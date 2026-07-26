@@ -1,0 +1,116 @@
+---
+description: Adding or changing an HTTP endpoint, request/response shape, error code or client API call. Contract-first, spec is the source of truth.
+globs: docs/api/openapi.yaml, packages/server/src/presentation/http/**, packages/shared/src/errors/**, packages/client/src/shared/api/**
+alwaysApply: false
+---
+
+# Контракт API
+
+Основание: `docs/architecture/stack.md`, раздел «Контракт API».
+
+## Когда применяется
+
+Добавляешь или меняешь endpoint, форму запроса/ответа, код ошибки, пагинацию, заголовок с
+семантикой; пишешь вызов API на клиенте.
+
+## Правило
+
+1. **Contract-first: `docs/api/openapi.yaml` — source of truth, правится руками в том же PR.**
+   Генерация спеки из кода (`zod-to-openapi` и подобное) запрещена: спека перестаёт быть договором и
+   начинает описывать случайное текущее поведение.
+2. **После правки спеки — `pnpm api:gen`, результат коммитится.** `packages/client/src/shared/api/
+   schemas/api-schema.d.ts` лежит в git; CI прогоняет генерацию и требует пустой `git diff`.
+3. **Никакого raw `fetch` и `axios` в клиентском коде.** Все вызовы — через `openapi-fetch`-клиент,
+   типизированный сгенерированной схемой. Несуществующий путь, лишний query-параметр или неверная
+   форма тела обязаны быть ошибкой компиляции, а не 400 в проде.
+4. **Все продуктовые endpoint'ы — под `/api/v1`.** Внутри версии допустимы только совместимые
+   изменения: новые опциональные поля и новые операции. Ломающее изменение — только `/api/v2` с
+   параллельной поддержкой `v1` не менее одного минорного релиза.
+5. **Единственный формат ошибки — `application/problem+json` (RFC 9457)**, включая ошибки валидации.
+   `code` — стабильный машинный идентификатор для выбора i18n-сообщения; `title`/`detail` —
+   для логов и разработчика, пользователю не показываются.
+6. **Каталог кодов — `packages/shared/src/errors/codes.ts`**, обязан совпадать с `enum` в спеке.
+   Свободных строк в поле `code` нет.
+7. **404 вместо 403 для чужой организации и закрытого контура.** См. `rules/permissions.mdc`, п. 7.
+8. **Пагинация выбирается по типу данных, а не по вкусу:** ленты (activity, комментарии, сообщения,
+   уведомления, аудит) — **cursor** (`?cursor=&limit=`, ответ `{ items, nextCursor }`); таблицы
+   (задачи, проекты, сотрудники, документы, файлы, инвойсы) — **offset**
+   (`?page=&perPage=&sort=`, ответ `{ items, total, page, perPage }`). Канбан — cursor +
+   fractional-indexing.
+9. **Курсор — opaque base64url от `{ sortKey, id }` с обязательным tie-breaker по `id`.** Без него
+   записи с одинаковым timestamp теряются. `limit` ограничен сверху: по умолчанию 50, максимум 100.
+10. **`Idempotency-Key` обязателен на всех небезопасных методах**, которые создают сущности,
+    отправляют почту или тратят деньги/токены. Клиентская обёртка проставляет его сама.
+    Повтор с тем же `request_hash` → сохранённый ответ; с другим → 409 `idempotency_key_reuse`.
+11. **Валидация входа — zod-схемой на границе**: body, query, params, семантические заголовки,
+    webhook-payload, содержимое job'ов, ответы внешних API. Внутри границы повторных проверок нет.
+12. **Контрактный тест двусторонний и обязателен.** Нет route без операции в спеке (кроме
+    allow-list `/health`, `/ready`, `/metrics`, `/socket.io`) и нет операции без route.
+
+## Примеры
+
+### ✅ Правильно
+
+```yaml
+# docs/api/openapi.yaml
+/tasks/{taskId}:
+  patch:
+    operationId: updateTask
+    parameters: [{ $ref: '#/components/parameters/IdempotencyKey' }]
+    responses:
+      '200': { $ref: '#/components/responses/Task' }
+      '404': { $ref: '#/components/responses/Problem' }
+      '409': { $ref: '#/components/responses/Problem' }
+```
+
+```ts
+// packages/client/src/units/task/api/task.api.ts
+export const updateTask = (taskId: string, body: TaskPatch, opts?: { signal?: AbortSignal }) =>
+  apiClient.PATCH('/tasks/{taskId}', { params: { path: { taskId } }, body, signal: opts?.signal });
+```
+
+```json
+{
+  "type": "https://bad-crm.dev/problems/validation-failed",
+  "title": "Request validation failed",
+  "status": 422,
+  "code": "validation_failed",
+  "instance": "/api/v1/tasks",
+  "requestId": "01J8Z2F5Q3K9V6N0R4T7YB3XQD",
+  "errors": [{ "path": "title", "code": "too_small", "message": "String must contain at least 1 character" }]
+}
+```
+
+### ❌ Неправильно
+
+```ts
+// raw fetch мимо сгенерированных типов: опечатка в пути доедет до прода
+const res = await fetch(`/api/v1/task/${id}`, { method: 'PATCH', body: JSON.stringify(patch) });
+
+// свой формат ошибки: клиент не может выбрать i18n-сообщение
+res.status(400).json({ error: 'Задача не найдена' });
+
+// offset для ленты сообщений: дубли, пропуски и seq scan на OFFSET 10000
+GET /api/v1/channels/{id}/messages?page=200&perPage=50
+```
+
+## Как проверяется
+
+| Механизм | Что ловит |
+|---|---|
+| `pnpm api:lint` (Spectral) | невалидную спеку, отсутствующие описания и примеры |
+| `pnpm api:gen` + `git diff --exit-code` в CI | забытую регенерацию типов |
+| `packages/server/test/contract/openapi.test.ts` | route без операции и операцию без route; расхождение каталога кодов ошибок с `enum` спеки |
+| ESLint `no-restricted-globals` на `fetch` и `no-restricted-imports` на `axios` вне `packages/client/src/shared/api` | raw-запросы на клиенте |
+| Типы `openapi-fetch` | неверный путь, параметр или форму тела — ошибка компиляции |
+| `test/integration/http/idempotency.spec.ts` | отсутствие или неверную обработку `Idempotency-Key` |
+| Тест `pagination-contract.spec.ts` | `limit` без верхней границы, курсор без tie-breaker |
+
+## Исключения
+
+- **Не-продуктовые маршруты** `/health`, `/ready`, `/metrics`, `/socket.io` в спеку не входят и
+  перечислены в allow-list контрактного теста.
+- **`shared/api` на клиенте** — единственное место, где `fetch` разрешён физически (внутри
+  `openapi-fetch` и `raw-client.ts` для загрузки в presigned URL, см. `rules/file-uploads.mdc`).
+- **Socket.IO-события** описываются не в OpenAPI, а в типизированном контракте
+  `packages/shared/src/realtime/events.ts`; см. `rules/realtime.mdc`.

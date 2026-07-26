@@ -1,0 +1,124 @@
+---
+description: Building or styling any UI. Mantine 7 usage, design tokens, CSS Modules, when to create a shared component.
+globs: packages/client/src/**/*.tsx, packages/client/src/**/*.css
+alwaysApply: false
+---
+
+# Дизайн-система: Mantine 7 + CSS Modules
+
+Основание: `docs/architecture/ux-architecture.md`, раздел «Дизайн-система». Доступность —
+`rules/a11y.mdc`; тексты — `rules/i18n.mdc`; состояния — `rules/errors-and-toasts.mdc`.
+
+## Когда применяется
+
+Любой компонент, любой CSS-файл, любое обращение к цвету, отступу, радиусу или анимации.
+
+## Правило
+
+1. **UI-kit один — Mantine 7.** Второй UI-kit не подключается. Перед использованием компонента или
+   хука спрашиваем официальный MCP `mantine` (`list_items` / `search_docs` / `get_item_props`) про
+   API текущей версии, а не пишем по памяти.
+2. **Стилизация — CSS Modules (`<name>.module.css`) рядом с компонентом** + `classNames` Mantine.
+   Tailwind не используется. Глобальный CSS — только для реально глобального (reset, темы) в `app/`.
+3. **Только токены, никаких литералов.** Цвета — `--mantine-color-*` и семантические алиасы
+   `--bc-*` из `app/styles/tokens.css`; отступы — `--mantine-spacing-*` (`xs 10 / sm 12 / md 16 /
+   lg 20 / xl 32`); радиусы — `--mantine-radius-*`. Произвольный hex, `px` и «магические» значения
+   запрещены; промежуточное — `calc(var(--mantine-spacing-md) / 2)`.
+4. **Тёмная тема — через `light-dark()` в объявлениях**, а не отдельным набором классов. Любой новый
+   токен объявляется сразу для обеих тем. Переключатель — `system | light | dark`, дефолт `system`.
+5. **Inline `style={{}}` и `sx`-подобные объекты запрещены.** Динамические значения — CSS custom
+   properties, выставляемые через ref или класс. `style={{ marginTop: 12 }}` — ошибка ревью,
+   вместо неё `Stack`/`Group` с токеном отступа.
+6. **Условные классы — только через `clsx`.** Конкатенация и тернарники в строке `className` —
+   нарушение.
+7. **Не оборачиваем ради обёртки.** `Button`, `TextInput`, `Select`, `Menu`, `Tabs`, `Modal`,
+   `Drawer`, `Tooltip` используются напрямую. Обёртка в `shared/ui` заводится, только когда есть что
+   зафиксировать: поведение, политику продукта или составное состояние.
+8. **Свой компонент заводится, если выполнено хотя бы одно:** поведение повторяется в 3+ местах и
+   содержит логику; нужно зафиксировать политику продукта (подтверждение разрушающего действия,
+   авто-очистка буфера, единый текст ошибки); Mantine-компонент требуется всегда с одним и тем же
+   набором из 4+ пропсов; нужна доступность сверх коробочной. «Mantine + два класса» компонентом не
+   становится.
+9. **Доменный компонент никогда не попадает в `shared/ui`** — его место `units/<unit>/ui`.
+   `shared/ui` не знает о доменах и не ходит в сеть.
+10. **Состояния экрана — только через `shared/ui`:** `DataState`, `EmptyState`, `ErrorState`,
+    skeleton-набор. Свой спиннер, своя «Ничего не найдено», свой текст ошибки — нарушение.
+11. **Формы — `@mantine/form` + `mantine-form-zod-resolver`.** Оверлеи — `useDisclosure`, кроме
+    случаев, где открытость должна быть в URL (тогда её определяет search-параметр).
+12. **Таблицы:** модель — TanStack Table v8 (колонки, сортировка, выделение, виртуализация),
+    разметка и стили — Mantine `Table`. Не наоборот. Свыше 200 строк на экране — виртуализация.
+13. **Иконки — один набор `@tabler/icons-react`**, размер только `16 | 20 | 24`, `stroke={1.5}`.
+14. **Типографика:** ровно один `h1` на страницу (в `PageHeader`), заголовки без пропусков уровней;
+    `xs` — только для метаданных, никогда для действий и сообщений об ошибках; межстрочный интервал
+    основного текста ≥ 1.5.
+15. **Motion:** `--bc-motion-fast: 120ms`, `--bc-motion-base: 200ms`; любая анимация уважает
+    `prefers-reduced-motion: reduce` и сводится к мгновенной смене состояния.
+16. **Модалка vs дровер vs страница** выбирается по правилу: нужно уметь переслать ссылкой — дровер
+    с параметром в URL или страница, но не модалка; действие занимает больше 30 секунд внимания —
+    страница. Вложенные модалки запрещены (исключение — `ConfirmDialog` поверх формы).
+17. **Разрушающие действия** — по трёхуровневой схеме: undo-тост / `ConfirmDialog` уровня `danger` /
+    `ConfirmDialog` с вводом имени объекта. Разрушающие настройки собираются в `DangerZone`.
+
+## Примеры
+
+### ✅ Правильно
+
+```css
+/* units/task/ui/task-card.module.css */
+.card {
+  background: var(--bc-surface-raised);
+  border: 1px solid var(--bc-border);
+  border-radius: var(--mantine-radius-md);
+  padding: var(--mantine-spacing-md);
+  transition: box-shadow var(--bc-motion-fast) ease;
+}
+@media (prefers-reduced-motion: reduce) { .card { transition: none; } }
+```
+
+```tsx
+import clsx from 'clsx';
+import classes from './task-card.module.css';
+
+export function TaskCard({ task, isDragging }: Props) {
+  return <article className={clsx(classes.card, isDragging && classes.dragging)}>…</article>;
+}
+```
+
+### ❌ Неправильно
+
+```tsx
+// литеральные цвета и пиксели, inline-стиль, конкатенация классов
+<div
+  className={'card ' + (isDragging ? 'dragging' : '')}
+  style={{ background: '#f4f4f5', padding: 14, borderRadius: 6 }}
+>
+```
+
+```tsx
+// свой спиннер и своё пустое состояние вместо shared/ui
+{isLoading ? <MySpinner /> : rows.length === 0 ? <p>Ничего не найдено</p> : <Table />}
+```
+
+## Как проверяется
+
+| Механизм | Что ловит |
+|---|---|
+| Stylelint `declaration-property-value-disallowed-list` (hex, `rgb(`, голые `px` вне `calc`) | литералы вместо токенов |
+| Stylelint `custom-property-pattern: ^(bc|mantine)-` | самодельные переменные вне системы токенов |
+| ESLint `react/forbid-dom-props: ['style']` + `react/forbid-component-props: ['style']` | inline-стили |
+| Кастомное правило `bad-crm/classnames-via-clsx` | конкатенацию и тернарники в `className` |
+| ESLint `no-restricted-imports` на UI-библиотеки, кроме `@mantine/*`, `@tabler/icons-react`, `@tanstack/react-table` | второй UI-kit |
+| Автотест контраста токенов по палитре (обе темы) | новый токен, не проходящий WCAG AA |
+| `vitest-axe` в компонентных тестах `shared/ui` (обе темы) | недоступный компонент |
+| `size-limit` на CSS-бандл | разрастание глобальных стилей |
+| Агент `ui-visual-validator` на скриншотах ключевых экранов | визуальные регрессии |
+
+## Исключения
+
+- **`app/styles/tokens.css` и `global.css`** — единственные места, где допустимы литеральные
+  значения: там токены и объявляются.
+- **Сторонние виджеты** (Schedule-X, BlockNote, dnd-kit overlay) стилизуются через их API и
+  адаптируются к токенам обёрткой в `shared/ui` или `units/*/ui`; их внутренние классы не
+  переопределяются глобально.
+- **CSS custom properties, выставляемые через ref**, — легитимный способ передать динамическое
+  значение (позиция, прогресс, цвет метки), не считается inline-стилем.

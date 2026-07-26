@@ -1,0 +1,118 @@
+---
+description: Socket.IO rooms, handshake authorization, presence and typing. Room names are built by the server from verified data, never by the client.
+globs: packages/server/src/infrastructure/realtime/**, packages/server/src/presentation/**, packages/client/src/units/**/service/**, packages/shared/src/realtime/**
+alwaysApply: false
+---
+
+# Realtime: Socket.IO + Redis
+
+Основание: `docs/architecture/overview.md` (раздел о realtime), ADR-0010.
+
+## Когда применяется
+
+Любое событие, доставляемое по сокету: чат, presence, обновления доски, уведомления, статусы CI,
+индикатор набора текста.
+
+## Правило
+
+1. **Имя комнаты строго `org:{orgId}:{resource}:{resourceId}`.** Формирует **сервер** из проверенных
+   данных. Клиент не передаёт имя комнаты и не может «сам зайти» — `socket.join` вызывается только
+   серверным кодом после проверки прав.
+2. **Широковещание запрещено.** `io.emit(...)` и рассылка в неймспейс целиком не используются
+   никогда: одно такое место — утечка между организациями. Любая отправка адресована конкретной
+   комнате.
+3. **Авторизация на handshake.** Токен проверяется в `io.use(...)` до подключения; `organizationId`,
+   `userId`, `sid` кладутся в `socket.data` и дальше берутся **только оттуда**, а не из payload
+   события.
+4. **Подписка на комнату — отдельная проверка прав.** `subscribe`-событие проходит тот же
+   `can(actor, key, ref)`, что и HTTP; отказ — закрытие подписки, а не молчаливое игнорирование.
+   Невидимый ресурс даёт «не найдено», а не «нет доступа» (см. `rules/permissions.mdc`).
+5. **Публикация — только через outbox.** Use-case пишет событие в `outbox_event` в той же
+   транзакции; broadcast делает воркер. Прямой `io.to(...).emit(...)` из use-case запрещён: при
+   откате транзакции клиенты получат событие о несостоявшемся изменении.
+6. **Payload события минимальный:** идентификаторы + версия агрегата. Клиент дочитывает данные
+   запросом или обновляет кеш точечно (`setQueryData`), а не полагается на полный объект в событии.
+   Полный объект в payload — это обход проверки прав получателя.
+7. **Контракт событий типизирован в `packages/shared/src/realtime/events.ts`** и общий для сервера и
+   клиента. Свободных строк в именах событий нет.
+8. **Presence — Redis-ключи с TTL и heartbeat от клиента.** При обрыве соединения запись истекает
+   сама. Presence в Postgres не хранится (в БД только `User.lastSeenAt`).
+9. **Индикатор набора текста троттлится** (не чаще одного события в 2–3 с на пользователя на канал)
+   и имеет собственный TTL. Событие «печатает» не сохраняется нигде.
+10. **Rate limit на события от клиента — 50/с на сокет** (см. `rules/security.mdc`). Превышение —
+    отключение с кодом, а не тихое игнорирование.
+11. **Отключение при потере прав.** Изменение роли или исключение из канала выкидывает пользователя
+    из соответствующих комнат: `router.invalidate()` на клиенте недостаточен, комната закрывается
+    сервером.
+12. **Fan-out между инстансами — `@socket.io/redis-streams-adapter`.** Sticky sessions обязательны,
+    пока разрешён HTTP long-polling fallback.
+13. **Клиент применяет события через `setQueryData` по ключу из фабрики**, а не рефетчем всего
+    списка на каждое событие (см. `rules/tanstack-query.mdc`).
+
+## Примеры
+
+### ✅ Правильно
+
+```ts
+// infrastructure/realtime/gateway.ts — имя комнаты строит сервер
+io.use(authHandshake);                       // токен проверен до подключения
+
+socket.on('channel:subscribe', async ({ channelId }) => {
+  const actor = socket.data.actor;           // из handshake, не из payload
+  const scope = await access.channelScope(channelId);
+  if (!scope) return ack({ code: 'resource_not_found' });
+  assertAllowed(canReadChannel(actor, scope));
+  await socket.join(roomName('channel', actor.organizationId, channelId));
+});
+
+export const roomName = (resource: Resource, orgId: string, id: string) =>
+  `org:${orgId}:${resource}:${id}` as const;
+```
+
+```ts
+// воркер: broadcast после коммита, payload минимальный
+await io.to(roomName('channel', e.organizationId, e.payload.channelId))
+       .emit('message:created', { messageId: e.payload.messageId, version: e.payload.version });
+```
+
+### ❌ Неправильно
+
+```ts
+// имя комнаты от клиента — можно подписаться на чужую организацию
+socket.on('subscribe', ({ room }) => socket.join(room));
+
+// широковещание: событие уходит всем организациям сразу
+io.emit('task:updated', task);
+
+// broadcast из use-case внутри транзакции: при откате клиенты получат ложное событие
+await this.uow.withTransaction(async () => {
+  await this.tasks.save(task);
+  io.to(room).emit('task:updated', task);
+});
+
+// полный объект в payload обходит проверку прав получателя
+io.to(room).emit('message:created', { ...message, authorEmail: author.email });
+```
+
+## Как проверяется
+
+| Механизм | Что ловит |
+|---|---|
+| Кастомное ESLint-правило `bad-crm/no-io-emit-global` | `io.emit(` и рассылку в неймспейс |
+| ESLint `no-restricted-syntax` на `socket.join(` вне `infrastructure/realtime/**` | join мимо централизованной проверки |
+| Тип `roomName()` (шаблонный литерал `org:${string}:${Resource}:${string}`) | имя комнаты, собранное конкатенацией — ошибка компиляции |
+| `test/integration/realtime/cross-tenant.spec.ts` | подписку на комнату чужой организации |
+| `test/integration/realtime/authz.spec.ts` | подписку на приватный канал без членства (ожидается `resource_not_found`) |
+| `test/integration/realtime/revocation.spec.ts` | пользователя, оставшегося в комнате после потери прав |
+| `test/integration/realtime/presence-ttl.spec.ts` | presence-ключ без TTL |
+| `test/integration/realtime/typing-throttle.spec.ts` | отсутствие троттлинга |
+| Агент `security-auditor` при изменении gateway | обход handshake-контекста |
+
+## Исключения
+
+- **Системные события инсталляции** (баннер обслуживания, требование перезагрузки SPA) — единственный
+  случай рассылки шире одной организации; отправляются в выделенный неймспейс `system`, содержат
+  только код события и не несут никаких данных организаций.
+- **Профиль `minimal`** не отключает realtime: Redis обязателен во всех профилях.
+- **Long-polling fallback** оставляем включённым (часть корпоративных прокси режет WebSocket) — цена
+  этого решения — обязательные sticky sessions.

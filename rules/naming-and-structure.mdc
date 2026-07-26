@@ -1,0 +1,166 @@
+---
+description: Naming of every file and exported symbol in the repo, plus one-responsibility-per-file rules. Applies to client and server alike.
+globs: packages/**/src/**
+alwaysApply: true
+---
+
+# Нейминг файлов и структура модулей
+
+Раскладка слоёв — `rules/frontend-fsd.mdc` (клиент) и `rules/hexagonal-backend.mdc` (сервер).
+Здесь — как называются файлы и что в них лежит.
+
+## Когда применяется
+
+Создаёшь файл, переименовываешь файл, добавляешь экспорт, выносишь хелпер.
+
+## Правило
+
+1. **Имя файла — всегда kebab-case + role-suffix:** `<kebab-описание>.<role>.<ext>`. Компоненты
+   тоже: `user-card.component.tsx`, а не `UserCard.tsx`. Хуки: `use-task-list.hook.ts`, а не
+   `useTaskList.ts`. `PascalCase.tsx` и `camelCase.ts` в именах файлов не существует.
+2. **Словарь суффиксов — закрытый.** Новый суффикс вводится правкой этого файла и ESLint-конфига,
+   а не по месту.
+
+   **Frontend**
+
+   | Suffix | Роль | Пример |
+   |---|---|---|
+   | `.component.tsx` | React-компонент | `task-card.component.tsx` |
+   | `.widget.tsx` | составной блок слоя widgets | `app-sidebar.widget.tsx` |
+   | `.hook.ts` | хук (`use-*`) | `use-task-filters.hook.ts` |
+   | `.query.ts` | TanStack query / `queryOptions` | `tasks.query.ts` |
+   | `.mutation.ts` | TanStack mutation | `create-task.mutation.ts` |
+   | `.store.ts` | zustand store | `board-drag.store.ts` |
+   | `.api.ts` | чистые fetch-функции | `tasks.api.ts` |
+   | `.types.ts` | типы и интерфейсы | `task.types.ts` |
+   | `.schema.ts` | zod-схема | `task-filters.schema.ts` |
+   | `.enums.ts` | union + label-map | `task-status.enums.ts` |
+   | `.constant.ts` | константы | `board-columns.constant.ts` |
+   | `.util.ts` | чистая утилита | `format-duration.util.ts` |
+   | `.errors.ts` | ошибки и error-типы | `api.errors.ts` |
+   | `.config.ts` | конфиг | `query-client.config.ts` |
+   | `.client.ts` | http/api-клиент | `raw-client.ts` |
+   | `.context.tsx` / `.provider.tsx` | React context / провайдер | `theme.provider.tsx` |
+   | `.guard.ts` | guard маршрута | `require-permission.guard.ts` |
+   | `.module.css` | стили рядом с компонентом | `task-card.module.css` |
+   | `.test.ts(x)` / `.spec.ts` | тесты рядом с кодом | `use-task-filters.hook.test.ts` |
+
+   **Backend**
+
+   | Suffix | Роль |
+   |---|---|
+   | `.entity.ts` · `.value.ts` · `.errors.ts` | domain |
+   | `.policy.ts` | правило доступа (`domain/<context>/access/`) |
+   | `.port.ts` | интерфейс порта (`*-repository.port.ts`, `*-access-reader.port.ts`, `*-query.port.ts`) |
+   | `.use-case.ts` | команда (меняет состояние) |
+   | `.query.ts` | чтение (read-модель) |
+   | `.adapter.ts` · `.repository.ts` · `.client.ts` | infrastructure |
+   | `.controller.ts` · `.middleware.ts` · `.routes.ts` · `.validator.ts` · `.serializer.ts` | presentation |
+   | `.handler.ts` | обработчик очереди |
+
+3. **Fixed-имена без описательного префикса** в `app/` и `pages/`: `page.tsx`, `layout.tsx`,
+   `index.ts`, `main.tsx`, `providers.tsx`, `router.tsx`, `global.css`. Под-страницы внутри одной
+   папки — `<kebab>-page.tsx`.
+4. **Только named-экспорты. `export default` запрещён** (кроме мест, где этого требует фреймворк —
+   таких в проекте нет).
+5. **Имена символов:** компоненты, классы, типы, enum — `PascalCase`; хуки, функции, переменные —
+   `camelCase`; константы-литералы — `SCREAMING_SNAKE_CASE`. kebab-имя файла соответствует
+   PascalCase-экспорту: `task-card.component.tsx` → `export function TaskCard`.
+6. **Один компонент — один файл.** Объявление второго компонента в файле запрещено, включая
+   «маленький подкомпонент рядом». Выносится в отдельный файл в `ui/` того же слоя.
+7. **Один файл — одна ответственность.** Хук в `.hook.ts`, тип в `.types.ts`, константа в
+   `.constant.ts`, утилита в `.util.ts`, стиль в `.module.css`. Роли не смешиваются.
+8. **Никаких helper-функций внутри компонента и рядом с ним в том же файле.** Чистая функция →
+   `*.util.ts`: переиспользуемая в `shared/lib`, доменная в `units/<unit>/lib`. Форматтеры, мапперы,
+   предикаты, расчёты — вне тела компонента.
+9. **Barrel `index.ts` в каждом сегменте.** Внутренности сегмента приватны: импорт мимо barrel
+   запрещён.
+10. **Имена из `docs/product/glossary.md` обязательны к переиспользованию** в именах юнитов,
+    сущностей, схем и таблиц. Ubiquitous language — не украшение: расхождение имени в коде и в
+    глоссарии чинится переименованием кода.
+11. **Корень unit'а — kebab-case в единственном числе и совпадает с доменной сущностью.** Одно
+    имя проходит сквозь весь стек: Prisma-модель (`PascalCase`, ед. ч.) = корень unit'а
+    (`kebab-case`, ед. ч.) = термин глоссария = имя ресурса в API. Множественное число, синонимы и
+    «описательные» имена папок запрещены — у домена ровно одно имя.
+
+    | ✅ Канон | ❌ Запрещено | Сущность / домен |
+    |---|---|---|
+    | `units/task` | `units/tasks` | `Task` |
+    | `units/board` | `units/boards` | `Board` |
+    | `units/project` | `units/projects` | `Project` |
+    | `units/file` | `units/files` | `File` |
+    | `units/employee` | `units/employees` | `EmployeeProfile` |
+    | `units/dashboard` | `units/dashboards` | `Dashboard` |
+    | `units/iam` | `units/permissions`, `units/roles`, `units/access` | `Permission`, `Role`, `UserRole`, `UserPermissionOverride`, `ResourceAcl`, `Invitation` |
+    | `units/kb` | `units/knowledge-base`, `units/notes` | `KbNote`, `KbSpace`, `KbLink` |
+    | `units/time` | `units/time-tracking`, `units/tracking` | `TimeEntry`, `RunningTimer`, `Activity` |
+
+    Исключения из правила «ед. ч.» отсутствуют: технические юниты без Prisma-модели
+    (`units/auth`, `units/realtime`, `units/search`, `units/billing`, `units/ai`, `units/github`,
+    `units/audit`, `units/onboarding`, `units/collaboration`, `units/appearance`) — уже неисчисляемые
+    имена домена, форма `-s` к ним не добавляется.
+
+    Полный перечень канонических имён — колонка *Unit / Entity* в `docs/product/glossary.md`;
+    новый unit заводится строкой там, а не созданием папки.
+
+## Примеры
+
+### ✅ Правильно
+
+```
+units/task/
+  ui/
+    task-card.component.tsx        → export function TaskCard
+    task-card.module.css
+    task-card-menu.component.tsx   → отдельный файл на подкомпонент
+    index.ts
+  lib/utils/
+    format-task-key.util.ts        → export function formatTaskKey
+  service/hooks/
+    use-task-list.hook.ts          → export function useTaskList
+```
+
+### ❌ Неправильно
+
+```
+units/tasks/          ❌ множественное число → units/task
+units/knowledge-base/ ❌ синоним            → units/kb
+units/permissions/    ❌ синоним            → units/iam
+units/time-tracking/  ❌ синоним            → units/time
+```
+
+```tsx
+// TaskCard.tsx — PascalCase-имя файла, default-экспорт, два компонента,
+// helper внутри файла компонента
+function formatKey(t: Task) { return `${t.projectKey}-${t.number}`; }   // ❌ → *.util.ts
+
+function TaskCardMenu() { /* … */ }                                     // ❌ второй компонент
+
+export default function TaskCard({ task }: Props) {                     // ❌ default export
+  const label = formatKey(task);
+  return <div>{label}<TaskCardMenu /></div>;
+}
+```
+
+## Как проверяется
+
+| Механизм | Что ловит |
+|---|---|
+| ESLint `unicorn/filename-case: { case: 'kebabCase' }` | `PascalCase.tsx`, `camelCase.ts` |
+| Кастомное ESLint-правило `bad-crm/require-role-suffix` (словарь из этого файла) | файл без суффикса и с суффиксом вне словаря |
+| ESLint `import/no-default-export` | `export default` |
+| ESLint `react/no-multi-comp` (error в `pages/**`, `widgets/**`, `units/*/ui/**`) | два компонента в файле |
+| Кастомное правило `bad-crm/no-inline-helpers` | объявление функции в файле компонента вне самого компонента |
+| ESLint `@typescript-eslint/naming-convention` | несоответствие PascalCase/camelCase для символов |
+| `test/architecture/barrels.spec.ts` | импорт мимо `index.ts` сегмента |
+| `test/architecture/unit-names.spec.ts` | корень `units/*` вне списка канонических имён из `docs/product/glossary.md` — ловит `units/tasks`, `units/permissions`, `units/knowledge-base` и любую новую папку без строки в глоссарии |
+| Агент `code-reviewer` | расхождение имён с `docs/product/glossary.md` |
+| Агент `fsd-architecture-linter` | множественное число и синонимы в имени unit'а при ревью дельты клиента |
+
+## Исключения
+
+- **Сгенерированные файлы** (`routeTree.gen.ts`, `api-schema.d.ts`, миграции Prisma) не подчиняются
+  правилу имён и исключены из линта.
+- **Конфиги в корне пакета** (`vite.config.ts`, `eslint.config.js`, `vitest.config.ts`) —
+  фиксированные имена инструментов.
+- **Fixed-имена** из п. 3 не требуют role-suffix.

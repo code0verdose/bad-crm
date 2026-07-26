@@ -1,0 +1,127 @@
+---
+description: Showing errors, success feedback and loading state on the client. One signal per action, no duplicate toasts.
+globs: packages/client/src/**
+alwaysApply: false
+---
+
+# Ошибки, уведомления и loading-state
+
+Основание: `docs/architecture/ux-architecture.md` («Одно действие — ровно один сигнал», состав
+`shared/ui`). Тексты — `rules/i18n.mdc`; коды ошибок — `rules/api-contract.mdc`.
+
+## Когда применяется
+
+Любая мутация, любой запрос, любая форма, любое состояние загрузки на клиенте.
+
+## Правило
+
+1. **Тостер один на всё приложение** — `@mantine/notifications`, обёрнутый в `shared/ui/toaster`
+   (`notify.success/error/loading/update/dismiss`). Компоненты вызывают обёртку, а не вендора.
+   `<Notifications />` монтируется в `app/providers.tsx` ровно один раз.
+2. **Одно логическое действие — максимум один сигнал.** Не бывает «и тост, и баннер», «и тост, и
+   inline-ошибка», «и `onError`, и `try/catch` вокруг того же вызова».
+3. **Единый источник ошибок мутаций — глобальный `MutationCache.onError`** → красный тост
+   (пропуская `AbortError`). Локальный `onError` **переопределяет** глобальный, а не добавляется к
+   нему: иначе на один сбой прилетают два тоста.
+4. **Валидация формы — inline у поля, никогда не тост.** Ошибка связывается через
+   `aria-describedby` + `aria-invalid`. Серверные ошибки полей («email занят») мапятся в
+   `form.setErrors({ email: … })`, а не в тост.
+5. **Ошибка загрузки списка/страницы — inline error-state с «Повторить»** (`shared/ui/DataState`
+   или `ErrorState` в `errorComponent` маршрута), а не тост. Фоновые ретраи молчат. Тост для query
+   допустим только на осмысленное разовое действие (ручной refresh).
+6. **Каждому тосту — стабильный `id`.** Повторная ошибка обновляет существующий тост
+   (`notifications.update`), а не плодит стек одинаковых.
+7. **Loading-индикатор выбирается по месту, а не «спиннер везде»:**
+   - действие с кнопки → `loading` на самой кнопке, поля остаются читаемыми (не `disabled` целиком);
+   - первичная загрузка списка/страницы → skeleton из `shared/ui/skeletons`;
+   - рефетч при смене фильтра/страницы → `keepPreviousData`, без спиннера;
+   - долгая или глобальная операция → тост-`loading` с тем же `id`, **обновляемый** в success/error.
+8. **Успех мутации, меняющей данные (create/save/delete/approve), — зелёный тост.** Мелкий
+   optimistic-toggle тоста не требует: сам UI уже дал обратную связь.
+9. **Разрушающее действие с окном отмены** показывает тост «Удалено» с кнопкой «Отменить» на 8 с —
+   это и есть его единственный сигнал; отдельного confirm-диалога в этом случае нет.
+10. **Текст ошибки для пользователя выбирается по `code` из `application/problem+json`**, а не
+    берётся из `detail`/`title`. Технический стек уходит в лог, не пользователю.
+11. **`AbortError` никогда не показывается.** Отмена запроса при смене фильтра — нормальное
+    поведение, а не сбой.
+12. **403/404 от сервера обрабатывается экраном, даже если UI считал действие разрешённым:**
+    показать понятное сообщение, откатить оптимистичное изменение, инвалидировать кеш сессии.
+13. **Error boundary обязателен на трёх уровнях:** `errorComponent` маршрута, глобальный boundary в
+    `app/`, глобальный `MutationCache.onError`. Голых экранов загрузки и ошибки не бывает:
+    у каждого маршрута есть `pendingComponent`, `errorComponent`, `notFoundComponent`.
+
+## Примеры
+
+### ✅ Правильно
+
+```ts
+// app/providers.tsx — единственный источник тостов на ошибку мутации
+const queryClient = new QueryClient({
+  defaultOptions: { queries: { retry: 1, staleTime: 30_000 } },
+  mutationCache: new MutationCache({
+    onError: (error) => {
+      if (isAbortError(error)) return;
+      notify.error({ id: 'mutation-error', messageKey: errorCodeToKey(error) });
+    },
+  }),
+});
+```
+
+```tsx
+// кнопка несёт своё состояние загрузки; отдельного спиннера и тоста «сохраняем» нет
+<Button loading={saveM.isPending} onClick={onSave}>{t('common.save')}</Button>
+```
+
+```tsx
+// список: skeleton → error-state с retry → контент
+<SharedUi.DataState
+  status={tasksQ.status}
+  error={tasksQ.error}
+  onRetry={tasksQ.refetch}
+  skeleton={<SharedUi.TableSkeleton rows={10} />}
+  empty={<SharedUi.EmptyState titleKey="tasks.empty.title" actionKey="tasks.empty.create" />}
+>
+  <TaskUi.Table rows={tasksQ.data} />
+</SharedUi.DataState>
+```
+
+### ❌ Неправильно
+
+```ts
+// двойной тост на один сбой: локальный onError не переопределяет, а дополняет глобальный
+useMutation({
+  mutationFn: saveTask,
+  onError: (e) => notify.error({ messageKey: 'tasks.save_failed' }),   // + глобальный MutationCache
+});
+
+// ошибка валидации формы тостом: пользователь не знает, какое поле чинить
+if (!result.success) notify.error({ messageKey: 'validation.failed' });
+
+// тост на каждый фоновый рефетч списка и на отменённый запрос
+useQuery({ queryKey, queryFn, onError: (e) => notify.error({ message: e.message }) });
+
+// технический текст пользователю
+notify.error({ message: error.detail });   // "PrismaClientKnownRequestError P2002"
+```
+
+## Как проверяется
+
+| Механизм | Что ловит |
+|---|---|
+| ESLint `no-restricted-imports` на `@mantine/notifications` вне `shared/ui/toaster/**` | вызовы вендора мимо обёртки |
+| Кастомное правило `bad-crm/no-toast-in-onerror-query` | тост на `onError` у `useQuery` |
+| `test/ui/toaster/dedupe.spec.ts`: три одинаковых сбоя подряд | стек одинаковых тостов (ожидается один, обновляемый) |
+| `test/ui/mutation-error.spec.ts`: мутация падает при наличии локального `onError` | двойной тост |
+| Компонентные тесты форм (Testing Library): submit с невалидным полем | тост вместо inline-ошибки |
+| `test/ui/data-state.spec.ts` | отсутствие retry в error-состоянии списка |
+| e2e Playwright: обрыв сети на сохранении | залипший loading, отсутствие отката |
+| `axe` в CI | `role="alert"`/`aria-live` у тостов, см. `rules/a11y.mdc` |
+
+## Исключения
+
+- **Vault**: копирование секрета показывает тост-таймер с обратным отсчётом — это единственный
+  случай долгоживущего тоста с активным действием; см. `rules/e2ee-crypto.mdc`.
+- **Автосохранение** (документы, заметки KB) заменяет тосты индикатором «Сохранено / Сохраняем /
+  Не сохранено» рядом с заголовком; тост показывается только при ошибке.
+- **Массовые операции** показывают один сводный тост («Удалено 14 из 15, 1 ошибка») со ссылкой на
+  детали, а не тост на каждый элемент.

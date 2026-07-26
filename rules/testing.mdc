@@ -1,0 +1,139 @@
+---
+description: What to test at which level, with which tool, and which coverage thresholds block the build.
+globs: packages/**/*.test.ts, packages/**/*.test.tsx, packages/**/*.spec.ts, packages/server/test/**, packages/e2e/**
+alwaysApply: true
+---
+
+# Тестовая стратегия
+
+Основание: `docs/architecture/stack.md`, раздел «Тестовая стратегия». Дисциплина написания —
+`rules/tdd-and-commit-gate.mdc`.
+
+## Когда применяется
+
+Любой новый или изменённый код. Выбор уровня теста — не вкусовое решение: он определяется тем, что
+именно проверяется.
+
+## Правило
+
+1. **Пять уровней, каждый со своей зоной ответственности.** Тест уровня выше не заменяет тест
+   уровня ниже.
+
+   | Уровень | Где живёт | Инструмент | Что проверяет |
+   |---|---|---|---|
+   | domain | рядом с кодом: `domain/task/task.entity.test.ts` | Vitest, без окружения, < 1 c | инварианты сущностей, переходы состояний, **все ветки policy** |
+   | application | `application/task/use-cases/*.test.ts` | Vitest + in-memory реализации портов | оркестрацию, ветвления, ошибки, публикацию в outbox |
+   | integration | `packages/server/test/integration/**` | Vitest + Testcontainers (`pgvector/pgvector:pg16` + Redis) | SQL, маппинг Prisma, миграции, **RLS-изоляцию**, HTTP через supertest |
+   | contract | `packages/server/test/contract/openapi.test.ts` | Vitest | спека ↔ роутер, каталог кодов ошибок |
+   | e2e | `packages/e2e/tests/**` | Playwright поверх `docker compose` | критичные пользовательские сценарии |
+
+2. **Policy покрываются табличными тестами на 100 % строк и ветвей.** Формат — таблица случаев
+   (`it.each`), а не копипаста `it()`. Обязательный набор: вся таблица истинности из
+   `docs/security/permission-model.md`, краевые случаи, граничные уровни ACL (ровно требуемый и на
+   единицу ниже), просроченные гранты, удалённый ресурс.
+3. **Application-тесты используют in-memory реализации портов, а не моки-заглушки с
+   `expect(mock).toHaveBeenCalled()`.** Проверяется наблюдаемый результат, а не факт вызова.
+4. **RLS-изоляция проверяется только на реальном Postgres в Testcontainers**, через `pg`, а не через
+   Prisma, и обязательно с положительным контролем. Полный список требований — `rules/tenancy-rls.mdc`.
+5. **Контрактный тест двусторонний** — см. `rules/api-contract.mdc`.
+6. **E2E: минимум один полный happy-path на эпик.** Обязательный базовый набор — логин, 2FA,
+   создание задачи, drag на канбане, документ, чат, поиск. Каждый прогон включает `@axe-core/playwright`.
+7. **Пороги покрытия (Vitest `coverage.thresholds`) блокируют сборку:**
+
+   | Область | lines | branches |
+   |---|---|---|
+   | `domain/**/access/*.policy.ts` | **100 %** | **100 %** |
+   | `domain/**` | 95 % | 90 % |
+   | `application/**` | 90 % | 85 % |
+   | `infrastructure/**`, `presentation/**` | 75 % | 70 % |
+   | весь `packages/server` | 85 % | 80 % |
+   | `packages/client` (хуки, схемы, `shared/ui`) | 70 % | 60 % |
+
+8. **Минимальный набор на каждую новую сущность:**
+
+   | Что добавляешь | Минимум |
+   |---|---|
+   | value object с инвариантом | 1 happy + 2–3 edge (граница, невалид, пустое) |
+   | use-case | 1 happy + 1 на каждую ветку `if`/`throw` |
+   | policy | вся таблица истинности + краевые |
+   | репозиторий Prisma | 1 integration с реальной БД |
+   | адаптер (S3, SMTP, AI, GitHub) | 1 contract-тест с моком вендора (MSW/nock) |
+   | HTTP-endpoint | happy + 401 + 403/404 + 422 + идемпотентность (если мутация) |
+   | таблица с `organization_id` | isolation-тест с положительным контролем |
+   | React-компонент | render + interaction + `axe` в обеих темах |
+   | форма | happy submit + ошибка на каждое поле + серверная ошибка через MSW |
+   | хук TanStack Query | success + error |
+   | guard маршрута | allowed + denied → redirect |
+   | search-схема фильтров | мусор, отсутствующие ключи, значения вне whitelist |
+
+9. **Тестом не считается:** `expect(true).toBe(true)`; `it()` без assertion на наблюдаемый результат;
+   снапшот сериализации > 50 строк; тест, проверяющий только факт вызова мока; `it.skip`/`xit`,
+   попавший в основную ветку.
+10. **Баг чинится тестом.** Сначала падающий тест, воспроизводящий баг, потом фикс.
+11. **Тесты изолированы.** Контейнер поднимается один на файл (`globalSetup`), между тестами —
+    `TRUNCATE … CASCADE`, а не пересоздание контейнера. Общего мутируемого состояния между тестами нет.
+12. **Никаких обращений в сеть из тестов.** Внешние API — MSW/nock; таймеры — фейковые; время —
+    через `ClockPort`.
+
+## Примеры
+
+### ✅ Правильно
+
+```ts
+// табличный тест policy
+const cases = [
+  { name: 'EDITOR правит задачу', actor: { permissions: set('task:update') },
+    scope: { aclLevel: 'EDITOR' }, expected: true },
+  { name: 'VIEWER не правит', actor: { permissions: set('task:update') },
+    scope: { aclLevel: 'VIEWER' }, expected: false, reason: 'insufficient_acl_level' },
+  { name: 'чужой тенант — 404, а не 403', actor: { organizationId: orgA },
+    scope: { organizationId: orgB }, expected: false, reason: 'tenant_mismatch' },
+] as const;
+
+it.each(cases)('$name', ({ actor, scope, expected, reason }) => {
+  const d = canUpdateTask(makeActor(actor), makeScope(scope));
+  expect(d.allowed).toBe(expected);
+  if (!expected) expect(d.reason).toBe(reason);
+});
+```
+
+### ❌ Неправильно
+
+```ts
+// проверяет мок, а не поведение: пройдёт, даже если use-case ничего не сохранил
+it('сохраняет задачу', async () => {
+  await useCase.execute(input);
+  expect(repo.save).toHaveBeenCalled();
+});
+
+// сеть из теста: флейки и зависимость от чужого сервиса
+it('получает курс', async () => {
+  const r = await fetch('https://api.example.com/rates');
+  expect(r.ok).toBe(true);
+});
+
+// снапшот на 300 строк: ловит форматирование, а не баги
+expect(renderDashboard()).toMatchSnapshot();
+```
+
+## Как проверяется
+
+| Механизм | Что ловит |
+|---|---|
+| `pnpm test` (Vitest, unit + application) | падения domain/application |
+| `pnpm test:integration` (Testcontainers) | SQL, миграции, RLS, HTTP |
+| `pnpm test:e2e` (Playwright + `docker compose`) | сценарии и `axe` |
+| `vitest --coverage` + `coverage.thresholds` в CI | падение ниже порогов из п. 7 |
+| ESLint `vitest/no-focused-tests`, `vitest/no-disabled-tests`, `vitest/expect-expect` | `it.only`, `it.skip`, тест без assertion |
+| Кастомное правило `bad-crm/no-network-in-tests` | `fetch`/`axios` в тестовых файлах |
+| Агент `test-coverage` в commit-гейте | непокрытые изменённые строки и ветки, тесты-пустышки; вердикт PASS обязателен |
+
+## Исключения
+
+- **Инфраструктурный конфиг без логики** (`docker-compose.yml`, `eslint.config.js`, Caddyfile)
+  тестами не покрывается — при условии, что изменение проверяемо вручную за минуту и это
+  зафиксировано строкой в истории эпика.
+- **UI-компоненты и тривиальные CRUD-репозитории** не обязаны писаться по TDD, но тесты
+  обязаны быть в том же коммите.
+- **Порог `infrastructure/**` 75 %** — не приглашение оставлять адаптеры без тестов: каждый адаптер
+  внешнего сервиса обязан иметь contract-тест независимо от общего процента.

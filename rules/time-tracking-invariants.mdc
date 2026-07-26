@@ -1,0 +1,123 @@
+---
+description: Time tracking and timesheets. One running timer guaranteed by the database, approved entries immutable, corrections only via reversal, dashboards read rollups.
+globs: packages/server/src/**/time*/**, packages/server/src/**/timesheet*/**, packages/server/prisma/**, packages/client/src/units/time/**
+alwaysApply: false
+---
+
+# Инварианты учёта времени
+
+Основание: `docs/architecture/data-model.md`, раздел про `RunningTimer`, `TimeEntry`, сторно и
+преагрегаты.
+
+## Когда применяется
+
+Таймер, ручные записи времени, таймшиты, аппрув, ставки, счета по времени, дашборды и отчёты по
+трудозатратам.
+
+## Правило
+
+1. **«Один активный таймер на человека» гарантирует БД, а не код.** `RunningTimer` — отдельная
+   таблица с `userId @unique`. Двойной старт (две вкладки, мобильный клиент) обязан падать ошибкой
+   уникальности, а не «проверкой перед вставкой», которая проигрывает гонку.
+2. **Незавершённый таймер не является `TimeEntry`.** Вариант «`TimeEntry` с `endedAt IS NULL`» не
+   используется: незавершённая запись не проходит проверки консистентности и требует частичного
+   уникального индекса поверх горячей таблицы.
+3. **Остановка таймера — одна транзакция:** удалить `RunningTimer`, создать `TimeEntry`,
+   опубликовать событие пересчёта в outbox.
+4. **Подтверждённая запись неизменяема.** Как только `approvalStatus = APPROVED`, `TimeEntry`
+   нельзя ни отредактировать, ни удалить, ни мягко удалить.
+5. **Исправление подтверждённой записи — только сторно:** новая запись в той же таблице с
+   отрицательными минутами и ссылкой `reversesId` на исходную. Отрицательные значения разрешены
+   осознанно, поэтому ограничение сформулировано как `minutes <> 0`, а не `> 0`.
+6. **Одна сторно-запись на исходную** — держит БД частичным уникальным индексом
+   `uq_time_entries_reverses (reverses_id) WHERE reverses_id IS NOT NULL`. Сторно нельзя сторнировать
+   повторно.
+7. **Ставки фиксируются снапшотом в момент аппрува**, а не читаются из справочника при построении
+   отчёта. Изменение ставки сотрудника не переписывает историю и не меняет уже выставленные суммы.
+8. **Дашборды и отчёты читают только преагрегат `TimeRollup`**, никогда не сканируют `TimeEntry`
+   напрямую. Прямой агрегирующий запрос по `time_entries` в отчётном пути — блокирующее замечание.
+9. **Пересчёт преагрегата идёт через outbox**, а не прямой записью из use-case: сторно и правки —
+   события пересчёта. См. `rules/outbox.mdc`. Сторно уменьшает `billableMinutes`/`nonBillableMinutes`
+   на соответствующую величину.
+10. **`InvoiceLine.sourceTimeEntryIds` пополняется id сторно-записи**, а не переписывается: строка
+    счёта продолжает ссылаться на полный набор фактов, а сумма пересчитывается.
+11. **Аппрув таймшита — отдельное право с ACL** и запись в `AuditLog`; самоаппрув запрещён на уровне
+    policy, а не только скрытой кнопкой.
+12. **Границы периода считаются в часовом поясе пользователя**, хранение — ISO 8601 в UTC; первый
+    день недели берётся из локали (см. `rules/i18n.mdc`).
+13. **Брошенные таймеры закрываются политикой** (фоновый джоб по `lastHeartbeatAt`), а не растут
+    бесконечно; закрытие фиксируется как системное действие в аудите.
+
+## Примеры
+
+### ✅ Правильно
+
+```prisma
+model RunningTimer {
+  id               String   @id @default(uuid())
+  organizationId   String
+  userId           String   @unique          // ← инвариант держит БД
+  activityId       String
+  startedAt        DateTime
+  lastHeartbeatAt  DateTime
+}
+```
+
+```ts
+// исправление подтверждённой записи: сторно, а не UPDATE
+if (entry.approvalStatus === 'APPROVED') {
+  await this.entries.save(TimeEntry.reversalOf(entry, actor.userId, this.clock.now()));
+  await this.outbox.publish(timeRollupRecalc(entry.organizationId, entry.date, entry.userId));
+  return;
+}
+```
+
+```ts
+// снапшот ставки в момент аппрува
+await this.timesheets.approve(sheet.id, {
+  approverId: actor.userId,
+  rateSnapshot: { currency: rate.currency, minorPerHour: rate.minorPerHour, at: now },
+});
+```
+
+### ❌ Неправильно
+
+```ts
+// проверка перед вставкой вместо уникального индекса — проигрывает гонку двух вкладок
+const active = await timers.findByUser(userId);
+if (!active) await timers.create({ userId, startedAt: now });
+
+// правка подтверждённой записи: история переписана, счёт разъехался
+await prisma.timeEntry.update({ where: { id }, data: { minutes: 420 } });
+
+// ставка читается из справочника при построении отчёта — прошлые периоды меняются задним числом
+const rate = await rates.currentFor(userId);
+const cost = entry.minutes * rate.minorPerHour / 60;
+
+// дашборд сканирует сырые записи
+const total = await prisma.timeEntry.aggregate({ _sum: { minutes: true }, where: { … } });
+```
+
+## Как проверяется
+
+| Механизм | Что ловит |
+|---|---|
+| Уникальный индекс `RunningTimer.userId` + `test/integration/time/double-start.spec.ts` (два параллельных старта) | гонку двойного старта — ожидается ошибка уникальности |
+| `CHECK (minutes <> 0)` + `uq_time_entries_reverses` | нулевые записи и повторное сторно |
+| `test/integration/time/approved-immutable.spec.ts` | `UPDATE`/`DELETE` подтверждённой записи — должен отклоняться |
+| `test/integration/time/reversal-sum.spec.ts` | расхождение суммы после сторно (`rollup` и `InvoiceLine`) |
+| `test/integration/time/rate-snapshot.spec.ts` (изменить ставку после аппрува) | пересчёт прошлых периодов |
+| `test/architecture/no-raw-time-aggregate.spec.ts` (grep агрегатов по `time_entries` в отчётных путях) | отчёт мимо `TimeRollup` |
+| `test/integration/time/self-approve.spec.ts` | самоаппрув на уровне policy |
+| `test/integration/time/timezone-boundary.spec.ts` (записи на границе суток и недели) | ошибки границ периода |
+| Агент `db-reviewer` при изменении схемы времени | ослабление инвариантов на уровне БД |
+
+## Исключения
+
+- **Черновые (`DRAFT`) и отклонённые (`REJECTED`) записи** правятся и удаляются обычным образом:
+  неизменяемость наступает вместе с `APPROVED`.
+- **Административная корректировка** (ошибочно подтверждённый таймшит целиком) выполняется
+  отдельным use-case'ом «отозвать аппрув» с записью в аудит — это возврат статуса, а не правка
+  чисел; после отзыва запись снова редактируема.
+- **Пересчёт `TimeRollup` целиком** (`bad-crm time reindex`) выполняется под `bypassRls: true` с
+  записью в аудит.

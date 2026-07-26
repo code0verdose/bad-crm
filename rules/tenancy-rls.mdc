@@ -1,0 +1,161 @@
+---
+description: Any table, migration, query or job that touches tenant data. Read before adding a table, a Prisma model, a repository or a background handler.
+globs: packages/server/prisma/**, packages/server/src/infrastructure/persistence/**, packages/server/src/**
+alwaysApply: true
+---
+
+# Мульти-тенантность и Row Level Security
+
+Основание: `docs/security/rls-design.md`, `docs/architecture/data-model.md` (раздел
+«Мульти-тенантность и RLS»). Документы объясняют «почему»; здесь — что делать и как это проверяется.
+
+## Когда применяется
+
+- Добавляешь или меняешь таблицу/модель Prisma.
+- Пишешь миграцию.
+- Пишешь репозиторий, query-адаптер, seed, воркер, крон, скрипт обслуживания.
+- Трогаешь `withTenant`, `tenant-tables.ts`, роли БД, `DATABASE_URL`.
+
+## Правило
+
+1. **Каждая таблица помечена `[T]` или `[G]`** в `docs/architecture/data-model.md`. `[T]` —
+   тенантная, обязана иметь `organization_id uuid NOT NULL` + FK на `organizations`. `[G]` —
+   глобальная, допускается только с письменным обоснованием в описании PR.
+2. **Никаких «почти тенантных» таблиц.** Если строка принадлежит организации хотя бы косвенно —
+   колонка `organization_id` заводится физически, а не выводится джойном.
+3. **RLS включается в той же миграции, что создаёт таблицу.** Пять блоков, порядок фиксирован:
+   `ENABLE ROW LEVEL SECURITY` → `FORCE ROW LEVEL SECURITY` → политика `tenant_isolation`
+   `TO app_user` → политика `maintenance_access` `TO app_migrator` → явные `GRANT`.
+   Таблица, созданная без политики, — блокирующий дефект, а не «доделаем следующей миграцией».
+4. **`USING` и `WITH CHECK` пишутся оба и явно**, даже когда PostgreSQL подставил бы `USING`
+   автоматически. Выражения идентичны. Без `WITH CHECK` можно вставить строку с чужим
+   `organization_id` или «переложить» свою строку в соседнюю организацию.
+5. **`FORCE ROW LEVEL SECURITY` обязателен.** Без него подключение владельцем таблицы (ошибка в
+   `DATABASE_URL`, ручной `psql`, скрипт обслуживания) видит все организации, а политики молча
+   не применяются.
+6. **Любая дополнительная политика на `[T]`-таблице — только `AS RESTRICTIVE`**, либо содержит
+   предикат тенанта внутри себя. PERMISSIVE-политики объединяются по **OR** и расширяют доступ.
+7. **Составной FK на родителя — `(organization_id, parent_id)`**, а не `(parent_id)`. Одиночный FK
+   позволяет привязать дочернюю строку к родителю из чужой организации; RLS этого не поймает,
+   потому что обе строки видны в своих контекстах.
+8. **`set_config` только внутри транзакции и только с `is_local = true`.** Единственная точка
+   выставления контекста — `withTenant()`. `SET app.organization_id` без `LOCAL` и
+   `set_config(..., false)` запрещены: значение переживёт возврат соединения в пул и утечёт на
+   чужой запрос.
+9. **Прямой вызов `prisma.*` / `tx.*` запрещён вне `infrastructure/persistence/`.** Наружу отдаются
+   порты, доменные сущности и read-модели. Prisma-типы не экспортируются за пределы слоя.
+10. **`$queryRawUnsafe` / `$executeRawUnsafe` и массивная форма `$transaction([...])` запрещены
+    везде.** Только тегированные шаблоны `$queryRaw` и интерактивная транзакция через `withTenant`.
+11. **Приложение подключается ролью `app_user` без `BYPASSRLS`.** Миграции — `app_migrator`,
+    логин/refresh — отдельный пул. Одна роль на всё — блокирующий дефект.
+12. **Обход RLS — только явным `bypassRls: true`** с записью в `AuditLog` и комментарием-обоснованием
+    в коде. Кросс-организационные крон-задачи (rollup, зачистка) итерируют по организациям, вызывая
+    `withTenant` на каждую, а не читают всё разом.
+13. **Каждый job несёт `organizationId` в payload**; обёртка `runJob` открывает `withTenant` до
+    вызова handler'а. Handler, обратившийся к БД мимо обёртки, падает на `guardedClient`.
+14. **Новая таблица регистрируется в `tenant-tables.ts` и в `ROW_FACTORIES`** — иначе не
+    компилируется и не попадает в isolation-тесты.
+15. **Isolation-тест обязателен на каждую таблицу и обязан содержать положительный контроль**
+    («своя строка видна»). Без контроля весь файл проходит вхолостую: если соединение окажется без
+    политик, все негативные проверки станут истинными просто потому, что не видно ничего.
+16. **Isolation-тесты ходят в Postgres напрямую через `pg`, не через Prisma.** Проверяется база, а
+    не обёртка: корректный `withTenant` замаскировал бы отсутствующую политику.
+17. **Идентификатор новой организации генерирует приложение** (`uuidv7()`), создание идёт внутри
+    `withTenant` с этим же id. Иначе `INSERT` в `organizations` упадёт на `WITH CHECK`.
+18. **Чек-лист «новая таблица» из `docs/security/rls-design.md` заполняется в описании PR**
+    целиком, все 13 пунктов.
+
+## Примеры
+
+### ✅ Правильно
+
+```sql
+-- migrations/20260801_add_task_watchers/migration.sql
+CREATE TABLE task_watchers (
+  id              uuid PRIMARY KEY,
+  organization_id uuid NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+  task_id         uuid NOT NULL,
+  user_id         uuid NOT NULL,
+  created_at      timestamptz NOT NULL DEFAULT now(),
+  -- составной FK: ребёнок не может уехать к родителю чужой организации
+  CONSTRAINT fk_task_watchers_task
+    FOREIGN KEY (organization_id, task_id) REFERENCES tasks (organization_id, id) ON DELETE CASCADE
+);
+CREATE INDEX idx_task_watchers_org_task ON task_watchers (organization_id, task_id);
+
+ALTER TABLE task_watchers ENABLE ROW LEVEL SECURITY;
+ALTER TABLE task_watchers FORCE  ROW LEVEL SECURITY;
+
+CREATE POLICY tenant_isolation ON task_watchers
+  AS PERMISSIVE FOR ALL TO app_user
+  USING      (organization_id = current_setting('app.organization_id')::uuid)
+  WITH CHECK (organization_id = current_setting('app.organization_id')::uuid);
+
+CREATE POLICY maintenance_access ON task_watchers
+  AS PERMISSIVE FOR ALL TO app_migrator
+  USING      (current_setting('app.maintenance', true) = 'on')
+  WITH CHECK (current_setting('app.maintenance', true) = 'on');
+
+GRANT SELECT, INSERT, UPDATE, DELETE ON task_watchers TO app_user;
+```
+
+```ts
+// infrastructure/persistence/prisma/task-watcher.repository.ts
+export class PrismaTaskWatcherRepository implements TaskWatcherRepositoryPort {
+  async add(watcher: TaskWatcher): Promise<void> {
+    const tx = currentTx();                       // из ALS, открыт withTenant()
+    await tx.taskWatcher.create({ data: toRow(watcher) });
+  }
+}
+```
+
+### ❌ Неправильно
+
+```sql
+-- политика без WITH CHECK и без FORCE: можно вставить чужой organization_id,
+-- а подключение владельцем видит все организации
+ALTER TABLE task_watchers ENABLE ROW LEVEL SECURITY;
+CREATE POLICY tenant_isolation ON task_watchers FOR ALL TO PUBLIC
+  USING (organization_id = current_setting('app.organization_id')::uuid);
+
+-- одиночный FK: watcher можно привязать к задаче чужой организации
+FOREIGN KEY (task_id) REFERENCES tasks (id)
+```
+
+```ts
+// прямой prisma вне persistence — запрос уйдёт мимо tenant-контекста
+import { prisma } from '@/infrastructure/persistence/prisma/client';
+export async function listWatchers(taskId: string) {
+  return prisma.taskWatcher.findMany({ where: { taskId } });   // ❌ нет withTenant
+}
+
+// SET без LOCAL — значение переживёт возврат соединения в пул
+await tx.$executeRawUnsafe(`SET app.organization_id = '${orgId}'`);   // ❌ вдобавок инъекция
+```
+
+## Как проверяется
+
+| Механизм | Что ловит |
+|---|---|
+| ESLint `no-restricted-imports` на `@prisma/client` вне `infrastructure/persistence/**` | утечку Prisma в domain/application/presentation |
+| ESLint `no-restricted-syntax` на `MemberExpression[object.name='prisma'\|'tx']` | прямые вызовы вне слоя |
+| ESLint `no-restricted-syntax` на `$queryRawUnsafe` / `$executeRawUnsafe` / `$transaction([...])` | небезопасный SQL и транзакцию без контекста |
+| grep-чек CI: `SET\s+app\.(organization_id\|user_id)` | `SET` без `LOCAL` |
+| grep-чек CI: `set_config\([^)]*,\s*false\s*\)` | `is_local = false` |
+| `pnpm check:rls` (`packages/server/scripts/check-rls.ts`) | таблицу без `ENABLE`/`FORCE`/политики; расхождение `pg_catalog` ↔ Prisma-схема ↔ `tenant-tables.ts`; неканоническую PERMISSIVE-политику |
+| `pnpm test:integration` → `test/integration/rls/rls-isolation.test.ts` | изоляцию по каждой таблице из `TENANT_TABLES`, включая контрольный тест |
+| Типы: `tenant-tables.ts` + `ROW_FACTORIES` как `satisfies` | таблицу, забытую в реестре — не компилируется |
+| Агент `db-reviewer` в commit-гейте | миграции, индексы, риск потери данных |
+| Агент `tenancy-rls-auditor` | семантику политик и обходы контекста, которых не видит регулярка |
+
+## Исключения
+
+- **`[G]`-таблицы** (глобальные справочники, `_prisma_migrations`, таблица версий схемы) — без
+  `organization_id` и без `tenant_isolation`. Требуют пометки `[G]` в `data-model.md` и обоснования
+  в PR. По умолчанию таблица — `[T]`.
+- **`organizations`** — политика `tenant_self` по собственному `id`, `DELETE` роли `app_user` не
+  выдаётся.
+- **Append-only журналы** (`AuditLog`, `OutboxEvent`, `ActivityEvent`) — политика разбивается по
+  командам, `REVOKE UPDATE, DELETE, TRUNCATE` для `app_user`.
+- **Опциональная RESTRICTIVE-политика `tenant_context_required`** включается только для инсталляций
+  с регуляторными требованиями; по умолчанию не создаётся.

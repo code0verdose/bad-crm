@@ -1,0 +1,118 @@
+---
+description: Any change to prisma/schema.prisma or prisma/migrations. Expand-migrate-contract, no blocking DDL, backup-first for self-host.
+globs: packages/server/prisma/**
+alwaysApply: false
+---
+
+# Миграции БД
+
+Основание: `docs/architecture/data-model.md`, раздел «Стратегия миграций»; `docs/architecture/stack.md`,
+раздел «Работа с БД».
+
+## Когда применяется
+
+Любое изменение `schema.prisma`, любой файл в `prisma/migrations`, любой скрипт бэкфилла.
+
+## Правило
+
+1. **Изменил `schema.prisma` — коммить миграцию в том же PR.** `prisma migrate dev --name <что>`
+   создаёт файл; `schema.prisma` и `migrations/` коммитятся вместе. `prisma db push` запрещён:
+   он молча меняет локальную БД и не оставляет файла — на чистой или прод-БД колонки не появится.
+2. **Несовместимое изменение разбивается на три релиза: expand → migrate → contract.**
+   Self-hosted означает, что во время обновления одновременно работают старая и новая версии кода.
+   - *expand* — добавить новое, не ломая старое: nullable-колонка или колонка с `DEFAULT`, новая
+     таблица, новый индекс;
+   - *migrate* — dual-write, фоновый бэкфилл пачками, постепенное переключение чтения; этап живёт
+     минимум один релизный цикл;
+   - *contract* — удалить старое, когда ни одна работающая версия к нему не обращается.
+3. **`DROP COLUMN` / `DROP TABLE` в том же релизе, где объект перестал использоваться, — запрещено.**
+   Минимум два релиза паузы: откат приложения на предыдущую версию не должен упираться в
+   отсутствующую колонку.
+4. **`ALTER COLUMN … SET NOT NULL` напрямую запрещён** — берёт `ACCESS EXCLUSIVE` и сканирует всю
+   таблицу. Только через `ADD CONSTRAINT … CHECK (col IS NOT NULL) NOT VALID` → `VALIDATE
+   CONSTRAINT` → `SET NOT NULL`.
+5. **Переименование колонки или таблицы запрещено как единичная операция.** Только add → dual-write
+   → бэкфилл → переключить чтение → drop через два релиза. Смена типа — через новую колонку, не
+   `ALTER TYPE`.
+6. **`CREATE INDEX` на непустой таблице — только `CONCURRENTLY`, в отдельном файле миграции**,
+   содержащем **только** эту команду (`CONCURRENTLY` не работает внутри транзакции, а Prisma
+   оборачивает файл в транзакцию). Миграция идемпотентна:
+   `DROP INDEX CONCURRENTLY IF EXISTS …; CREATE INDEX CONCURRENTLY IF NOT EXISTS …`.
+7. **Каждая миграция начинается с `SET lock_timeout = '3s'; SET statement_timeout = '5min';`**
+   `lock_timeout` критичен: `ALTER TABLE`, ждущий `ACCESS EXCLUSIVE`, блокирует все запросы позади
+   себя, включая читающие. Лучше упасть через 3 секунды и повторить.
+8. **Бэкфилл — пачками с паузой** (`UPDATE … WHERE id IN (SELECT id … LIMIT 5000)` в цикле).
+   Один `UPDATE` на всю таблицу держит снапшот, блокирует autovacuum и раздувает таблицу.
+9. **RLS-политика создаётся в той же миграции, что и таблица.** Таблица без политики — блокирующий
+   дефект и падение `pnpm check:rls`. См. `rules/tenancy-rls.mdc`.
+10. **Backup-first.** `bad-crm db backup` — обязательный шаг апгрейд-скрипта, а не рекомендация в
+    README. Апгрейдер отказывается мигрировать без проверенного бэкапа (`pg_restore --list`), кроме
+    явного `--skip-backup` с предупреждением. Миграция, которую невозможно откатить, помечается в
+    заголовке файла и требует интерактивного подтверждения.
+11. **Миграция проверяется на объёме, а не на пустой dev-базе.** `bad-crm seed --scale large`,
+    прогон с замером времени и блокировок (`pg_locks` + `pg_stat_activity`), фоновая нагрузка во
+    время прогона, проверка отката, повторный прогон RLS-тестов. Результаты прикладываются к PR.
+12. **Расхождение миграций с реальной БД чинится новой идемпотентной миграцией**
+    (`ADD COLUMN IF NOT EXISTS` / `DROP INDEX IF EXISTS`), а не правкой истории миграций.
+13. **Индексы заводятся вместе с таблицей**, а не «когда станет медленно»: FK проиндексирован,
+    основной сценарий чтения покрыт составным индексом, начинающимся с `organization_id`.
+
+## Примеры
+
+### ✅ Правильно
+
+```sql
+-- 20260801_expand_add_task_due_at/migration.sql
+SET lock_timeout = '3s';
+SET statement_timeout = '5min';
+
+ALTER TABLE tasks ADD COLUMN due_at timestamptz;          -- nullable: старый код не ломается
+```
+
+```sql
+-- 20260801_index_tasks_due_at/migration.sql   ← отдельный файл, только индекс
+DROP  INDEX CONCURRENTLY IF EXISTS idx_tasks_org_due_at;
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_tasks_org_due_at ON tasks (organization_id, due_at);
+```
+
+```sql
+-- 20260915_contract_tasks_due_at_not_null/migration.sql  ← через два релиза
+ALTER TABLE tasks ADD CONSTRAINT ck_tasks_due_at_not_null CHECK (due_at IS NOT NULL) NOT VALID;
+ALTER TABLE tasks VALIDATE CONSTRAINT ck_tasks_due_at_not_null;
+ALTER TABLE tasks ALTER COLUMN due_at SET NOT NULL;
+```
+
+### ❌ Неправильно
+
+```sql
+-- переименование + NOT NULL + блокирующий индекс в одной миграции:
+-- старый код падает с P2022, таблица заблокирована на всё время построения индекса
+ALTER TABLE tasks RENAME COLUMN deadline TO due_at;
+ALTER TABLE tasks ALTER COLUMN due_at SET NOT NULL;
+CREATE INDEX idx_tasks_due_at ON tasks (due_at);
+```
+
+```bash
+# схема поменялась, миграции нет — на проде колонки не будет
+npx prisma db push
+```
+
+## Как проверяется
+
+| Механизм | Что ловит |
+|---|---|
+| CI-шаг `check:migration-present` (`git diff schema.prisma` без изменений в `migrations/`) | схему без миграции |
+| Линтер миграций `scripts/lint-migrations.ts` | `DROP COLUMN`/`RENAME`/`SET NOT NULL` напрямую, `CREATE INDEX` без `CONCURRENTLY`, отсутствие `lock_timeout`, `CONCURRENTLY` вместе с другими командами в файле |
+| `pnpm check:rls` | новую таблицу без политики |
+| `pnpm test:integration` (Testcontainers, `prisma migrate deploy` на чистой БД) | неприменимую миграцию и сломанную RLS-изоляцию после неё |
+| `test/integration/migrations/rollback.spec.ts` | невозможность отката (восстановление дампа + предыдущий образ + smoke) |
+| Прогон на `seed --scale large` с отчётом о блокировках, приложенным к PR | миграцию, блокирующую запись дольше `lock_timeout` |
+| Агент `db-reviewer` в commit-гейте | риск потери данных, несовместимость с rolling deploy, отсутствие плана отката |
+
+## Исключения
+
+- **Первая миграция на пустой схеме** (bootstrap) может создавать индексы без `CONCURRENTLY` и
+  колонки сразу `NOT NULL` — данных нет, блокировать нечего.
+- **`[G]`-таблицы служебного назначения** (`_prisma_migrations`, реестр версий) — вне RLS-требования.
+- **Даунтайм-миграция** допустима, только если её невозможно избежать: выполняется в
+  maintenance-режиме с баннером и заранее посчитанной оценкой времени, зафиксированной в ADR.

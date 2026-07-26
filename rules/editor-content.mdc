@@ -1,0 +1,111 @@
+---
+description: Rich text and block content - BlockNote documents, KB notes, comments, chat messages. Storage format, sanitization, versioning.
+globs: packages/client/src/units/doc/**, packages/client/src/units/kb/**, packages/server/src/**/doc*/**, packages/server/src/**/kb/**
+alwaysApply: false
+---
+
+# Редактируемый контент: документы, заметки, комментарии
+
+Основание: `docs/architecture/ux-architecture.md` (Notion-страница, заметка KB),
+[ADR-0012](../docs/architecture/adr/0012-docs-editor-blocknote-json-content.md).
+Лицензионные ограничения BlockNote — `rules/dependencies.mdc`.
+
+## Когда применяется
+
+BlockNote-документы, заметки базы знаний, описания задач, комментарии, сообщения чата — всё, где
+пользователь вводит форматированный текст.
+
+## Правило
+
+1. **Каноническое хранение — блочный JSON BlockNote, а не HTML и не Markdown.** HTML и Markdown —
+   производные представления для экспорта и импорта, а не источник правды.
+2. **Схема блочного документа версионирована** (`contentVersion`). Читатель обязан уметь открыть
+   документ предыдущей версии; миграция формата — отдельным фоновым проходом, не «на лету при
+   открытии без сохранения».
+3. **Рядом с блочным JSON хранится `plainText`** для поиска и превью — он и уходит в индекс, а не
+   сырое дерево блоков (см. `rules/search-index.mdc`).
+4. **Санитизация обязательна на сервере, а не только на клиенте.** Любой пользовательский
+   Markdown/HTML проходит `rehype-sanitize` при импорте и при рендеринге в письма/экспорт.
+   Клиентская санитизация — UX, а не защита.
+5. **Whitelist протоколов ссылок:** `http`, `https`, `mailto`. `javascript:`, `data:`, `vbscript:`
+   запрещены в любом атрибуте.
+6. **`dangerouslySetInnerHTML` вне отрендеренного санитайзером результата запрещён.** Внутри
+   `units/vault/**` запрещён полностью, без исключений (см. `rules/e2ee-crypto.mdc`).
+7. **Встраивания (embed) — по whitelist источников.** Произвольный iframe не рендерится; unfurl
+   ссылки выполняется **от имени получателя**, а не автора, иначе превью раскроет недоступный ресурс.
+8. **Вложения внутри документа — записи `Attachment`**, а не base64 в теле блока. Тело файла живёт
+   в S3, см. `rules/file-uploads.mdc`. Base64-картинка в JSON раздувает строку и ломает индексацию.
+9. **Конкурентная правка — оптимистичная блокировка по `version`**, не CRDT: `UPDATE … WHERE id = $1
+   AND version = $2`, 0 строк → 409 `stale_version`, UI предлагает перезагрузить и показывает, кто
+   правил. CRDT-коллаборация осознанно вне скоупа.
+10. **Автосохранение заменяет dirty-guard** и показывает честный статус «Сохранено / Сохраняем /
+    Не сохранено»; уход со страницы блокируется только при «Не сохранено». Тостов на каждое
+    автосохранение нет (см. `rules/errors-and-toasts.mdc`).
+11. **Редактор грузится лениво отдельным чанком.** Он тяжёлый и не нужен на большинстве маршрутов.
+12. **`@blocknote/xl-*` подключается только с записью в ADR-0012** с указанием лицензии (GPL-3.0
+    ветка дуальной лицензии).
+13. **Тексты интерфейса редактора (плейсхолдеры, меню слэш-команд, подсказки) переводятся** —
+    см. `rules/i18n.mdc`.
+
+## Примеры
+
+### ✅ Правильно
+
+```ts
+// units/doc/model/validation/doc-content.schema.ts
+export const docContentSchema = z.object({
+  contentVersion: z.literal(1),
+  blocks: z.array(blockSchema),          // дерево блоков BlockNote
+});
+
+// на сервере рядом сохраняется производное представление для поиска
+await this.docs.save({ ...doc, content, plainText: extractPlainText(content), version: doc.version + 1 });
+```
+
+```ts
+// импорт Markdown: санитизация на сервере, whitelist протоколов
+const html = await unified()
+  .use(remarkParse).use(remarkRehype)
+  .use(rehypeSanitize, { ...defaultSchema, protocols: { href: ['http', 'https', 'mailto'] } })
+  .use(rehypeStringify)
+  .process(input);
+```
+
+### ❌ Неправильно
+
+```ts
+// HTML как источник правды: невозможно надёжно мигрировать и безопасно рендерить
+await docs.save({ html: editor.getHTML() });
+
+// санитизация только на клиенте — API принимает что угодно
+<div dangerouslySetInnerHTML={{ __html: note.body }} />
+
+// картинка base64 в теле блока: строка на мегабайты, индексация и диффы ломаются
+{ type: 'image', props: { url: 'data:image/png;base64,iVBORw0KGgo…' } }
+
+// «последний победил»: правки соавтора молча затираются
+await prisma.docPage.update({ where: { id }, data: { content } });   // без version
+```
+
+## Как проверяется
+
+| Механизм | Что ловит |
+|---|---|
+| `docContentSchema` + тест на документ предыдущей `contentVersion` | поломку обратной совместимости формата |
+| `test/security/sanitize.spec.ts` с XSS-корпусом (`javascript:`, `onerror=`, `<script>`, `data:`) | пропуск опасной разметки на сервере |
+| ESLint `react/no-danger` (error, allow-list — только компонент рендера санитизированного результата) | произвольный `dangerouslySetInnerHTML` |
+| `test/integration/docs/optimistic-lock.spec.ts` (две параллельные правки) | отсутствие 409 `stale_version` |
+| `test/integration/docs/unfurl-authz.spec.ts` | превью, раскрывающее недоступный получателю ресурс |
+| `test/integration/search/plaintext.spec.ts` | попадание сырого дерева блоков в индекс вместо `plainText` |
+| `size-limit` на чанк редактора | потерю ленивой загрузки |
+| CI-шаг `check:blocknote-xl` (сверка установленных `@blocknote/xl-*` со списком в ADR-0012) | подключение GPL-пакета без записи в ADR |
+| Агент `frontend-security-coder` при изменении рендеринга контента | обходы санитайзера |
+
+## Исключения
+
+- **Комментарии и сообщения чата** используют упрощённый набор блоков (без вложенных таблиц и
+  колонок), но тот же формат хранения и ту же санитизацию.
+- **Экспорт в Markdown/HTML/PDF** — производное представление, генерируется из блочного JSON; см.
+  `rules/import-export.mdc`.
+- **Vault-заметки** не используют этот путь вовсе: их содержимое шифруется на клиенте и
+  рендерится только как `textContent`.

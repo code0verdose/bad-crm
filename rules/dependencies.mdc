@@ -1,0 +1,124 @@
+---
+description: Adding or upgrading any npm package. Latest stable, supply-chain checked, license compatible with AGPL-3.0.
+globs: package.json, packages/*/package.json, pnpm-lock.yaml, .github/dependabot.yml
+alwaysApply: false
+---
+
+# Зависимости: актуальность, supply-chain, лицензии
+
+Основание: `docs/architecture/stack.md`, раздел «Политика зависимостей». Проект распространяется под
+**AGPL-3.0** — лицензия зависимости не деталь, а условие возможности распространения.
+
+## Когда применяется
+
+Добавляешь пакет, обновляешь версию, разбираешь Dependabot-PR, выбираешь библиотеку под задачу.
+
+## Правило
+
+### Версии
+
+1. **Новый пакет добавляется в последней стабильной версии.** Диапазоны: `^` для рантайм-зависимостей,
+   **точные версии** для инструментов сборки (turbo, prisma, typescript, vite) — там минорка меняет
+   поведение.
+2. **`pnpm-lock.yaml` коммитится всегда**; в CI — `pnpm install --frozen-lockfile`.
+3. **Мажорный апгрейд — отдельным PR**, с чтением migration guide и зелёными тестами. Никогда
+   «заодно» с фичей.
+4. **`overrides`/`resolutions` — осознанно и с комментарием**, с указанием, когда снимаются.
+
+### Supply-chain
+
+5. **Перед добавлением или апгрейдом проверяется:** не входит ли пакет в свежие кампании со
+   скомпрометированными npm-пакетами; нет ли typosquatting (похожее имя на популярный пакет); есть
+   ли `postinstall`-скрипт и что он делает; кто мейнтейнер и не менялся ли недавно; живой ли проект.
+   Инструменты: `pnpm audit`, `osv-scanner`, GitHub Advisories, `npm view <pkg>` для истории публикаций.
+6. **Malware важнее свежести.** Пакет под подозрением не обновляется и не добавляется; факт
+   фиксируется в описании PR.
+7. **`pnpm.onlyBuiltDependencies` — allow-list** пакетов, которым разрешены install-скрипты. Новый
+   пакет со `postinstall` добавляется в allow-list явно, с обоснованием.
+
+### Лицензии (AGPL-3.0)
+
+8. **Разрешено:** MIT, Apache-2.0, BSD-2/3-Clause, ISC, 0BSD, Unlicense, CC0, Python-2.0, MPL-2.0.
+9. **Разрешено с фиксацией в ADR:** LGPL-2.1+/3.0, GPL-3.0, AGPL-3.0.
+10. **Запрещено:** GPL-2.0-only (несовместим с AGPL-3.0), «free for non-commercial», BSL 1.1, SSPL,
+    Elastic License 2.0, Commons Clause, любые проприетарные. Новая лицензия вне allow-list ломает
+    сборку.
+11. **Зафиксированные решения проекта — не пересматриваются «заодно»:**
+    - **Schedule-X — только MIT-ядро.** Premium-плагины (event modal, drag-to-create, draw,
+      resource view, sidebar) продаются по лицензии «1 проект = 1 лицензия» и **запрещены**:
+      их нельзя распространять в составе AGPL-репозитория. Создание и редактирование события —
+      собственная модалка на Mantine поверх событий сетки. FullCalendar Premium запрещён по той же
+      причине.
+    - **BlockNote — ядро под MPL-2.0** (`@blocknote/core`, `@blocknote/react`) в allow-list. Пакеты
+      `@blocknote/xl-*` лицензированы дуально **GPL-3.0 / коммерческая**; для нашего проекта
+      применима ветка GPL-3.0, использование допустимо, но **каждый подключённый `xl`-пакет
+      фиксируется в [ADR-0012](../docs/architecture/adr/0012-docs-editor-blocknote-json-content.md)**
+      с указанием лицензии.
+    - **`libsodium-wrappers-sumo` — ISC**, единственная зависимость крипто-модуля. **Исключение по
+      размеру узаконено** (решение от 2026-07-26): ~375 KB min+gzip против бюджета ленивого чанка
+      ≤ 150 KB. У чанка отдельная строка в `size-limit` с собственным порогом; общий бюджет к нему
+      не применяется. Замена на `@noble/*` + WebCrypto отвергнута — меняет набор примитивов и требует
+      переписывания `docs/security/e2ee-design.md`.
+    - **Elasticsearch (SSPL/Elastic License) отвергнут** — выбран Meilisearch (MIT).
+    - **Коммерческие data-grid'ы отвергнуты** — TanStack Table v8 (MIT).
+12. **Каждая новая зависимость с нетривиальной лицензией или ролью** (редактор, крипто, платежи,
+    поиск) требует строки в `docs/architecture/adr/` с лицензией и отвергнутыми альтернативами.
+13. **Dependabot**: еженедельные сгруппированные PR (`dev`, `prod-patch`, `prod-minor`), мажоры —
+    отдельно. PR проходят полный CI и **не мержатся автоматически**. Критичные CVE чинятся вне очереди.
+
+## Примеры
+
+### ✅ Правильно
+
+```jsonc
+// package.json — точные версии инструментов, ^ для рантайма
+{
+  "devDependencies": { "turbo": "2.5.4", "typescript": "5.9.2", "prisma": "6.14.0" },
+  "dependencies":    { "@mantine/core": "^7.17.0", "libsodium-wrappers-sumo": "^0.7.15" },
+  "pnpm": { "onlyBuiltDependencies": ["esbuild", "@node-rs/argon2"] }
+}
+```
+
+```
+chore(deps): add @schedule-x/react 2.x (MIT core only)
+
+Premium plugins are intentionally not installed: their licence is
+incompatible with AGPL-3.0 redistribution. Event create/edit is a
+custom Mantine modal on top of the grid.
+```
+
+### ❌ Неправильно
+
+```jsonc
+// premium-пакет с несовместимой лицензией
+"@schedule-x/event-modal": "^2.0.0"
+
+// пакет с непроверенным postinstall и без allow-list
+"some-cli-helper": "*"
+
+// мажор «заодно» внутри фичевого PR
+"react": "^20.0.0"
+```
+
+## Как проверяется
+
+| Механизм | Что ловит |
+|---|---|
+| `license-checker` с allow-list в CI | лицензию вне списка — блокирует сборку |
+| CI-шаг `check:forbidden-packages` (список из п. 11) | `@schedule-x/*` premium, FullCalendar Premium, Elasticsearch-клиенты |
+| `pnpm audit` + `osv-scanner` в CI | известные CVE |
+| CI-шаг `check:build-scripts` (сверка `onlyBuiltDependencies` с фактическими `postinstall`) | новый install-скрипт без allow-list |
+| `pnpm install --frozen-lockfile` | разъехавшийся lockfile |
+| `size-limit` (отдельная строка для крипто-чанка) | рост бандла от новой зависимости |
+| Скилл `/deps` | периодический проход: outdated, аудит, supply-chain, план апгрейда patch→minor→major |
+| Агент `security-auditor` в commit-гейте | CVE и подозрительные пакеты в дельте |
+| Требование ADR на нетривиальную зависимость | молчаливое подключение GPL-3.0-пакета |
+
+## Исключения
+
+- **Транзитивные зависимости с проблемной лицензией** разбираются точечно: `overrides` на
+  совместимую версию либо замена родительского пакета. Игнорирование не допускается.
+- **Пакет только для разработки**, не попадающий в артефакт распространения, всё равно проверяется —
+  но GPL-3.0 в devDependencies не требует ADR (не распространяется вместе с продуктом).
+- **Исключение по размеру для `libsodium-wrappers-sumo`** не расширяется на другие пакеты: это
+  единичное зафиксированное решение.

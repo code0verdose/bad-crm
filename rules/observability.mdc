@@ -1,0 +1,143 @@
+---
+description: Logging, metrics, tracing and audit. Cross-cutting requestId/organizationId/userId, no secrets or personal data in logs.
+globs: packages/server/src/**, packages/client/src/app/**, packages/client/src/shared/lib/**
+alwaysApply: false
+---
+
+# Наблюдаемость и аудит
+
+Основание: `docs/architecture/stack.md`, раздел «Наблюдаемость»; `docs/security/permission-model.md`,
+раздел «Аудит».
+
+## Когда применяется
+
+Добавляешь endpoint, воркер, очередь, внешнюю интеграцию, событие безопасности; пишешь любую строку
+в лог.
+
+## Правило
+
+### Логи
+
+1. **pino в JSON, единственный транспорт — stdout.** Свои файлы логов, ротация и вторые транспорты
+   не заводятся: сбором занимается Docker/systemd/loki.
+2. **Обязательные поля на каждой записи:** `requestId`, `organizationId`, `userId`, `route`,
+   `durationMs`, `statusCode`. Контекст протаскивается через `AsyncLocalStorage`, а не аргументом
+   через все слои. Логгер подмешивает его сам — вызывающему коду передавать ничего не нужно.
+3. **В job'ах контекст создаёт обёртка `runJob`.** `requestId` наследуется от события, породившего
+   job; по цепочке `causationId` прослеживается путь от HTTP-запроса до письма.
+4. **Секретов и ПДн в логах нет.** Редактируются: `authorization`, `cookie`, `set-cookie`,
+   `*.password`, `*.token`, `*.refreshToken`, `*.apiKey`, `*.apiKeyEnc`, `*.secret`, `*.otp`,
+   `*.recoveryCode`. Сериализатор ошибок вырезает `config.headers` из ошибок HTTP-клиентов.
+   Новый секретный ключ — новая строка в `REDACTED_PATHS` в том же PR.
+5. **Содержимое пользовательских данных не логируется:** тело сообщения, текст документа, имя файла
+   с персональными данными, email в открытом виде в массовых логах. Логируются идентификаторы,
+   типы и размеры. Расшифрованное содержимое vault не логируется никогда — см. `rules/e2ee-crypto.mdc`.
+6. **`console.log` в серверном и клиентском коде запрещён.** Только `logger` из
+   `infrastructure/logging`.
+7. **Уровни осмысленны:** `error` — требует внимания человека; `warn` — деградация, с которой
+   система справилась; `info` — бизнес-события; `debug` — только по `LOG_LEVEL=debug` и не для
+   auth-маршрутов.
+
+### Метрики
+
+8. **`prom-client` на `GET /metrics`** (закрыт basic-auth или сетевым доступом). RED-набор
+   обязателен: `http_requests_total{method,route,status}`,
+   `http_request_duration_seconds{method,route}`, `bullmq_jobs_total{queue,status}`,
+   `bullmq_job_duration_seconds{queue}`, `bullmq_queue_depth{queue}`, `outbox_lag_seconds`,
+   `db_query_duration_seconds`, `db_pool_active/idle` + default metrics Node.
+9. **`route` берётся из шаблона Express** (`/api/v1/tasks/:id`), а не из URL — иначе кардинальность
+   взрывается на идентификаторах. **Идентификаторы, email и любые пользовательские значения не
+   попадают в лейблы метрик.**
+10. **Новая очередь приносит свои метрики и алерт** (`outbox_lag_seconds`, `failed > 0` за 15 мин).
+
+### Трейсы
+
+11. **OpenTelemetry Node SDK** с автоинструментацией `http`, `express`, `@prisma/instrumentation`,
+    `ioredis`. Экспорт включается наличием `OTEL_EXPORTER_OTLP_ENDPOINT`, по умолчанию выключен —
+    self-host инстанс не должен тратить ресурсы без надобности.
+12. **`traceId` пишется в каждую строку лога, `requestId` — в атрибут span'а.** Из лога можно уйти
+    в трейс и обратно. Сэмплирование — `parentbased_traceidratio` 10 % в проде, 100 % в dev.
+
+### Health
+
+13. **`GET /health` — liveness**, без обращений к зависимостям. **`GET /ready` — readiness**:
+    `SELECT 1`, `PING` в Redis, флаг завершённых миграций, `shuttingDown === false`. Выключенные
+    опциональные сервисы отражаются в теле (`{ meilisearch: "disabled" }`), но **не влияют на
+    HTTP-статус** — иначе профиль `minimal` никогда не станет готовым.
+
+### Аудит
+
+14. **В `AuditLog` обязательно попадает:** изменение прав и ролей, изменение состава организации,
+    вход/выход/смена пароля/2FA, reuse detection refresh-токена, доступ к vault и escrow,
+    выдача и использование защищённой ссылки, изменение и использование AI-провайдера, доступ к
+    файлу через presigned URL, экспорт данных, любое действие с `bypassRls: true`, подтверждение и
+    сторнирование записей времени.
+15. **Запись в `AuditLog` идёт в той же транзакции, что и само изменение.** Иначе при откате
+    остаётся запись о несостоявшемся событии, а при падении после коммита событие теряется.
+16. **Запись аудита содержит `before`/`after`, `actorId`, `resourceType`, `resourceId`, `severity`
+    и `requestId`.** Секреты и расшифрованные значения в `before`/`after` не попадают — только
+    факты изменения и маски.
+17. **`AuditLog` append-only:** `REVOKE UPDATE, DELETE, TRUNCATE` для `app_user`, см.
+    `rules/tenancy-rls.mdc`.
+
+### Клиент
+
+18. **Необработанные ошибки React и отклонённые промисы уходят на
+    `POST /api/v1/telemetry/client-error`** (rate-limit 10/мин на пользователя) и пишутся в тот же
+    pino-лог с `source: "client"`. Внешние сервисы (Sentry и подобные) по умолчанию не подключаются:
+    self-host не должен слать данные наружу.
+19. **Телеметрия отключена целиком на `/vault/**` и `/l/**`** — см. `rules/e2ee-crypto.mdc`.
+
+## Примеры
+
+### ✅ Правильно
+
+```ts
+// контекст подмешивается сам, в лог уходят идентификаторы и размеры
+logger.info({ taskId, attachmentCount: files.length, bytes: totalSize }, 'task attachments uploaded');
+```
+
+```ts
+// аудит в той же транзакции, что и изменение
+await this.uow.withTransaction(async () => {
+  await this.roles.save(role);
+  await this.audit.record({ action: 'role.permissions_changed', resourceType: 'ROLE',
+    resourceId: role.id, before, after, severity: 'high' });
+});
+```
+
+### ❌ Неправильно
+
+```ts
+// секрет и ПДн в логе, console вместо логгера, контекст руками
+console.log('provider', { apiKey: provider.apiKey, email: user.email, requestId });
+
+// идентификатор в лейбле метрики — кардинальность взрывается
+httpRequests.inc({ route: `/api/v1/tasks/${req.params.id}` });
+
+// аудит отдельной транзакцией: при откате останется запись о несостоявшемся событии
+await this.roles.save(role);
+await this.audit.record({ ... });   // вне withTransaction
+```
+
+## Как проверяется
+
+| Механизм | Что ловит |
+|---|---|
+| `test/security/log-redaction.spec.ts` (прогон логгера по объекту со всеми секретными ключами) | новый секретный ключ вне `REDACTED_PATHS` |
+| ESLint `no-console` (error) вне `infrastructure/logging` | обход логгера |
+| `test/observability/log-context.spec.ts` (запрос через supertest → проверка полей записи) | потерю `requestId`/`organizationId`/`userId` |
+| `test/observability/metrics-cardinality.spec.ts` | идентификаторы в лейблах метрик |
+| `test/observability/job-context.spec.ts` | job без унаследованного `requestId` |
+| `test/integration/audit/*.spec.ts` на каждое событие из п. 14 | отсутствующую или несинхронную запись аудита |
+| `test/integration/health/ready.spec.ts` при выключенном Meilisearch | `/ready`, зависящий от опционального сервиса |
+| Агент `production-readiness` в commit-гейте | отсутствие логов и метрик у нового кода |
+| Агент `observability-engineer` при добавлении очереди или интеграции | недостающие метрики и алерты |
+
+## Исключения
+
+- **`LOG_LEVEL=debug`** разрешает логировать тело запроса — но не для auth-маршрутов и не в проде по
+  умолчанию.
+- **Опциональные сервисы** (Meilisearch, AI, SMTP, OTel) отсутствуют штатно: это `info`-запись при
+  старте и поле в `/ready`, а не `error`.
+- **e2e и локальная разработка** могут работать с `LOG_LEVEL=debug` и 100 % сэмплированием трейсов.

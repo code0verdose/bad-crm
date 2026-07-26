@@ -1,0 +1,139 @@
+---
+description: Auth, sessions, secrets, env, HTTP hardening, input validation and rate limiting. Read before touching authentication, configuration or anything that stores a secret.
+globs: packages/server/src/**, packages/client/src/shared/api/**, .env.example, docker-compose*.yml, .github/workflows/**
+alwaysApply: true
+---
+
+# Безопасность в коде
+
+Основание: `docs/architecture/stack.md` (раздел «Безопасность в коде», «Конфигурация и env»),
+`docs/security/threat-model.md`. Изоляция тенантов — `rules/tenancy-rls.mdc`; права —
+`rules/permissions.mdc`; E2EE-хранилище — `rules/e2ee-crypto.mdc`.
+
+## Когда применяется
+
+Аутентификация, сессии, токены, пароли, 2FA, хранение чужих ключей и секретов интеграций,
+конфигурация, CORS/CSP/заголовки, rate limiting, валидация входа, санитизация пользовательского
+контента.
+
+## Правило
+
+### Секреты
+
+1. **Ни одного секрета в git.** Реальные `.env` — в `.gitignore`; `.env.example` содержит все
+   переменные с безопасными дефолтами и явными плейсхолдерами `CHANGE_ME_…`.
+2. **Секреты интеграций хранятся только зашифрованными** (`apiKeyEnc`, AES-256-GCM на
+   `APP_ENCRYPTION_KEY`, формат `v1:<iv>:<tag>:<ct>` с префиксом версии). Наружу в API отдаётся
+   исключительно `apiKeyTail` (последние 4 символа). Расшифровка — только в момент использования,
+   расшифрованное значение не кладётся в переменные модуля и не возвращается ни в одном ответе.
+3. **Секрет в клиентском бандле — критический дефект.** Vite пробрасывает только префикс `VITE_`;
+   `MEILI_MASTER_KEY`, `JWT_SECRET`, `APP_ENCRYPTION_KEY`, ключи AI-провайдеров в бандле не
+   существуют. Клиент никогда не ходит в Meilisearch/S3/AI-провайдера напрямую с мастер-ключом.
+4. **Логи редактируются по путям**: `req.headers.authorization`, `req.headers.cookie`,
+   `res.headers["set-cookie"]`, `*.password`, `*.token`, `*.refreshToken`, `*.apiKey`, `*.apiKeyEnc`,
+   `*.secret`, `*.otp`, `*.recoveryCode`. Сериализатор ошибок вырезает `config.headers` из ошибок
+   HTTP-клиентов. Новый секретный ключ — новая строка в `REDACTED_PATHS` в том же PR.
+5. **Увидел секрет в выводе, в чужом конфиге, в истории — зафиксируй по правилу учёта утечек**
+   (`~/.claude/security/secret-leaks/bad-crm.md`, маска, а не значение) и предупреди. Ротацию
+   выполняет человек.
+
+### Аутентификация и сессии
+
+6. **Пароли — argon2id** (`@node-rs/argon2`, `memoryCost` 19456, `timeCost` 2, `parallelism` 1,
+   `outputLen` 32). Параметры в env; хеш хранит их внутри строки, поэтому старые пароли прозрачно
+   перехешируются при следующем успешном логине. bcrypt и sha-* для паролей запрещены.
+7. **Access JWT живёт только в памяти клиента** (TTL 15 мин), refresh — opaque 32 байта в httpOnly
+   cookie (`SameSite=Lax`, `Secure`, `Path=/api/v1/auth`, TTL 30 дней), в БД хранится SHA-256-хеш.
+   Токены в `localStorage` запрещены.
+8. **Ротация refresh с reuse detection обязательна.** Повторное предъявление использованного
+   refresh отзывает **всю семью** (`family_id`), закрывает сессии, пишет событие в `AuditLog` и
+   отправляет письмо пользователю.
+9. **Logout и смена пароля добавляют `sid` в Redis-денилист** на остаток TTL access-токена.
+10. **2FA — TOTP (`otplib`, 6 цифр, окно ±1 шаг)**, секрет шифруется как остальные секреты,
+    10 recovery-кодов хранятся argon2id-хешами.
+11. **Rate limiting обязателен на каждом чувствительном пути** (`rate-limiter-flexible` на Redis,
+    общий счётчик для всех реплик): логин/сброс/2FA — 5 попыток / 15 мин по IP+email;
+    API — 300 req/мин; тяжёлые endpoint'ы — 10/мин; регистрация организации — 3/час; события
+    WebSocket — 50/с. При срабатывании — 429 + `Retry-After` + `code: "rate_limited"`.
+
+### Транспорт и вход
+
+12. **`helmet` с явным CSP без `unsafe-inline`**, HSTS при https, `nosniff`,
+    `Referrer-Policy: strict-origin-when-cross-origin`, `frame-ancestors 'none'`.
+13. **CORS — строгий allow-list** из `APP_URL` + `CORS_EXTRA_ORIGINS`, `credentials: true`.
+    `origin: true` и `*` запрещены.
+14. **Тело запроса ограничено 1 MB.** Файлы идут не через Node, а presigned-URL в S3, см.
+    `rules/file-uploads.mdc`.
+15. **Всё, что приходит извне, проходит zod-схему на границе**: body, query, params, семантические
+    заголовки, webhook-payload, содержимое job'ов, ответы внешних API. См. `rules/zod-validation.mdc`.
+16. **Пользовательский Markdown/HTML санитизируется** (`rehype-sanitize`), протоколы ссылок —
+    whitelist (`http`, `https`, `mailto`); `javascript:` и `data:` запрещены. См.
+    `rules/editor-content.mdc`.
+
+### Конфигурация
+
+17. **Единственный вход конфигурации — env, разобранный zod-схемой один раз при старте**
+    (`parse`, не `safeParse`: падаем громко). Ошибка конфигурации = отказ старта, а не 500 через час.
+18. **`APP_ENCRYPTION_KEY` обязателен**, если в БД есть хоть один зашифрованный секрет; ротация —
+    миграционным скриптом с перешифровкой (префикс версии позволяет держать `v1` и `v2` одновременно).
+19. **Никаких секретов в URL, query-строке и в именах метрик.**
+
+## Примеры
+
+### ✅ Правильно
+
+```ts
+// infrastructure/crypto/secret-box.ts — наружу только хвост
+const { apiKeyEnc, apiKeyTail } = encryptSecret(input.apiKey);
+await this.providers.save({ ...provider, apiKeyEnc, apiKeyTail });
+return { id: provider.id, kind: provider.kind, apiKeyTail };   // полного ключа нет в ответе
+```
+
+```ts
+// infrastructure/bootstrap/env.ts
+APP_ENCRYPTION_KEY: z.string().refine(
+  (v) => Buffer.from(v, 'base64').length === 32,
+  'APP_ENCRYPTION_KEY must be 32 bytes, base64-encoded',
+),
+```
+
+### ❌ Неправильно
+
+```ts
+// секрет в ответе API и в логе
+logger.info({ apiKey: provider.apiKey }, 'provider configured');
+res.json({ id: provider.id, apiKey: provider.apiKey });
+
+// токен в localStorage — доступен любому XSS
+localStorage.setItem('accessToken', token);
+
+// CORS нараспашку с credentials — любой сайт ходит от имени пользователя
+app.use(cors({ origin: true, credentials: true }));
+
+// конфигурация без валидации: падает не при старте, а в проде через час
+const key = process.env.APP_ENCRYPTION_KEY!;
+```
+
+## Как проверяется
+
+| Механизм | Что ловит |
+|---|---|
+| `~/.claude/security/scan-secrets.sh --staged` + hook `git-guard.sh` | секреты в staged-диффе (жёсткий блок) |
+| Агент `secret-scanner` | секреты в репозитории и в выводе команд, ведёт журнал утечек |
+| Агент `security-auditor` в commit-гейте | OWASP-находки, небезопасные дефолты, CVE в зависимостях; вердикт High/Critical блокирует коммит |
+| CodeQL в CI (`.github/workflows/codeql.yml`) | инъекции, небезопасную десериализацию, path traversal |
+| Тест `test/security/bundle-secrets.spec.ts` (grep по собранному бандлу) | `MEILI_MASTER_KEY`/`JWT_SECRET`/ключи провайдеров в клиентской сборке |
+| Тест `test/security/log-redaction.spec.ts` | новый секретный ключ, не попавший в `REDACTED_PATHS` |
+| `test/integration/auth/refresh-reuse.spec.ts` | отсутствие reuse detection |
+| `test/integration/auth/rate-limit.spec.ts` | endpoint без лимита |
+| Тест `env-schema.spec.ts` | переменную, добавленную в код мимо схемы и `.env.example` |
+| ESLint `no-restricted-globals` на `localStorage` в `units/auth/**` | токены в persistent storage |
+
+## Исключения
+
+- **`LOG_LEVEL=debug`** разрешает логировать тело запроса — но только для не-auth маршрутов и
+  никогда в проде по умолчанию.
+- **Публичные маршруты** (`/health`, `/ready`, `/metrics`, `/link/:token`, логин, приглашение,
+  сброс пароля) не требуют аутентификации, но требуют rate limit и объявления `publicReason`.
+- **E2EE-хранилище живёт по более строгому правилу** — `rules/e2ee-crypto.mdc` имеет приоритет над
+  этим файлом везде, где они пересекаются.

@@ -1,0 +1,126 @@
+---
+description: Any user-visible string, date, number, currency or duration. EN and RU are both mandatory, no hardcoded text in JSX.
+globs: packages/client/src/**, packages/shared/src/errors/**, packages/server/src/**
+alwaysApply: true
+---
+
+# Локализация EN/RU
+
+Основание: `docs/architecture/ux-architecture.md`, раздел «Локализация EN/RU».
+
+## Когда применяется
+
+Любой текст, который увидит пользователь; любая дата, число, деньги, длительность; любое серверное
+сообщение об ошибке.
+
+## Правило
+
+1. **Никаких хардкод-строк в JSX и в `.ts`-файлах клиента.** Всё через `t('namespace.key')`.
+   Whitelist: числа, `·`, `—`, коды и ключи задач.
+2. **Оба языка обязательны в том же PR.** Перевод — часть DoD истории, а не отдельная задача.
+   Ключ, существующий в `en`, но отсутствующий в `ru` (и наоборот), ломает сборку.
+3. **Ключи иерархические и семантические** (`tasks.board.column.empty.title`), не по тексту
+   (`tasks.click_here` — плохо). Ключ никогда не собирается конкатенацией в рантайме — иначе его
+   нельзя найти статически.
+4. **Namespace совпадают с юнитами:** `common`, `validation`, `errors`, `nav` + `auth`, `projects`,
+   `tasks`, `docs`, `kb`, `chat`, `files`, `vault`, `time`, `reports`, `delivery`, `onboarding`,
+   `admin`, `ai`. `common` и `validation` грузятся всегда, доменные — лениво вместе с чанком маршрута.
+5. **Пользовательский текст в `.ts` хранится ключом, а не строкой.** Label-map статусов, заголовки
+   колонок, тексты ошибок: `{ value: 'paid', labelKey: 'delivery.invoice.status.paid' }`, перевод —
+   в компоненте.
+6. **`aria-label`, `title`, `placeholder`, `alt`, `document.title` и сообщения live-region
+   переводятся тоже** — их забывают чаще всего.
+7. **Никакой сборки предложений из кусков.** «Удалено » + n + « задач» запрещено: только
+   интерполяция с плюрализацией. Перечисления — `Intl.ListFormat`, не `join(', ')`.
+8. **Плюрализация обязательна там, где есть счётчик.** Русский — `one/few/many`, английский —
+   `one/other`. Ноль обрабатывается отдельным ключом там, где «0 задач» звучит плохо
+   («Нет задач»).
+9. **Сервер отдаёт код, клиент выбирает текст.** В `application/problem+json` пользовательского
+   текста нет: `code` из `packages/shared/src/errors/codes.ts` → ключ в `errors.json`. `title` и
+   `detail` — для логов и разработчика. Серверные строки не локализуются и не показываются как есть.
+10. **Даты, числа, валюты — только `Intl.*`** (`DateTimeFormat`, `NumberFormat`,
+    `RelativeTimeFormat`) с текущей локалью; обёртки в `shared/lib/format`. Ручные шаблоны
+    `dd.MM.yyyy` в компонентах запрещены.
+11. **Хранение и передача — ISO 8601 в UTC; отображение — в часовом поясе пользователя**
+    (настройка профиля, по умолчанию из браузера). В кросс-часовых контекстах (звонки, дедлайны)
+    рядом показывается зона.
+12. **Деньги — минорные единицы целым числом** на бэкенде; форматирование —
+    `Intl.NumberFormat(locale, { style: 'currency', currency })`. Валюта — свойство контракта или
+    инвойса, а не локали: русский интерфейс может показывать USD.
+13. **Первый день недели берётся из локали** (RU — понедельник, EN-US — воскресенье): это влияет на
+    раскладку таймшита и календаря.
+14. **Длительности — собственный форматтер** (`7:30`, `7 ч 30 мин`) с переводимыми единицами; ввод
+    парсится Zod-схемой, принимающей `7:30`, `7.5` и `450m`.
+15. **Вёрстка переживает русский текст.** Он на 15–30 % длиннее английского, отдельные термины —
+    вдвое. Кнопки, вкладки, чипы и пункты навигации — без фиксированной ширины (`min-width`, не
+    `width`); заголовки колонок и метки форм не обрезаются многоточием там, где текст несёт смысл.
+
+## Примеры
+
+### ✅ Правильно
+
+```tsx
+const { t } = useTranslation('tasks');
+<Button aria-label={t('board.addCard.aria')}>{t('board.addCard.label')}</Button>
+<span>{t('selected', { count })}</span>
+```
+
+```json
+// ru/tasks.json
+{ "selected_one": "{{count}} задача выбрана",
+  "selected_few": "{{count}} задачи выбрано",
+  "selected_many": "{{count}} задач выбрано" }
+```
+
+```ts
+// units/task/model/enums/task-status.enums.ts — ключ, не текст
+export const TASK_STATUS_LABEL: Record<TaskStatus, string> = {
+  todo: 'tasks.status.todo',
+  in_progress: 'tasks.status.in_progress',
+  done: 'tasks.status.done',
+};
+```
+
+```ts
+// shared/lib/format/date.util.ts
+export const formatDate = (iso: string, locale: string, tz: string) =>
+  new Intl.DateTimeFormat(locale, { dateStyle: 'medium', timeZone: tz }).format(new Date(iso));
+```
+
+### ❌ Неправильно
+
+```tsx
+<Button aria-label="Добавить карточку">Добавить</Button>          {/* хардкод, только RU */}
+<span>Удалено {count} задач</span>                                 {/* сборка из кусков */}
+<time>{new Date(t.dueAt).toLocaleDateString('ru-RU')}</time>       {/* локаль зашита */}
+```
+
+```ts
+// сервер возвращает готовый русский текст — не переводится, ломает EN-интерфейс
+res.status(409).json({ message: 'Задача уже закрыта' });
+
+// label-map готовыми строками
+export const TASK_STATUS_LABEL = { todo: 'К выполнению', done: 'Готово' };
+```
+
+## Как проверяется
+
+| Механизм | Что ловит |
+|---|---|
+| ESLint `i18next/no-literal-string` (строгий режим, whitelist: числа, `·`, `—`, коды) | хардкод-строки в JSX и в атрибутах |
+| CI-шаг `pnpm i18n:check` (сверка деревьев ключей `en` ↔ `ru`) | ключ, существующий только в одном языке |
+| CI-шаг `pnpm i18n:unused` | ключи-сироты и ключи, собранные конкатенацией (не находятся статически) |
+| `test/i18n/plural.spec.ts` для RU и EN | отсутствие форм `few`/`many` |
+| `test/i18n/error-codes.spec.ts` | код ошибки из `codes.ts` без ключа в `errors.json` |
+| ESLint `no-restricted-syntax` на `toLocaleDateString`/`toLocaleString` вне `shared/lib/format` | форматирование мимо обёрток |
+| e2e Playwright с `locale: 'ru-RU'` по ключевым экранам + скриншот-диффы | переполнение и обрезку при длинном русском тексте |
+| `vitest-axe` | непереведённые `aria-label` (пустая метка) |
+
+## Исключения
+
+- **Технические строки в логах, метриках, `title`/`detail` problem+json** не переводятся — они для
+  разработчика.
+- **Имена собственные, ключи задач (`BC-142`), коды валют, названия форматов** остаются как есть.
+- **Runbook'и, ADR и внутренняя документация** пишутся на русском без перевода.
+- **`en` — базовая локаль fallback**: отсутствующий ключ показывает английский вариант, но это
+  состояние всё равно валит `pnpm i18n:check`.

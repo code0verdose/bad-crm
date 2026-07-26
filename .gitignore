@@ -1,0 +1,81 @@
+# === Секреты и конфигурация ===
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+.ops-credentials.local.md
+secrets/
+
+# === Зависимости ===
+node_modules/
+.pnpm-store/
+.yarn/
+
+# === Сборка ===
+dist/
+build/
+out/
+.turbo/
+*.tsbuildinfo
+
+# === Тесты и отчёты ===
+coverage/
+playwright-report/
+test-results/
+blob-report/
+.playwright/
+*.lcov
+
+# === Prisma ===
+packages/server/prisma/*.db
+packages/server/prisma/*.db-journal
+packages/server/prisma/migrations/**/shadow.sql
+
+# === Дампы и бэкапы БД ===
+*.sql.gz
+*.dump
+*.backup
+dumps/
+backups/
+
+# === Docker и локальные тома ===
+.docker-data/
+pgdata/
+minio-data/
+meili-data/
+redis-data/
+
+# === Логи ===
+*.log
+npm-debug.log*
+pnpm-debug.log*
+logs/
+
+# === Кеши инструментов ===
+.eslintcache
+.stylelintcache
+.vite/
+.cache/
+
+# === macOS ===
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# === IDE ===
+.idea/
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.recommended.json
+*.swp
+*.swo
+
+# === Временное ===
+tmp/
+temp/
+scratch/
+*.bak

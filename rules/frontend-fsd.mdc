@@ -1,0 +1,133 @@
+---
+description: Any file under packages/client/src. Layer boundaries, namespace barrels, alias imports and the ui to service to api call chain.
+globs: packages/client/src/**
+alwaysApply: true
+---
+
+# FSD-архитектура клиента (вариант «units»)
+
+Основание: `docs/architecture/ux-architecture.md`. Нейминг файлов — `rules/naming-and-structure.mdc`.
+
+## Когда применяется
+
+Любой новый или изменённый файл в `packages/client/src`.
+
+**Boy-scout rule:** наткнулся на файл, нарушающий это правило (мульти-компонентный `page.tsx`,
+`useQuery` в виджете, deep-import в юнит, относительный `../../../`) — переделай его в рамках
+текущей задачи, не оставляй как есть.
+
+## Правило
+
+1. **Пять слоёв, зависимости строго вниз:** `app → pages → widgets → units → shared`.
+   `shared` не зависит ни от кого; `units` не импортируют `pages`/`widgets`; циклы запрещены.
+2. **Импорты только через `@`-алиасы по слою:** `@app/*`, `@pages`, `@widgets/*`, `@units/*`,
+   `@shared`, `@shared/*`. Относительный `../` запрещён; `./` допустим только внутри одной
+   папки-модуля (`./page.css`, `./ui/…` из `page.tsx`). Алиасы настроены и в `tsconfig.paths`,
+   и в `vite.resolve.alias`.
+3. **Публичное API слоя и юнита — только `index.ts` (namespace-barrel).** Слой:
+   `export * as SharedUi from './ui'` и т. д. Юнит: `export * as TaskService from './service'`,
+   `TaskUi`, `TaskApi`, `TaskModel`, `TaskTypes`. Потребление — через namespace
+   (`TaskService.useTaskList()`), deep-import `@units/task/service/hooks/...` запрещён.
+4. **Call-chain фиксирован:** `ui → service/hooks → service/{queries,mutations} → api → SharedApi`.
+   Каждое звено вызывает только следующее. `ui`, дергающий `api` напрямую, — нарушение.
+5. **`fetch`, `useQuery`, `useMutation`, `useInfiniteQuery` запрещены в `pages`, `widgets`, `app`.**
+   Только хуки юнитов (`XxxService.useY()`). Причина: страница не должна знать про сеть и кеш.
+6. **Хук уровня `service/hooks` — публичное API юнита для `ui`.** Он композирует query + mutation +
+   локальное состояние + форматирование и отдаёт готовые к рендеру данные и обработчики.
+7. **Страница — только композиция.** `page.tsx` дергает хуки юнитов и раскладывает
+   `<PageHeader>` + `<Toolbar>` + `<list>` + `<PaginationBar>`. Ни фильтр-логики, ни маппинга,
+   ни вычислений в JSX.
+8. **Где что живёт (жёсткая граница DDD):**
+   - переиспользуемое, не завязанное на домен → `shared` (`shared/ui`, `shared/lib`, `shared/hooks`,
+     `shared/api`);
+   - завязанное на сущность/домен → `units/<unit>` — никогда в `shared` и никогда inline в компоненте;
+   - специфичное для одной страницы → `pages/<page>/{ui,hooks}`.
+   Доменный компонент (знает про задачу, инвойс, канал) в `shared/ui` не попадает никогда.
+9. **Сегменты юнита:** `api/` (чистые fetch-функции), `service/{queries,mutations,hooks,stores?}`,
+   `model/{enums,constants,validation?}`, `lib/utils`, `types/`, `ui/`. Пустые сегменты не создаются
+   «на всякий случай».
+10. **Route-файл тонкий.** `app/routes/**` содержит только wiring: `validateSearch`, `beforeLoad`
+    (guard), `loader`, `component`, `pendingComponent`, `errorComponent`, `notFoundComponent`.
+    Рендер делегируется в `pages/<page>`; бизнес-логика и запросы — в юнитах.
+11. **Анти-`useEffect`.** Данные с сервера → TanStack Query; производное состояние → вычисление при
+    рендере или `useMemo`; реакция на действие → обработчик события; сброс состояния при смене
+    входа → `key`. Легитимный `useEffect` — только настоящий сайд-эффект с внешним миром
+    (подписка — лучше `useSyncExternalStore`, императивный DOM, таймер), с cleanup и комментарием-
+    обоснованием.
+12. **Code-splitting по маршрутам** (`.lazy.tsx` / lazy route). Тяжёлое (редактор, крипто-модуль,
+    календарь) — за Suspense отдельным чанком.
+
+## Примеры
+
+### ✅ Правильно
+
+```ts
+// units/task/index.ts — namespace-barrel
+export * as TaskApi     from './api';
+export * as TaskModel   from './model';
+export * as TaskService from './service';
+export * as TaskTypes   from './types';
+export * as TaskUi      from './ui';
+```
+
+```tsx
+// pages/board/page.tsx — только композиция
+import { TaskService, TaskUi } from '@units/task';
+import { SharedUi } from '@shared';
+
+export function BoardPage() {
+  const boardQ = TaskService.useBoard();          // вся логика внутри хука юнита
+  return (
+    <>
+      <SharedUi.PageHeader title={boardQ.title} />
+      <SharedUi.DataState status={boardQ.status} error={boardQ.error} onRetry={boardQ.refetch}
+        skeleton={<SharedUi.BoardSkeleton />}>
+        <TaskUi.Board columns={boardQ.columns} onMove={boardQ.moveCard} />
+      </SharedUi.DataState>
+    </>
+  );
+}
+```
+
+### ❌ Неправильно
+
+```tsx
+// запрос и бизнес-логика прямо в странице, deep-import, относительный путь
+import { useQuery } from '@tanstack/react-query';
+import { fetchBoard } from '../../units/task/api/task.api';        // ❌ ../ и deep-import
+
+export function BoardPage() {
+  const { data } = useQuery({ queryKey: ['board'], queryFn: fetchBoard });   // ❌ useQuery в pages
+  const overdue = data?.tasks.filter((t) => new Date(t.dueAt) < new Date()); // ❌ логика в компоненте
+  return <div>{overdue?.map((t) => <div key={t.id}>{t.title}</div>)}</div>;
+}
+```
+
+```ts
+// units/task импортирует страницу — зависимость вверх
+import { BoardPage } from '@pages/board';   // ❌
+```
+
+## Как проверяется
+
+| Механизм | Что ловит |
+|---|---|
+| ESLint `boundaries/element-types` (слои `app/pages/widgets/units/shared`) | импорт вверх и между юнитами мимо barrel |
+| ESLint `no-restricted-imports` c `patterns: ['@units/*/*']` | deep-import в юнит |
+| ESLint `import/no-relative-parent-imports` | относительные `../` |
+| ESLint `no-restricted-imports` на `@tanstack/react-query` в `pages/**`, `widgets/**`, `app/**` | `useQuery`/`useMutation` вне юнитов |
+| ESLint `no-restricted-globals: ['fetch']` вне `shared/api/**` | raw-запросы |
+| ESLint `react-hooks/exhaustive-deps` + кастомное правило `no-effect-for-derived-state` | `useEffect` вместо вычисления при рендере |
+| `import/no-cycle` | циклические зависимости |
+| `test/architecture/layers.spec.ts` (обход графа импортов) | нарушение call-chain `ui → service → api` |
+| `size-limit` по чанкам маршрутов | потерянный code-splitting |
+
+## Исключения
+
+- **`shared/api`** — единственное место, где физически живут `fetch`/`openapi-fetch` и middleware
+  авторизации.
+- **`app/`** имеет право импортировать всё: там собирается провайдер-дерево и роутер.
+- **Композиция фильтров нескольких сущностей на одной странице** допустима в `pages/<page>/hooks/`,
+  но доменная логика каждого фильтра остаётся в своём юните.
+- **Крипто-чанк `units/vault/lib/crypto`** не подчиняется общему бюджету размера ленивого чанка —
+  см. `rules/e2ee-crypto.mdc`.

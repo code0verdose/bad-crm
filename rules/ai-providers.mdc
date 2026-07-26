@@ -1,0 +1,141 @@
+---
+description: AI provider configuration and the assistant. Keys encrypted in the database, permission-aware retrieval, tool allowlist, token accounting, prompt injection defence.
+globs: packages/server/src/infrastructure/ai/**, packages/server/src/application/**/ai/**, packages/client/src/units/ai/**
+alwaysApply: false
+---
+
+# AI-провайдеры и ассистент
+
+Основание: `docs/architecture/stack.md` (`AIProvider`, деградация без AI), `docs/security/threat-model.md`.
+
+## Когда применяется
+
+Настройка провайдера администратором, вызовы LLM, RAG-поиск, инструменты ассистента, эмбеддинги,
+учёт токенов.
+
+## Правило
+
+### Ключи и конфигурация
+
+1. **Ключей AI-провайдеров в `env` нет.** В env живёт только глобальный выключатель инсталляции
+   `AI_ENABLED`. Ключи настраиваются администратором организации в UI и хранятся в таблице
+   `AIProvider` в поле `apiKeyEnc` (AES-256-GCM, `APP_ENCRYPTION_KEY`).
+2. **В API наружу отдаётся только `apiKeyTail`** (последние 4 символа). Полный ключ не возвращается
+   ни в одном ответе, включая ответ на собственное сохранение и «проверку соединения».
+3. **Расшифровка — в момент вызова провайдера**, значение не кладётся в переменные модуля, не
+   логируется и не попадает в трейс-атрибуты.
+4. **Ключ принадлежит организации** и подчиняется RLS как любая другая строка, см.
+   `rules/tenancy-rls.mdc`.
+
+### Архитектура
+
+5. **Один порт — `AIProviderPort`**, адаптеры на каждый `kind` (`anthropic`, `openai`,
+   `openai_compat`, `openrouter`) и фабрика, выбирающая адаптер по конфигурации организации.
+   Вызовы SDK провайдера живут только в `infrastructure/ai/**`.
+6. **Приложение работает без AI.** При выключенном или ненастроенном провайдере AI-функции скрыты в
+   UI, endpoint'ы возвращают 501 `feature_disabled`, очередь `embeddings` — no-op. Падать нельзя.
+7. **Вызовы провайдера идут из воркера, а не из HTTP-обработчика** (стриминг и медленные ответы не
+   должны занимать event loop). Внутри транзакции внешний вызов запрещён — см. `rules/outbox.mdc`.
+
+### Данные в контексте
+
+8. **Retrieval permission-aware.** В контекст попадают только те чанки, которые актор имеет право
+   видеть: фильтр по `visibleTo` и `organizationId` — в самом запросе к `pgvector`, а не после
+   выборки. См. `rules/search-index.mdc`.
+9. **Секреты и vault в контекст не попадают никогда** — ни как retrieval-документ, ни как вложение,
+   ни как «полезный фон». См. `rules/e2ee-crypto.mdc`.
+10. **Что уходит наружу — видно пользователю.** Состав контекста (какие документы использованы)
+    показывается в ответе ассистента; отправка данных организации внешнему провайдеру фиксируется в
+    `AuditLog`.
+
+### Инструменты и защита от инъекций
+
+11. **Tool-allowlist по ролям.** Набор инструментов, доступных ассистенту, определяется правами
+    актора: инструмент, вызывающий действие, проходит тот же `can(actor, key, ref)`, что и HTTP-путь.
+    Ассистент не является привилегированным субъектом.
+12. **Разрушающие и записывающие инструменты требуют явного подтверждения пользователя** в UI перед
+    выполнением. Автономного удаления, отправки писем и изменения прав ассистентом не бывает.
+13. **Содержимое документов и сообщений — данные, а не инструкции.** Текст из retrieval, вложений,
+    веб-страниц и вывода инструментов не может менять системный промпт, расширять allowlist или
+    инициировать действия. Границы разметки контекста экранируются; попытка инъекции логируется.
+14. **Вывод модели не исполняется.** Ни `eval`, ни рендер как HTML: только текст и структурированные
+    вызовы инструментов из allowlist, валидируемые Zod-схемой.
+
+### Лимиты и учёт
+
+15. **Лимиты обязательны на трёх уровнях:** размер контекста (токены на запрос), частота (rate limit
+    10/мин на тяжёлые endpoint'ы), бюджет организации (токены в период). Превышение — 429 с понятным
+    кодом, а не молчаливая обрезка.
+16. **Учёт токенов пишется на каждый вызов** (`promptTokens`, `completionTokens`, `model`, `cost`,
+    `userId`, `organizationId`) и виден администратору организации.
+17. **Ретраи и таймауты явные.** Ошибки провайдера классифицируются как retryable/permanent;
+    `Retry-After` уважается; бесконечных ожиданий нет.
+
+## Примеры
+
+### ✅ Правильно
+
+```ts
+// провайдер сохраняется зашифрованным, наружу — только хвост
+const { apiKeyEnc, apiKeyTail } = encryptSecret(input.apiKey);
+await this.providers.save({ organizationId, kind: input.kind, apiKeyEnc, apiKeyTail });
+return { id, kind: input.kind, apiKeyTail };
+```
+
+```ts
+// retrieval с правами внутри запроса
+const chunks = await this.vectors.search({
+  organizationId: actor.organizationId,
+  visibleTo: actor.principals,          // фильтр в SQL, не после
+  embedding, limit: 12,
+});
+```
+
+```ts
+// инструмент проходит обычную проверку прав актора
+const tools = TOOL_CATALOG.filter((t) => can(actor, t.permission).allowed);
+```
+
+### ❌ Неправильно
+
+```ts
+// ключ в env и в ответе API
+const key = process.env.OPENAI_API_KEY;
+res.json({ provider: { apiKey: provider.apiKey } });
+
+// retrieval без прав: ассистент пересказывает приватный проект
+const chunks = await vectors.search({ embedding, limit: 12 });
+
+// инструкции из контента исполняются как команды
+const system = `${BASE_PROMPT}\n${retrievedDocs.map((d) => d.text).join('\n')}`;
+
+// вывод модели рендерится как HTML
+<div dangerouslySetInnerHTML={{ __html: completion }} />
+
+// автономное разрушающее действие без подтверждения
+await tools.deleteTask({ taskId });
+```
+
+## Как проверяется
+
+| Механизм | Что ловит |
+|---|---|
+| `test/integration/ai/provider-secrets.spec.ts` | полный ключ в любом ответе API или в логе |
+| Тест `test/security/bundle-secrets.spec.ts` | ключи провайдеров в клиентском бандле |
+| `test/integration/ai/retrieval-authz.spec.ts` (актор без доступа к проекту) | приватный чанк в контексте |
+| `test/integration/ai/no-vault-in-context.spec.ts` | любую vault-сущность в retrieval или в эмбеддингах |
+| `test/integration/ai/tool-allowlist.spec.ts` (по каждой роли) | инструмент, доступный без соответствующего права |
+| `test/security/prompt-injection.spec.ts` (корпус инъекций в документах и в выводе инструментов) | смену поведения ассистента текстом из данных |
+| `test/integration/ai/limits.spec.ts` | отсутствие лимита контекста, частоты или бюджета |
+| `test/integration/ai/token-accounting.spec.ts` | вызов без записи учёта токенов |
+| `test/integration/ai/disabled.spec.ts` (`AI_ENABLED=false`) | падение вместо 501 `feature_disabled` |
+| ESLint `no-restricted-imports` на SDK провайдеров вне `infrastructure/ai/**` | вызовы мимо порта |
+| Агент `ai-engineer` при изменении промптов и инструментов | расширение поверхности атаки |
+
+## Исключения
+
+- **Локальные и self-hosted модели** (`openai_compat` на своём endpoint) подчиняются тем же
+  правилам: то, что данные не уходят наружу, не отменяет проверку прав и лимиты.
+- **Эмбеддинги** считаются фоном и могут отставать; отсутствие эмбеддинга — деградация поиска, а
+  не ошибка.
+- **Профиль `minimal`** поднимается без AI: это штатное состояние, а не сбой.

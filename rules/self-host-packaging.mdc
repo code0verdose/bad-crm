@@ -1,0 +1,133 @@
+---
+description: Anything that affects an existing self-hosted installation - compose files, env, profiles, startup checks, upgrade path. Do not break installs you cannot see.
+globs: docker-compose*.yml, Dockerfile*, .env.example, scripts/**, packages/server/src/infrastructure/bootstrap/**, docs/runbooks/**
+alwaysApply: false
+---
+
+# Self-host и упаковка
+
+Основание: `docs/architecture/overview.md` (профили, тома, обновление), ADR-0020. Аудитория —
+администратор одного VPS без DBA и без наблюдателя за логами.
+
+## Когда применяется
+
+Изменение `docker-compose`, `Dockerfile`, переменных окружения, профилей, стартовых проверок,
+процедуры обновления, требований к железу.
+
+## Правило
+
+1. **Обратная совместимость установки — обязательство, а не пожелание.** Обновление существующей
+   инсталляции не должно требовать ручных действий, кроме `docker compose pull && up -d`. Всё, что
+   требует действий администратора, документируется в `docs/runbooks/` и объявляется в CHANGELOG до
+   релиза.
+2. **Новая обязательная переменная окружения — ломающее изменение.** Вводится в два шага:
+   релиз N — переменная опциональна с безопасным дефолтом и предупреждением при старте; релиз N+1 —
+   становится обязательной. Разово обязательной делать нельзя: инстансы просто не поднимутся.
+3. **Переименование переменной — только через период поддержки обоих имён** с предупреждением о
+   старом. То же для имён томов, сервисов и портов в compose.
+4. **Два профиля, оба обязаны работать:**
+   - `full` — Postgres, Redis, MinIO, Meilisearch, приложение, воркер;
+   - `minimal` — без Meilisearch и без AI (`SearchPort` → `postgres-fts`, AI-функции скрыты и
+     возвращают 501). Требования к памяти снижены.
+   Новая функция обязана либо работать в `minimal`, либо явно и мягко деградировать. «Работает
+   только в `full`» без деградации — блокирующее замечание.
+5. **Переход `minimal → full` не требует миграции данных** — поднять контейнер и запустить полную
+   переиндексацию из БД.
+6. **Безопасные дефолты.** Никаких дефолтных паролей и ключей в `.env.example` — только
+   `CHANGE_ME_…`. Порты Postgres, Redis, MinIO, Meilisearch **не публикуются** наружу по умолчанию.
+   Никакой телеметрии наружу по умолчанию.
+7. **Fail-fast проверка окружения при старте.** Приложение падает громко и с понятным текстом, если:
+   отсутствует обязательная переменная; `APP_ENCRYPTION_KEY` не 32 байта; в БД есть зашифрованные
+   секреты, а ключа нет; миграции не применены; версия Postgres ниже поддерживаемой; `MEILI_HOST`
+   задан без `MEILI_MASTER_KEY`. Текст ошибки объясняет, что именно поправить, а не печатает стек.
+8. **Preflight-проверка безопасности при старте:** предупреждение (или отказ в проде), если
+   обнаружены дефолтные креды, публично доступные порты инфраструктуры, `APP_URL` на http при
+   внешнем адресе.
+9. **Миграции выполняет отдельный одноразовый контейнер** до старта `api`/`worker`, под ролью-
+   владельцем; у приложения нет `BYPASSRLS` (см. `rules/tenancy-rls.mdc`).
+10. **`bad-crm db backup` — обязательный шаг апгрейда**, встроенный в скрипт; см.
+    `rules/db-migrations.mdc`. Апгрейдер отказывается мигрировать без проверенного бэкапа.
+11. **Бэкапятся `pgdata` и `minio-data`.** `meili-data` не бэкапится (восстанавливается
+    переигрыванием из БД), `redis-data` не критичен (очереди восстанавливаются из outbox, presence
+    эфемерен). Изменение этого списка требует правки runbook'а в том же PR.
+12. **Один образ на все роли.** `ROLE=worker` и `ROLE=api` различаются переменной, а не сборкой;
+    `RUN_WORKERS_IN_PROCESS=true` — осознанное исключение для `minimal`, не дефолт.
+13. **Graceful shutdown ≤ 30 с** с корректным `/ready → 503` до закрытия: обновление
+    одноинстансной инсталляции не должно требовать окна простоя больше рестарта.
+14. **Каждое изменение эксплуатации сопровождается runbook'ом** (`docs/runbooks/`): бэкап,
+    восстановление, ротация ключей, переиндексация, откат.
+15. **AGPL-3.0 обязывает публиковать исходники изменённой версии** — сборка не должна включать
+    ничего, что нельзя распространять (см. `rules/dependencies.mdc`).
+
+## Примеры
+
+### ✅ Правильно
+
+```ts
+// infrastructure/bootstrap/preflight.ts — понятный отказ вместо 500 через час
+const result = envSchema.safeParse(process.env);
+if (!result.success) {
+  logger.fatal(formatEnvErrors(result.error));   // «APP_ENCRYPTION_KEY must be 32 bytes, base64»
+  process.exit(1);
+}
+if (await hasEncryptedSecrets(prisma) && !env.APP_ENCRYPTION_KEY) {
+  logger.fatal('Database contains encrypted secrets but APP_ENCRYPTION_KEY is missing. ' +
+               'Restore the key or see docs/runbooks/key-rotation.md');
+  process.exit(1);
+}
+```
+
+```yaml
+# docker-compose.yml — порты инфраструктуры не публикуются
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    expose: ["5432"]            # не ports:
+    volumes: ["pgdata:/var/lib/postgresql/data"]
+  meilisearch:
+    profiles: ["full"]          # в minimal не поднимается
+```
+
+### ❌ Неправильно
+
+```yaml
+# дефолтный пароль и опубликованный наружу порт БД
+postgres:
+  environment: { POSTGRES_PASSWORD: postgres }
+  ports: ["5432:5432"]
+```
+
+```ts
+// новая обязательная переменная разом: все существующие инсталляции не поднимутся
+GITHUB_APP_ID: z.string().min(1),      // без опционального периода и без дефолта
+```
+
+```ts
+// функция работает только при поднятом Meilisearch и падает в minimal
+const results = await meili.index('tasks').search(q);   // без ветки postgres-fts
+```
+
+## Как проверяется
+
+| Механизм | Что ловит |
+|---|---|
+| CI-джоб `compose-up-full`: чистый `docker compose --profile full up -d` + smoke | неподнимающийся стек |
+| CI-джоб `compose-up-minimal`: то же с `--profile minimal` + e2e-подмножество | функцию, не деградирующую без Meilisearch/AI |
+| CI-джоб `upgrade-path`: поднять предыдущий релиз с данными → накатить текущий образ → smoke | ломающее изменение env, томов, миграций |
+| `test/bootstrap/preflight.spec.ts` (по каждому обязательному условию из п. 7) | молчаливый старт с неполной конфигурацией |
+| `test/security/default-creds.spec.ts` | дефолтные пароли и ключи в `.env.example` и compose |
+| CI-шаг `check:published-ports` (парсинг compose) | опубликованные наружу порты инфраструктуры |
+| CI-шаг `check:env-parity` (`.env.example` ↔ zod-схема) | переменную, добавленную только в код |
+| `test/integration/shutdown.spec.ts` | shutdown дольше 30 с и `/ready`, не отдающий 503 |
+| Агент `production-readiness` в commit-гейте | отсутствие плана отката и runbook'а |
+| Агент `deployment-engineer` при изменении compose/Dockerfile | регрессии в процедуре обновления |
+
+## Исключения
+
+- **Локальная разработка** публикует порты инфраструктуры (`docker-compose.override.yml`) — это
+  отдельный файл, не попадающий в дистрибутив.
+- **Профиль `scaled`** (несколько инстансов, отдельный воркер, sticky sessions) — не обязателен для
+  каждой функции, но не должен ломаться: новое состояние в памяти процесса вместо Redis —
+  блокирующее замечание.
+- **Kubernetes-манифесты** — community-дополнение и не определяют архитектуру; их отсутствие не
+  является дефектом.

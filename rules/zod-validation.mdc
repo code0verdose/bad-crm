@@ -1,0 +1,117 @@
+---
+description: Schema-first validation with Zod 4 on both client and server. Parse at boundaries, infer types from schemas, never duplicate an interface.
+globs: packages/**/src/**/*.schema.ts, packages/server/src/presentation/http/validators/**, packages/client/src/units/**/model/validation/**, packages/server/src/infrastructure/bootstrap/**
+alwaysApply: false
+---
+
+# Zod: schema-first валидация
+
+Основание: `docs/architecture/stack.md` (валидация входа, env), `docs/architecture/ux-architecture.md`
+(формы, search-параметры).
+
+## Когда применяется
+
+Любая рантайм-граница: тело/query/params HTTP-запроса, ответы внешних API, payload вебхуков и
+job'ов, формы, search-параметры URL, `localStorage`, переменные окружения.
+
+## Правило
+
+1. **Схема — источник правды, тип выводится из неё:** `export const taskSchema = z.object({…});
+   export type Task = z.infer<typeof taskSchema>;`. Ручное дублирование `interface` + схемы
+   запрещено — они разъедутся.
+2. **Zod применяется только там, где есть рантайм-граница.** Чисто внутренние типы остаются
+   `interface`/union: схема без парсинга — лишний вес.
+3. **Валидация — на границе, один раз.** Внутри границы данные уже типобезопасны; повторных
+   проверок в use-case'ах и компонентах нет.
+4. **`safeParse` по умолчанию** (формы, API, внешние ответы — ожидаемо невалидный вход);
+   `parse` — только там, где падение уместно: `env` при старте, нарушенный инвариант.
+5. **Композиция вместо копипасты.** `*Draft` — это `entitySchema.omit({ id: true, createdAt: true })`
+   или `.partial()`, а не вторая схема руками. Расширение — `.extend`/`.merge`; выбор полей —
+   `.pick`/`.omit`; варианты — `z.discriminatedUnion('type', […])`, а не `.or`.
+6. **`z.coerce` для URL и env** — там всё строки: `z.coerce.number()`, `z.coerce.boolean()`,
+   `z.enum` как whitelist. Схема фильтров одновременно валидирует и приводит; см.
+   `rules/lists-and-filters.mdc`.
+7. **Cross-field правила — `.refine`/`.superRefine` с `path`** на конкретное поле, чтобы форма
+   показала ошибку там, где её ждут.
+8. **Нормализация — `.transform` внутри схемы** (trim, lowercase, телефон → цифры), чтобы наружу
+   выходили чистые данные. Различаем `z.input` и `z.output`.
+9. **Сообщения об ошибках — ключи i18n, а не готовый текст.** Единый мап `validation.json`;
+   хардкод строки в схеме запрещён, см. `rules/i18n.mdc`.
+10. **Nominal-id — `.brand<'TaskId'>()`**, чтобы `UserId` нельзя было передать вместо `TaskId`.
+11. **Размещение и нейминг:** доменные схемы и `*Draft` — `units/<unit>/model/validation/
+    <entity>.schema.ts`; переиспользуемые примитивы (email, phone, money, id, пагинация) —
+    `shared/lib/validation`; серверные схемы запросов — `presentation/http/validators/`; схемы
+    ответов внешних API — рядом с адаптером; схема `env` — `infrastructure/bootstrap/env.ts`.
+    Файл — `<name>.schema.ts`, схема `camelCaseSchema`, тип `PascalCase` через `z.infer`.
+12. **Формы — `@mantine/form` + `mantine-form-zod-resolver`.** Второй формовой библиотеки в проекте
+    нет; ручных проверок в компоненте нет.
+13. **Ответы API прогоняются через схему в `api`-слое** там, где нужен рантайм-гейт: сгенерированные
+    типы из OpenAPI гарантируют форму на этапе компиляции, но не защищают от дрейфа бэкенда.
+14. **Схема `env` парсится один раз при старте**, дальше используется типобезопасный объект.
+    `process.env` россыпью по коду запрещён.
+
+## Примеры
+
+### ✅ Правильно
+
+```ts
+// units/task/model/validation/task.schema.ts
+export const taskSchema = z.object({
+  id:        z.string().uuid().brand<'TaskId'>(),
+  title:     z.string().trim().min(1, { error: 'validation.required' }).max(200),
+  status:    z.enum(TASK_STATUSES),
+  estimateM: z.coerce.number().int().min(0).optional(),
+  dueAt:     z.iso.datetime().optional(),
+  createdAt: z.iso.datetime(),
+});
+export type Task = z.infer<typeof taskSchema>;
+
+// draft — производная, не вторая схема
+export const taskDraftSchema = taskSchema.omit({ id: true, createdAt: true });
+export type TaskDraft = z.infer<typeof taskDraftSchema>;
+```
+
+```ts
+// cross-field правило с path — форма подсветит нужное поле
+export const rangeSchema = z
+  .object({ from: z.iso.date(), to: z.iso.date() })
+  .refine((v) => v.from <= v.to, { error: 'validation.range_inverted', path: ['to'] });
+```
+
+### ❌ Неправильно
+
+```ts
+// interface рядом со схемой — два источника правды, разъедутся на первой же правке
+export interface Task { id: string; title: string; status: string; }
+export const taskSchema = z.object({ id: z.string(), title: z.string(), status: z.string() });
+
+// хардкод текста ошибки: не переводится, не мапится
+z.string().min(1, 'Введите название')
+
+// parse на пользовательском вводе — исключение вместо inline-ошибки поля
+const data = taskDraftSchema.parse(formValues);
+
+// валидация размазана по компоненту
+if (!values.title.trim()) setError('Введите название');
+if (values.title.length > 200) setError('Слишком длинно');
+```
+
+## Как проверяется
+
+| Механизм | Что ловит |
+|---|---|
+| Кастомное ESLint-правило `bad-crm/no-interface-next-to-schema` | дублирование `interface` и схемы в одном файле |
+| ESLint `no-restricted-syntax` на строковый литерал вторым аргументом Zod-валидатора | хардкод текста ошибки |
+| ESLint `no-restricted-properties` на `process.env` вне `infrastructure/bootstrap/**` | чтение env мимо схемы |
+| `*.schema.test.ts` на каждую схему: happy + пустое + невалидное + граница + лишние поля | схему, принимающую мусор |
+| `env-schema.spec.ts` | переменную, добавленную в код мимо схемы и `.env.example` |
+| `test/integration/http/validation.spec.ts` | endpoint без zod-схемы на границе (ожидается 422 `validation_failed`) |
+| Компонентные тесты форм | ручную проверку в компоненте вместо резолвера |
+
+## Исключения
+
+- **Сгенерированные типы OpenAPI** (`api-schema.d.ts`) не дублируются схемами по умолчанию — Zod
+  добавляется точечно там, где нужен рантайм-гейт (внешние интеграции, вебхуки, критичные ответы).
+- **Внутренние value-objects домена** на сервере валидируются собственными конструкторами
+  (`Money.from`, `Slug.from`) — они и есть граница; Zod там избыточен.
+- **Проекты на `zod@3`** (сторонние пакеты) используют соответствующий API; в нашем коде — Zod 4.

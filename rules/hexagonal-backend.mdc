@@ -1,0 +1,148 @@
+---
+description: Any file under packages/server/src. Defines what belongs in each layer and which direction dependencies may point.
+globs: packages/server/src/**
+alwaysApply: true
+---
+
+# Гексагональная архитектура backend
+
+Основание: `docs/architecture/stack.md`, раздел «Backend: гексагональная архитектура».
+
+## Когда применяется
+
+Любой новый или изменённый файл в `packages/server/src`: сущность, use-case, порт, адаптер,
+контроллер, воркер, скрипт.
+
+## Правило
+
+1. **Зависимости направлены только внутрь:** `presentation → application → domain`,
+   `infrastructure → application/domain`. `domain` не зависит ни от чего, кроме `domain/shared` и
+   `packages/shared`. Циклы запрещены.
+2. **`domain` не знает про I/O.** Запрещены Prisma, Express, Redis, socket.io, `process.env`,
+   `Date.now()`, `Math.random()`, `fetch`. Время приходит через `ClockPort`, идентификаторы — через
+   `IdGeneratorPort`. Следствие: домен покрывается юнит-тестами без окружения.
+3. **`application` зависит от `domain` и от собственных портов.** Не знает про Prisma, про HTTP-коды
+   и про то, что его вызвали по HTTP. Use-case, читающий `req`, — дефект.
+4. **`infrastructure` реализует порты и не содержит бизнес-правил.** Prisma-типы наружу не
+   экспортируются: возвращаются доменные сущности или read-модели.
+5. **`presentation/http` — тонкий транспорт.** Контроллер делает ровно четыре вещи: валидирует вход
+   zod-схемой из `validators/`, достаёт контекст из middleware, вызывает **один** use-case,
+   сериализует ответ в DTO из OpenAPI. Никаких `if (user.role === …)`, никаких `try/catch` —
+   доменные ошибки летят в `error-handler.ts`.
+6. **Три вида портов, и их нельзя путать:**
+   - `*-repository.port.ts` — загружает и сохраняет **агрегат целиком**, для команд. Ничего не знает
+     о правах.
+   - `*-access-reader.port.ts` — приносит **только данные для решения о доступе** (идентификаторы,
+     `aclLevel`, флаги). Не возвращает сущность — иначе превращается во второй репозиторий.
+   - `*-query.port.ts` — read-модели списков: плоские DTO, JOIN-ы, пагинация. Не возвращает сущности.
+7. **Команды и чтения разделены по имени файла.** `*.use-case.ts` меняет состояние, открывает **одну**
+   транзакцию на сценарий, возвращает id или DTO. `*.query.ts` только читает, транзакцию не
+   открывает, возвращает плоскую read-модель.
+8. **Решение о доступе принимает policy в `domain`, а не репозиторий и не SQL.** См.
+   `rules/permissions.mdc`.
+9. **Инварианты живут в сущности.** `task.moveToColumn(...)` меняет состояние с проверкой; use-case
+   не собирает объект по полям снаружи.
+10. **Внешние вызовы (S3, SMTP, AI, GitHub) никогда не делаются внутри транзакции** — всё внешнее
+    уходит в outbox, см. `rules/outbox.mdc`.
+11. **Оптимистичная блокировка через колонку `version`** на конкурентно изменяемых агрегатах
+    (задача, документ, инвойс): `UPDATE … WHERE id = $1 AND version = $2`, 0 строк → 409
+    `stale_version`.
+12. **`main.ts` — единственный composition root.** Только здесь создаются конкретные адаптеры и
+    связываются с use-case'ами. DI-контейнер с декораторами не используем: явная сборка функциями.
+    Импорт адаптера из `application` или `domain` — дефект.
+13. **Graceful shutdown обязателен** для любого нового ресурса (пул, сокет, воркер): регистрация в
+    `shutdown()` с жёстким таймаутом 30 с.
+14. **Импорты через алиас `@/*` → `src/*`.** Относительные `../` запрещены; `./` — только внутри
+    одной папки-модуля.
+15. **Express 5:** `async`-контроллер пишется без `try/catch` и без `asyncHandler`. `req.query` —
+    getter, мутировать нельзя: нормализованные параметры кладём в `res.locals` или в собственный
+    объект. Безымянный wildcard `*` не поддерживается — только именованный (`/files/*splat`).
+
+## Примеры
+
+### ✅ Правильно
+
+```ts
+// application/task/use-cases/move-task-column.use-case.ts
+export class MoveTaskColumnUseCase {
+  constructor(
+    private readonly tasks: TaskRepositoryPort,
+    private readonly access: TaskAccessReaderPort,
+    private readonly outbox: OutboxPort,
+    private readonly clock: ClockPort,
+    private readonly uow: UnitOfWorkPort,
+  ) {}
+
+  async execute(input: MoveTaskColumnInput): Promise<void> {
+    return this.uow.withTransaction(async () => {
+      const scope = await this.access.taskScope(input.taskId);
+      if (scope === null) throw new NotFoundError('resource_not_found');
+      assertAllowed(canMoveTask(await this.actors.forUser(input.userId), scope));
+
+      const task = await this.tasks.findById(input.taskId);
+      task!.moveToColumn(input.columnId, input.position, this.clock.now()); // инвариант в entity
+      await this.tasks.save(task!);
+      await this.outbox.publish(taskColumnMoved(task!));                    // внешнее — через outbox
+    });
+  }
+}
+```
+
+```ts
+// presentation/http/controllers/task.controller.ts — тонкий транспорт
+export const update: RequestHandler = async (req, res) => {
+  const input = updateTaskValidator.parse({ ...req.body, taskId: req.params.taskId });
+  const dto = await container.tasks.updateTask.execute({ ...input, ...requestActor(res) });
+  res.json(serializeTask(dto));
+};
+```
+
+### ❌ Неправильно
+
+```ts
+// бизнес-логика и права в контроллере, Prisma в presentation, ручной маппинг статусов
+export const update: RequestHandler = async (req, res) => {
+  const task = await prisma.task.findUnique({ where: { id: req.params.taskId } });
+  if (!task) return res.status(404).json({ error: 'not found' });
+  if (task.organizationId !== req.user.orgId) return res.status(403).end();
+  if (req.body.status === 'done' && !task.assigneeId) return res.status(400).end();
+  await prisma.task.update({ where: { id: task.id }, data: req.body });
+  res.json(task);
+};
+```
+
+```ts
+// domain с I/O: не тестируется без окружения, ломает направление зависимостей
+import { redis } from '@/infrastructure/redis/client';
+export async function canPublish(task: Task) {
+  const flag = await redis.get('feature:publish');
+  return flag === '1' && task.updatedAt < Date.now();
+}
+```
+
+```ts
+// смешение видов портов: access-reader вернул агрегат и стал вторым репозиторием
+export interface TaskAccessReaderPort {
+  taskScope(id: TaskId): Promise<Task>;    // ❌ должно быть TaskScope | null
+}
+```
+
+## Как проверяется
+
+| Механизм | Что ловит |
+|---|---|
+| ESLint `no-restricted-imports` (`@prisma/client`, `express`, `ioredis` вне разрешённых слоёв) | нарушение направления зависимостей |
+| ESLint `import/no-relative-parent-imports` + алиас `@/*` | относительные `../` |
+| `eslint-plugin-boundaries` (слои `domain/application/infrastructure/presentation`) | импорт наружу и циклы |
+| `test/architecture/layers.spec.ts` | импорт `infrastructure` из `application`/`domain`; адаптер, собранный не в composition root |
+| Vitest без окружения для `domain/**` (порог 95 % lines / 90 % branches, policy — 100 %) | I/O, просочившееся в домен: тест просто не запустится |
+| Контрактный тест OpenAPI ↔ роутер | контроллер без объявленной операции |
+| Агент `architect-review` при изменении структуры слоёв | размывание границ, «сервис на контекст» вместо use-case'ов |
+
+## Исключения
+
+- **`packages/shared`** импортируется всеми слоями — это общий словарь (типы, каталог permissions,
+  коды ошибок, чистый `can()`), в нём нет I/O.
+- **`infrastructure/bootstrap`** имеет право читать `process.env` — там живёт zod-схема env.
+- **Скрипты обслуживания** (`packages/server/scripts/**`) не обязаны соблюдать слои, но обязаны
+  соблюдать `rules/tenancy-rls.mdc` и не импортироваться из рантайм-кода.

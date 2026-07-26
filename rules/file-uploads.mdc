@@ -1,0 +1,112 @@
+---
+description: Uploading, downloading and attaching files. Permission check before issuing a presigned URL, short TTL, MIME whitelist, commit step.
+globs: packages/server/src/infrastructure/storage/**, packages/server/src/application/**/file*/**, packages/client/src/units/file/**, packages/client/src/shared/api/**
+alwaysApply: false
+---
+
+# Файлы и объектное хранилище
+
+Основание: `docs/architecture/overview.md` (ADR-0015, presigned URL), `docs/architecture/data-model.md`
+(`File`, `Attachment`).
+
+## Когда применяется
+
+Загрузка и скачивание файлов, аватары, вложения задач, комментариев, документов, сообщений, импорт
+и экспорт.
+
+## Правило
+
+1. **Тело файла не проходит через Node.** Загрузка — presigned `PUT` напрямую в S3/MinIO, скачивание —
+   presigned `GET`. Проксирование через API запрещено: оно занимает event loop и удваивает трафик.
+   Тело HTTP-запроса к API ограничено 1 MB.
+2. **Права проверяются ДО выдачи presigned URL.** Presigned URL — это предъявительский токен: кто
+   его получил, тот и скачал. Проверка после выдачи бессмысленна. Проверка идёт через тот же
+   `can(actor, key, ref)` в use-case, что и остальной доступ (см. `rules/permissions.mdc`).
+3. **TTL presigned URL ≤ 300 с** (для загрузки — до 900 с при явном обосновании крупного файла).
+   Долгоживущий URL эквивалентен публичной ссылке.
+4. **Публичного бакета нет.** Любое чтение — presigned `GET` после проверки ACL. Никаких
+   `public-read` объектов, никакого «аватары же не секретны».
+5. **Whitelist MIME и лимит размера обязательны и задаются на сервере** при выдаче presign
+   (`Content-Type` и `Content-Length` фиксируются в подписи). Клиентская проверка — только UX.
+6. **Двухфазная загрузка: `presign` → PUT в S3 → `commit`.** Шаг `commit` обязателен: сервер делает
+   `headObject`, сверяет фактический размер и `Content-Type` с заявленными, и только после этого
+   создаёт запись `File` со статусом `READY`. Без `commit` запись остаётся `PENDING` и убирается
+   джобом.
+7. **Имя объекта в бакете генерирует сервер** (`org/<orgId>/<yyyy>/<mm>/<uuid>`), пользовательское
+   имя хранится отдельным полем. Пользовательская строка не участвует в ключе объекта — иначе path
+   traversal и коллизии.
+8. **`organizationId` — часть ключа объекта и часть записи `File`.** Кросс-организационный доступ
+   невозможен ни через presign, ни через прямой ключ.
+9. **Проверка содержимого, а не только заголовка.** Для типов, где это важно (изображения,
+   импортируемые архивы), на `commit` проверяется сигнатура файла; несоответствие — отклонение.
+10. **Удаление — мягкое, физическое — джобом по TTL** с проверкой обратных ссылок
+    (`idx_attachments_file`): файл может висеть в нескольких местах, см. `rules/polymorphic-access.mdc`.
+11. **Вложения vault не проходят по этому пути** — тела шифруются на клиенте и хранятся как
+    шифротекст, см. `rules/e2ee-crypto.mdc`.
+12. **Каждая выдача presigned `GET` пишется в аудит** (`file.presigned_issued`: кто, что, зачем,
+    TTL) — см. `rules/observability.mdc`.
+
+## Примеры
+
+### ✅ Правильно
+
+```ts
+// application/file/use-cases/presign-download.use-case.ts
+const scope = await this.access.fileScope(input.fileId);
+if (scope === null) throw new NotFoundError('resource_not_found');   // 404, не 403
+assertAllowed(canDownloadFile(actor, scope));                        // ← до выдачи URL
+
+const url = await this.storage.presignGet(scope.objectKey, { expiresInSeconds: 300 });
+await this.audit.record({ action: 'file.presigned_issued', resourceType: 'FILE',
+  resourceId: scope.fileId, severity: 'low' });
+return { url, expiresAt };
+```
+
+```ts
+// commit: сверяем фактический объект с заявленным
+const head = await this.storage.headObject(objectKey);
+if (head.contentLength !== input.size || head.contentType !== input.mimeType) {
+  throw new ValidationError('file_commit_mismatch');
+}
+await this.files.markReady(fileId, head.contentLength, head.eTag);
+```
+
+### ❌ Неправильно
+
+```ts
+// URL выдан до проверки прав — токен уже у клиента
+const url = await storage.presignGet(key, { expiresInSeconds: 86_400 });   // ❌ сутки TTL
+if (!canDownload(actor, scope)) throw new ForbiddenError();                // ❌ поздно и 403
+
+// пользовательское имя в ключе объекта: path traversal и коллизии
+const key = `uploads/${file.originalName}`;                                // ❌
+
+// запись File создаётся без commit и без headObject — размер и тип заявлены клиентом
+await files.create({ id, size: input.size, mimeType: input.mimeType, status: 'READY' }); // ❌
+
+// проксирование тела через Node
+app.get('/files/:id', async (req, res) => (await s3.getObject(key)).Body!.pipe(res));    // ❌
+```
+
+## Как проверяется
+
+| Механизм | Что ловит |
+|---|---|
+| `test/integration/files/presign-authz.spec.ts` | выдачу URL без проверки прав; 403 вместо 404 на чужой файл |
+| `test/integration/files/ttl.spec.ts` | TTL > 300 с (900 с только с явным маркером в коде) |
+| `test/integration/files/commit-mismatch.spec.ts` | приём файла, чей фактический размер/тип не совпал с заявленным |
+| `test/integration/files/mime-whitelist.spec.ts` | загрузку типа вне whitelist и файла с подделанным `Content-Type` |
+| `test/integration/files/cross-tenant.spec.ts` | доступ к объекту чужой организации по прямому ключу |
+| ESLint `no-restricted-syntax` на `res.pipe(` / `getObject(...).Body` в `presentation/**` | проксирование тела через Node |
+| Тест `objectKey` (ключ строится только из `orgId`, даты и uuid) | пользовательскую строку в ключе |
+| Джоб-тест `orphan-files.spec.ts` | физическое удаление файла, на который ещё есть ссылки |
+| Агент `security-auditor` | небезопасные дефолты бакета (`public-read`, отсутствие шифрования at rest) |
+
+## Исключения
+
+- **Аватары и логотипы** используют тот же путь, но с более длинным кешированием на клиенте; они
+  по-прежнему не публичны и выдаются presigned `GET`.
+- **Крупные импорты и экспорты** могут получать TTL до 900 с — с явным обоснованием в коде и
+  записью в аудит; см. `rules/import-export.mdc`.
+- **Вложения vault** живут по правилам `rules/e2ee-crypto.mdc`: сервер видит только шифротекст,
+  MIME и имя тоже зашифрованы.

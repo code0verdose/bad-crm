@@ -1,0 +1,114 @@
+---
+description: Working with (entityType, entityId) pairs - comments, attachments, ACL entries, embeddings. Integrity and permissions for entities without a foreign key.
+globs: packages/server/src/**, packages/server/prisma/**
+alwaysApply: false
+---
+
+# Полиморфные связи и доступ к ним
+
+Основание: `docs/architecture/data-model.md`, раздел «Полиморфные связи».
+
+## Когда применяется
+
+Работа с `Comment`, `Attachment`, `ResourceAcl`, `Embedding` — всеми таблицами, где связь задана
+парой `(entityType, entityId)` без внешнего ключа. Добавление нового значения дискриминатора.
+
+## Правило
+
+1. **Полиморфия допустима только в четырёх местах:** `Comment`, `Attachment`, `ResourceAcl`,
+   `Embedding`. Новая полиморфная таблица заводится только через ADR с обоснованием, почему
+   exclusive arc (нуллабельные FK + `CHECK`) не подходит. При двух-трёх типах правильный выбор —
+   exclusive arc, а не полиморфия.
+2. **Дискриминатор — PostgreSQL enum (Prisma enum), а не свободная строка.** Значение вне списка
+   отклоняет база. Zod-схема на границе API повторяет тот же список из единого источника в коде.
+3. **Права наследуются от родителя, а не проверяются у самой записи.** Доступ к комментарию =
+   доступ к задаче/документу/заметке, к которой он привязан. Для этого используется
+   `resolveProjectId(resource, id)` из `*-access-reader.port.ts`, а не отдельная логика на каждый тип.
+4. **Родитель резолвится до проверки прав, и `null` даёт 404.** Комментарий к несуществующей или
+   невидимой сущности неотличим от несуществующего комментария.
+5. **`organizationId` обязателен и на самой полиморфной строке.** Он не выводится из родителя:
+   без FK база не гарантирует, что родитель существует и принадлежит той же организации. RLS
+   работает по собственной колонке — см. `rules/tenancy-rls.mdc`.
+6. **Каскад — в use-case, а не в БД.** Удаление родителя выполняет **один** доменный сервис, который
+   в той же транзакции удаляет или помечает удалёнными комментарии, вложения, ACL, эмбеддинги и
+   наблюдателей. Точка входа одна, поэтому забыть можно только в одном месте — и это место покрыто
+   тестом.
+7. **Новый тип дискриминатора требует пяти шагов в одном PR:** значение в enum БД (миграция),
+   значение в union в коде, ветка в `resolveProjectId`, каскад в доменном сервисе удаления, строки
+   в ночном integrity-джобе и в тестах. Пропуск любого — блокирующий дефект.
+8. **Обратные индексы обязательны.** `idx_attachments_file (file_id)` и аналоги позволяют ответить
+   «на что ещё ссылается этот объект» до удаления — иначе физическая зачистка удалит используемое.
+9. **Составной индекс начинается с `organization_id`**, дальше `(entity_type, entity_id)`. При
+   плохих оценках селективности — `CREATE STATISTICS` на пару колонок.
+10. **Ночной integrity-джоб выдаёт метрику и отчёт, а не удаляет сирот.** Сироты означают баг в
+    use-case; тихая уборка мусора скрыла бы его. Ненулевое значение поднимает алерт.
+11. **`ResourceAcl` — особый случай:** полиморфия там не компромисс, а суть механизма (он должен
+    работать для типов, которых ещё нет). Висящий ACL на удалённый объект безвреден и чистится по
+    расписанию.
+
+## Примеры
+
+### ✅ Правильно
+
+```ts
+// application/comment/use-cases/create-comment.use-case.ts
+const projectId = await this.access.resolveProjectId(input.entityType, input.entityId);
+if (projectId === null) throw new NotFoundError('resource_not_found');   // родитель невиден → 404
+
+const scope = await this.access.commentScope(projectId, input.entityType);
+assertAllowed(canCommentOn(actor, scope));                               // права от родителя
+
+await this.comments.save(Comment.create({
+  organizationId: actor.organizationId,     // собственная колонка, не из родителя по факту
+  entityType: input.entityType,
+  entityId: input.entityId,
+  authorId: actor.userId,
+  body: input.body,
+}));
+```
+
+```ts
+// один доменный сервис каскада на удаление родителя
+await this.cascade.deleteChildrenOf({ type: 'TASK', id: task.id }, tx);
+// внутри: comments, attachments, acl, embeddings, watchers — в той же транзакции
+```
+
+### ❌ Неправильно
+
+```ts
+// права проверены у самого комментария, а не у родителя:
+// комментарий к недоступной задаче остаётся читаемым
+if (comment.authorId !== actor.userId) throw new ForbiddenError();
+
+// свободная строка вместо enum: опечатка создаёт «тип», которого не существует
+await prisma.comment.create({ data: { entityType: 'Task', entityId: id } });   // 'TASK'?
+
+// каскад руками в очередном use-case — через месяц забудут про embeddings
+await tx.comment.deleteMany({ where: { entityType: 'TASK', entityId: id } });
+await tx.attachment.deleteMany({ where: { entityType: 'TASK', entityId: id } });
+
+// organizationId «выводится» из родителя и не хранится — RLS не защищает строку
+await prisma.attachment.create({ data: { entityType, entityId, fileId } });
+```
+
+## Как проверяется
+
+| Механизм | Что ловит |
+|---|---|
+| PostgreSQL enum на колонке дискриминатора | значение вне списка — отклоняется базой |
+| Тип-union в коде + `satisfies` | ветку `resolveProjectId`, забытую для нового типа — ошибка компиляции |
+| `test/integration/polymorphic/parent-authz.spec.ts` (по каждому типу) | доступ к дочерней записи при недоступном родителе (ожидается 404) |
+| `test/integration/polymorphic/cascade.spec.ts` (по каждому типу) | сироту после удаления родителя: comments, attachments, acl, embeddings, watchers |
+| `test/integration/rls/rls-isolation.test.ts` | полиморфную таблицу без собственного `organization_id` и политики |
+| Ночной integrity-джоб + метрика `polymorphic_orphans_total{table,type}` + алерт | сирот в проде |
+| `test/db/indexes.spec.ts` | отсутствие обратного индекса (`file_id`) и составного `(organization_id, entity_type, entity_id)` |
+| Агент `db-reviewer` при добавлении типа | пропуск одного из пяти шагов п. 7 |
+
+## Исключения
+
+- **`ResourceAcl`** не требует каскада при удалении объекта: висящий ACL безвреден и чистится
+  джобом по расписанию.
+- **`Embedding`** может пересчитываться асинхронно и отставать: рассинхрон в пределах лага очереди
+  допустим, но сирота после удаления родителя — нет.
+- **Новая полиморфная таблица** — только через ADR; отказ от неё в пользу exclusive arc при малой
+  кардинальности типов не считается усложнением.

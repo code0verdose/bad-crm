@@ -1,0 +1,164 @@
+---
+description: Any code touching the E2EE vault, secure links, master password, key material or the client crypto module. Zero tolerance rule.
+globs: packages/client/src/units/vault/**, packages/client/src/pages/vault/**, packages/client/src/pages/secure-link/**, packages/server/src/**/vault/**
+alwaysApply: false
+---
+
+# Крипто и E2EE-хранилище
+
+Основание: `docs/security/e2ee-design.md` (раздел «Правила для разработчиков»). **Нарушение любого
+пункта — блокирующий дефект, а не замечание.** Обещание продукта: сервер не может прочитать
+содержимое хранилища. Одна ошибка здесь обнуляет всё обещание целиком.
+
+## Когда применяется
+
+- Любое касание `units/vault/**`, страницы защищённой ссылки, формы мастер-пароля.
+- Серверный контекст `vault`: хранение шифротекста, membership, escrow, `VaultAccessLog`.
+- Любое место, куда потенциально может попасть расшифрованное значение: логи, телеметрия, поиск,
+  контекст AI, аналитика, уведомления, экспорт.
+
+## Правило
+
+### Что нельзя отправлять на сервер
+
+1. **На сервер уходит только шифротекст.** Мастер-пароль, `MUK`, `VaultKey`, `ItemKey`, приватные
+   ключи, расшифрованное имя или тело элемента не пересекают границу клиента ни в каком виде — ни в
+   теле запроса, ни в query, ни в заголовке, ни в теле ошибки, ни в отчёте о клиентской ошибке.
+2. **Vault не попадает в Meilisearch и в эмбеддинги никогда** — ни имена, ни метаданные, ни
+   blind-индексы. См. `rules/search-index.mdc`.
+3. **Vault не попадает в контекст AI-ассистента** ни как retrieval-документ, ни как вложение
+   промпта. См. `rules/ai-providers.mdc`.
+
+### Ключевой материал
+
+4. **Ключи живут только в памяти.** `localStorage`, `sessionStorage`, IndexedDB, cookie, кеш
+   service worker, `history.state`, URL — запрещены. Исключение ровно одно: фрагмент URL для
+   `ONE_TIME`-ссылки, где это и есть механизм.
+5. **Ключи не попадают в zustand, в кеш TanStack Query и в React state.** В кеше Query допустим
+   шифротекст и результат расшифровки **имени** для рендера списка; тело секрета в кеш не попадает
+   никогда — запрашивается по требованию и умирает вместе с карточкой.
+6. **Ключи и пароли — только `Uint8Array`, не `string`.** Строки неизменяемы и не затираются.
+7. **`memzero` в `finally`** для каждого промежуточного ключа. Отсутствие `finally` вокруг работы с
+   `ItemKey` — автоматический отказ на ревью.
+8. **Депонирование MUK запрещено — навсегда, а не «пока не реализовано».** Escrow работает
+   **исключительно на уровне ключа хранилища**: обёртка `VaultKey` на публичный ключ
+   `OrgRecoveryKey`, выраженная строкой `VaultMembership` с `subjectKind = ESCROW`, и только для
+   `Vault.kind = SHARED | PROJECT`. В `UserKeyPair` **не существует и не заводится** поле, из
+   которого организация может восстановить MUK пользователя (прежняя колонка `orgEscrowBlobEnc`
+   удалена 2026-07-26). Депонирование master key дало бы хранителям доступ ко **всем** хранилищам
+   человека, включая `PERSONAL`, — это прямое нарушение инварианта «админ не читает личные
+   хранилища». Единственный путь восстановления личного хранилища — `recoveryBlobEnc` самого
+   пользователя. Появление такой колонки в миграции, схеме или DTO — блокирующий дефект, даже если
+   она нуллабельна и никем не заполняется: пустой слот в схеме и есть приглашение его заполнить.
+
+### Примитивы
+
+9. **Nonce — только `randombytes_buf(24)` на каждую операцию.** Счётчики и детерминированные nonce
+   запрещены. Nonce не приходит в функцию извне параметром.
+10. **AEAD вызывается только с AAD.** Обёртки модуля требуют объект контекста; `undefined` не
+   проходит типизацию.
+11. **Никакой самодельной криптографии:** ни своего Base64 для ключей, ни своего сравнения за
+    константное время. Всё — из libsodium (`sodium.compare`, `sodium.to_base64` с
+    `URLSAFE_NO_PADDING`).
+12. **Крипто-модуль имеет ровно одну зависимость** — `libsodium-wrappers-sumo` — плюс WebCrypto из
+    глобального объекта. Ни сетевого слоя, ни логгера, ни утилит приложения внутри модуля.
+13. **Модуль грузится лениво отдельным чанком**, только после успешной аутентификации.
+
+### Утечки через побочные каналы
+
+14. **Ничего расшифрованного в логи.** Ни `console.log`, ни `pino`, ни `performance.mark` с именем
+    элемента. Логируются только идентификаторы и размеры в байтах.
+15. **Телеметрия на `/vault/**` и `/l/**` отключается целиком**, а не выборочно: ни breadcrumbs, ни
+    RUM, ни отчёты о клиентских ошибках с содержимым формы.
+16. **`dangerouslySetInnerHTML`, `eval`, `new Function`, `innerHTML` запрещены** в `units/vault/**`
+    и на странице защищённой ссылки. Только `textContent` и React-рендеринг.
+17. **Автозаполнение выключено** на полях мастер-пароля и секретов: `autocomplete="off"`,
+    `autocorrect="off"`, `autocapitalize="off"`, `spellcheck="false"`, `data-1p-ignore`,
+    `data-lpignore="true"`.
+18. **CSP ужесточена на `/vault/**` и `/l/**`**, Trusted Types с единственной политикой,
+    `Referrer-Policy: no-referrer`. CSP-отчёт с vault-маршрута — инцидент, а не шум.
+
+### Поведение UI
+
+19. **Оптимистичные обновления в vault запрещены.** Никакого `onMutate` со снапшотом: показать
+    состояние, которого сервер не подтвердил, для секрета значит показать неправду о том, кто имеет
+    доступ. Все мутации хранилища — пессимистичные (`onSuccess` → `invalidateQueries`).
+    Ср. `rules/tanstack-query.mdc`, где оптимистичность — дефолт для остального продукта.
+20. **Отзыв доступа — это ротация ключа, а не `DELETE` строки membership.** Удаление записи не
+    отбирает у бывшего участника уже скачанный `wrappedVaultKey`: ротируем `VaultKey`, перешифровываем
+    обёртки для оставшихся, повышаем `keyVersion`, пишем в `VaultAccessLog`. UI обязан честно
+    сообщать, что ранее скопированные значения считаются скомпрометированными.
+21. **Копирование секрета — только через `CopyToClipboard` в режиме `sensitive`** с авто-очисткой
+    через 30 с, стабильным `id` тоста и проверкой, что содержимое буфера всё ещё наше.
+
+## Примеры
+
+### ✅ Правильно
+
+```ts
+// units/vault/lib/crypto/item.crypto.ts
+export function encryptItem(itemKey: Uint8Array, plain: Uint8Array, aad: ItemAad): Sealed {
+  const nonce = sodium.randombytes_buf(sodium.crypto_aead_xchacha20poly1305_ietf_NPUBBYTES);
+  try {
+    const ct = sodium.crypto_aead_xchacha20poly1305_ietf_encrypt(
+      plain, encodeAad(aad), null, nonce, itemKey,
+    );
+    return { nonce, ct, algoVersion: ALGO_V1 };
+  } finally {
+    sodium.memzero(plain);
+  }
+}
+```
+
+```ts
+// отзыв доступа = ротация
+await rotateVaultKey({ vaultId, revokeMemberId, reason: 'access_revoked' });
+```
+
+### ❌ Неправильно
+
+```ts
+// nonce извне и без AAD — переиспользование nonce ломает XChaCha20 полностью
+export function encryptItem(key: Uint8Array, plain: string, nonce: Uint8Array) {
+  return sodium.crypto_aead_xchacha20poly1305_ietf_encrypt(plain, null, null, nonce, key);
+}
+
+// ключ переживает вкладку и достаётся любым XSS
+localStorage.setItem('vaultKey', sodium.to_base64(vaultKey));
+
+// расшифрованное значение в логе и в телеметрии
+logger.debug({ secret: decrypted }, 'item opened');
+
+// оптимистичный отзыв доступа: UI врёт о том, кто видит секрет
+useMutation({ mutationFn: revokeAccess, onMutate: runOptimisticRemove(QueryKeys.Vault.members(id)) });
+
+// отзыв через DELETE: у бывшего участника остаётся рабочий wrappedVaultKey
+await prisma.vaultMembership.delete({ where: { id } });
+```
+
+## Как проверяется
+
+| Механизм | Что ловит |
+|---|---|
+| Property-тесты `fast-check`: `decrypt(encrypt(x)) === x` для payload 0…1 MiB | несоответствие round-trip |
+| Негативные property-тесты: изменение любого байта `ct`/`nonce`/`aad`/ключа | частичный результат вместо исключения |
+| Тест неповторяемости nonce: 100 000 шифрований → 100 000 уникальных nonce | детерминированный или счётчиковый nonce |
+| Статический тест модуля: `nonce` не приходит параметром; импорты модуля == `libsodium-wrappers-sumo` | сетевой слой и лишние зависимости в чанке |
+| KAT-векторы для Argon2id, XChaCha20-Poly1305, HKDF, HMAC | молчаливую поломку совместимости при обновлении libsodium |
+| Негативные тесты: подмена `itemId` в AAD, `keyVersion`, перестановка `dataEnc`, `kdfParams` ниже порога, `algoVersion` из будущего | тихую деградацию вместо явной ошибки |
+| Тест инварианта: `Vault.kind = PERSONAL` не допускает escrow-membership (use-case + `CHECK` в БД) | обход модели на уровне данных |
+| Тест схемы: в `user_key_pairs` нет ни одной колонки, содержащей MUK, восстановимый силами организации (снапшот списка колонок + запрет по имени `*escrow*`) | возврат `orgEscrowBlobEnc` и любую попытку депонировать master key |
+| grep-чек CI по `units/vault/**`: `localStorage\|sessionStorage\|innerHTML\|dangerouslySetInnerHTML\|console\.` | запрещённые API в vault-коде |
+| Сборочный тест: `size-limit` с отдельной строкой для чанка `units/vault/lib/crypto` | рост крипто-чанка |
+| Агент **`e2ee-crypto-reviewer`** на каждое касание `units/vault/lib/crypto/**` и серверного контекста `vault` | всё перечисленное семантически; вердикт `PASS` обязателен для commit-гейта |
+
+## Исключения
+
+- **Фрагмент URL для `ONE_TIME`-ссылки** — единственное разрешённое место ключевого материала в
+  URL: он не отправляется на сервер по определению и в этом суть механизма.
+- **Расшифрованное имя элемента** допустимо в кеше Query для рендера списка. Тело — никогда.
+- **Размер `libsodium-wrappers-sumo`** (~375 KB min+gzip) — осознанное исключение из бюджета
+  ленивого чанка ≤ 150 KB, зафиксированное отдельной строкой `size-limit`. Заменять на
+  `@noble/*` + WebCrypto «заодно» нельзя: это меняет набор примитивов и требует переписывания
+  `e2ee-design.md`.
+- Ни одно из исключений не расширяется по аналогии. Новое исключение — только через ADR.

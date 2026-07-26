@@ -1,0 +1,137 @@
+---
+description: Every client data fetch and mutation. Query keys, cache defaults, optimistic vs pessimistic updates, cancellation.
+globs: packages/client/src/units/**/service/**, packages/client/src/shared/api/**, packages/client/src/shared/lib/enums/**
+alwaysApply: false
+---
+
+# Дата-слой клиента: TanStack Query v5
+
+Основание: `docs/architecture/ux-architecture.md`, `docs/architecture/stack.md` (раздел «Контракт API»).
+Списки и фильтры — `rules/lists-and-filters.mdc`; тосты — `rules/errors-and-toasts.mdc`.
+
+## Когда применяется
+
+Любой запрос или мутация на клиенте; всё, что живёт в `units/<unit>/service/**` и `shared/api/**`.
+
+## Правило
+
+1. **Единственный `QueryClient` с дефолтами `{ queries: { retry: 1, staleTime: 30_000 } }`.**
+   Отклонение от дефолта — только на конкретный запрос и с комментарием почему.
+2. **Query-keys — только из центральной типизированной фабрики** `shared/lib/enums/query-keys.ts`:
+   `QueryKeys.Tasks.list(params)`, `QueryKeys.Tasks.detail(id)`, `QueryKeys.Tasks.all`. Ad-hoc
+   массивы (`['tasks', id]`) запрещены — иначе инвалидация промахивается и это никак не ловится.
+3. **Ключ включает все параметры, влияющие на ответ**, включая фильтры из URL и `organizationId`
+   там, где кеш может пережить смену организации.
+4. **`signal` пробрасывается в каждый `queryFn`** и дальше в `openapi-fetch`. Смена ключа и размонтирование
+   отменяют предыдущий запрос. `AbortError` не показывается как ошибка.
+5. **Списки — `useQuery`/`useInfiniteQuery` с `placeholderData: keepPreviousData`.** Экран не мигает
+   при смене страницы или фильтра. Деталь — `useQuery` + `enabled: !!id`.
+6. **Оптимистичные мутации — для toggle, inline-edit, delete, drag&drop.** Порядок фиксирован:
+   `onMutate` → `runOptimisticPatch`/`runOptimisticRemove` (снапшот и `setQueriesData` **синхронно**,
+   `cancelQueries` — fire-and-forget), `onError` → `rollbackOptimistic`, `onSettled` →
+   `invalidateQueries`, `onSuccess` → уведомление там, где оно нужно.
+7. **Пессимистичные мутации — для create и тяжёлых записей:** только `onSuccess` →
+   `invalidateQueries` + уведомление. Показывать созданный объект до подтверждения сервером нельзя:
+   у него нет настоящего id.
+8. **Снапшот в `onMutate` берётся синхронно.** `await cancelQueries()` перед снятием снапшота —
+   классическая гонка: за время `await` успевает прилететь ответ и снапшот окажется уже испорченным.
+9. **Хелперы `shared/api/optimistic.ts` переиспользуются**, каждая мутация не пишет свой откат.
+10. **Локальный `onError` переопределяет глобальный, а не добавляется к нему** — см.
+    `rules/errors-and-toasts.mdc`, иначе на один сбой прилетают два тоста.
+11. **Мутации не вызываются из `pages`/`widgets`/`app`** — только через хук юнита; см.
+    `rules/frontend-fsd.mdc`.
+12. **Loader маршрута использует `queryClient.ensureQueryData(entityQueryOptions(...))`**, компонент
+    затем читает тем же ключом (`useSuspenseQuery`) — данные из кеша, без второго запроса.
+    `defaultPreload: 'intent'`, `defaultPreloadStaleTime: 0` (свежесть остаётся за Query).
+13. **`queryClient.clear()` при смене пользователя**, `router.invalidate()` при смене прав. Кеш
+    одного пользователя не должен пережить логаут.
+14. **Оптимистичные обновления запрещены в vault** — см. `rules/e2ee-crypto.mdc`, п. 18.
+15. **Мутации несут `Idempotency-Key`** — проставляет обёртка клиента, см. `rules/api-contract.mdc`.
+
+## Примеры
+
+### ✅ Правильно
+
+```ts
+// shared/lib/enums/query-keys.ts
+export const QueryKeys = {
+  Tasks: {
+    all: ['tasks'] as const,
+    list: (p: TaskListParams) => ['tasks', 'list', p] as const,
+    detail: (id: string) => ['tasks', 'detail', id] as const,
+  },
+} as const;
+```
+
+```ts
+// units/task/service/queries/tasks.query.ts
+export const tasksQueryOptions = (params: TaskListParams) =>
+  queryOptions({
+    queryKey: QueryKeys.Tasks.list(params),
+    queryFn: ({ signal }) => TaskApi.listTasks(params, { signal }),
+    placeholderData: keepPreviousData,
+  });
+```
+
+```ts
+// units/task/service/mutations/toggle-task-done.mutation.ts — оптимистичная
+export const useToggleTaskDone = () =>
+  useMutation({
+    mutationFn: TaskApi.toggleDone,
+    onMutate: (vars) => runOptimisticPatch(QueryKeys.Tasks.all, vars.id, { done: vars.done }),
+    onError: (_e, _v, ctx) => rollbackOptimistic(ctx),
+    onSettled: () => queryClient.invalidateQueries({ queryKey: QueryKeys.Tasks.all }),
+  });
+
+// units/task/service/mutations/create-task.mutation.ts — пессимистичная
+export const useCreateTask = () =>
+  useMutation({
+    mutationFn: TaskApi.createTask,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: QueryKeys.Tasks.all });
+      notify.success({ id: 'task-created', messageKey: 'tasks.created' });
+    },
+  });
+```
+
+### ❌ Неправильно
+
+```ts
+// ad-hoc ключ: инвалидация по QueryKeys.Tasks.all его не найдёт
+useQuery({ queryKey: ['task', id], queryFn: () => fetchTask(id) });
+
+// нет signal: гонка фильтров, поздний ответ перезаписывает свежий
+queryFn: () => TaskApi.listTasks(params);
+
+// await перед снапшотом — снапшот берётся уже испорченным
+onMutate: async (vars) => {
+  await queryClient.cancelQueries({ queryKey: QueryKeys.Tasks.all });   // ❌ await
+  const prev = queryClient.getQueryData(QueryKeys.Tasks.all);
+  …
+}
+
+// оптимистичный create: показываем объект с временным id, ссылки ведут в никуда
+onMutate: (draft) => runOptimisticPatch(QueryKeys.Tasks.all, 'tmp', draft);
+```
+
+## Как проверяется
+
+| Механизм | Что ловит |
+|---|---|
+| Кастомное ESLint-правило `bad-crm/no-adhoc-query-key` (литеральный массив в `queryKey`) | ключи мимо фабрики |
+| Кастомное ESLint-правило `bad-crm/require-signal-in-queryfn` | `queryFn` без проброса `signal` |
+| ESLint `no-restricted-imports` на `@tanstack/react-query` вне `units/*/service/**` и `shared/api/**` | запросы в pages/widgets |
+| `use-*.hook.test.ts` (Vitest + MSW): success + error на каждый хук | необработанные состояния |
+| `test/optimistic/rollback.spec.ts` — сервер отвечает 500 | отсутствие отката и «залипший» оптимистичный UI |
+| `test/optimistic/no-optimistic-in-vault.spec.ts` | `onMutate` в `units/vault/**` |
+| e2e: смена фильтра дважды подряд | гонку запросов при отсутствии `signal` |
+| Агент `frontend-developer` при ревью новых хуков | смешение оптимистичного и пессимистичного паттернов |
+
+## Исключения
+
+- **`retry: 0`** уместен на дорогих одноразовых операциях (экспорт, генерация AI) — с комментарием.
+- **`staleTime: Infinity`** уместен для справочников, меняющихся только по явному действию
+  администратора, при условии точечной инвалидации.
+- **Vault** — только пессимистичные мутации, см. `rules/e2ee-crypto.mdc`.
+- **Realtime-обновления** приходят не через рефетч, а через `setQueryData` из подписки; см.
+  `rules/realtime.mdc`.

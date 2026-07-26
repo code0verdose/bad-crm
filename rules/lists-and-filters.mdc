@@ -1,0 +1,123 @@
+---
+description: Any filterable, sortable or paginated screen. URL is the single source of truth for filter state.
+globs: packages/client/src/app/routes/**, packages/client/src/units/**/service/hooks/**, packages/client/src/pages/**
+alwaysApply: false
+---
+
+# Списки, фильтры и пагинация
+
+Основание: `docs/architecture/ux-architecture.md`, раздел «Списки и фильтры»; типы пагинации —
+`docs/architecture/stack.md`.
+
+## Когда применяется
+
+Любой экран со списком, таблицей, лентой или доской, у которого есть фильтр, сортировка, поиск или
+пагинация.
+
+## Правило
+
+1. **URL search-params — единственный источник правды состояния фильтров, сортировки и страницы.**
+   Локальный `useState` для этого запрещён: состояние обязано переживать перезагрузку, работать в
+   back/forward и уезжать ссылкой коллеге.
+2. **Схема search-параметров — Zod, подключение — `validateSearch: zodValidator(schema)`.** Парсинг,
+   приведение (`z.coerce`) и whitelist делает схема, а не руками написанный разбор строки.
+   Мусорное значение отбрасывается схемой.
+3. **Мульти-значения** — повторяющиеся ключи или список через запятую, всегда валидируемые против
+   допустимого множества (`z.enum`). Неизвестное значение молча отбрасывается, а не роняет экран.
+4. **Чтение — `Route.useSearch()`** (типизировано). Запись — `navigate({ search: prev => ({...}),
+   replace: true })`: фильтры не засоряют историю браузера.
+5. **Смена любого фильтра сбрасывает `page` в 1.** Иначе пользователь оказывается на пустой
+   седьмой странице результата из трёх строк.
+6. **Текстовый поиск — `useDebouncedValue(value, 300)` из `@mantine/hooks`.** В URL и в query-key
+   уходит уже debounced-значение; поле ввода при этом контролируемое и мгновенное, иначе курсор
+   «прыгает».
+7. **Логика фильтра живёт в хуке юнита** `units/<unit>/service/hooks/use-<entity>-filters.hook.ts`
+   (читает/пишет URL, debounce, отдаёт `{ filters, setFilter, resetFilters, queryParams }`) и
+   `use-<entity>-list.hook.ts` (композит фильтра и запроса). Страница только раскладывает
+   `<FilterBar>` + `<list>` + `<PaginationBar>`.
+8. **Запрос — с `placeholderData: keepPreviousData` и обязательным `signal`** (см.
+   `rules/tanstack-query.mdc`). Смена фильтра отменяет предыдущий запрос; `AbortError` не ошибка.
+9. **Тип пагинации выбирается по типу данных, а не по удобству:** ленты (activity, комментарии,
+   сообщения, уведомления, аудит) — **курсор**; таблицы (задачи, проекты, сотрудники, документы,
+   файлы, инвойсы) — **offset** с `total`; канбан — курсор + fractional-indexing.
+10. **Курсор всегда с tie-breaker по `id`.** Без него записи с одинаковым timestamp теряются на
+    границе страниц.
+11. **Активные фильтры видны чипами с крестиком + кнопка «Сбросить всё».** Пользователь всегда
+    видит, почему список короткий.
+12. **Пустой результат из-за фильтра и пустая сущность — разные `EmptyState`** с разными текстами и
+    разными действиями («Сбросить фильтры» против «Создать первую задачу»).
+13. **Права фильтруются в SQL, а не после выборки** — см. `rules/permissions.mdc`, п. 8.
+
+## Примеры
+
+### ✅ Правильно
+
+```ts
+// units/task/model/validation/task-filters.schema.ts
+export const taskFiltersSchema = z.object({
+  q:        z.string().trim().default(''),
+  status:   z.array(z.enum(TASK_STATUSES)).default([]),
+  assignee: z.string().uuid().optional(),
+  page:     z.coerce.number().int().min(1).default(1),
+  perPage:  z.coerce.number().int().min(10).max(100).default(50),
+  sort:     z.enum(['createdAt', '-createdAt', 'dueAt', '-dueAt']).default('-createdAt'),
+});
+export type TaskFilters = z.infer<typeof taskFiltersSchema>;
+```
+
+```ts
+// app/routes/_authenticated/tasks.tsx — тонкий route-файл
+export const Route = createFileRoute('/_authenticated/tasks')({
+  validateSearch: zodValidator(taskFiltersSchema),
+  component: TasksPage,
+});
+```
+
+```ts
+// units/task/service/hooks/use-task-filters.hook.ts
+export function useTaskFilters() {
+  const search = Route.useSearch();
+  const navigate = Route.useNavigate();
+  const [debouncedQ] = useDebouncedValue(search.q, 300);
+
+  const setFilter = <K extends keyof TaskFilters>(key: K, value: TaskFilters[K]) =>
+    navigate({ search: (prev) => ({ ...prev, [key]: value, page: 1 }), replace: true }); // page → 1
+
+  return { filters: search, setFilter, resetFilters: () => navigate({ search: {}, replace: true }),
+           queryParams: { ...search, q: debouncedQ } };
+}
+```
+
+### ❌ Неправильно
+
+```tsx
+// состояние в useState: не переживает reload, не шарится ссылкой, ломает back
+const [status, setStatus] = useState<string[]>([]);
+const [page, setPage] = useState(1);
+const { data } = useQuery({ queryKey: ['tasks', status, page], queryFn: () => fetchTasks() });
+
+// ручной разбор URL вместо схемы: мусор в параметре роняет экран
+const status = new URLSearchParams(location.search).get('status')!.split(',');
+
+// смена фильтра без сброса page — пустая страница 7
+setFilter('status', next);   // page остался прежним
+```
+
+## Как проверяется
+
+| Механизм | Что ловит |
+|---|---|
+| Тип `Route.useSearch()` (TanStack Router `Register`) | обращение к несуществующему параметру — ошибка компиляции |
+| `*-filters.schema.test.ts`: мусорный ввод, отсутствующие ключи, значения вне whitelist | падение вместо дефолта |
+| `use-*-filters.hook.test.ts`: смена фильтра → `page === 1`; ввод текста → один запрос вместо N | отсутствие сброса и debounce |
+| Кастомное ESLint-правило `bad-crm/no-usestate-for-search-params` (`useState` рядом с `useSearch`) | дублирование состояния фильтра |
+| e2e Playwright: применить фильтры → reload → back → forward | потерю состояния |
+| Контрактный тест пагинации (`rules/api-contract.mdc`) | offset для ленты, курсор без tie-breaker, `limit` без верхней границы |
+
+## Исключения
+
+- **Ширины колонок таблицы** хранятся в `localStorage`, а не в URL: это персональная настройка
+  отображения, а не состояние выборки.
+- **Открытость модалки** обычно не в URL; дровер с деталями объекта — всегда в URL (`?task=`).
+- **Чат и другие бесконечные ленты** не имеют номера страницы в URL; вместо этого — `?msg=` для
+  перехода к конкретному сообщению с загрузкой окна вокруг него.

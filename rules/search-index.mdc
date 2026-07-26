@@ -1,0 +1,122 @@
+---
+description: Indexing anything into Meilisearch or pgvector. Permissions live inside the document, sync only through the outbox, vault never gets indexed.
+globs: packages/server/src/infrastructure/search/**, packages/server/src/infrastructure/queue/handlers/**, packages/server/src/application/**/search/**
+alwaysApply: false
+---
+
+# Индексация и поиск
+
+Основание: `docs/architecture/overview.md` (ADR-0011, permission-aware search),
+`docs/security/threat-model.md` (T-PLAT-03, T-PROJ-01, T-CHAT-02).
+
+## Когда применяется
+
+Добавляешь сущность в поисковый индекс или в эмбеддинги, меняешь ACL индексируемой сущности,
+пишешь поисковый запрос или адаптер `SearchPort`.
+
+## Правило
+
+1. **Синхронизация индекса — только через transactional outbox.** Прямая запись в Meilisearch из
+   use-case запрещена: при откате транзакции документ останется в индексе и будет находиться для
+   людей, которые не должны его видеть. См. `rules/outbox.mdc`.
+2. **Права лежат в самом документе.** Каждый документ несёт `organizationId` и `visibleTo` — список
+   принципалов (`user:<id>`, `team:<id>`, `role:<id>`, `project:<id>`), которым он виден. Поисковый
+   запрос фильтруется по `visibleTo IN [принципалы текущего пользователя]`.
+3. **Второй барьер — tenant token с жёстко зашитым фильтром `organizationId`**, выпускаемый API.
+   Мастер-ключ живёт только на сервере. **Клиент никогда не ходит в Meilisearch напрямую.**
+   Порт Meilisearch не публикуется наружу.
+4. **Пост-фактум фильтрация результатов запрещена.** Нельзя запросить всё и отсеять недоступное в
+   JS: ломается релевантность, ломается пагинация (страница из 20 превращается в 3), и любая
+   забытая ветка становится утечкой.
+5. **Изменение ACL требует переиндексации.** Смена видимости проекта, состава участников канала,
+   членства в команде, `ResourceAcl` — событие в outbox, пересчитывающее `visibleTo` всех
+   затронутых документов. Без этого поиск продолжает отдавать документы бывшим участникам.
+6. **Vault, секреты и защищённые ссылки не индексируются никогда** — ни имена, ни метаданные, ни
+   blind-индексы, ни эмбеддинги. См. `rules/e2ee-crypto.mdc`.
+7. **Индексируемый документ не содержит секретов и лишних ПДн.** В индекс попадает то, что нужно
+   для поиска и превью; полные персональные данные и токены — нет.
+8. **`SearchPort` — единственный интерфейс.** Адаптеров два: `meilisearch.adapter.ts` и
+   `postgres-fts.adapter.ts` (`tsvector` + GIN + `pg_trgm`) для профиля `minimal`.
+   **Permission-фильтрация в обоих адаптерах одинаковая** — вторая реализация не имеет права быть
+   мягче.
+9. **Приватность вторичных путей.** Поиск, автодополнение исполнителей, счётчик непрочитанного,
+   лента активности, unfurl ссылок, дашборд обязаны использовать **ту же** функцию «видимые
+   пользователю ресурсы». Unfurl выполняется от имени получателя, а не автора ссылки.
+10. **Индекс не бэкапится и восстанавливается переигрыванием из БД.** Следствие: любая схема
+    документа обязана быть восстановима из `[T]`-таблиц, а переиндексация — идемпотентной
+    (upsert по стабильному id).
+11. **Эмбеддинги (`pgvector`) подчиняются тем же правилам:** очередь `embeddings`, `visibleTo` в
+    метаданных чанка, permission-aware retrieval, отсутствие vault. См. `rules/ai-providers.mdc`.
+
+## Примеры
+
+### ✅ Правильно
+
+```ts
+// infrastructure/search/documents/task.document.ts
+export const toSearchDocument = (task: TaskRow, acl: AclSnapshot): SearchDoc => ({
+  id: task.id,
+  organizationId: task.organizationId,
+  visibleTo: acl.principals,                 // ['project:p7', 'user:u1', 'team:t3']
+  title: task.title,
+  body: task.descriptionPlain,               // без вложений и без секретов
+  updatedAt: task.updatedAt,
+});
+```
+
+```ts
+// поиск: tenant token + фильтр по принципалам, всё на стороне движка
+const res = await meili.index('tasks').search(q, {
+  filter: [`organizationId = "${actor.organizationId}"`, orFilter('visibleTo', actor.principals)],
+  limit, offset,
+});
+```
+
+```ts
+// смена ACL → переиндексация затронутых документов
+await this.outbox.publish({ type: 'acl.changed', v: 1, organizationId,
+  payload: { resourceType: 'PROJECT', resourceId: projectId } });
+```
+
+### ❌ Неправильно
+
+```ts
+// прямая запись в индекс из use-case: при откате транзакции документ останется
+await this.tasks.save(task);
+await meili.index('tasks').addDocuments([toSearchDocument(task)]);   // ❌
+
+// пост-фильтрация: релевантность и пагинация сломаны, забытая ветка = утечка
+const hits = await meili.index('tasks').search(q, { limit: 500 });
+return hits.filter((h) => userCanSee(actor, h)).slice(0, 20);        // ❌
+
+// мастер-ключ на клиенте — полный дамп индекса всех организаций
+const client = new MeiliSearch({ host, apiKey: import.meta.env.VITE_MEILI_MASTER_KEY }); // ❌
+
+// vault в индексе
+await meili.index('vault').addDocuments([{ id, name: item.name }]);  // ❌ никогда
+```
+
+## Как проверяется
+
+| Механизм | Что ловит |
+|---|---|
+| ESLint `no-restricted-imports` на `meilisearch` вне `infrastructure/search/**` | прямые вызовы из use-case и с клиента |
+| Тест `test/security/bundle-secrets.spec.ts` (grep по сборке) | `MEILI_MASTER_KEY` в клиентском бандле |
+| `test/integration/search/cross-tenant.spec.ts` | документ чужой организации в выдаче |
+| `test/integration/search/visible-to.spec.ts` | документ, доступный не своим принципалам |
+| `test/integration/search/acl-reindex.spec.ts` (исключить участника → повторить поиск) | отсутствие переиндексации при смене ACL |
+| `test/integration/search/no-vault.spec.ts` | любую vault-сущность в индексе или в эмбеддингах |
+| `test/integration/search/parity.spec.ts` (одинаковый набор кейсов для Meilisearch и postgres-fts) | более мягкую фильтрацию во втором адаптере |
+| e2e `private-project-invisible-everywhere`, `private-channel-invisible-everywhere` | утечку через вторичные пути |
+| Preflight-проверка портов при старте | опубликованный наружу порт Meilisearch и дефолтный ключ |
+| Агент `security-auditor` при изменении схемы документа | появление секретов и лишних ПДн в индексе |
+
+## Исключения
+
+- **Профиль `minimal`** работает без Meilisearch: `SearchPort` резолвится в `postgres-fts`, очередь
+  `search-index` — no-op, в UI баннер «расширенный поиск недоступен». Это деградация функции, а не
+  ослабление правил доступа.
+- **Публичный контент** (справка, онбординг-материалы, помеченные `PUBLIC_ORG`) индексируется с
+  `visibleTo: ['org:<id>']` — это по-прежнему явный принципал, а не отсутствие фильтра.
+- **Переиндексация целиком** (`bad-crm search reindex`) выполняется под `bypassRls: true` с записью
+  в аудит — единственный легитимный обход, см. `rules/tenancy-rls.mdc`.

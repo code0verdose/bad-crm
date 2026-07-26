@@ -1,0 +1,105 @@
+Bad CRM
+------------------------------------------------------------
+Self-hosted, multi-tenant CRM and workspace for software teams.
+
+Copyright (C) 2026 Bad CRM contributors
+
+Source code: <REPOSITORY_URL>            (e.g. https://github.com/<ORG>/bad-crm)
+SPDX-License-Identifier: AGPL-3.0-or-later
+
+
+LICENSE
+-------
+
+This program is free software: you can redistribute it and/or modify it under
+the terms of the GNU Affero General Public License as published by the Free
+Software Foundation, either version 3 of the License, or (at your option) any
+later version.
+
+This program is distributed in the hope that it will be useful, but WITHOUT ANY
+WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
+PARTICULAR PURPOSE. See the GNU Affero General Public License for more details.
+
+You should have received a copy of the GNU Affero General Public License along
+with this program. If not, see <https://www.gnu.org/licenses/>.
+
+The complete license text is in the file `LICENSE` in the root of this
+repository.
+
+
+NETWORK USE — AGPL-3.0 SECTION 13
+---------------------------------
+
+If you modify this program and make it available to users over a network, AGPL
+section 13 requires you to offer those users access to the Corresponding Source
+of *your* modified version, under the same license.
+
+Bad CRM ships a user-visible "Source code" link (application footer and the
+"About" screen) that points at the repository and the exact build (version and
+commit SHA) being served. Operators of modified deployments must repoint that
+link at their own sources. Removing or falsifying the link does not remove the
+obligation.
+
+See `docs/legal/licensing.md` for the practical guide.
+
+
+THIRD-PARTY COMPONENTS
+----------------------
+
+This product includes third-party software. The list below covers the principal
+components; it is not exhaustive. Each package's own license text and copyright
+notices are distributed inside that package (typically `node_modules/<pkg>/LICENSE`)
+and are the authoritative source.
+
+  Component                          License                    Notes
+  ---------------------------------  -------------------------  ----------------------------------
+  React                              MIT                        UI runtime
+  Mantine (@mantine/*)               MIT                        UI kit
+  TanStack Query                     MIT                        Server-state / caching
+  TanStack Router                    MIT                        Routing, typed search params
+  TanStack Table                     MIT                        Data grids
+  Zod                                MIT                        Schema validation
+  dnd-kit (@dnd-kit/*)               MIT                        Drag and drop
+  CodeMirror 6 (@codemirror/*)       MIT                        Code editing
+  Sigma.js                           MIT                        Graph rendering
+  graphology                         MIT                        Graph data structures
+  Apache ECharts                     Apache-2.0                 Charts
+  BlockNote core                     MPL-2.0                    Rich-text editor core
+    (@blocknote/core, @blocknote/react)
+  BlockNote XL (@blocknote/xl-*)     GPL-3.0 OR commercial      Used under the GPL-3.0 branch only;
+                                                                each package must be recorded in
+                                                                docs/architecture/adr/0012-*.md
+  Schedule-X (@schedule-x/*)         MIT                        Calendar — open-source core only.
+                                                                Premium plugins are proprietary and
+                                                                MUST NOT be added to this project.
+  Express                            MIT                        HTTP server
+  Socket.IO                          MIT                        Realtime transport
+  Prisma (prisma, @prisma/client)    Apache-2.0                 ORM and migrations
+  Meilisearch (server + JS client)   MIT                        Search engine
+  AWS SDK for JavaScript v3          Apache-2.0                 S3-compatible object storage
+    (@aws-sdk/client-s3)                                        (MinIO in dev / self-host)
+  MinIO SDK                          Apache-2.0                 S3-compatible object storage
+  BullMQ                             MIT                        Background jobs
+  pino / pino-http                   MIT                        Structured logging
+  libsodium-wrappers-sumo            ISC                        Client-side cryptography (E2EE vault)
+  Playwright                         Apache-2.0                 End-to-end tests (dev dependency)
+  Vitest                             MIT                        Unit tests (dev dependency)
+
+Apache-2.0 components: this product includes software developed by their
+respective authors; see the `NOTICE` file shipped inside each such package for
+attributions required by Apache License 2.0 section 4(d).
+
+A machine-generated, exhaustive inventory of dependencies and their licenses is
+produced by the release pipeline and published with each release
+(see EPIC-046, `epics/epic-046-self-host-release-1-0/epic.md`).
+
+Trademarks: the names and logos of the third-party projects listed above belong
+to their respective owners and are used for identification only.
+
+
+TRADEMARKS
+----------
+
+The name "Bad CRM" and the Bad CRM logo are not licensed under AGPL-3.0. The
+license grants rights to the code, not to the project name or branding. See
+`docs/legal/licensing.md`, section 6.

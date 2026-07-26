@@ -1,0 +1,120 @@
+---
+description: Importing and exporting data - Markdown archives, CSV, backups, knowledge base bundles. Untrusted input, permission-scoped output, background jobs.
+globs: packages/server/src/**/import*/**, packages/server/src/**/export*/**, packages/server/src/infrastructure/queue/handlers/**, packages/client/src/units/**/ui/**
+alwaysApply: false
+---
+
+# Импорт и экспорт данных
+
+Основание: `docs/architecture/data-model.md`, `docs/security/threat-model.md`. Файловый транспорт —
+`rules/file-uploads.mdc`; формат контента — `rules/editor-content.mdc`.
+
+## Когда применяется
+
+Импорт Markdown-архива в базу знаний, импорт CSV сотрудников и задач, экспорт документов, отчётов,
+таймшитов, выгрузка данных организации.
+
+## Правило
+
+### Импорт
+
+1. **Импортируемый файл — недоверенный вход целиком.** Имена файлов, пути внутри архива, front
+   matter, ссылки, вложения — всё проходит валидацию и санитизацию.
+2. **Защита от zip-slip и zip-bomb обязательна:** нормализация пути и проверка, что он не выходит за
+   корень распаковки; лимиты на число записей, суммарный распакованный размер и коэффициент сжатия;
+   запрет символических ссылок.
+3. **Импорт выполняется фоновым job'ом, а не в HTTP-запросе.** Пользователь получает id задачи
+   импорта и следит за прогрессом; таймаут запроса не должен решать судьбу импорта.
+4. **Импорт идёт под тем же tenant-контекстом и с теми же правами**, что обычная запись: `withTenant`
+   + `can(actor, '<resource>:create')`. Импорт не является привилегированным путём и не обходит ACL.
+5. **Импорт идемпотентен по стабильному ключу** (внешний id, путь в архиве + хеш): повтор не плодит
+   дубликаты. Job может быть выполнен дважды — см. `rules/outbox.mdc`.
+6. **Импорт транзакционен по единице**, а не по всему архиву: одна заметка — одна транзакция,
+   ошибка на одной не откатывает уже импортированные. Итог — отчёт «импортировано N, пропущено M, с
+   ошибкой K» со списком причин.
+7. **Контент импортируется в канонический формат** (блочный JSON) через санитизацию, а не
+   складывается как сырой HTML.
+8. **Вложения из архива загружаются как обычные `File`** с проверкой MIME и размера, см.
+   `rules/file-uploads.mdc`.
+
+### Экспорт
+
+9. **Экспортируется только то, что актор имеет право видеть.** Фильтрация — тем же предикатом, что
+   и в списках (один SQL, а не пост-фильтрация), см. `rules/permissions.mdc`.
+10. **Экспорт — отдельное право (`*:export`) и помечается `dangerous`.** Возможность выгрузить всё
+    одним файлом не следует автоматически из права читать по одному.
+11. **Экспорт выполняется фоновым job'ом**, результат кладётся в S3 и выдаётся presigned `GET` с
+    TTL ≤ 900 с и записью в аудит. Ссылка одноразовая по смыслу: истечение — не баг.
+12. **Vault, секреты и `apiKeyEnc` в экспорт не попадают никогда.** Экспорт хранилища секретов
+    возможен только как шифротекст, инициируется с клиента и расшифровывается там же — см.
+    `rules/e2ee-crypto.mdc`.
+13. **Каждый экспорт пишется в `AuditLog`** (`severity: high`): кто, что, сколько строк, каким
+    фильтром.
+14. **CSV генерируется с защитой от формульной инъекции:** ячейка, начинающаяся с `=`, `+`, `-`,
+    `@`, `\t`, `\r`, экранируется. Иначе выгрузка становится вектором атаки на того, кто её откроет.
+15. **Кодировка и разделители фиксированы и документированы** (UTF-8 с BOM для CSV, ISO 8601 в UTC
+    для дат — см. `rules/i18n.mdc`). Локаль влияет на отображение в UI, но не на формат файла обмена.
+
+## Примеры
+
+### ✅ Правильно
+
+```ts
+// защита от zip-slip: путь нормализуется и проверяется на выход за корень
+const target = path.resolve(root, entry.fileName);
+if (!target.startsWith(root + path.sep)) throw new ValidationError('import_unsafe_path');
+if (entry.uncompressedSize > MAX_ENTRY_BYTES) throw new ValidationError('import_entry_too_large');
+```
+
+```ts
+// экспорт: право проверено, фильтр тот же, что в списке, результат — в аудит
+assertAllowed(canExportTasks(actor, scope));
+const rows = await this.taskQuery.listForExport(actor, filters);   // фильтрация в SQL
+await this.audit.record({ action: 'task.exported', resourceType: 'PROJECT',
+  resourceId: filters.projectId, severity: 'high', after: { rows: rows.length } });
+```
+
+```ts
+// защита CSV от формульной инъекции
+const escapeCsv = (v: string) => (/^[=+\-@\t\r]/.test(v) ? `'${v}` : v);
+```
+
+### ❌ Неправильно
+
+```ts
+// распаковка без нормализации пути: ../../ перезаписывает файлы вне корня
+await extract(zip, { dir: root });
+
+// импорт в HTTP-запросе: таймаут посреди архива оставляет половину данных
+app.post('/kb/import', async (req, res) => { await importArchive(req.file); res.end(); });
+
+// экспорт всего без проверки права и с пост-фильтрацией
+const all = await prisma.task.findMany();
+return all.filter((t) => canRead(actor, t));
+
+// сырой HTML из архива в базу — XSS для всех, кто откроет заметку
+await kb.save({ body: entry.rawHtml });
+```
+
+## Как проверяется
+
+| Механизм | Что ловит |
+|---|---|
+| `test/security/zip-slip.spec.ts` (архив с `../../etc/x`, symlink, bomb) | выход за корень, символические ссылки, превышение лимитов |
+| `test/integration/import/idempotency.spec.ts` (повторный прогон job'а) | дубликаты при ретрае |
+| `test/integration/import/partial-failure.spec.ts` | откат уже импортированных единиц из-за одной ошибки |
+| `test/integration/import/tenant-context.spec.ts` | импорт мимо `withTenant` и мимо проверки прав |
+| `test/integration/export/authz.spec.ts` | экспорт данных, недоступных актору; отсутствие права `*:export` |
+| `test/security/csv-injection.spec.ts` | неэкранированную ячейку с `=`/`+`/`-`/`@` |
+| `test/integration/export/no-secrets.spec.ts` | `apiKeyEnc`, vault-данные и токены в выгрузке |
+| `test/integration/export/audit.spec.ts` | экспорт без записи в `AuditLog` |
+| `test/security/sanitize.spec.ts` (общий XSS-корпус) | сырой HTML из импорта |
+
+## Исключения
+
+- **`bad-crm db backup` / `db restore`** — операционные команды администратора инсталляции, они
+  работают под ролью `app_migrator` вне модели прав; их использование логируется в журнале devops,
+  а не в `AuditLog` организации. См. `rules/self-host-packaging.mdc`.
+- **`db:seed`** — часть тестовой и демо-инфраструктуры, на неё правила импорта не распространяются.
+- **Экспорт vault** инициируется и выполняется на клиенте: сервер отдаёт только шифротекст и не
+  участвует в формировании читаемого файла.

@@ -1,0 +1,127 @@
+---
+description: How code gets written (red-green-refactor) and the six checks that must pass before any commit or push.
+globs: **
+alwaysApply: true
+---
+
+# TDD и commit-гейт
+
+Что именно тестировать — `rules/testing.mdc`. Проверки перед push — `rules/ci-before-push.mdc`.
+Чистота диффа — `rules/commit-hygiene.mdc`.
+
+## Когда применяется
+
+Всегда: любая фича, любой багфикс, любой коммит и push.
+
+## Правило
+
+### A. Red → Green → Refactor
+
+1. **Тест предшествует реализации.** Сначала падающий тест на требуемое поведение (и показано, что
+   он падает), потом минимальный код, чтобы он прошёл, потом рефакторинг при зелёных тестах.
+2. **TDD строго обязателен** для доменных value-objects, use-case'ов, policy и чистых функций
+   (мапперы, расчётчики, форматтеры, схемы).
+3. **Багфикс начинается с теста, воспроизводящего баг.** Без него PR не принимается.
+4. **Покрывается не только happy path:** ошибки, границы, пустые и невалидные входы,
+   конкурентность, просроченные права, удалённые ресурсы.
+5. Для UI-компонентов и тривиальных репозиториев TDD не обязателен, но **тесты в том же коммите**.
+   Отдельных PR «добавим тесты позже» не существует.
+
+### B. Шесть проверок гейта
+
+**`git commit` и `git push` не выполняются, пока все шесть не дали PASS** — даже если попросили
+закоммитить. Сначала гейт, потом коммит. Независимые проверки запускаются параллельно.
+
+| # | Проверка | Агент/инструмент | Критерий PASS |
+|---|---|---|---|
+| 1 | Тесты и покрытие | `test-coverage` | весь набор зелёный; изменённые строки и ветки покрыты; нет тестов-пустышек; пороги из `rules/testing.mdc` соблюдены |
+| 2 | Безопасность | `security-auditor` (+ `secret-scanner` при подозрении) | нет находок High/Critical, нет секретов в диффе |
+| 3 | База данных | `db-reviewer` — если дельта трогает схему, миграции, запросы, модели | нет риска потери данных, нет блокирующих миграций без плана, совместимо с rolling deploy |
+| 4 | Продакшен-готовность | `production-readiness` | error handling, логи и метрики, конфиг и секреты, перформанс, обратная совместимость, план отката |
+| 5 | Чистота коммита | `scan-cruft.sh --staged` + агент `commit-hygiene` | нет BLOCK-мусора; нет fallback-ов, mock-данных, временных скриптов, лишней доки |
+| 6 | База знаний обновлена | вручную | создана запись `docs/brain/YYYY-MM-DD--<slug>.md` и обновлён `~/ObsidianBrain/` (Projects + затронутые Technologies/Concepts) |
+
+**Профильные проверки добавляются по типу дельты:** `permission-matrix-auditor` (каталог прав,
+роли, `ROUTE_REGISTRY`, policy, снапшот), `tenancy-rls-auditor` (новая таблица, политика,
+`withTenant`), `e2ee-crypto-reviewer` (`units/vault/lib/crypto/**` и серверный контекст vault) —
+вердикт PASS обязателен, см. соответствующие правила.
+
+6. **FAIL или BLOCKED от любой проверки — коммит откладывается.** Показать находки, починить
+   (по TDD — сперва тест), перезапустить только затронутые проверки.
+7. **Пропуск проверки возможен только с явным согласием человека** и фиксируется в описании PR
+   строкой «skipped: <проверка> — <причина>».
+
+### C. После зелёного гейта
+
+8. **Атомарный коммит: одно логическое изменение.** Если на дефолтной ветке — сперва создать ветку.
+9. **Conventional Commits, на английском:**
+   ```
+   <type>(<scope>): <subject>
+
+   <body>
+
+   <footer>
+   ```
+   `type`: `feat` | `fix` | `docs` | `style` | `refactor` | `perf` | `test` | `build` | `ci` |
+   `chore` | `revert`. `subject` — imperative, lowercase, без точки, ≤ 50 символов. `body` — что и
+   **зачем** (не «как»), wrap ~72. `footer` — `BREAKING CHANGE:`, `Refs: #123`, `Closes #123`;
+   ломающее также помечается `feat!:`/`fix!:`.
+10. **Без AI-атрибуции.** Ни `Co-Authored-By: Claude`, ни `🤖 Generated with…`, ни упоминания
+    Claude/AI — ни в сообщении коммита, ни в описании PR.
+11. **Push — только по явной просьбе** и только после `pnpm turbo run typecheck lint build test`
+    (см. `rules/ci-before-push.mdc`).
+12. **История `epics/` обновляется:** статус истории в `review`/`done` переводится только на зелёном
+    гейте, см. `rules/epic-driven-development.mdc`.
+
+## Примеры
+
+### ✅ Правильно
+
+```
+feat(tasks): add fractional index for board ordering
+
+Moving a card now sends only the moved card and its new fractional
+position, so concurrent moves no longer reindex neighbours.
+
+Refs: STORY-019-04
+```
+
+```
+fix(rls): add WITH CHECK to task_watchers tenant policy
+
+Without WITH CHECK a row could be inserted with a foreign
+organization_id. Isolation test extended with a negative case.
+```
+
+### ❌ Неправильно
+
+```
+Fixed stuff.                                   # не Conventional Commits, не императив
+
+feat: added tasks and fixed chat and updated deps and refactored auth
+                                               # не атомарно, прошедшее время, точка
+
+feat(ai): add assistant
+
+🤖 Generated with Claude Code
+Co-Authored-By: Claude <noreply@anthropic.com>  # AI-атрибуция запрещена
+```
+
+## Как проверяется
+
+| Механизм | Что ловит |
+|---|---|
+| Скилл `/gate` | прогон всех шести проверок параллельно со сводкой вердиктов |
+| Hook `~/.claude/hooks/git-guard.sh` (PreToolUse) | секреты и BLOCK-мусор в staged при попытке коммита — жёсткий блок |
+| `~/.claude/git-hooks/pre-commit` | то же на уровне git для любого клиента |
+| `commitlint` с `@commitlint/config-conventional` в CI | нарушение формата сообщения |
+| CI-шаг `grep -iE 'co-authored-by: claude|generated with' ` по сообщениям коммитов PR | AI-атрибуцию |
+| `vitest --coverage` + пороги | падение покрытия |
+| Агенты `test-coverage`, `security-auditor`, `db-reviewer`, `production-readiness`, `commit-hygiene` | содержательные дефекты, которых не видит регулярка |
+
+## Исключения
+
+- **Ревёрт** (`revert:`) и `chore(release):` не обязаны нести новые тесты.
+- **Изменение только документации** (`docs:`) пропускает проверки 1 и 3, но проходит 5 и 6.
+- **Пропуск проверки** без явного согласия человека не бывает; `--no-verify` — только для локального
+  ремонта сломанного hook'а, никогда для обхода гейта.

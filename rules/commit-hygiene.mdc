@@ -1,0 +1,87 @@
+---
+description: What must never enter git. Fallbacks, mock data, hardcoded endpoints, debug statements, throwaway scripts, redundant docs.
+globs: **
+alwaysApply: true
+---
+
+# Чистота коммита
+
+Часть commit-гейта (проверка №5, см. `rules/tdd-and-commit-gate.mdc`).
+
+## Когда применяется
+
+Перед каждым коммитом, на staged-дифф целиком — не только на «основные» файлы.
+
+## Правило
+
+1. **Никаких временных fallback-ов и заглушек.** `|| default` «чтобы пока работало», hardcoded-обходы,
+   mock-реализации портов в продакшен-коде, закомментированный старый код. Осознанный fallback
+   допустим, но обязан быть задокументирован комментарием с причиной и условием снятия.
+2. **Никаких тестовых и фейковых данных в продакшен-коде:** dummy/sample-данные, фикстуры,
+   `foobar`, `example.com`, `John Doe`, seed-хардкод. Их место — тестовая инфраструктура и `db:seed`.
+3. **Никаких тестовых и отладочных эндпоинтов:** `http://localhost`, `127.0.0.1`, `*.ngrok.*`,
+   `:3000`/`:8080`, staging- и debug-URL, `sk_test_`, `test_api_key`. Всё — через конфиг и env
+   (см. `rules/security.mdc`).
+4. **Никакой отладки:** `debugger`, `console.log/debug/trace`, `print()`, focused-тесты
+   (`describe.only`, `it.only`, `fit`), маркеры конфликтов (`<<<<<<<`).
+5. **Никаких временных скриптов:** одноразовые `scratch/`, `tmp/`, `test-*.sh`, `*.bak`,
+   `<name> copy.ts`. Их место — scratchpad, а не репозиторий.
+6. **Никакой лишней документации:** черновики, авто-README «на всякий случай», дубли доков внутри
+   репозитория. Знания идут в базу знаний (`docs/brain/`, `~/ObsidianBrain/`), решения — в
+   `docs/architecture/adr/`, а не мусором в git.
+7. **`TODO`/`FIXME`/`HACK` — либо решить, либо завести историю в `epics/` и сослаться на её id.**
+   Пачка TODO в коммите — нарушение.
+8. **Ничего сгенерированного вручную и не воспроизводимого.** Файлы, которые генерируются
+   (`api-schema.d.ts`, `routeTree.gen.ts`), коммитятся, но правятся только генератором.
+9. **Дифф соответствует заявленному изменению.** Попутный рефакторинг соседнего модуля, смена
+   форматирования по всему файлу, апгрейд зависимости «заодно» — отдельными коммитами.
+10. **Секреты — по правилу `rules/security.mdc`**, здесь без исключений: даже маска или пример
+    ключа в комментарии не нужны.
+
+## Примеры
+
+### ✅ Правильно
+
+```ts
+// Осознанный fallback: Meilisearch опционален в профиле minimal (см. docs/architecture/stack.md).
+// Снимается, когда профиль minimal перестанет поддерживаться.
+const search: SearchPort = env.MEILI_HOST ? meiliAdapter(env) : postgresFtsAdapter(prisma);
+```
+
+```ts
+// адрес берётся из провалидированного env, а не из кода
+const s3 = new S3Client({ endpoint: env.S3_ENDPOINT, forcePathStyle: env.S3_FORCE_PATH_STYLE });
+```
+
+### ❌ Неправильно
+
+```ts
+// отладка, тестовый адрес, фейковые данные и «пока пусть будет так» в одном файле
+console.log('payload', payload);                                  // ❌
+const API = process.env.API_URL || 'http://localhost:3000';        // ❌ хардкод-фолбэк
+const DEMO_USER = { name: 'John Doe', email: 'john@example.com' }; // ❌ фейковые данные в проде
+// TODO: переделать нормально                                      // ❌ без ссылки на историю
+// const oldImpl = () => { ... }                                   // ❌ закомментированный код
+it.only('создаёт задачу', …);                                     // ❌ focused-тест
+```
+
+## Как проверяется
+
+| Механизм | Что ловит |
+|---|---|
+| `~/.claude/security/scan-cruft.sh --staged` | tier **BLOCK**: `debugger`, focused-тесты, маркеры конфликтов — жёсткий блок; tier **WARN**: TODO, debug-print, localhost, mock |
+| Hook `~/.claude/hooks/git-guard.sh` (PreToolUse на `git commit`/`push`) | тот же набор на моих коммитах |
+| `~/.claude/git-hooks/pre-commit` | то же на уровне git для любого клиента |
+| ESLint `no-console` (error, allow: `warn`/`error` в `infrastructure/logging`), `no-debugger` | отладочные вызовы |
+| ESLint `vitest/no-focused-tests` | `it.only`/`describe.only` |
+| ESLint `no-restricted-syntax` на строковые литералы `localhost`/`127.0.0.1`/`ngrok` вне тестов и `.env.example` | хардкод-эндпоинты |
+| Агент `commit-hygiene` | семантику, которую не ловит регулярка: fallback-и, mock-реализации, лишние скрипты и доки |
+| CI-шаг `git diff --stat` против описания PR | дифф, не соответствующий заявленному изменению |
+
+## Исключения
+
+- **Тестовая инфраструктура** (`packages/e2e`, `test/**`, `db:seed`, MSW-моки, фикстуры) — место,
+  где фейковые данные и `localhost` уместны по определению.
+- **`.env.example`, `docker-compose.yml`, runbook'и** содержат `localhost` и плейсхолдеры осознанно.
+- **WARN-находки** можно принять — но только с явным решением человека, зафиксированным в описании
+  PR. BLOCK-находки не принимаются никогда.

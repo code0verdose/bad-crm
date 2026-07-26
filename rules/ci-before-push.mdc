@@ -1,0 +1,90 @@
+---
+description: The full check set that must be green locally before any git push. Never push on a red or unrun pipeline.
+globs: **
+alwaysApply: true
+---
+
+# CI перед push
+
+Дополняет `rules/tdd-and-commit-gate.mdc`: гейт решает, можно ли **коммитить**; этот файл — можно ли
+**пушить**.
+
+## Когда применяется
+
+Перед каждым `git push`, включая push в ветку с открытым PR и force-push после rebase.
+
+## Правило
+
+1. **Одна команда, полный набор, из корня репозитория:**
+   ```bash
+   pnpm turbo run typecheck lint build test
+   ```
+   Push выполняется только при её нулевом коде возврата. Turbo кеширует — на неизменённых пакетах
+   это секунды, а не оправдание для пропуска.
+2. **Дополнительно, если дельта того требует:**
+
+   | Дельта затрагивает | Команда |
+   |---|---|
+   | `docs/api/openapi.yaml` | `pnpm api:lint && pnpm api:gen && git diff --exit-code` |
+   | `schema.prisma`, миграции, репозитории | `pnpm test:integration` (Testcontainers) |
+   | RLS-политики, новую таблицу | `pnpm check:rls` |
+   | клиентские экраны и потоки | `pnpm test:e2e` (или явное обоснование, почему не гонялся) |
+   | ключи i18n | `pnpm i18n:check` |
+   | `package.json`, lockfile | `pnpm install --frozen-lockfile && pnpm audit` |
+
+3. **`pnpm install --frozen-lockfile` обязателен после смены зависимостей.** Разъехавшийся lockfile
+   ломает CI у всех.
+4. **Красный или неизвестный результат = не пушим.** «У меня локально не воспроизводится»,
+   «это флейк», «CI починит» — не основания. Флейк либо чинится, либо помечается и заводится
+   отдельной задачей.
+5. **Warnings в lint не игнорируются.** ESLint в CI работает с `--max-warnings 0`.
+6. **Push — только по явной просьбе человека.** Автоматического push не бывает.
+7. **Force-push только в свою ветку** и только после того, как набор снова зелёный на
+   переписанной истории.
+8. **Если проверка пропущена осознанно** — это фиксируется строкой в описании PR
+   («skipped e2e: не затронуты клиентские потоки»), а не молчанием.
+
+## Примеры
+
+### ✅ Правильно
+
+```bash
+# полный набор + профильные проверки под конкретную дельту
+pnpm turbo run typecheck lint build test
+pnpm check:rls
+pnpm test:integration
+git push origin feat/task-fractional-index
+```
+
+### ❌ Неправильно
+
+```bash
+# push без прогона: сломанный typecheck доедет до всех
+git commit -m "feat(tasks): add ordering" && git push
+
+# точечный прогон вместо полного набора: сломан другой пакет монорепо
+pnpm --filter @bad-crm/client test && git push
+
+# обход проверок
+git push --no-verify
+```
+
+## Как проверяется
+
+| Механизм | Что ловит |
+|---|---|
+| `pnpm turbo run typecheck lint build test` локально | всё перечисленное до push |
+| GitHub Actions `ci.yml` (тот же набор + `test:integration` + `test:e2e`) | расхождение локального и чистого окружения |
+| CI-шаг `pnpm install --frozen-lockfile` | разъехавшийся lockfile |
+| CI-шаг `pnpm api:gen && git diff --exit-code` | забытую регенерацию типов API |
+| ESLint `--max-warnings 0` в CI | накопление предупреждений |
+| Hook `~/.claude/hooks/git-guard.sh` | секреты и cruft при попытке push |
+| Правило ветки: PR не мержится с красным CI | попадание красного в основную ветку |
+
+## Исключения
+
+- **Ветка с черновиком (`draft` PR)** может пушиться с красными e2e, если это явно указано в
+  описании PR и ветка не претендует на merge.
+- **Hotfix при инциденте** может пропустить `test:e2e`, но не `typecheck lint build test` и не
+  проверки безопасности; пропуск фиксируется в PR и в журнале devops.
+- **Изменения только в `docs/`, `epics/`, `rules/`** ограничиваются `lint` и проверкой ссылок.

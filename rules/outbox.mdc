@@ -1,0 +1,111 @@
+---
+description: Publishing domain events, sending mail, indexing, notifications, rollups or any side effect that must not run inside a transaction.
+globs: packages/server/src/application/**, packages/server/src/infrastructure/queue/**, packages/server/src/infrastructure/persistence/**
+alwaysApply: false
+---
+
+# Transactional outbox и фоновые задачи
+
+Основание: `docs/architecture/stack.md`, раздел «Фоновые задачи и outbox».
+
+## Когда применяется
+
+Любой побочный эффект за пределами БД: письмо, индексация, эмбеддинг, realtime-broadcast,
+уведомление, пересчёт rollup, вызов внешнего API, вебхук.
+
+## Правило
+
+1. **Событие пишется в `outbox_event` в той же транзакции, что и изменение данных.** Публикация в
+   очередь напрямую из use-case запрещена: при откате транзакции job уже в Redis и обрабатывает
+   несуществующие данные.
+2. **Ни одного внешнего вызова внутри транзакции.** S3, SMTP, AI, GitHub, Meilisearch — только из
+   handler'а очереди. Медленный HTTP внутри транзакции держит соединение и блокировки.
+3. **Диспетчер забирает события `SELECT … FOR UPDATE SKIP LOCKED`** — это позволяет запускать
+   несколько реплик без дублей.
+4. **Каждый job несёт `organizationId` в payload.** Обёртка `runJob` открывает `withTenant` до вызова
+   handler'а и прокидывает `requestId`/`causationId` в логи. Handler, обратившийся к БД мимо обёртки,
+   падает на `guardedClient`.
+5. **Handler обязан быть идемпотентным.** BullMQ даёт at-least-once. Либо `jobId` — детерминированный
+   ключ события (`outbox:<eventId>`), либо операция выполняется как upsert по естественному ключу.
+   Handler, который нельзя выполнить дважды, — баг.
+6. **Ошибки делятся явно.** `RetryableError` (сеть, 5xx, 429) уходит в экспоненциальный backoff с
+   jitter ±20 %; `PermanentError` (валидация, 4xx, удалённая сущность) идёт в DLQ сразу, без
+   ретраев. `catch (e) { throw e }` без классификации — дефект.
+7. **Исчерпавший попытки job дублируется записью в `dead_letter`** (payload, ошибка, стектрейс,
+   `organizationId`) и виден администратору инсталляции с возможностью переотправки.
+8. **`outbox_lag_seconds` — обязательная метрика** для любой новой очереди; см. `rules/observability.mdc`.
+9. **Новая очередь регистрируется в одном месте** (`infrastructure/queue/queues.ts`) вместе с
+   политикой ретраев, лимитом конкурентности и правилом деградации при выключенном сервисе
+   (`no-op`, а не падение).
+10. **Событие — факт в прошедшем времени** (`task.column_moved`, а не `move_task`), с версией схемы
+    payload. Payload содержит идентификаторы и минимум данных; handler дочитывает остальное сам.
+11. **Порядок не гарантируется.** Handler не полагается на очерёдность событий; если порядок важен —
+    используется версия агрегата в payload и проверка «событие устарело → пропустить».
+
+## Примеры
+
+### ✅ Правильно
+
+```ts
+// внутри одной транзакции use-case'а
+await this.tasks.save(task);
+await this.outbox.publish({
+  type: 'task.column_moved', v: 1,
+  organizationId: task.organizationId,
+  payload: { taskId: task.id, boardId: task.boardId, version: task.version },
+});
+```
+
+```ts
+// infrastructure/queue/handlers/search-index.handler.ts
+export const handleTaskChanged = defineHandler({
+  jobId: (e) => `outbox:${e.id}`,            // дедуп на уровне очереди
+  async run(event, { tx }) {                 // tx уже внутри withTenant
+    const doc = await buildSearchDocument(tx, event.payload.taskId);
+    if (!doc) return;                        // сущность удалена — не ошибка
+    await search.upsert(doc);                // upsert, не insert
+  },
+});
+```
+
+### ❌ Неправильно
+
+```ts
+// публикация мимо outbox: при откате транзакции job уже в очереди
+await this.uow.withTransaction(async () => {
+  await this.tasks.save(task);
+  await queue.add('search-index', { taskId: task.id });   // ❌
+});
+
+// внешний вызов внутри транзакции: держит соединение и блокировки
+await this.uow.withTransaction(async () => {
+  await this.invoices.save(invoice);
+  await mailer.send(invoice.customerEmail, renderInvoice(invoice));   // ❌
+});
+
+// handler без tenant-контекста и без идемпотентности
+export async function handle(job: Job) {
+  await prisma.searchDoc.create({ data: job.data });   // ❌ дубли при ретрае, мимо withTenant
+}
+```
+
+## Как проверяется
+
+| Механизм | Что ловит |
+|---|---|
+| ESLint `no-restricted-syntax` на `queue.add(` вне `infrastructure/queue/**` | публикацию в очередь из use-case |
+| `test/architecture/no-io-in-transaction.spec.ts` | вызов адаптера S3/SMTP/AI/HTTP внутри `withTransaction` |
+| `test/integration/outbox/at-least-once.spec.ts` | неидемпотентный handler: событие подаётся дважды, состояние сравнивается |
+| `test/integration/outbox/rollback.spec.ts` | событие, оставшееся в очереди после отката транзакции |
+| `test/integration/queue/tenant-context.spec.ts` | handler, обратившийся к БД мимо `runJob` (падение на `guardedClient`) |
+| Метрика `outbox_lag_seconds` + алерт | отставание диспетчера |
+| Метрика `bullmq_jobs_total{status="failed"}` + запись в `dead_letter` | job'ы без классификации ошибок |
+
+## Исключения
+
+- **Синхронный ответ пользователю** (например, presigned URL) формируется в запросе, а не через
+  outbox — он не является побочным эффектом и не переживает транзакцию.
+- **Realtime-broadcast** идёт через outbox всегда, даже когда «хочется быстрее»: см.
+  `rules/realtime.mdc`, п. о публикации.
+- **Профиль `minimal`**: очереди `search-index` и `embeddings` — no-op, а не ошибка; см.
+  `rules/self-host-packaging.mdc`.

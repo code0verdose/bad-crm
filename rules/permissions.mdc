@@ -1,0 +1,137 @@
+---
+description: Any route, use-case, policy, list query or UI element gated by a permission. Read before adding an endpoint or a permission key.
+globs: packages/shared/src/permissions/**, packages/server/src/domain/**/access/**, packages/server/src/application/**, packages/server/src/presentation/http/**, packages/client/src/units/auth/**
+alwaysApply: true
+---
+
+# Авторизация и права доступа
+
+Основание: `docs/security/permission-model.md` (алгоритм разрешения, каталог, реализация по слоям).
+RLS — второй независимый рубеж, не замена policy: см. `rules/tenancy-rls.mdc`.
+
+## Когда применяется
+
+- Добавляешь HTTP-маршрут, WebSocket-событие или воркер, действующий от имени пользователя.
+- Пишешь `*.policy.ts`, `*-access-reader.port.ts`, `*.use-case.ts`, `*.query.ts`.
+- Добавляешь или меняешь ключ в каталоге permissions, состав системной роли, `ROUTE_REGISTRY`.
+- Прячешь или показываешь элемент интерфейса по праву.
+
+## Правило
+
+1. **Каталог `packages/shared/src/permissions/permissions.catalog.ts` — единственный источник
+   правды.** Права вне каталога не существует. Свободных строк в коде нет: тип `PermissionKey`
+   выводится из каталога, опечатка не компилируется.
+2. **Нет маршрута без объявленной permission.** Каждая запись `ROUTE_REGISTRY` имеет либо
+   `permission: PermissionKey`, либо `public: true` с **непустым** `publicReason`. Маршрут,
+   зарегистрированный в Express и отсутствующий в реестре, валит CI.
+3. **Авторитетное решение принимает use-case, а не middleware.** `require-permission.middleware`
+   делает только fail-fast по capability и не знает `resourceId`. Проверка ACL — внутри use-case
+   через `assertAllowed(policy(actor, scope))`. Для каждого маршрута с `:id`-параметром обязателен
+   `aclCheckedIn` — имя use-case, который эту проверку делает.
+4. **Policy возвращает `Decision { allowed, reason }`, а не `boolean`.** `reason` — конкретный
+   `DenyReason`, не общий `forbidden`: без него 403 неразличимы в поддержке и в аудите.
+5. **Policy — чистая функция.** Никакого I/O, `Date.now()`, Prisma, HTTP. Всё нужное приносит
+   `*-access-reader.port.ts`.
+6. **Fail-closed.** Неизвестный ключ, ошибка резолва ACL, отсутствующий scope, недоступный кеш —
+   всё это `DENY`. Ни одна ветка не заканчивается «разрешим, раз непонятно».
+7. **`accessReader` вернул `null` → 404 `resource_not_found`, а не 403.** Ресурс из чужой
+   организации и ресурс закрытого контура не должны быть отличимы по коду ответа: иначе API
+   становится оракулом существования сущностей. 403 отдаётся только внутри своей организации и
+   только там, где существование ресурса не секрет (`/admin/**`, `/reports/**`, `/delivery/**`).
+8. **Списки фильтруются одним SQL-запросом, а не пост-фильтрацией в JS.** Пагинация поверх
+   отфильтрованного набора; `total` считается по тому же предикату. К каждому списочному endpoint'у
+   обязателен тест «результат списка == построчный `can()` по всем существующим объектам».
+9. **DENY-override не действует на owner.** `isOwner` обходит capability и ACL (`resolveAcl →
+   MANAGER`) — иначе фраза «owner неотзываем» ложна: достаточно поставить `NONE` на корневой проект.
+   Единственное исключение — vault: там доступ определяется наличием ключа, см. `rules/e2ee-crypto.mdc`.
+10. **Одна точка вычисления прав.** `if (user.role === 'admin')` в контроллере, ручной разбор
+    `permissions` на клиенте мимо `can()`, дублирующая проверка в репозитории — запрещены.
+    Репозиторий никогда не решает про доступ.
+11. **Клиентская проверка — только подсказка.** `useCan()` и `<Can>` управляют видимостью и
+    доступностью элементов и **не являются механизмом безопасности**. Каждый экран корректно
+    отрабатывает 403/404 от сервера, даже если считал действие разрешённым: откатывает
+    оптимистичное изменение и инвалидирует кеш сессии.
+12. **Права на конкретный объект приходят вместе с объектом** (`permissions: { canEdit, canDelete }`),
+    а не выводятся на клиенте из роли.
+13. **Изменение прав пишется в `AuditLog` в той же транзакции**, что и само изменение.
+14. **Permission-matrix snapshot обновляется только осознанно.** Обновление (`-u`) требует
+    отдельного ревью (CODEOWNERS на `test/permissions/__snapshots__/**`) и обоснования в теле PR;
+    строка со значком расширения прав — обязательное объяснение.
+15. **Мёртвых прав нет:** каждый ключ каталога используется хотя бы в одном месте (реестр, policy
+    или матрица ролей), иначе удаляется или помечается `deprecated`.
+
+## Примеры
+
+### ✅ Правильно
+
+```ts
+// application/task/use-cases/update-task.use-case.ts
+const scope = await this.access.taskScope(input.taskId);
+if (scope === null) throw new NotFoundError('resource_not_found');   // 404, не 403
+assertAllowed(canUpdateTask(actor, scope));                          // ← авторитет здесь
+```
+
+```ts
+// domain/task/access/task-access.policy.ts — чистая функция, Decision с причиной
+export function canUpdateTask(actor: Actor, scope: TaskScope): Decision {
+  if (scope.organizationId !== actor.organizationId) return deny('tenant_mismatch');
+  if (scope.isDeleted) return deny('resource_not_found');
+  return can(actor, 'task:update', scope.aclLevel)
+    ? allow()
+    : deny(explainDenial(actor, 'task:update', scope.aclLevel));
+}
+```
+
+```ts
+// presentation/http/routes/registry.ts
+export const ROUTE_REGISTRY = [
+  { method: 'PATCH', path: '/tasks/:taskId', permission: 'task:update',
+    handler: taskController.update, aclCheckedIn: 'UpdateTaskUseCase' },
+  { method: 'GET', path: '/health', public: true,
+    publicReason: 'liveness-проба балансировщика, данных не отдаёт' },
+] as const satisfies readonly RouteDeclaration[];
+```
+
+### ❌ Неправильно
+
+```ts
+// проверка роли в контроллере: вторая точка вычисления прав, не тестируется, разъедется
+if (req.user.role !== 'admin') return res.status(403).json({ code: 'forbidden' });
+
+// пост-фильтрация списка в JS: total врёт, пагинация ломается, N+1
+const all = await this.tasks.findByProject(projectId);
+return all.filter((t) => can(actor, 'task:read', t.aclLevel));
+
+// 403 на чужую организацию — раскрывает существование объекта
+if (scope.organizationId !== actor.organizationId) throw new ForbiddenError();
+
+// policy с I/O — не покрывается табличными тестами и врёт при недоступной БД
+export async function canUpdateTask(actor: Actor, taskId: string) {
+  const task = await prisma.task.findUnique({ where: { id: taskId } });
+  return task?.assigneeId === actor.userId;
+}
+```
+
+## Как проверяется
+
+| Механизм | Что ловит |
+|---|---|
+| Тип `PermissionKey` + `satisfies readonly RouteDeclaration[]` | опечатку в ключе, маршрут без permission — ошибка компиляции |
+| `test/permissions/route-registry.spec.ts` | маршрут в Express, отсутствующий в реестре, и наоборот |
+| `test/permissions/acl-coverage.spec.ts` | маршрут с `:id` без `aclCheckedIn`; use-case без `assertAllowed` |
+| `test/permissions/permission-matrix.test.ts` + снапшот `permission-matrix.json` | любое изменение матрицы (роль × endpoint) с указанием `DenyReason`; подмену 404→403 |
+| `domain/**/access/*.policy.spec.ts` (табличные тесты) | все ветки policy; порог покрытия **100 % строк и ветвей** |
+| Тест `list-matches-can.spec.ts` на каждый списочный endpoint | расхождение «список ≠ построчный `can()`» |
+| e2e Playwright `private-*-invisible-everywhere` | утечку через вторичные пути (поиск, дашборд, автодополнение, уведомления) |
+| Агент `permission-matrix-auditor` в commit-гейте | мёртвые права, `requiredLevel: null` у ресурсного права, неотмеченные `dangerous`, вторую точку вычисления прав |
+
+## Исключения
+
+- **Публичные маршруты** — `/health`, `/ready`, `/metrics`, `/socket.io`, логин, приглашение,
+  сброс пароля, `/link/:token`. Каждый объявлен `public: true` с `publicReason`; их список
+  снапшотится отдельно.
+- **Vault и `VaultItem`** — авторитет не `ResourceAcl`, а `VaultMembership` и наличие
+  `wrappedVaultKey`. Никакое право не заменяет ключ; доступ владельца — только через
+  `vault:use_org_escrow` с записью в `VaultAccessLog`.
+- **Системные job'ы** без актора (rollup, зачистка) работают вне модели прав, но внутри
+  `withTenant` и с записью в аудит.
