@@ -1,4 +1,4 @@
-import { problemTypeUrl, type ErrorCode } from '@bad-crm/shared/errors';
+import { problemTypeUrl, type ErrorCode, type ValidationIssue } from '@bad-crm/shared/errors';
 
 /** Media type of RFC 9457 problem documents. Never `application/json`: the shape is a contract. */
 export const PROBLEM_CONTENT_TYPE = 'application/problem+json';
@@ -20,7 +20,8 @@ export interface ProblemDocument {
   readonly code: ErrorCode;
   readonly detail?: string;
   readonly requestId: string;
-  readonly errors?: unknown;
+  /** Present on `validation_failed` only: one entry per rejected field. */
+  readonly errors?: readonly ValidationIssue[];
 }
 
 export interface ProblemInput {
@@ -29,7 +30,7 @@ export interface ProblemInput {
   /** Included only for statuses below 500; see the note about 5xx below. */
   readonly detail?: string | undefined;
   readonly requestId: string;
-  readonly errors?: unknown;
+  readonly errors?: readonly ValidationIssue[] | undefined;
 }
 
 /** `task_not_found` → `Task not found`. Human-facing text is the client's job, from `code`. */
@@ -50,6 +51,10 @@ const titleOf = (code: ErrorCode): string => {
  * unexpected exception is a database error, a driver sentence or a stack frame, and each one hands
  * an attacker a piece of the schema. `requestId` is what connects the user's screenshot to the full
  * story in the log.
+ *
+ * `errors` is present only when there is something in it. An empty array would tell a client "the
+ * request was rejected over these fields: none", and a form written against it would render an
+ * empty error list instead of falling back to the top-level `code`.
  */
 export const serializeProblem = (input: ProblemInput): ProblemDocument => ({
   type: problemTypeUrl(input.code),
@@ -58,5 +63,5 @@ export const serializeProblem = (input: ProblemInput): ProblemDocument => ({
   code: input.code,
   ...(input.status < 500 && input.detail !== undefined ? { detail: input.detail } : {}),
   requestId: input.requestId,
-  ...(input.errors === undefined ? {} : { errors: input.errors }),
+  ...(input.errors === undefined || input.errors.length === 0 ? {} : { errors: input.errors }),
 });

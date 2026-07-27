@@ -14,5 +14,5 @@
     // to be part of the program at all.
     "rootDir": "."
   },
-  "include": ["test/**/*.ts", "vitest.config.ts"]
+  "include": ["test/**/*.ts", "vitest.config.ts", "vitest.integration.config.ts"]
 }

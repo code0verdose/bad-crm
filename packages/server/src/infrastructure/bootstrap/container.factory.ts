@@ -2,6 +2,7 @@ import { type Logger } from 'pino';
 
 import { CheckHealthUseCase } from '@/application/platform/use-cases/check-health.use-case.js';
 import { CheckReadinessUseCase } from '@/application/platform/use-cases/check-readiness.use-case.js';
+import { DescribeApiUseCase } from '@/application/platform/use-cases/describe-api.use-case.js';
 import { APP_INFO } from '@/app-info.constant.js';
 import { AsyncRequestContextAdapter } from '@/infrastructure/logging/async-request-context.adapter.js';
 import { createHttpLogger } from '@/infrastructure/logging/http-logger.middleware.js';
@@ -13,6 +14,7 @@ import { SystemClockAdapter } from '@/infrastructure/platform/system-clock.adapt
 import { UlidIdGeneratorAdapter } from '@/infrastructure/platform/ulid-id-generator.adapter.js';
 import { type AppContainer } from '@/infrastructure/bootstrap/container.types.js';
 import { type ServerEnv } from '@/infrastructure/bootstrap/env.schema.js';
+import { API_VERSION } from '@/presentation/http/api-version.constant.js';
 
 export interface ContainerInput {
   readonly env: ServerEnv;
@@ -47,6 +49,7 @@ export const buildContainer = (input: ContainerInput): AppContainer => {
   const lifecycle = new ProcessLifecycleAdapter();
 
   const checkHealth = new CheckHealthUseCase(new ProcessHealthAdapter(APP_INFO.version), clock);
+  const describeApi = new DescribeApiUseCase(clock, API_VERSION);
   const checkReadiness = new CheckReadinessUseCase(
     // Live probes for Postgres and Redis are appended here when their clients land (STORY-003-06,
     // EPIC-009). Today the list describes what this installation deliberately does not run.
@@ -75,6 +78,7 @@ export const buildContainer = (input: ContainerInput): AppContainer => {
       httpLogger: createHttpLogger({ logger: input.logger, requestContext }),
       checkHealth,
       checkReadiness,
+      describeApi,
     },
   };
 };

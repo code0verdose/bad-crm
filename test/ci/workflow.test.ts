@@ -108,14 +108,43 @@ describe('CI runs exactly the CI-before-push task set', () => {
   });
 
   /**
-   * Compared as sets: `compat` runs the same command on a newer Node, so every task legitimately
-   * appears twice. What must not drift is *which* tasks CI runs versus which the rule demands.
+   * Tasks CI is allowed to run beyond the pre-push set, each with the reason it is not in the rule.
+   *
+   * The rule is a contract about what a contributor runs before pushing, and that set has to cost
+   * seconds and need nothing but Node. A task that needs a Docker daemon does not belong in it —
+   * but it does belong in CI, in a job of its own.
    */
-  it('asks turbo for the same tasks the rule requires before a push', () => {
-    const required = new Set(taskSetOfTheRule());
+  const EXTRA_TASKS: Record<string, string> = {
+    'test:integration':
+      'needs a real PostgreSQL through Testcontainers; requiring a running Docker daemon before ' +
+      'every push would be a worse trade than running it in CI',
+  };
+
+  it('runs every task the rule requires before a push', () => {
     const covered = new Set(turboSteps().flatMap((run) => tasksOf(run)));
 
-    expect([...covered].sort()).toEqual([...required].sort());
+    expect(taskSetOfTheRule().filter((task) => !covered.has(task))).toEqual([]);
+  });
+
+  /**
+   * The other direction, and the one that actually rots: a task quietly added to CI and never to
+   * the rule is how "green locally, red on main" comes back. Extras are allowed — but only the
+   * ones written down above, with why.
+   */
+  it('runs no task beyond the rule that is not declared as an extra', () => {
+    const required = new Set(taskSetOfTheRule());
+    const covered = new Set(turboSteps().flatMap((run) => tasksOf(run)));
+    const undeclared = [...covered].filter(
+      (task) => !required.has(task) && EXTRA_TASKS[task] === undefined,
+    );
+
+    expect(undeclared).toEqual([]);
+  });
+
+  it('gives every declared extra a reason, so the list cannot grow silently', () => {
+    for (const [task, reason] of Object.entries(EXTRA_TASKS)) {
+      expect(reason.length, task).toBeGreaterThan(40);
+    }
   });
 
   it('installs with a frozen lockfile, so a stale lock fails instead of being rewritten', () => {

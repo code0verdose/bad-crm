@@ -8,11 +8,10 @@ updated: 2026-07-26
 
 Здесь живёт **`openapi.yaml`** — единственный источник истины по HTTP-контракту Bad CRM.
 
-> **Файла пока нет.** Он создаётся в [EPIC-003](../../epics/epic-003-server-skeleton-and-api-contract/epic.md)
-> вместе со скелетом сервера. До этого момента контракт существует только как описание в
-> [`../architecture/stack.md`](../architecture/stack.md), раздел «Контракт API». Этот документ
-> описывает правила, по которым спека будет жить, чтобы они были согласованы до появления первого
-> endpoint'а, а не после сотого.
+> **Файл появился** в [STORY-003-05](../../epics/epic-003-server-skeleton-and-api-contract/stories/story-003-05-openapi-contract-and-codegen.md):
+> [`openapi.yaml`](openapi.yaml) описывает первую продуктовую операцию `GET /api/v1/meta`, схему
+> ошибки `Problem` и `enum` кодов ошибок. Служебные `/health` и `/ready` в спеку **не входят** —
+> они в allow-list контрактного теста. Правила ниже — то, по чему спека живёт дальше.
 
 Связанные документы: [`../architecture/stack.md`](../architecture/stack.md) ·
 [ADR-0003](../architecture/adr/0003-openapi-as-source-of-truth.md) ·
@@ -76,7 +75,7 @@ pnpm api:lint    # валидация спеки (Spectral)
 
 ### Контрактный тест
 
-Живёт в `packages/server` (появится вместе со спекой в EPIC-003) и проверяет **обе стороны**:
+Живёт в `packages/server/test/contract/openapi.test.ts` и проверяет **обе стороны**:
 
 1. Нет ни одного зарегистрированного Express-роута, которого нет в спеке — кроме явного allow-list:
    `/health`, `/ready`, `/metrics`, `/socket.io`.
@@ -85,8 +84,19 @@ pnpm api:lint    # валидация спеки (Spectral)
 Реализация берёт список роутов из Express, нормализуя `:param` → `{param}`, и множество
 `paths × methods` из `openapi.yaml`. Тест обязателен: без него спека и код расходятся за недели.
 
-Отдельно тот же тест сверяет **каталог кодов ошибок** `packages/shared/src/errors/codes.ts` с `enum`
-в спеке — они обязаны совпадать.
+Отдельно `packages/server/test/contract/error-codes.test.ts` сверяет **каталог кодов ошибок**
+`packages/shared/src/errors/error-code.enums.ts` с `enum` `ErrorCode` в спеке, а
+`validation-issue.enums.ts` — с `ValidationIssueCode`. Оба множества обязаны совпадать точно.
+
+**Что делать, когда тест упал.** Сообщение называет направление расхождения:
+
+- *«route not described in docs/api/openapi.yaml: …»* — маршрут есть, операции нет. Либо опиши
+  операцию в спеке и прогони `pnpm api:gen`, либо убери маршрут. Служебный endpoint — добавь его в
+  `test/contract/service-route-allow-list.constant.ts` с обоснованием (это ревьюируемая строка).
+- *«operation not implemented: …»* — операция описана, маршрута нет. Добавь запись в
+  `presentation/http/route-registry.factory.ts` (с permission или `public` + `publicReason`).
+- *«ErrorCode matches packages/shared exactly»* — каталог и `enum` разошлись: правь оба, код
+  добавляется сначала в каталог, потом в спеку.
 
 ---
 
@@ -118,9 +128,12 @@ pnpm api:lint    # валидация спеки (Spectral)
 ### Обязательное для каждой новой операции
 
 - [ ] Путь под `/api/v1`, имя ресурса — из [`../product/glossary.md`](../product/glossary.md).
-- [ ] Объявленная **permission из каталога** `packages/shared/src/permissions/permissions.catalog.ts`,
-      и проверка этой permission **в use-case**, а не только в middleware (инвариант №2, см.
-      [`../../CLAUDE.md`](../../CLAUDE.md) и [`../security/permission-model.md`](../security/permission-model.md)).
+- [ ] Запись в реестре маршрутов `packages/server/src/presentation/http/route-registry.factory.ts`
+      с **permission из каталога** `packages/shared/src/permissions/permissions.catalog.ts` — либо
+      `public: true` с непустым `publicReason`. Маршруты монтируются только из реестра, поэтому
+      маршрута без объявления не существует; проверка самой permission живёт **в use-case**, а не
+      только в middleware (инвариант №2, см. [`../../CLAUDE.md`](../../CLAUDE.md) и
+      [`../security/permission-model.md`](../security/permission-model.md)).
 - [ ] Все ответы об ошибках — `application/problem+json` (RFC 9457) со **стабильным `code`** из общего
       каталога; `title`/`detail` пользователю не показываются и могут меняться.
 - [ ] Отсутствие доступа к сущности другой организации — **404**, а не 403. 403 только внутри своей

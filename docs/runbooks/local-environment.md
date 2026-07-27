@@ -342,6 +342,46 @@ docker compose --profile default ps
 
 ---
 
+## 5a. Интеграционные тесты и Docker-рантайм не от Docker Desktop
+
+`pnpm test:integration` поднимает настоящий PostgreSQL через Testcontainers — это единственное
+автоматическое доказательство инварианта №1 (арендатор не видит и не пишет чужие строки), потому что
+проверяемое свойство живёт в политике БД, а не в коде.
+
+Testcontainers ищет демон по `/var/run/docker.sock`. **Docker Desktop кладёт сокет туда, colima,
+podman и rancher — нет**, и симптом получается обманчивый:
+
+```
+Could not find a working container runtime strategy
+```
+
+или, если сокет нашёлся, а путь для монтирования — нет:
+
+```
+error while creating mount source path
+```
+
+Читается это как «сломан Testcontainers», хотя сломано только то, что демон лежит в другом месте.
+
+Две переменные закрывают вопрос — подставь путь своего рантайма (`docker context inspect` покажет):
+
+```bash
+export DOCKER_HOST="unix://$HOME/.colima/default/docker.sock"
+export TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE=/var/run/docker.sock
+pnpm test:integration
+```
+
+Первая говорит клиенту, куда подключаться. Вторая — какой путь Testcontainers должен монтировать
+внутрь контейнеров, которым нужен доступ к демону; без неё пробрасывается путь хоста, которого в
+контейнере не существует.
+
+Обе перечислены в `passThroughEnv` задачи `test:integration` (`turbo.json`): turbo прогоняет задачи
+с отфильтрованным окружением, и без этой записи переменные не доезжают — `pnpm --filter
+@bad-crm/server test:integration` при этом работает, что читается как «turbo сломан» вместо «одну
+переменную выбросили».
+
+На CI ничего этого не нужно: раннеры GitHub отдают демон на стандартном сокете.
+
 ## 6. Замер холодного старта (контрольная точка NFR-3)
 
 [NFR-3](../product/prd.md) требует холодного старта менее 10 минут на чистом хосте. Протокол

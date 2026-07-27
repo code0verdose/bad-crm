@@ -178,6 +178,37 @@ describe('turbo pipeline', () => {
     },
   );
 
+  /**
+   * `api:gen` regenerates a file that is committed, and CI verifies it by regenerating and
+   * requiring an empty diff — which means the value of that gate is exactly the correctness of
+   * this task's cache key. The entry that used to be missing is `$TURBO_DEFAULT$`: with only the
+   * specification listed, every other file of the package was outside the hash, so a change to how
+   * generation works was served from cache and the committed types were "verified" against a run
+   * that never happened.
+   */
+  describe('the codegen task hashes everything it reads', () => {
+    const apiGenInputs = (): string[] => turbo().tasks['api:gen']?.inputs ?? [];
+
+    it('hashes the package own files', () => {
+      expect(apiGenInputs()).toContain('$TURBO_DEFAULT$');
+    });
+
+    it('hashes the specification, which lives outside the package', () => {
+      expect(apiGenInputs()).toContain('$TURBO_ROOT$/docs/api/openapi.yaml');
+    });
+
+    it('writes the generated types where the client keeps them', () => {
+      expect(turbo().tasks['api:gen']?.outputs).toEqual(['src/shared/api/schemas/**']);
+    });
+
+    it('is backed by a package script, so `turbo run api:gen` has something to run', () => {
+      const scripts = packageJsonOf(PACKAGE_DIRS.client).scripts ?? {};
+
+      expect(scripts['api:gen']).toContain('openapi-typescript');
+      expect(scripts['api:gen']).toContain('docs/api/openapi.yaml');
+    });
+  });
+
   it('invalidates the repository contract tests on config changes', () => {
     const inputs = turbo().tasks['//#test:repo']?.inputs ?? [];
 

@@ -8,6 +8,7 @@ import {
   ForbiddenError,
   NotFoundError,
   PayloadTooLargeError,
+  RateLimitedError,
   ServiceUnavailableError,
   ValidationError,
 } from '../../../src/domain/shared/errors/app.errors.js';
@@ -49,10 +50,47 @@ describe('AppError derives its status from the shared catalog', () => {
     expect(error.code).toBe('route_not_found');
   });
 
-  it('carries optional structured details for the problem document', () => {
-    const error = new ValidationError({ fields: ['title'] });
+  /**
+   * `details` is developer context for the log line — which probe failed, which limit was hit —
+   * and the error handler keeps it out of the response body. What the client acts on travels in
+   * its own typed property, `ValidationError.issues`, so the two cannot be confused at a call site.
+   */
+  it('carries optional structured details for the log, not for the response', () => {
+    const error = new ServiceUnavailableError({ probe: 'postgres' });
 
-    expect(error.details).toEqual({ fields: ['title'] });
+    expect(error.details).toEqual({ probe: 'postgres' });
+  });
+
+  it('carries the rejected fields of a validation failure as a typed list', () => {
+    const error = new ValidationError([
+      { path: 'title', code: 'too_small', message: 'Too small: expected string to have >=1' },
+    ]);
+
+    expect(error.issues).toEqual([
+      { path: 'title', code: 'too_small', message: 'Too small: expected string to have >=1' },
+    ]);
+    expect(error.details).toBeUndefined();
+  });
+
+  it('states how many fields were rejected in its message, which becomes `detail`', () => {
+    expect(new ValidationError([]).message).toBe('0 fields are invalid');
+    expect(new ValidationError([{ path: 'a', code: 'custom', message: 'x' }]).message).toBe(
+      '1 field is invalid',
+    );
+    expect(
+      new ValidationError([
+        { path: 'a', code: 'custom', message: 'x' },
+        { path: 'b', code: 'custom', message: 'y' },
+      ]).message,
+    ).toBe('2 fields are invalid');
+  });
+
+  it('carries the back-off a 429 has to advertise', () => {
+    const error = new RateLimitedError(30);
+
+    expect(error.code).toBe('rate_limited');
+    expect(error.status).toBe(429);
+    expect(error.retryAfterSeconds).toBe(30);
   });
 
   it('keeps the originating failure as `cause`, for the log and not for the response', () => {

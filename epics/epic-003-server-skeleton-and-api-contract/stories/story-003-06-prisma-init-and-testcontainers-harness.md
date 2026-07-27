@@ -1,7 +1,7 @@
 ---
 id: STORY-003-06
 epic: EPIC-003
-status: backlog
+status: review
 blocked: false
 priority: must
 estimate: M
@@ -26,11 +26,11 @@ estimate: M
 
 ## Задачи
 
-- [ ] Написать тесты первыми: `test/integration/db/migrations.test.ts` (миграции применяются на чистой БД и идемпотентны при повторе), `test/unit/db/migration-lint.test.ts` (запрещённые конструкции в файлах миграций).
-- [ ] Инициализировать Prisma: `packages/server/prisma/schema.prisma`, генератор клиента, `previewFeatures` при необходимости для `postgresqlExtensions`.
+- [x] Написать тесты первыми: `test/integration/db/migrations.test.ts` (миграции применяются на чистой БД и идемпотентны при повторе), `test/unit/db/migration-lint.test.ts` (запрещённые конструкции в файлах миграций).
+- [x] Инициализировать Prisma: `packages/server/prisma/schema.prisma`, генератор клиента, `previewFeatures` при необходимости для `postgresqlExtensions`.
 - [ ] Создать первую миграцию: включение расширений + платформенная таблица (`schema_meta` / `app_setting`) без `organizationId`.
 - [ ] Реализовать `infrastructure/persistence/prisma/prisma-client.ts` — создание клиента, логирование медленных запросов через `LoggerPort`, единая точка `$disconnect` в shutdown.
-- [ ] Реализовать харнесс `test/integration/setup/testcontainers.ts`: `globalSetup` с поднятием контейнера, применением `prisma migrate deploy` **и последующим прогоном `01-grants.sql`**, экспортом `DATABASE_URL` для тестов; `truncateAll()` между тестами. Без грантов интеграционные тесты пойдут под `app_migrator` и не заметят ни одной ошибки в правах.
+- [x] Реализовать харнесс `test/integration/setup/testcontainers.ts`: `globalSetup` с поднятием контейнера, применением `prisma migrate deploy` **и последующим прогоном `01-grants.sql`**, экспортом `DATABASE_URL` для тестов; `truncateAll()` между тестами. Без грантов интеграционные тесты пойдут под `app_migrator` и не заметят ни одной ошибки в правах.
 - [ ] Настроить отдельный vitest-проект `integration` и скрипт `pnpm test:integration`; подключить его к CI-джобе из [STORY-002-01](../../epic-002-ci-and-commit-gate/stories/story-002-01-ci-pipeline-turbo-checks.md).
 - [ ] Реализовать `scripts/migration-lint.ts`: запрет `DROP COLUMN`/`DROP TABLE` в одном релизе с изменением кода, переименований, `CREATE INDEX` без `CONCURRENTLY`, `SET NOT NULL` без `CHECK ... NOT VALID`.
 - [ ] Добавить шаблон миграции с обязательным блоком RLS-заготовки (полное наполнение — [EPIC-005](../../epic-005-multi-tenancy-rls/epic.md)) и подключить агента `db-reviewer` к гейту.

@@ -1,7 +1,7 @@
 ---
 id: STORY-003-04
 epic: EPIC-003
-status: backlog
+status: review
 blocked: false
 priority: must
 estimate: S
@@ -19,24 +19,33 @@ estimate: S
 - **Given** вложенное поле `amount.value` неверного типа **When** валидация падает **Then** `path` в ответе — `"amount.value"` (точечная нотация), а не индекс массива Zod-issue.
 - **Given** query-параметр `page=abc` при схеме `z.coerce.number().int().positive()` **When** запрос обрабатывается **Then** 422 с `path: "page"`, а не 500 при попытке использовать `NaN`.
 - **Given** валидный запрос **When** он проходит через middleware валидации **Then** в контроллер попадают уже приведённые значения (`page` — число, `enabled` — boolean), а повторной проверки в use-case нет.
-- **Given** любая ошибка приложения **When** формируется ответ **Then** он содержит `type`, `title`, `status`, `code`, `instance`, `requestId`; `detail` присутствует только для не-500 ошибок.
+- **Given** любая ошибка приложения **When** формируется ответ **Then** он содержит `type`, `title`, `status`, `code`, `requestId`; `detail` присутствует только для не-500 ошибок.
+  > **Изменено 2026-07-27: поля `instance` в документе нет — намеренно.** Критерий требовал его при
+  > написании истории. При реализации STORY-003-03 выяснилось, что единственное честное значение —
+  > URL запроса, а его этот продукт печатать не может: есть маршруты, где сегмент пути *и есть*
+  > credential (`/l/:token`), а problem-документ — ровно то, что пользователь вставляет в тикет.
+  > Шаблон маршрута тоже отвергнут: утилита для него не принадлежит ни одному из слоёв, которым
+  > пришлось бы её делить (это показал ESLint-запрет `presentation → infrastructure`). Идентичность
+  > случая несёт `requestId`, который коррелирует со строкой лога, ничего не раскрывая. Решение
+  > задокументировано в `packages/server/src/presentation/http/serializers/problem.serializer.ts`
+  > и закреплено тестом на **отсутствие** поля.
 - **Given** отсутствие доступа к сущности **чужой** организации **When** формируется ответ **Then** это 404 `<resource>_not_found`, а не 403 — API не является оракулом существования (проверяется тестом на выбранном примере).
 - **Given** каталог кодов ошибок в `packages/shared` **When** запускается тест соответствия **Then** множество кодов совпадает с `enum` в `openapi.yaml`; расхождение валит сборку.
 - **Given** превышение rate limit (заготовка) **When** возвращается 429 **Then** в ответе есть `Retry-After` и `code: "rate_limited"`.
 
 ## Задачи
 
-- [ ] Написать тесты первыми: `test/integration/http/validation.test.ts` (все сценарии выше), `test/unit/http/problem-json.test.ts` (форма ответа), `test/contract/error-codes.test.ts` (каталог ↔ спецификация).
-- [ ] Реализовать `presentation/http/middleware/validate.ts`: `validate({ params?, query?, body? })`, который парсит через `safeParse`, при ошибке бросает `ValidationError`, при успехе кладёт типизированные значения в `res.locals.validated`.
-- [ ] Реализовать преобразователь `ZodError → errors[]` с точечными путями и стабильными `code` из Zod-issue.
-- [ ] Реализовать `presentation/http/problem.ts` — сборка тела `application/problem+json` (RFC 9457) и установка корректного `Content-Type`.
-- [ ] Разместить схемы запросов в `presentation/http/validators/*.validator.ts`, общие примитивы переиспользовать из `packages/shared/validation`.
+- [x] Написать тесты первыми: `test/integration/http/validation.test.ts` (все сценарии выше), `test/unit/http/problem-json.test.ts` (форма ответа), `test/contract/error-codes.test.ts` (каталог ↔ спецификация).
+- [x] Реализовать `presentation/http/middleware/validate.ts`: `validate({ params?, query?, body? })`, который парсит через `safeParse`, при ошибке бросает `ValidationError`, при успехе кладёт типизированные значения в `res.locals.validated`.
+- [x] Реализовать преобразователь `ZodError → errors[]` с точечными путями и стабильными `code` из Zod-issue.
+- [x] Реализовать `presentation/http/problem.ts` — сборка тела `application/problem+json` (RFC 9457) и установка корректного `Content-Type`.
+- [x] Разместить схемы запросов в `presentation/http/validators/*.validator.ts`, общие примитивы переиспользовать из `packages/shared/validation`.
 - [ ] Дополнить `packages/shared/errors/codes.ts` таблицей соответствия «ситуация → HTTP → code» из [`stack.md`](../../../docs/architecture/stack.md).
-- [ ] Описать формат ошибок в `docs/api/` (раздел или `components.schemas.Problem` в `openapi.yaml`).
+- [x] Описать формат ошибок в `docs/api/` (раздел или `components.schemas.Problem` в `openapi.yaml`).
 
 ## Definition of Done
 
-- [ ] Тесты написаны первыми (TDD), проходят, изменённый код покрыт
+- [x] Тесты написаны первыми (TDD), проходят, изменённый код покрыт
 - [ ] Commit-гейт зелёный (test-coverage, security-auditor, db-reviewer при изменении схемы, production-readiness, commit-hygiene)
 - [ ] Документация обновлена (docs/ + запись в `docs/brain/`)
 - [ ] a11y-проверка (для UI-историй) — не применимо

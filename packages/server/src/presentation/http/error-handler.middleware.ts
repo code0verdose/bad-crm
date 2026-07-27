@@ -6,12 +6,14 @@ import { type RequestContextPort } from '@/application/platform/ports/request-co
 import {
   AppError,
   PayloadTooLargeError,
+  RateLimitedError,
   ValidationError,
 } from '@/domain/shared/errors/app.errors.js';
 import {
   PROBLEM_CONTENT_TYPE,
   serializeProblem,
 } from '@/presentation/http/serializers/problem.serializer.js';
+import { toValidationIssues } from '@/presentation/http/validators/zod-issues.util.js';
 
 export interface ErrorHandlerDependencies {
   readonly logger: LoggerPort;
@@ -36,14 +38,23 @@ const isBodyParserError = (error: unknown): error is BodyParserError =>
 const asAppError = (error: unknown): AppError | undefined => {
   if (error instanceof AppError) return error;
 
+  // A schema parsed outside the `validate` middleware — a webhook payload, a job body, an external
+  // response. The per-field list is built the same way, so the response is identical wherever the
+  // schema ran.
   if (error instanceof ZodError) {
-    return new ValidationError({ issueCount: error.issues.length }, error);
+    return new ValidationError(toValidationIssues(error), error);
   }
 
   if (isBodyParserError(error)) {
     if (error.type === 'entity.too.large') return new PayloadTooLargeError({ limit: '1mb' }, error);
-    if (error.type === 'entity.parse.failed')
-      return new ValidationError({ body: 'malformed' }, error);
+    if (error.type === 'entity.parse.failed') {
+      // The body never became a value, so there is no field to point at: the empty path is the
+      // documented way of saying "the payload as a whole".
+      return new ValidationError(
+        [{ path: '', code: 'invalid_type', message: 'Request body is not valid JSON' }],
+        error,
+      );
+    }
   }
 
   return undefined;
@@ -81,9 +92,18 @@ export const createErrorHandler = (dependencies: ErrorHandlerDependencies): Erro
     const code = appError?.code ?? 'internal_error';
 
     if (appError !== undefined && status < 500) {
-      dependencies.logger.warn({ requestId, code, status }, 'request rejected');
+      // `details` goes to the log and never to the body: it is developer context (which probe,
+      // which limit), and the response carries only what the client can act on.
+      dependencies.logger.warn(
+        { requestId, code, status, details: appError.details },
+        'request rejected',
+      );
     } else {
       dependencies.logger.error({ requestId, code, status, err: error }, 'unhandled error');
+    }
+
+    if (appError instanceof RateLimitedError) {
+      response.setHeader('Retry-After', String(appError.retryAfterSeconds));
     }
 
     response
@@ -95,7 +115,7 @@ export const createErrorHandler = (dependencies: ErrorHandlerDependencies): Erro
           status,
           detail: appError?.message,
           requestId,
-          errors: appError?.details,
+          errors: appError instanceof ValidationError ? appError.issues : undefined,
         }),
       );
   };

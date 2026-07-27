@@ -1,7 +1,7 @@
 ---
 id: STORY-003-02
 epic: EPIC-003
-status: in-progress
+status: review
 blocked: false
 priority: must
 estimate: M

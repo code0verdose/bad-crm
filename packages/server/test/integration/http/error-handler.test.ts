@@ -139,13 +139,32 @@ describe('validation errors', () => {
 
   it('answers an explicit ValidationError with the same code', async () => {
     const { app } = appThrowing(() => {
-      throw new ValidationError({ fields: ['title'] });
+      throw new ValidationError([{ path: 'title', code: 'too_small', message: 'too short' }]);
     });
 
     const response = await request(app).get('/boom');
 
     expect(response.status).toBe(422);
     expect(response.body.code).toBe('validation_failed');
+    expect(response.body.errors).toEqual([
+      { path: 'title', code: 'too_small', message: 'too short' },
+    ]);
+  });
+
+  /**
+   * A schema parsed anywhere other than the `validate` middleware — a webhook payload, an external
+   * response — has to produce the same body, or a client would need two error parsers.
+   */
+  it('turns a bare ZodError into the same per-field list', async () => {
+    const { app } = appThrowing(() => {
+      z.object({ title: z.string() }).parse({ title: 42 });
+    });
+
+    const response = await request(app).get('/boom');
+
+    expect(response.body.errors).toEqual([
+      { path: 'title', code: 'invalid_type', message: expect.any(String) },
+    ]);
   });
 });
 

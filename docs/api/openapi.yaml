@@ -1,0 +1,404 @@
+# Bad CRM — the HTTP contract.
+#
+# This file is the source of truth of the API (ADR-0003, CLAUDE.md → «Порядок источников истины»).
+# It is written by hand, reviewed as code, and never generated from the implementation: a
+# specification derived from the code describes whatever the code happens to do, and a breaking
+# change then passes review looking like a rename.
+#
+# The flow for any change (`rules/api-contract.mdc`):
+#
+#   1. edit this file;
+#   2. `pnpm api:gen` — regenerates `packages/client/src/shared/api/schemas/api-schema.d.ts`,
+#      which is committed; CI runs the same command and requires an empty `git diff`;
+#   3. implement the operation on the server — validator, use-case, serializer, registry entry;
+#   4. `packages/server/test/contract/openapi.test.ts` compares this document against the Express
+#      router in both directions and fails on either kind of drift.
+#
+# Operational endpoints (`/health`, `/ready`, `/metrics`, `/socket.io`) are deliberately absent:
+# they are not part of the product contract, and they are on the explicit allow-list of that test.
+openapi: 3.1.1
+
+info:
+  title: Bad CRM API
+  version: 1.0.0
+  summary: Self-hosted, multi-tenant workspace for software teams.
+  description: |
+    Every product operation lives under `/api/v1`. Inside a major version only compatible changes
+    are made — new optional fields, new operations; anything breaking gets `/api/v2` with `v1` kept
+    for at least one minor release (`docs/architecture/stack.md`, «Версионирование»).
+
+    Errors are always `application/problem+json` (RFC 9457) with a stable machine-readable `code`.
+    The client maps `code` to a translated message; `title` and `detail` are for logs and
+    developers and may be reworded at any time.
+  license:
+    name: AGPL-3.0-or-later
+    identifier: AGPL-3.0-or-later
+
+servers:
+  # Relative on purpose: the API is served from the same origin as the SPA in every supported
+  # deployment, and a hard-coded host in the contract is a host somebody's self-hosted install does
+  # not have. The path segment here is the version prefix, so operation paths below stay clean.
+  - url: /api/v1
+    description: This installation.
+
+# No document-level `security` yet: the only operation published so far is public. EPIC-006 sets
+# the default to `bearerAuth` and marks the handful of anonymous operations with `security: []`.
+
+paths:
+  /meta:
+    get:
+      operationId: getApiMeta
+      summary: Version and clock of this API.
+      description: |
+        Read before a session exists: the client checks that it understands the API version it is
+        talking to, and reconciles clock skew for anything it renders as a relative time.
+
+        The operation takes no parameters and rejects the ones it was not given — an endpoint that
+        silently ignores an unknown query parameter is how a typo reaches production as a 200.
+      tags: [platform]
+      security: []
+      responses:
+        '200':
+          description: The API described itself.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiMeta'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+components:
+  securitySchemes:
+    # Declared ahead of its use (EPIC-006): the access token is a short-lived JWT in the
+    # `Authorization` header, while the refresh token travels in an httpOnly cookie and is
+    # therefore not part of this scheme.
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Short-lived access token issued by `POST /auth/login`.
+
+  schemas:
+    ApiMeta:
+      type: object
+      additionalProperties: false
+      required: [apiVersion, serverTime]
+      properties:
+        apiVersion:
+          type: string
+          description: The version segment this response was served under.
+          examples: ['v1']
+        serverTime:
+          type: string
+          format: date-time
+          description: The server's clock at the moment of the response, in UTC.
+          examples: ['2026-07-27T09:41:12.004Z']
+
+    ErrorCode:
+      type: string
+      description: |
+        The closed catalog of machine-readable error codes. It is the same list as
+        `packages/shared/src/errors/error-code.enums.ts`, and
+        `packages/server/test/contract/error-codes.test.ts` fails the build if the two differ.
+
+        The client selects an i18n message by this value, so a code is never renamed and never
+        reused with a different meaning.
+      enum:
+        - validation_failed
+        - unauthenticated
+        - route_not_found
+        - payload_too_large
+        - vault_locked
+        - stale_version
+        - idempotency_key_reuse
+        - rate_limited
+        - feature_disabled
+        - service_unavailable
+        - internal_error
+        - organization_not_found
+        - organization_forbidden
+        - organization_already_exists
+        - team_not_found
+        - team_forbidden
+        - team_already_exists
+        - user_not_found
+        - user_forbidden
+        - user_already_exists
+        - role_not_found
+        - role_forbidden
+        - role_already_exists
+        - invitation_not_found
+        - invitation_forbidden
+        - invitation_already_exists
+        - project_not_found
+        - project_forbidden
+        - project_already_exists
+        - board_not_found
+        - board_forbidden
+        - board_already_exists
+        - task_not_found
+        - task_forbidden
+        - task_already_exists
+        - sprint_not_found
+        - sprint_forbidden
+        - sprint_already_exists
+        - comment_not_found
+        - comment_forbidden
+        - comment_already_exists
+        - doc_not_found
+        - doc_forbidden
+        - doc_already_exists
+        - kb_note_not_found
+        - kb_note_forbidden
+        - kb_note_already_exists
+        - file_not_found
+        - file_forbidden
+        - file_already_exists
+        - vault_item_not_found
+        - vault_item_forbidden
+        - vault_item_already_exists
+        - secure_link_not_found
+        - secure_link_forbidden
+        - secure_link_already_exists
+        - time_entry_not_found
+        - time_entry_forbidden
+        - time_entry_already_exists
+        - channel_not_found
+        - channel_forbidden
+        - channel_already_exists
+        - message_not_found
+        - message_forbidden
+        - message_already_exists
+        - dashboard_not_found
+        - dashboard_forbidden
+        - dashboard_already_exists
+
+    ValidationIssueCode:
+      type: string
+      description: |
+        Why one field was rejected. The list mirrors
+        `packages/shared/src/errors/validation-issue.enums.ts`; anything a validator produces
+        outside it is reported as `custom`, so this enum is exhaustive by construction.
+      enum:
+        - invalid_type
+        - too_big
+        - too_small
+        - invalid_format
+        - not_multiple_of
+        - unrecognized_keys
+        - invalid_union
+        - invalid_key
+        - invalid_element
+        - invalid_value
+        - custom
+
+    ValidationIssue:
+      type: object
+      additionalProperties: false
+      required: [path, code, message]
+      properties:
+        path:
+          type: string
+          description: |
+            The rejected field in dot notation over the request value — `title`,
+            `amount.value`, `items[0].title`. An empty string means the value as a whole was
+            wrong (a body that is not an object at all).
+          examples: ['amount.value']
+        code:
+          $ref: '#/components/schemas/ValidationIssueCode'
+        message:
+          type: string
+          description: English, for the developer reading a log. Never shown to a user.
+          examples: ['Invalid input: expected number, received string']
+
+    Problem:
+      type: object
+      description: |
+        RFC 9457 problem document — the only error shape this API produces, validation included.
+
+        `instance` is deliberately absent. The field is optional in the RFC and the only honest
+        value would be the request URL, which this product cannot print: it has routes whose path
+        segment *is* the credential (`/l/{token}`), and a problem document is exactly the thing a
+        user pastes into a support ticket. The occurrence is identified by `requestId`, which
+        correlates to the log line without exposing anything.
+      required: [type, title, status, code, requestId]
+      properties:
+        type:
+          type: string
+          format: uri
+          description: Identifies the problem class. Not dereferenced at runtime.
+          examples: ['https://bad-crm.dev/problems/validation-failed']
+        title:
+          type: string
+          description: Short human-readable summary, for developers. May be reworded; do not parse.
+          examples: ['Validation failed']
+        status:
+          type: integer
+          minimum: 400
+          maximum: 599
+          description: The HTTP status code, repeated in the body for logs and proxies.
+          examples: [422]
+        code:
+          $ref: '#/components/schemas/ErrorCode'
+        detail:
+          type: string
+          description: |
+            Explanation of this occurrence, for the developer. **Absent on every 5xx**: the message
+            of an unexpected exception is a driver sentence or a schema name, and each one hands an
+            attacker a piece of the internals.
+          examples: ['2 fields are invalid']
+        requestId:
+          type: string
+          description: Correlates this response with the server log. Also returned as `x-request-id`.
+          examples: ['01J8Z2F5Q3K9V6N0R4T7YB3XQD']
+        errors:
+          type: array
+          description: Present on `validation_failed` only — one entry per rejected field.
+          items:
+            $ref: '#/components/schemas/ValidationIssue'
+
+    OffsetPage:
+      type: object
+      description: |
+        The envelope of a table-shaped list (tasks, projects, employees, documents, invoices).
+        Feeds — activity, comments, messages, notifications, audit — use the cursor parameters
+        instead, because an offset over an append-heavy stream both duplicates and drops rows
+        (`rules/api-contract.mdc`, §8).
+      additionalProperties: false
+      required: [total, page, perPage]
+      properties:
+        total:
+          type: integer
+          minimum: 0
+          description: Rows matching the same predicate as `items`, before pagination.
+        page:
+          type: integer
+          minimum: 1
+        perPage:
+          type: integer
+          minimum: 1
+          maximum: 100
+
+    CursorPage:
+      type: object
+      description: The envelope of a feed. `nextCursor` is absent on the last page.
+      additionalProperties: false
+      required: [nextCursor]
+      properties:
+        nextCursor:
+          type: [string, 'null']
+          description: |
+            Opaque base64url of `{ sortKey, id }`. The `id` tie-breaker is mandatory: without it
+            rows sharing a timestamp are skipped at the page boundary.
+
+  parameters:
+    Page:
+      name: page
+      in: query
+      required: false
+      description: 1-based page number of an offset-paginated list.
+      schema:
+        type: integer
+        minimum: 1
+        default: 1
+    PerPage:
+      name: perPage
+      in: query
+      required: false
+      description: Page size of an offset-paginated list. Bounded, so one caller cannot ask for the table.
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 50
+    Cursor:
+      name: cursor
+      in: query
+      required: false
+      description: Opaque cursor returned as `nextCursor` by the previous page. Absent on the first.
+      schema:
+        type: string
+    Limit:
+      name: limit
+      in: query
+      required: false
+      description: Page size of a cursor-paginated feed.
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 50
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      description: |
+        Client-generated key, mandatory on every unsafe operation that creates an entity, sends
+        mail or spends money or tokens. A replay carrying the same request hash returns the stored
+        response; the same key with a different hash is refused with 409 `idempotency_key_reuse`.
+      schema:
+        type: string
+        minLength: 16
+        maxLength: 128
+
+  responses:
+    ValidationFailed:
+      description: The request did not pass validation; `errors[]` names every field.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+    Unauthenticated:
+      description: No credentials, or the access token expired.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+    Forbidden:
+      description: |
+        Authenticated, and not allowed to do this **inside their own organization**. A resource
+        belonging to another organization is answered 404, never 403 — otherwise the API tells an
+        attacker which ids exist in tenants they cannot see (CLAUDE.md, invariant 2).
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+    NotFound:
+      description: The resource does not exist, or exists in another organization.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+    Conflict:
+      description: Version conflict, duplicate key, or a replayed `Idempotency-Key`.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+    RateLimited:
+      description: Too many requests. `Retry-After` says when to come back.
+      headers:
+        Retry-After:
+          description: Seconds to wait before retrying.
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+    InternalError:
+      description: Unexpected failure. Carries no `detail`; quote `requestId` in a bug report.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+
+tags:
+  - name: platform
+    description: Operations about the installation itself rather than about its data.

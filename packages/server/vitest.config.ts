@@ -16,8 +16,18 @@ export default defineConfig({
      * `pnpm test` would mean the HTTP surface is only exercised by a task nobody runs locally. The
      * Testcontainers project (STORY-003-06) lands under `test/integration/db/**` behind
      * `pnpm test:integration`, which is where the "needs Docker" boundary actually is.
+     *
+     * `test/contract/**` is here for the same reason and one more: it is the gate that keeps
+     * `docs/api/openapi.yaml` and the Express router from drifting (STORY-003-07), and a gate that
+     * only CI knows how to run is a gate nobody runs before pushing. It needs no environment
+     * either — the application is built from in-process adapters.
      */
-    include: ['test/unit/**/*.test.ts', 'test/integration/http/**/*.test.ts', 'src/**/*.test.ts'],
+    include: [
+      'test/unit/**/*.test.ts',
+      'test/integration/http/**/*.test.ts',
+      'test/contract/**/*.test.ts',
+      'src/**/*.test.ts',
+    ],
     environment: 'node',
     coverage: {
       enabled: true,

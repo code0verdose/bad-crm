@@ -5,6 +5,7 @@ import { type LoggerPort } from '@/application/platform/ports/logger.port.js';
 import { type RequestContextPort } from '@/application/platform/ports/request-context.port.js';
 import { type CheckHealthUseCase } from '@/application/platform/use-cases/check-health.use-case.js';
 import { type CheckReadinessUseCase } from '@/application/platform/use-cases/check-readiness.use-case.js';
+import { type DescribeApiUseCase } from '@/application/platform/use-cases/describe-api.use-case.js';
 
 /**
  * The configuration the HTTP layer needs — a deliberate subset of the environment, not `ServerEnv`.
@@ -39,4 +40,5 @@ export interface HttpServerDependencies {
   readonly httpLogger: RequestHandler;
   readonly checkHealth: CheckHealthUseCase;
   readonly checkReadiness: CheckReadinessUseCase;
+  readonly describeApi: DescribeApiUseCase;
 }

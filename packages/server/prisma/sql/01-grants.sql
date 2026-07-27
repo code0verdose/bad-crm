@@ -56,6 +56,16 @@ DECLARE
   -- one adds it here, in the open, rather than hiding a cross-tenant read behind a bare GRANT.
   global_read  CONSTANT text[] := ARRAY[]::text[];
 
+  -- Tenant tables the application may never DELETE from. Removing an organization is an offboarding
+  -- procedure with its own path — export, key revocation, retention — not a statement the request
+  -- handler is allowed to issue.
+  --
+  -- Mirrors `appUserPrivileges` in
+  -- `src/infrastructure/persistence/prisma/tenant-tables.constant.ts`. SQL cannot read that
+  -- registry, so the two are kept in step by `test/unit/persistence/grants-registry.test.ts`, which
+  -- parses this list and fails when it disagrees.
+  no_delete    CONSTANT text[] := ARRAY['organizations'];
+
   rel record;
   granted_tables    int := 0;
   granted_sequences int := 0;
@@ -74,11 +84,20 @@ BEGIN
     SELECT c.oid,
            c.relname,
            c.relispartition,
-           EXISTS (
-             SELECT 1 FROM pg_attribute a
-             WHERE  a.attrelid = c.oid AND a.attname = 'organization_id'
-               AND  a.attnum > 0 AND NOT a.attisdropped
-           ) AS is_tenant_table
+           -- A tenant table is one whose rows are filtered by a policy — not one that happens to
+           -- carry a column of a particular name.
+           --
+           -- Keying this on `organization_id` was a second source of truth for the same idea, and
+           -- it disagreed with the first on the one table where the two differ: `organizations` is
+           -- the tenant root, so it has no such column — its policy compares `id`. The classifier
+           -- did not see it as a tenant table, granted app_user nothing on it, and because
+           -- `pg_restore` runs with `--no-privileges`, every restore ended with the application
+           -- unable to read the table that resolves the tenant. Not a leak: a total outage, and one
+           -- this file was supposed to be the cure for.
+           --
+           -- `relrowsecurity` is the definition invariant 1 already gives: if the application may
+           -- touch it, rows are filtered by policy. One source, derived from the thing that matters.
+           c.relrowsecurity AS is_tenant_table
     FROM   pg_class c
     JOIN   pg_namespace n ON n.oid = c.relnamespace
     WHERE  n.nspname = 'public'
@@ -109,15 +128,21 @@ BEGIN
       EXECUTE format('GRANT SELECT, INSERT ON TABLE public.%I TO app_user', rel.relname);
       EXECUTE format('REVOKE UPDATE, DELETE, TRUNCATE ON TABLE public.%I FROM app_user', rel.relname);
 
+    ELSIF rel.is_tenant_table AND rel.relname = ANY (no_delete) THEN
+      -- 4. Tenant table the application must not delete from — today the tenant root itself.
+      EXECUTE format('GRANT SELECT, INSERT, UPDATE ON TABLE public.%I TO app_user', rel.relname);
+      EXECUTE format('REVOKE DELETE, TRUNCATE ON TABLE public.%I FROM app_user', rel.relname);
+
     ELSIF rel.is_tenant_table OR rel.relname = ANY (global_read) THEN
-      -- 4. Ordinary tenant table. TRUNCATE is never granted: it ignores row-level security, so one
+      -- 5. Ordinary tenant table. TRUNCATE is never granted: it ignores row-level security, so one
       --    TRUNCATE would empty the table for every organization at once.
       EXECUTE format('GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.%I TO app_user',
                      rel.relname);
       EXECUTE format('REVOKE TRUNCATE ON TABLE public.%I FROM app_user', rel.relname);
     END IF;
-    -- Anything else (a table with neither organization_id nor an entry in global_read — today only
-    -- Prisma's own _prisma_migrations) is readable by the backup and invisible to the application.
+    -- Anything else (a table with row-level security disabled and no entry in global_read — today
+    -- only Prisma's own _prisma_migrations) is readable by the backup and invisible to the
+    -- application.
   END LOOP;
 
   -- 5. Sequences. pg_dump reads `last_value` out of every sequence and stops on the first one it

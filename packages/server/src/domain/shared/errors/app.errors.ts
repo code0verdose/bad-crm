@@ -1,4 +1,9 @@
-import { errorCodeStatus, type ErrorCode, type ErrorResource } from '@bad-crm/shared/errors';
+import {
+  errorCodeStatus,
+  type ErrorCode,
+  type ErrorResource,
+  type ValidationIssue,
+} from '@bad-crm/shared/errors';
 
 /** Structured extras carried into the `application/problem+json` document, never into a 5xx body. */
 export type ErrorDetails = Readonly<Record<string, unknown>>;
@@ -67,10 +72,44 @@ export class ConflictError extends AppError {
   }
 }
 
-/** Input rejected at the boundary. The per-field list is filled in by STORY-003-04. */
+/** `1 field is invalid` / `3 fields are invalid` — the `detail` line of the problem document. */
+const describeIssueCount = (count: number): string =>
+  count === 1 ? '1 field is invalid' : `${count} fields are invalid`;
+
+/**
+ * Input rejected at the boundary, with the list of fields that caused it.
+ *
+ * `issues` is a first-class property rather than one more entry in `details` because it is the one
+ * part of an error body the client *acts* on: a form maps `path` to an input and `code` to a
+ * message. Keeping it separate is what lets the serializer put it in `errors[]` — the array the
+ * OpenAPI document declares — while `details` stays what it has always been: developer context for
+ * the log, never for the response.
+ */
 export class ValidationError extends AppError {
-  constructor(details?: ErrorDetails, cause?: unknown) {
-    super('validation_failed', 'Request validation failed', details, cause);
+  readonly issues: readonly ValidationIssue[];
+
+  constructor(issues: readonly ValidationIssue[] = [], cause?: unknown) {
+    super('validation_failed', describeIssueCount(issues.length), undefined, cause);
+
+    this.issues = issues;
+  }
+}
+
+/**
+ * Too many requests. `retryAfterSeconds` becomes the `Retry-After` header.
+ *
+ * A 429 without that header tells a client to back off without saying for how long, and the client
+ * that guesses is the client that retries in a tight loop — the limiter then spends its budget on
+ * the caller it was meant to slow down. The limiter itself arrives with the auth surface; this is
+ * the error it will raise, and the header is wired in the handler so it cannot be forgotten there.
+ */
+export class RateLimitedError extends AppError {
+  readonly retryAfterSeconds: number;
+
+  constructor(retryAfterSeconds: number, details?: ErrorDetails) {
+    super('rate_limited', 'Too many requests', details);
+
+    this.retryAfterSeconds = retryAfterSeconds;
   }
 }
 

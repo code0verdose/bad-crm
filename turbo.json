@@ -37,13 +37,31 @@
     },
     "test": {
       "dependsOn": ["^build", "//#test:repo"],
+      // `docs/api/openapi.yaml` is read by two suites that live inside packages and by no package
+      // that owns the file: `packages/server/test/contract/**` compares it against the Express
+      // router in both directions, and `packages/client/test/api/**` compares it against the
+      // committed generated types. Under the default inputs — the package's own files — a change
+      // to the contract would leave both tasks on a cache hit, and the gate that exists to catch
+      // specification drift would report a PASS over a specification it never re-read.
+      //
+      // Declared on the shared task rather than per package: `@bad-crm/shared#test` re-running on
+      // a contract change is a second of over-invalidation, and a package-scoped override is one
+      // more place to forget when the next package starts reading the contract.
+      "inputs": ["$TURBO_DEFAULT$", "$TURBO_ROOT$/docs/api/openapi.yaml"],
       // Real since the coverage provider landed: `coverage.thresholds` in every package's
       // `vitest.config.ts` is what makes rules/testing.mdc §7 a gate rather than a document.
       "outputs": ["coverage/**"]
     },
     "test:integration": {
       "dependsOn": ["^build"],
-      "cache": false
+      "cache": false,
+      // Testcontainers has to find the Docker daemon, and turbo runs tasks with a filtered
+      // environment. Without these the suite fails with `error while creating mount source path`
+      // on every runtime that is not Docker Desktop on a standard socket — colima, podman, rancher
+      // — while `pnpm --filter @bad-crm/server test:integration` passes, which reads as "turbo is
+      // broken" rather than "a variable was dropped". Measured on colima: DOCKER_HOST and
+      // TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE are the two that matter.
+      "passThroughEnv": ["DOCKER_HOST", "DOCKER_TLS_VERIFY", "DOCKER_CERT_PATH", "TESTCONTAINERS_*"]
     },
     "test:e2e": {
       "dependsOn": ["^build"],
@@ -56,7 +74,23 @@
       "cache": false
     },
     "api:gen": {
-      "inputs": ["../../docs/api/openapi.yaml"],
+      // `$TURBO_DEFAULT$` first, and it is the entry that was missing.
+      //
+      // `inputs` is an allow-list: naming the specification and nothing else meant the package's
+      // own files were not hashed at all. Measured on this task — editing anything in
+      // `packages/client` other than `package.json` produced a *cache hit* on `api:gen`. Today the
+      // task is a one-line `openapi-typescript` invocation and `package.json` happens to be hashed
+      // by turbo as part of the task definition, so the gap looks harmless; it stops looking
+      // harmless the moment generation grows the config file or the post-processing script that
+      // every codegen setup eventually grows, because an edit there would be served from cache and
+      // the committed `api-schema.d.ts` would be re-verified against a run that never happened.
+      // This is the same class of defect that has cost this repository four rounds of the commit
+      // gate in `//#test:repo`: a task reporting a cached PASS over a file it never re-read.
+      //
+      // `$TURBO_ROOT$`, not `../../`: the relative form does resolve today, but it is not part of
+      // turbo's documented input syntax — the root token says "a file outside this package" in the
+      // way turbo means it.
+      "inputs": ["$TURBO_DEFAULT$", "$TURBO_ROOT$/docs/api/openapi.yaml"],
       "outputs": ["src/shared/api/schemas/**"]
     },
     "dev": {

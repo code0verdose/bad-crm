@@ -114,6 +114,29 @@ jobs:
         # names show up in the run without expanding a log.
         run: pnpm turbo run typecheck lint build test --output-logs=errors-only
 
+      - name: Regenerate the API types and require an empty diff
+        # Contract-first, enforced (ADR-0003, step 5): `docs/api/openapi.yaml` is edited by hand and
+        # `packages/client/src/shared/api/schemas/api-schema.d.ts` is generated from it and
+        # committed. If the two disagree, the client compiles against a contract the server no
+        # longer serves — so the specification moving without the types is a red build, not a
+        # comment on a pull request.
+        #
+        # `--exit-code` is the whole gate: no `|| true`, no `continue-on-error`. The paths are
+        # named so that an unrelated dirty file (a lockfile the installer touched) cannot fail this
+        # step for the wrong reason.
+        run: |
+          set -euo pipefail
+          pnpm api:gen
+          if ! git diff --exit-code -- packages/client/src/shared/api/schemas; then
+            {
+              echo "### API types are out of date"
+              echo
+              echo 'The specification changed without regenerating the client types.'
+              echo 'Run `pnpm api:gen` and commit `api-schema.d.ts` with the specification.'
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+
       - name: Check coverage against the baseline
         # `--silent` so that pnpm's own `> bad-crm@0.0.0 …` banner does not land in the summary;
         # the table is written before the non-zero exit, so a regression is both visible and red.
@@ -271,6 +294,42 @@ jobs:
           # The wording above avoids the literal patterns on purpose: this file is scanned like any
           # other, and a comment naming them would block the pull request that edits this step.
           if [ "$status" -ge 2 ]; then exit 1; fi
+
+  # The RLS isolation suite. It is the only automated proof that invariant 1 of CLAUDE.md holds —
+  # a tenant cannot read, write, move or count another tenant's rows — and it needs a real
+  # PostgreSQL, because the property under test is a database policy, not application code.
+  #
+  # No `services:` block: Testcontainers starts the pgvector image itself, so the version under test
+  # is the one `docker-compose.yml` pins rather than a second one declared here. GitHub runners ship
+  # a Docker daemon on the standard socket, which is why the env passthrough that local runtimes
+  # need (see `passThroughEnv` in turbo.json) is not repeated.
+  #
+  # Its own job rather than a step in `checks`: it costs a container start, and a failure here means
+  # something different from a failing unit test — isolation, not logic.
+  integration:
+    name: database isolation
+    if: github.event_name != 'schedule'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+
+      - name: Activate pnpm through Corepack
+        run: corepack enable
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run the integration suite against a real PostgreSQL
+        run: pnpm turbo run test:integration
 
   # `engines.node` declares a floor and no ceiling. That is a claim about every Node above the
   # floor, and an untested claim is how the previous ceiling got there: it was written by hand,
