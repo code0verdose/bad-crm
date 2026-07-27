@@ -1,7 +1,4 @@
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
-
-import { repoRoot } from '../repo/repo-fixture.util.js';
+import { readRepoFile } from '../repo/repo-fixture.util.js';
 
 export const ENV_EXAMPLE_PATH = '.env.example';
 
@@ -22,7 +19,7 @@ const ASSIGNMENT = /^(?<comment>#\s*)?(?<key>[A-Z][A-Z0-9_]*)=(?<value>.*)$/;
  * comparison would let a real variable disappear from the template unnoticed.
  */
 export const readEnvExample = (): EnvExampleEntry[] =>
-  readFileSync(join(repoRoot, ENV_EXAMPLE_PATH), 'utf8')
+  readRepoFile(ENV_EXAMPLE_PATH)
     .split('\n')
     .map((line) => ASSIGNMENT.exec(line.trim()))
     .filter((match): match is RegExpExecArray => match !== null)
@@ -43,7 +40,7 @@ const COMPOSE_INTERPOLATION = /\$\{([A-Z][A-Z0-9_]*)(?::-[^}]*)?\}/g;
  * declare in the template.
  */
 export const composeInterpolatedVariables = (): string[] => {
-  const body = readFileSync(join(repoRoot, 'docker-compose.yml'), 'utf8')
+  const body = readRepoFile('docker-compose.yml')
     .split('\n')
     .filter((line) => !line.trimStart().startsWith('#'))
     .join('\n');

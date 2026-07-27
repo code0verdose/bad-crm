@@ -11,8 +11,9 @@ updated: 2026-07-26
 > зафиксированная до реализации; имена контейнеров и томов будут уточнены вместе с compose-файлом.
 
 Связанные документы: [`install.md`](install.md) · [`upgrade.md`](upgrade.md) ·
-[`incident.md`](incident.md) · [`../security/rls-design.md`](../security/rls-design.md) (ограничение
-№5) · [`../security/e2ee-design.md`](../security/e2ee-design.md) (раздел «Бэкапы»)
+[`incident.md`](incident.md) · [`local-environment.md`](local-environment.md) (локальный стек: тома,
+их сброс и что именно в них лежит) · [`../security/rls-design.md`](../security/rls-design.md)
+(ограничение №5) · [`../security/e2ee-design.md`](../security/e2ee-design.md) (раздел «Бэкапы»)
 
 ---
 

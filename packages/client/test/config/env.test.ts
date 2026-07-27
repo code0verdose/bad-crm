@@ -54,8 +54,9 @@ describe('client environment', () => {
 
   it('ignores the rest of the environment instead of forwarding it into the app', () => {
     // A server-only secret is deliberately present in the input: the assertion below proves it is
-    // dropped rather than forwarded into the client bundle.
-    const serverOnlySecret = 'leaked'; // scan-secrets:allow — dummy value, not a real secret
+    // dropped rather than forwarded into the client bundle. The value is a dummy, marked in both
+    // exemption syntaxes because scan-secrets.sh reads one and gitleaks the other.
+    const serverOnlySecret = 'leaked'; // scan-secrets:allow gitleaks:allow
     expect(loadClientEnv({ VITE_API_BASE_URL: '/api/v1', JWT_SECRET: serverOnlySecret })).toEqual({
       VITE_API_BASE_URL: '/api/v1',
     });

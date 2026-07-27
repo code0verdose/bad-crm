@@ -1,0 +1,58 @@
+# Bad CRM — gitleaks configuration.
+#
+# `~/.claude/security/scan-secrets.sh` prefers gitleaks when it is installed and falls back to a
+# perl matcher when it is not. The two disagree about exemptions: the perl fallback honours a
+# `scan-secrets:allow` marker on the line, gitleaks honours `gitleaks:allow` and knows nothing about
+# the other spelling. Without this file, three lines that are green on a machine without gitleaks
+# turn red the moment gitleaks is installed — and red in CI, which will install it. Every exemption
+# therefore exists twice: as an inline marker in both syntaxes (rules/security.mdc, «Исключения»)
+# and as an entry here, so that stripping one of the two markers cannot silently change the verdict.
+#
+# The entries below are scoped by path *and* by value pattern (`condition = "AND"`). Allowlisting a
+# whole file is what makes a scanner stop finding things: `packages/server/test/unit/env.test.ts` is
+# a suite about secret handling, and it is exactly the file where a real secret is most likely to be
+# pasted next to a fake one.
+
+title = "bad-crm"
+
+# The default ruleset is the point of running gitleaks at all; this file narrows it, never replaces
+# it. Dropping `useDefault` would leave a config that detects nothing and reports success.
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Development Postgres password from the compose defaults, used as a loadEnv fixture"
+condition = "AND"
+paths = ['''^packages/server/test/unit/env\.test\.ts$''']
+regexTarget = "line"
+# The pattern, not the literal: a config file that quotes the values it exempts is a file that
+# leaks them, and gitleaks scans its own configuration like any other tracked file.
+regexes = ['''dev_[a-z]+_password''']
+
+[[allowlists]]
+description = "The .env.example placeholder, asserted to be rejected by the hardening preflight"
+condition = "AND"
+paths = ['''^packages/server/test/unit/env\.test\.ts$''']
+regexTarget = "line"
+regexes = ['''CHANGE_ME_generate_with_openssl_rand_base64_\d+''']
+
+[[allowlists]]
+description = "Dummy server-only value, asserted to be dropped instead of reaching the browser"
+condition = "AND"
+paths = ['''^packages/client/test/config/env\.test\.ts$''']
+regexTarget = "line"
+regexes = ['''const serverOnlySecret''']
+
+[[allowlists]]
+description = "Deliberately invalid JWT_SECRET, asserted never to be echoed into a preflight issue"
+condition = "AND"
+paths = ['''^test/repo/service-checks\.test\.ts$''']
+regexTarget = "line"
+regexes = ['''JWT_SECRET: .too-short.''']
+
+[[allowlists]]
+description = "AWS SigV4 documentation test vector — the expected signature is derived from it"
+condition = "AND"
+paths = ['''^test/repo/service-checks\.test\.ts$''']
+regexTarget = "line"
+regexes = ['''secretKey: .wJalrXUtnFEMI''']

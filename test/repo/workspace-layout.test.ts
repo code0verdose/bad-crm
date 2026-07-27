@@ -1,10 +1,18 @@
-import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { parse as parseYaml } from 'yaml';
 import { describe, expect, it } from 'vitest';
 
-import { PACKAGE_NAMES, PACKAGE_DIRS, readJson, repoRoot } from './repo-fixture.util.js';
+import rootVitestConfig from '../../vitest.config.js';
+import { importedRepoFiles, matchesGlob, unhashedReads } from './hashed-inputs.util.js';
+import { ReadsLastSequencer } from './reads-last.sequencer.js';
+import {
+  PACKAGE_NAMES,
+  PACKAGE_DIRS,
+  readJson,
+  readRepoFile,
+  recordedReads,
+} from './repo-fixture.util.js';
 
 interface PackageJson {
   name?: string;
@@ -40,8 +48,7 @@ const internalDepsOf = (dir: string): string[] => {
 
 describe('pnpm workspace', () => {
   it('declares packages/* as the only workspace glob', () => {
-    const raw = readFileSync(join(repoRoot, 'pnpm-workspace.yaml'), 'utf8');
-    const workspace = parseYaml(raw) as { packages?: string[] };
+    const workspace = parseYaml(readRepoFile('pnpm-workspace.yaml')) as { packages?: string[] };
 
     expect(workspace.packages).toEqual(['packages/*']);
   });
@@ -184,48 +191,88 @@ describe('turbo pipeline', () => {
   });
 
   /**
-   * Every file the root suite reads has to appear in `inputs`, in some form. The list below is
-   * derived by hand from the `readFileSync`/`import` calls under `test/**`; it is asserted here so
-   * that adding a read without extending `inputs` fails loudly instead of silently caching.
+   * Every file the root suite reads has to appear in `inputs`, in some form.
+   *
+   * This used to be a hand-written list of paths, and within one epic it fell behind the code three
+   * times — `packages/{pkg}/prisma/**`, then `packages/{pkg}/tsconfig.test.json`, then the two
+   * documents `runbook-restore.test.ts` reads. Each gap meant a cached PASS over a file the task
+   * had never re-read — the exact failure this test exists to prevent. What it actually checked was
+   * whether somebody had remembered to append a line, not whether the suite reads what turbo
+   * hashes.
+   *
+   * So the set is no longer written down. `readRepoFile`/`readJson` register every path they open
+   * (`repo-fixture.util.ts`), `importedRepoFiles()` recovers the sources that arrive through
+   * `import` instead of through a read, and this test compares the union against the `inputs`
+   * globs. A read that nothing hashes fails here under its own name.
    */
+  const hashedInputs = (): string[] => [
+    ...(turbo().tasks['//#test:repo']?.inputs ?? []),
+    ...(readJson<{ globalDependencies?: string[] }>('turbo.json').globalDependencies ?? []),
+  ];
+
+  /**
+   * The registry is module state, so it only spans test files while they share one module graph and
+   * while this file runs last: `isolate: false`, `fileParallelism: false` and `ReadsLastSequencer`
+   * in `vitest.config.ts`. Undo any of the three and the audit below still passes — over its own
+   * handful of reads, having seen nothing else. `poolOptions.forks.singleFork` looked like it would
+   * do the job and did not, so the settings are asserted twice: once as configuration, and once as
+   * the observable effect of that configuration.
+   */
+  it.each([
+    ['isolate', rootVitestConfig.test?.isolate],
+    ['fileParallelism', rootVitestConfig.test?.fileParallelism],
+  ])('keeps %s off, so the read registry spans the whole suite', (_option, value) => {
+    expect(value).toBe(false);
+  });
+
+  it('runs this file last, after every suite that fills the registry', () => {
+    expect(rootVitestConfig.test?.sequence?.sequencer).toBe(ReadsLastSequencer);
+  });
+
+  /**
+   * The effect: paths belonging to three other suites, which this file never opens itself. They are
+   * only present when the whole suite ran — a filtered run such as `vitest run workspace-layout`
+   * cannot satisfy them, and is not how `//#test:repo` invokes this suite.
+   */
+  it.each([
+    ['docker-compose.yml', 'test/infra'],
+    ['.env.example', 'test/env'],
+    ['docs/runbooks/backup-restore.md', 'test/repo/runbook-restore.test.ts'],
+    ['packages/server/tsconfig.test.json', 'test/repo/tsconfig-contract.test.ts'],
+  ])('sees %s, read by %s and not by this file', (path, reader) => {
+    expect(recordedReads(), `${reader} did not share its reads with this file`).toContain(path);
+  });
+
   it('covers every repository file the root suite reads', () => {
-    const inputs = turbo().tasks['//#test:repo']?.inputs ?? [];
-    const globalDeps =
-      readJson<{ globalDependencies?: string[] }>('turbo.json').globalDependencies ?? [];
-    const hashed = [...inputs, ...globalDeps];
+    // Recovers the `import`-only dependencies into the registry before it is read out, so that the
+    // union below is complete regardless of the order of these two calls' side effects.
+    importedRepoFiles();
 
-    const readByTheSuite = [
-      'test/**',
-      'package.json',
-      'pnpm-workspace.yaml',
-      'turbo.json',
-      'tsconfig.base.json',
-      'docker-compose.yml',
-      '.env.example',
-      '.gitignore',
-      '.nvmrc',
-      'packages/*/package.json',
-      'packages/*/tsconfig.json',
-      'packages/*/src/**',
-      // `test/infra/compose.test.ts` asserts the RLS invariants of the bootstrap SQL — the only
-      // automated guard of tenant isolation in the repository right now. Leaving it out of `inputs`
-      // means a change that drops NOBYPASSRLS from app_user is served from cache as FULL TURBO.
-      'packages/*/prisma/**',
-      // `test/repo/coverage-contract.test.ts` imports every vitest config: without these, the
-      // coverage thresholds of rules/testing.mdc §7 can be lowered behind a cached pass.
-      // `test/repo/tsconfig-contract.test.ts` reads these: without them a change dropping
-      // `test/**` from `include` — which makes every @ts-expect-error in the package vacuous —
-      // is served from cache as a pass.
-      'packages/*/tsconfig.test.json',
-      // `test/repo/runbook-restore.test.ts` reads both: the restore runbook is an executable
-      // procedure, and each of its three past defects ended in an empty or unusable database.
-      'docs/runbooks/backup-restore.md',
-      'docs/security/rls-design.md',
-      'packages/*/vitest.config.ts',
-      'vitest.config.ts',
-    ];
+    const uncovered = unhashedReads(hashedInputs(), recordedReads());
 
-    expect(readByTheSuite.filter((path) => !hashed.includes(path))).toEqual([]);
+    expect(uncovered, `not hashed by //#test:repo inputs: ${uncovered.join(', ')}`).toEqual([]);
+  });
+
+  /** The glob semantics the audit above depends on, including the case that silently over-covers. */
+  describe('input globs are expanded, not compared as strings', () => {
+    it.each([
+      ['packages/*/src/**', 'packages/server/src/infrastructure/bootstrap/env.schema.ts'],
+      ['packages/*/src/**', 'packages/client/src/env.ts'],
+      ['packages/*/package.json', 'packages/e2e/package.json'],
+      ['test/**', 'test/repo/workspace-layout.test.ts'],
+      ['turbo.json', 'turbo.json'],
+    ])('%s covers %s', (pattern, path) => {
+      expect(matchesGlob(pattern, path)).toBe(true);
+    });
+
+    it.each([
+      ['packages/*/tsconfig.json', 'packages/server/tsconfig.test.json'],
+      ['packages/*/package.json', 'packages/client/prisma/package.json'],
+      ['packages/*/src/**', 'packages/server/prisma/schema.prisma'],
+      ['test/**', 'testing/foo.ts'],
+    ])('%s does not cover %s', (pattern, path) => {
+      expect(matchesGlob(pattern, path)).toBe(false);
+    });
   });
 });
 
@@ -241,6 +288,29 @@ describe('repository-level tasks', () => {
 
   it.each(['test:repo', 'lint:repo'])('declares the //#%s root task', (task) => {
     expect(turbo().tasks[`//#${task}`]).toBeDefined();
+  });
+
+  /**
+   * The runtime read registry can only see files the vitest process opens. A root task whose
+   * command is `tsc -p tsconfig.scripts.json && vitest run` reads a second file before vitest
+   * starts, and nothing else would notice it missing from `inputs` — the task would report a
+   * cached pass over a typecheck project that had been narrowed to nothing.
+   */
+  it('hashes every project file named on a root task command line', () => {
+    const scripts = rootPackageJson().scripts ?? {};
+    const named = Object.entries(scripts)
+      .filter(([name]) => name.endsWith(':repo'))
+      .flatMap(([, command]) => [...command.matchAll(/(?:-p|--project)\s+(\S+)/g)])
+      .map((match) => match[1] as string);
+
+    expect(named.length).toBeGreaterThan(0);
+
+    const hashed = new Set([
+      ...(turbo().tasks['//#test:repo']?.inputs ?? []),
+      ...(readJson<{ globalDependencies?: string[] }>('turbo.json').globalDependencies ?? []),
+    ]);
+
+    expect(named.filter((path) => !hashed.has(path))).toEqual([]);
   });
 
   it.each(['test:repo', 'lint:repo'])('backs //#%s with a root script', (script) => {

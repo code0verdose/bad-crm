@@ -148,20 +148,31 @@ installations on constrained hardware.
 ### Working on the code — works today
 
 Requirements: **Node 22 LTS** (`>=22.22.1 <23`, see `.nvmrc`), **pnpm 10** (installed by Corepack
-from the `packageManager` field), Git. Docker is optional — the checks below run without it; you
-need it only to start the backing services.
+from the `packageManager` field), Git, and **Docker** — `pnpm dev` runs a preflight check and
+refuses to start without a configuration file and the required services. The check set
+(`typecheck`, `lint`, `build`, `test`) runs without Docker.
 
 ```bash
 git clone https://github.com/<org>/bad-crm.git
 cd bad-crm
 corepack enable                          # picks up pnpm 10.x pinned in package.json
 pnpm install                             # installs all four workspace packages
-pnpm turbo run typecheck lint build test # the full check set, run before every push
+pnpm turbo run typecheck lint build test # the full check set, run before every push — no Docker needed
+
+cp .env.example .env                     # then generate the two secrets it cannot ship:
+openssl rand -base64 32                  #   -> APP_ENCRYPTION_KEY
+openssl rand -base64 48                  #   -> JWT_SECRET
+pnpm docker:up                           # Postgres, Redis, MinIO, Meilisearch, Mailpit
+pnpm check:services                      # verifies the stack is actually usable, not just running
 pnpm dev                                 # all packages in watch mode, Ctrl+C stops the whole tree
 ```
 
-`pnpm dev` currently starts three parallel watchers: the `shared` build (`tsc -b --watch`), the
-server skeleton (`tsx watch src/main.ts`, prints one startup line), and a client type-check watcher.
+`pnpm dev` first runs `scripts/preflight.ts` — it checks the configuration and the required
+services and prints what to do when something is missing, instead of failing later with a
+connection error. Set `SKIP_PREFLIGHT=1` to bypass it when working on packages that need no
+backing services. It then starts three parallel watchers: the `shared` build (`tsc -b --watch`),
+the server skeleton (`tsx watch src/main.ts`, prints one startup line), and a client type-check
+watcher.
 
 | Command | State today |
 |---|---|

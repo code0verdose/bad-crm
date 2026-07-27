@@ -14,8 +14,15 @@ updated: 2026-07-26
 > от 2026-07-27). Пока его нет, разделы про `api`/`worker`/`migrate` и про запуск приложения из
 > контейнера описывают целевой интерфейс, зафиксированный до реализации.
 
-Связанные документы: [`upgrade.md`](upgrade.md) · [`backup-restore.md`](backup-restore.md) ·
-[`incident.md`](incident.md) · [`../architecture/overview.md`](../architecture/overview.md) (раздел
+> **Перед установкой прочитайте [`hosting.md`](hosting.md)** — требования к серверу с расчётом
+> (сколько RAM, ядер и диска на команду вашего размера, почему NVMe обязателен, где хостить и
+> почём). Таблица профилей ниже задаёт порог, при котором стек **стартует**; `hosting.md` — то,
+> на чём он работает под нагрузкой со всеми включёнными возможностями.
+
+Связанные документы: [`hosting.md`](hosting.md) · [`upgrade.md`](upgrade.md) · [`backup-restore.md`](backup-restore.md) ·
+[`incident.md`](incident.md) · [`local-environment.md`](local-environment.md) (dev-стек, ручное
+подключение к сервисам, `pnpm check:services`) ·
+[`../architecture/overview.md`](../architecture/overview.md) (раздел
 «Развёртывание») · [`../architecture/stack.md`](../architecture/stack.md) (раздел «Конфигурация и
 env») · [`../../SECURITY.md`](../../SECURITY.md)
 

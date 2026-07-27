@@ -1,11 +1,6 @@
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
-
 import { describe, expect, it } from 'vitest';
 
-import { readJson, repoRoot } from './repo-fixture.util.js';
-
-const read = (relativePath: string): string => readFileSync(join(repoRoot, relativePath), 'utf8');
+import { readJson, readRepoFile } from './repo-fixture.util.js';
 
 /**
  * The commands a fenced block actually runs, with `#`/`--` comment lines dropped.
@@ -40,7 +35,7 @@ const commandsIn = (markdown: string): string =>
  *   * `CREATE DATABASE … OWNER app_migrator` running before the role existed.
  */
 describe('docs/runbooks/backup-restore.md — the restore procedure', () => {
-  const runbook = read('docs/runbooks/backup-restore.md');
+  const runbook = readRepoFile('docs/runbooks/backup-restore.md');
   /** Section 7.2 only: the surrounding prose legitimately mentions the commands it warns about. */
   const section = runbook.slice(
     runbook.indexOf('### 7.2'),
@@ -115,7 +110,7 @@ describe('package.json — database maintenance commands', () => {
 });
 
 describe('docs/security/rls-design.md — checks that must not be red by default', () => {
-  const design = read('docs/security/rls-design.md');
+  const design = readRepoFile('docs/security/rls-design.md');
 
   it('exempts backup_role from the "no grants on partitions" rule', () => {
     // A partition with no GRANT SELECT for backup_role fails the whole dump: pg_dump locks and

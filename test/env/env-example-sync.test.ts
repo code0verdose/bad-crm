@@ -1,6 +1,3 @@
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
-
 import { describe, expect, it } from 'vitest';
 
 import { clientEnvSchema } from '../../packages/client/src/shared/config/env.schema.js';
@@ -8,7 +5,7 @@ import {
   SECRET_BEARING_ENV_KEYS,
   SERVER_ENV_KEYS,
 } from '../../packages/server/src/infrastructure/bootstrap/env.schema.js';
-import { repoRoot } from '../repo/repo-fixture.util.js';
+import { readRepoFile } from '../repo/repo-fixture.util.js';
 import {
   ENV_EXAMPLE_PATH,
   TOOLING_ENV_KEYS,
@@ -96,14 +93,14 @@ describe('.env.example contains no real secret', () => {
   });
 
   it('tells the operator how to generate the two secrets that have no usable placeholder', () => {
-    const raw = readFileSync(join(repoRoot, ENV_EXAMPLE_PATH), 'utf8');
+    const raw = readRepoFile(ENV_EXAMPLE_PATH);
 
     expect(raw).toContain('openssl rand -base64 32');
     expect(raw).toContain('openssl rand -base64 48');
   });
 
   it('never ships a real .env: only the template is committed', () => {
-    const gitignore = readFileSync(join(repoRoot, '.gitignore'), 'utf8');
+    const gitignore = readRepoFile('.gitignore');
 
     expect(gitignore).toMatch(/^\.env$/m);
     expect(gitignore).toMatch(/^!\.env\.example$/m);

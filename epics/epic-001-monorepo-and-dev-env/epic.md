@@ -41,14 +41,14 @@ Bad CRM состоит из клиента, сервера, общего изо�
 
 ## Acceptance (эпик выполнен, когда)
 
-- [ ] `pnpm install && pnpm docker:up && pnpm dev` на чистой машине с Node 22 и Docker 24 приводит к работающим клиенту и серверу без ручных шагов сверх копирования `.env.example` → `.env`.
-- [ ] `pnpm typecheck`, `pnpm lint`, `pnpm build`, `pnpm test` выполняются из корня и проходят на пустом скелете.
-- [ ] Turborepo кеширует повторный `pnpm build`/`pnpm typecheck`: второй прогон без изменений завершается из кеша (FULL TURBO).
-- [ ] Направление зависимостей соблюдено: `shared` не импортирует ничего из `packages/*`, `e2e` не импортирует исходники `server`/`client`; нарушение падает на линте.
-- [ ] Все контейнеры `docker-compose.yml` имеют healthcheck, зафиксированные версии образов и именованные тома; `pnpm docker:up` ждёт готовности сервисов.
-- [ ] Старт сервера с неполным `.env` падает с внятным сообщением о конкретной переменной, а не работает «наполовину».
-- [ ] Коммит с сообщением вне Conventional Commits отклоняется локальным хуком.
-- [ ] `packages/shared` собирается и импортируется и из `server`, и из `client`; в нём нет Node-only и браузерных API.
+- [ ] `pnpm install && pnpm docker:up && pnpm dev` на чистой машине с Node 22 и Docker 24 приводит к работающим клиенту и серверу без ручных шагов сверх копирования `.env.example` → `.env`. — **не выполнено и не может быть выполнено внутри этого эпика.** Критерий требует работающих клиента и сервера, а раздел «Вне скоупа» этого же эпика отдаёт HTTP-сервер в [EPIC-003](../epic-003-server-skeleton-and-api-contract/epic.md), клиентский шелл — в [EPIC-004](../epic-004-client-shell-fsd/epic.md). Сама команда работает: `pnpm dev` прогоняет preflight и поднимает три watch-процесса; поднимать ей пока нечего. Закрывается вместе с EPIC-004.
+- [x] `pnpm typecheck`, `pnpm lint`, `pnpm build`, `pnpm test` выполняются из корня и проходят на пустом скелете.
+- [x] Turborepo кеширует повторный `pnpm build`/`pnpm typecheck`: второй прогон без изменений завершается из кеша (FULL TURBO). *Проверено 2026-07-27: `8ms >>> FULL TURBO`; правка в `shared` инвалидирует `shared`/`server`/`client` и не трогает `e2e`.*
+- [x] Направление зависимостей соблюдено: `shared` не импортирует ничего из `packages/*`, `e2e` не импортирует исходники `server`/`client`; нарушение падает на линте.
+- [x] Все контейнеры `docker-compose.yml` имеют healthcheck, зафиксированные версии образов и именованные тома; `pnpm docker:up` ждёт готовности сервисов.
+- [ ] Старт сервера с неполным `.env` падает с внятным сообщением о конкретной переменной, а не работает «наполовину». — **частично:** схема, текст сообщения и список **всех** невалидных переменных готовы и покрыты тестами; вживую этот отказ сегодня демонстрирует preflight `pnpm dev`. Самого старта сервера нет — `main.ts` пока не вызывает `loadEnv()`. Закрывается в [STORY-003-01](../epic-003-server-skeleton-and-api-contract/stories/story-003-01-express-app-composition-root.md).
+- [x] Коммит с сообщением вне Conventional Commits отклоняется локальным хуком.
+- [x] `packages/shared` собирается и импортируется и из `server`, и из `client`; в нём нет Node-only и браузерных API.
 
 ## Зависимости / риски
 
@@ -63,10 +63,27 @@ Bad CRM состоит из клиента, сервера, общего изо�
 
 ## Истории
 
-- [ ] [STORY-001-01 — pnpm workspaces и turborepo pipeline](stories/story-001-01-pnpm-workspaces-turborepo.md)
-- [ ] [STORY-001-02 — tsconfig.base.json strict и path-алиасы](stories/story-001-02-tsconfig-base-strict-aliases.md)
-- [ ] [STORY-001-03 — ESLint 9 flat, Prettier, husky, lint-staged, commitlint](stories/story-001-03-eslint-prettier-husky-commitlint.md)
-- [ ] [STORY-001-04 — docker-compose с полным набором dev-сервисов](stories/story-001-04-docker-compose-dev-services.md)
-- [ ] [STORY-001-05 — .env.example и Zod-схема окружения](stories/story-001-05-env-example-zod-schema.md)
-- [ ] [STORY-001-06 — pnpm dev одной командой и quickstart](stories/story-001-06-single-command-dev-and-quickstart.md)
-- [ ] [STORY-001-07 — packages/shared: типы, Zod-примитивы, каталог permissions](stories/story-001-07-shared-package-foundation.md)
+- [x] [STORY-001-01 — pnpm workspaces и turborepo pipeline](stories/story-001-01-pnpm-workspaces-turborepo.md) — `done`
+- [ ] [STORY-001-02 — tsconfig.base.json strict и path-алиасы](stories/story-001-02-tsconfig-base-strict-aliases.md) — `review`: сторона `vite.config.ts` принадлежит [STORY-004-01](../epic-004-client-shell-fsd/stories/story-004-01-vite-react-strict-aliases.md)
+- [x] [STORY-001-03 — ESLint 9 flat, Prettier, husky, lint-staged, commitlint](stories/story-001-03-eslint-prettier-husky-commitlint.md) — `done`
+- [x] [STORY-001-04 — docker-compose с полным набором dev-сервисов](stories/story-001-04-docker-compose-dev-services.md) — `done`
+- [ ] [STORY-001-05 — .env.example и Zod-схема окружения](stories/story-001-05-env-example-zod-schema.md) — `review`: три критерия начинаются со «старта приложения» ([EPIC-003](../epic-003-server-skeleton-and-api-contract/epic.md))
+- [ ] [STORY-001-06 — pnpm dev одной командой и quickstart](stories/story-001-06-single-command-dev-and-quickstart.md) — `review`: `:5173` и `GET /health` появятся в EPIC-004 и EPIC-003
+- [x] [STORY-001-07 — packages/shared: типы, Zod-примитивы, каталог permissions](stories/story-001-07-shared-package-foundation.md) — `done`
+
+## Почему эпик остаётся в `review`
+
+Четыре истории из семи закрыты. Три оставшиеся упираются в одно и то же: их acceptance-критерии
+писались так, как будто EPIC-001 отдаёт работающее приложение, тогда как раздел «Вне скоупа» этого
+же эпика отдаёт HTTP-сервер в [EPIC-003](../epic-003-server-skeleton-and-api-contract/epic.md), а
+клиентский шелл — в [EPIC-004](../epic-004-client-shell-fsd/epic.md). Пункты вида «сервер отвечает
+`200` на `GET /health`», «клиент доступен на `:5173`», «при старте в лог уходит сводка деградаций»
+нельзя ни выполнить, ни проверить, не выйдя за границы эпика.
+
+Отметить их выполненными было бы неправдой, переписать критерии задним числом — тоже: они верно
+описывают состояние, к которому проект идёт. Поэтому эпик остаётся в `review` до закрытия
+STORY-003-01, STORY-003-02, STORY-003-03 и STORY-004-01; каждый открытый пункт выше несёт ссылку на
+историю, которая его закроет. Инфраструктурная часть эпика — монорепо, конфиги, линт, dev-стек,
+env-схема, `packages/shared` — сделана и проверена на живом окружении.
+
+*Ревизия чекбоксов проведена 2026-07-27.*

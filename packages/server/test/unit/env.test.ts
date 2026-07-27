@@ -59,7 +59,9 @@ describe('a valid configuration', () => {
     const env = loadEnv({
       ...VALID_ENV,
       HOME: '/root',
-      POSTGRES_PASSWORD: 'dev_postgres_password', // scan-secrets:allow — test fixture, not a secret
+      // A compose development default, not a real secret. Both markers, because the perl matcher
+      // of scan-secrets.sh reads one spelling and gitleaks the other (rules/security.mdc).
+      POSTGRES_PASSWORD: 'dev_postgres_password', // scan-secrets:allow gitleaks:allow
     });
 
     expect(env.APP_URL).toBe('https://crm.example.com');
@@ -161,7 +163,9 @@ describe('typed scalars', () => {
  * to `production` lets it boot on a placeholder `JWT_SECRET` published in a public AGPL repository.
  */
 describe('hardening preflight is scoped by NODE_ENV', () => {
-  const PLACEHOLDER_SECRET = 'CHANGE_ME_generate_with_openssl_rand_base64_48'; // scan-secrets:allow
+  // The .env.example placeholder this test asserts is rejected; marked in both syntaxes so the
+  // verdict of scan-secrets.sh does not depend on whether gitleaks happens to be installed.
+  const PLACEHOLDER_SECRET = 'CHANGE_ME_generate_with_openssl_rand_base64_48'; // scan-secrets:allow gitleaks:allow
 
   it.each(['production', 'test'] as const)('refuses a placeholder secret under %s', (nodeEnv) => {
     expect(issuePathsOf(withEnv({ NODE_ENV: nodeEnv, JWT_SECRET: PLACEHOLDER_SECRET }))).toContain(

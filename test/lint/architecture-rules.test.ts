@@ -156,6 +156,22 @@ const NARROW_LAYER_EXCEPTIONS: ForbiddenCase[] = [
   },
 ];
 
+/**
+ * The repository suite reads through one recording door.
+ *
+ * `test/repo/workspace-layout.test.ts` audits the files the suite reads against the `inputs` of
+ * `//#test:repo`, and it can only see reads that `readRepoFile`/`readJson` recorded. A spec calling
+ * `readFileSync` itself would be a hole in that audit, and holes there are how `//#test:repo`
+ * returned a cached PASS over a file it had never re-read — three times in one epic.
+ */
+const REPOSITORY_SUITE_READS: ForbiddenCase[] = [
+  {
+    fixture: 'test/raw-read.util.ts',
+    rule: 'no-restricted-imports',
+    hint: 'repo-fixture.util.ts',
+  },
+];
+
 /** Configuration reaches the code through a schema, never through a raw environment read. */
 const ENVIRONMENT_ACCESS: ForbiddenCase[] = [
   {
@@ -177,6 +193,7 @@ const CLEAN_FIXTURES = [
   'packages/server/src/infrastructure/persistence/task.repository.ts',
   'packages/client/src/units/task/service/hooks/use-task-list.hook.ts',
   'packages/client/src/shared/api/http.client.ts',
+  'test/recorded-read.util.ts',
 ];
 
 /**
@@ -210,6 +227,7 @@ describeForbidden('naming and file structure', NAMING);
 describeForbidden('general hygiene', GENERAL);
 describeForbidden('environment access', ENVIRONMENT_ACCESS);
 describeForbidden('layer exceptions stay narrow', NARROW_LAYER_EXCEPTIONS);
+describeForbidden('repository suite reads', REPOSITORY_SUITE_READS);
 
 describe('positive control', () => {
   it.each(CLEAN_FIXTURES)(

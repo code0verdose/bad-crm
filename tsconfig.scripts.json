@@ -1,0 +1,18 @@
+{
+  // Typecheck project for the repository-level scripts in `scripts/**`.
+  //
+  // Those files belong to no workspace package, so `turbo run typecheck` — which only visits
+  // packages — never looked at them. `tsx` strips types and runs whatever it is given, so without
+  // this project a broken `scripts/preflight.ts` would only fail on the developer machine that ran
+  // it. It is executed from the root `test:repo` script, which `turbo run test` already depends on.
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "lib": ["ES2023"],
+    "types": ["node"],
+    "noEmit": true,
+    "incremental": false
+  },
+  "include": ["scripts/**/*.ts"]
+}

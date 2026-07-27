@@ -24,6 +24,18 @@
 --   somebody adds a table and does not read this file. The rules below are expressed against
 --   pg_class/pg_attribute, so a table created by a future migration is covered the moment it exists.
 --
+-- WHAT THIS FILE DOES NOT COVER YET — FUNCTIONS
+--   Only tables and sequences below. That is a gap with a direction: for a table `--no-privileges`
+--   is fail-closed (no GRANT, the application dies on `permission denied`, this file repairs it),
+--   while for a function it is fail-open. PostgreSQL grants `EXECUTE` on a new function to PUBLIC
+--   by default, and `pg_restore` recreates it owned by the role running the restore — app_migrator,
+--   the owner of the schema. A restored SECURITY DEFINER resolver is therefore callable by anybody
+--   and runs with more rights than it was written for.
+--   No such function exists today. The first one arrives with the pre-organization user resolver of
+--   EPIC-006 (STORY-006-02, epics/epic-006-auth-core/stories/story-006-02-login-access-and-refresh-cookie.md),
+--   and that story carries the task of extending this file over pg_proc: OWNER TO app_auth,
+--   REVOKE ALL FROM PUBLIC, GRANT EXECUTE to the one role that needs it.
+--
 -- Idempotent: GRANT of a privilege already held is a no-op, and the whole file is one transaction —
 -- a failure half way through leaves the previous state rather than a half-granted database.
 

@@ -118,7 +118,8 @@ const key = process.env.APP_ENCRYPTION_KEY!;
 
 | Механизм | Что ловит |
 |---|---|
-| `~/.claude/security/scan-secrets.sh --staged` + hook `git-guard.sh` | секреты в staged-диффе (жёсткий блок) |
+| `~/.claude/security/scan-secrets.sh --staged` + hook `git-guard.sh` | секреты в staged-диффе (жёсткий блок); gitleaks, если установлен, иначе perl-фолбэк |
+| [`.gitleaks.toml`](../.gitleaks.toml) (`[extend] useDefault = true` + точечный allowlist) | расхождение вердикта между машиной с gitleaks и без него |
 | Агент `secret-scanner` | секреты в репозитории и в выводе команд, ведёт журнал утечек |
 | Агент `security-auditor` в commit-гейте | OWASP-находки, небезопасные дефолты, CVE в зависимостях; вердикт High/Critical блокирует коммит |
 | CodeQL в CI (`.github/workflows/codeql.yml`) | инъекции, небезопасную десериализацию, path traversal |
@@ -131,6 +132,14 @@ const key = process.env.APP_ENCRYPTION_KEY!;
 
 ## Исключения
 
+- **Маркер исключения ставится в обоих синтаксисах — `scan-secrets:allow` и `gitleaks:allow`,
+  на одной строке со значением.** `~/.claude/security/scan-secrets.sh` предпочитает `gitleaks`,
+  если он установлен, и только иначе идёт в perl-фолбэк. Perl-фолбэк понимает **только**
+  `scan-secrets:allow`, gitleaks — **только** `gitleaks:allow`. Один маркер вместо двух означает,
+  что вердикт сканера зависит от того, установлен ли gitleaks на конкретной машине: локально зелено,
+  в CI красно (или наоборот). Дублируется и в [`.gitleaks.toml`](../.gitleaks.toml) — точечной
+  записью «путь + шаблон значения», не «игнорировать файл целиком»: файл-исключение целиком
+  перестаёт быть проверяемым ровно там, где рядом с фейковым значением однажды окажется настоящее.
 - **`LOG_LEVEL=debug`** разрешает логировать тело запроса — но только для не-auth маршрутов и
   никогда в проде по умолчанию.
 - **Публичные маршруты** (`/health`, `/ready`, `/metrics`, `/link/:token`, логин, приглашение,

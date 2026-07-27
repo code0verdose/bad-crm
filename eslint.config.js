@@ -57,7 +57,11 @@ const TESTS = [
   'packages/**/*.{test,spec}.{ts,tsx}',
   'test/**/*.test.ts',
 ];
-const REPO_TOOLING = ['*.js', '*.ts', 'test/**/*.ts', 'eslint/**/*.js'];
+const REPO_TOOLING = ['*.js', '*.ts', 'test/**/*.ts', 'scripts/**/*.ts', 'eslint/**/*.js'];
+/** The repository-contract suite, both its specs and the fixtures they share. */
+const REPO_SUITE = ['test/**/*.ts'];
+/** The one module in the suite allowed to touch the filesystem — it is the recording door. */
+const REPO_SUITE_FS_DOOR = ['test/repo/repo-fixture.util.ts'];
 
 // ─── monorepo package boundaries (CLAUDE.md → «Раскладка пакетов и нейминг») ──────────────────
 const workspace = (...names) => names.flatMap((name) => [`@bad-crm/${name}`, `@bad-crm/${name}/*`]);
@@ -81,6 +85,12 @@ const E2E_IS_BLACK_BOX = {
   group: workspace('shared', 'server', 'client'),
   message:
     '`packages/e2e` drives the running stack over HTTP and the UI; importing application sources would let a test pass against code that is not deployed (CLAUDE.md → «Раскладка пакетов и нейминг»).',
+};
+
+const READS_GO_THROUGH_THE_REGISTRY = {
+  group: ['fs', 'fs/*', 'node:fs', 'node:fs/*'],
+  message:
+    'The repository suite reads through `readRepoFile`/`readJson` from `test/repo/repo-fixture.util.ts`, which records the path so that `test/repo/workspace-layout.test.ts` can prove the `inputs` of `//#test:repo` still hash everything the suite reads. A direct `readFileSync` is invisible to that audit and brings back the cached PASS over an unread file.',
 };
 
 const NO_PARENT_RELATIVE = {
@@ -582,6 +592,21 @@ export default tseslint.config(
       'vitest/valid-title': ['error', { ignoreTypeOfDescribeName: true }],
       'bad-crm/require-role-suffix': 'off',
       '@typescript-eslint/naming-convention': 'off',
+    },
+  },
+
+  // ── repository suite: every read goes through the recording door ─────────────────────────────
+  // `//#test:repo` declares an `inputs` allow-list; a file the suite reads but `inputs` omits is
+  // served from cache as a PASS over content that was never re-read. The set of files read is
+  // therefore collected at read time by `readRepoFile`/`readJson` and audited in
+  // `test/repo/workspace-layout.test.ts` — which only works while those two are the only way in.
+  // A `readFileSync` written directly in a spec would be invisible to the audit, so the import is
+  // banned everywhere in the suite except in the module that owns the registry.
+  {
+    files: REPO_SUITE,
+    ignores: REPO_SUITE_FS_DOOR,
+    rules: {
+      'no-restricted-imports': ['error', { patterns: [READS_GO_THROUGH_THE_REGISTRY] }],
     },
   },
 );

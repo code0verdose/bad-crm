@@ -1,9 +1,6 @@
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
-
 import { parse as parseYaml } from 'yaml';
 
-import { repoRoot } from '../repo/repo-fixture.util.js';
+import { readRepoFile } from '../repo/repo-fixture.util.js';
 
 /** Long syntax of a published port; the short syntax is a plain `host_ip:published:target` string. */
 export interface ComposePortMapping {
@@ -56,19 +53,17 @@ export const COMPOSE_PATH = 'docker-compose.yml';
 export const BOOTSTRAP_SQL_PATH = 'packages/server/prisma/sql/00-bootstrap-roles.sql';
 
 /** Raw text of the role bootstrap. Read as text on purpose: the assertions are about SQL shape. */
-export const readBootstrapSql = (): string =>
-  readFileSync(join(repoRoot, BOOTSTRAP_SQL_PATH), 'utf8');
+export const readBootstrapSql = (): string => readRepoFile(BOOTSTRAP_SQL_PATH);
 
 /** Wrapper the Docker entrypoint and `pnpm db:bootstrap` both execute. */
 export const BOOTSTRAP_WRAPPER_PATH = 'packages/server/prisma/sql/initdb/00-bootstrap-roles.sh';
 
-export const readBootstrapWrapper = (): string =>
-  readFileSync(join(repoRoot, BOOTSTRAP_WRAPPER_PATH), 'utf8');
+export const readBootstrapWrapper = (): string => readRepoFile(BOOTSTRAP_WRAPPER_PATH);
 
 /** Catalog-driven grant reconciler, run after every migration and after every restore. */
 export const GRANTS_SQL_PATH = 'packages/server/prisma/sql/01-grants.sql';
 
-export const readGrantsSql = (): string => readFileSync(join(repoRoot, GRANTS_SQL_PATH), 'utf8');
+export const readGrantsSql = (): string => readRepoFile(GRANTS_SQL_PATH);
 
 /**
  * Healthcheck command of a service as one string, whatever syntax it was written in
@@ -93,7 +88,7 @@ export const imageMajorOf = (service: ComposeService): number => {
  * shell resolves it to. `docker compose config` would substitute them away.
  */
 export const readComposeFile = (): ComposeFile => {
-  const raw = readFileSync(join(repoRoot, COMPOSE_PATH), 'utf8');
+  const raw = readRepoFile(COMPOSE_PATH);
   return parseYaml(raw) as ComposeFile;
 };
 

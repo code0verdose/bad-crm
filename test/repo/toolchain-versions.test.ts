@@ -1,9 +1,8 @@
-import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
-import { PACKAGE_DIRS, readJson, repoRoot } from './repo-fixture.util.js';
+import { PACKAGE_DIRS, readJson, readRepoFile } from './repo-fixture.util.js';
 
 interface PackageJson {
   engines?: Record<string, string>;
@@ -90,7 +89,7 @@ describe('Node version floor', () => {
   });
 
   it('matches .nvmrc', () => {
-    const nvmrc = readFileSync(join(repoRoot, '.nvmrc'), 'utf8').trim();
+    const nvmrc = readRepoFile('.nvmrc').trim();
     const [major, minor, patch] = floorOf(engineRange());
 
     expect(nvmrc).toBe(`${major}.${minor}.${patch}`);

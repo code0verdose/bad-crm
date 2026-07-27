@@ -103,7 +103,14 @@
         // procedure: each of its three past defects ended in an empty or unusable database, and an
         // edit reintroducing one of them must not be served from cache.
         "docs/runbooks/backup-restore.md",
-        "docs/security/rls-design.md"
+        "docs/security/rls-design.md",
+        // `test/repo/service-checks.test.ts` and `test/repo/preflight.test.ts` import the preflight
+        // check modules directly, so the scripts are code under test here, not tooling beside it.
+        "scripts/**",
+        // The task command is `tsc -p tsconfig.scripts.json && vitest run`. The runtime read
+        // registry only sees what vitest reads — never what the first half of the command line
+        // reads — so a project file named on the command line has to be listed by hand.
+        "tsconfig.scripts.json"
       ],
       "outputs": ["coverage/**"]
     },
@@ -113,7 +120,17 @@
     // disabled `vitest/no-focused-tests` on the repository suite. `--ignore-pattern packages/`
     // keeps the split clean: each package still lints itself, this task lints the rest.
     "//#lint:repo": {
-      "inputs": ["test/**", "eslint/**", "*.js", "*.ts", "package.json", "!test/lint/fixtures/**"],
+      "inputs": [
+        "test/**",
+        // `eslint . --ignore-pattern packages/` lints scripts/** too: without this entry a change
+        // there is served from cache as a lint pass over code that was never re-linted.
+        "scripts/**",
+        "eslint/**",
+        "*.js",
+        "*.ts",
+        "package.json",
+        "!test/lint/fixtures/**"
+      ],
       "outputs": []
     }
   }
