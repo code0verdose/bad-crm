@@ -56,7 +56,7 @@ env») · [`../../SECURITY.md`](../../SECURITY.md)
 ## 2. Установка
 
 ```bash
-git clone https://github.com/<org>/bad-crm.git
+git clone https://github.com/code0verdose/bad-crm.git
 cd bad-crm
 cp .env.example .env
 ```

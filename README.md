@@ -130,7 +130,7 @@ AI (features are hidden and return a clear "feature disabled" response).
 #### Intended flow
 
 ```bash
-git clone https://github.com/<org>/bad-crm.git
+git clone https://github.com/code0verdose/bad-crm.git
 cd bad-crm
 cp .env.example .env
 # generate the mandatory encryption key
@@ -153,7 +153,7 @@ refuses to start without a configuration file and the required services. The che
 (`typecheck`, `lint`, `build`, `test`) runs without Docker.
 
 ```bash
-git clone https://github.com/<org>/bad-crm.git
+git clone https://github.com/code0verdose/bad-crm.git
 cd bad-crm
 corepack enable                          # picks up pnpm 10.x pinned in package.json
 pnpm install                             # installs all four workspace packages

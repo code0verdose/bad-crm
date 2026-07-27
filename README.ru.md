@@ -130,7 +130,7 @@ Bad CRM — рабочее пространство для команд разр
 #### Как это задумано
 
 ```bash
-git clone https://github.com/<org>/bad-crm.git
+git clone https://github.com/code0verdose/bad-crm.git
 cd bad-crm
 cp .env.example .env
 # сгенерировать обязательный ключ шифрования
@@ -152,7 +152,7 @@ docker compose up -d
 поднять зависимые сервисы.
 
 ```bash
-git clone https://github.com/<org>/bad-crm.git
+git clone https://github.com/code0verdose/bad-crm.git
 cd bad-crm
 corepack enable                          # подтянет pnpm 10.x, зафиксированный в package.json
 pnpm install                             # установит все четыре пакета workspace

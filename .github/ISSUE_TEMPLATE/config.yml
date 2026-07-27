@@ -5,14 +5,19 @@
 blank_issues_enabled: false
 
 contact_links:
-  # MAINTAINER TODO (before the repository is published): point this at
-  # https://github.com/<org>/bad-crm/security/advisories/new once the slug exists, and enable
-  # private vulnerability reporting in Settings → Code security. A `<org>` placeholder is not
-  # used in the URL itself: an invalid URL makes GitHub reject the whole file, which would
-  # silently re-enable blank issues and drop this notice.
+  # The repository slug exists now, so this is the reporting form itself rather than a description
+  # of it. It returns 404 until private vulnerability reporting is switched on in
+  # Settings → Code security — which is why the how-to link below stays as a second entry: a
+  # reporter who hits the 404 still has somewhere to go instead of opening a public issue.
   - name: Security vulnerability — report privately, never as an issue
+    url: https://github.com/code0verdose/bad-crm/security/advisories/new
+    about: >-
+      Cross-tenant data access, permission bypass, anything touching the encrypted vault. Details,
+      scope and safe harbour are in SECURITY.md. Public disclosure before a fix puts every
+      installation at risk.
+
+  - name: How private vulnerability reporting works
     url: https://docs.github.com/en/code-security/security-advisories/guidance-on-reporting-and-writing-information-about-vulnerabilities/privately-reporting-a-security-vulnerability
     about: >-
-      Cross-tenant data access, permission bypass, anything touching the encrypted vault: use
-      Security → Report a vulnerability on this repository. Details, scope and safe harbour are
-      in SECURITY.md. Public disclosure before a fix puts every installation at risk.
+      Use this if the link above returns 404 — private reporting has not been enabled on the
+      repository yet. Do not fall back to a public issue.

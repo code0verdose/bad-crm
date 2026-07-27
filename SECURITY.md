@@ -37,11 +37,19 @@ before a fix exists puts every installation at risk.
 **Preferred channel:** GitHub **Private vulnerability reporting** (Security → Report a vulnerability)
 on this repository. It is private, it produces an advisory draft, and it lets us credit you.
 
-**Alternative channel:** email `SECURITY_CONTACT_PLACEHOLDER@example.com`.
+Use it here:
+<https://github.com/code0verdose/bad-crm/security/advisories/new>
+
+**There is no email channel yet, and this document will not pretend otherwise.** A published
+address that bounces is worse than an absent one: a reporter who gets a delivery failure usually
+does not try again, and the finding goes public instead. Until a monitored address and a PGP key
+exist, GitHub private reporting is the only channel — it is private, it produces an advisory
+draft, and it lets us credit you.
 
 <!--
-  MAINTAINER TODO: before the first public release, replace the placeholder above with a real
-  address, publish a PGP key here, and enable GitHub private vulnerability reporting on the repo.
+  MAINTAINER TODO: private vulnerability reporting has to be switched on in
+  Settings → Code security for the link above to work. Add a monitored address and a PGP key here
+  when they exist, and delete the paragraph that says they do not.
 -->
 
 ### What to include

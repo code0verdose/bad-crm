@@ -48,7 +48,7 @@ Resources: 8 GB RAM (4 GB with the `minimal` profile), 10 GB of disk.
 **Flow** (working since EPIC-001; the migrate/seed and `pnpm dev` steps land with EPIC-003 and EPIC-004):
 
 ```bash
-git clone https://github.com/<org>/bad-crm.git
+git clone https://github.com/code0verdose/bad-crm.git
 cd bad-crm
 corepack enable
 pnpm install

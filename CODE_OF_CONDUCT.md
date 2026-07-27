@@ -59,17 +59,22 @@ representative at an online or offline event.
 ## Enforcement
 
 Instances of abusive, harassing, or otherwise unacceptable behavior may be
-reported to the community leaders responsible for enforcement at
-CONDUCT_CONTACT_PLACEHOLDER@example.com.
+reported to the community leaders responsible for enforcement by opening a
+private report through GitHub on
+<https://github.com/code0verdose/bad-crm/security/advisories/new>, or by
+contacting the repository owner directly through their GitHub profile.
 All complaints will be reviewed and investigated promptly and fairly.
+
+There is no dedicated email address for conduct reports yet. Rather than print
+one that bounces — which tells a reporter their complaint was received when it
+was not — this document names only channels that work today.
 
 All community leaders are obligated to respect the privacy and security of the
 reporter of any incident.
 
 <!--
-  MAINTAINER TODO: replace CONDUCT_CONTACT_PLACEHOLDER@example.com with a real, monitored
-  address before the first public release. It should not be the same address as the
-  security contact in SECURITY.md.
+  MAINTAINER TODO: add a monitored address for conduct reports and delete the paragraph that
+  says there is none. It should not be the same address as the security contact in SECURITY.md.
 -->
 
 ## Enforcement Guidelines
