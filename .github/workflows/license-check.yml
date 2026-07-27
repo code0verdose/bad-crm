@@ -319,7 +319,10 @@ jobs:
               ghsa: 'GHSA-mh99-v99m-4gvg',
               module: 'brace-expansion',
               // Every dependency path this exception covers. A new path fails the gate.
-              paths: ['.>eslint>minimatch>brace-expansion'],
+              paths: [
+                '.>eslint>minimatch>brace-expansion',
+                'packages__client>openapi-typescript>@redocly/openapi-core>minimatch>brace-expansion',
+              ],
               expires: '2026-10-27',
               reason:
                 'CVE-2026-14257 (High, CVSS 7.5) in brace-expansion 1.x: unbounded expansion ' +
@@ -328,6 +331,11 @@ jobs:
                 'lockfile for other consumers; the vulnerable 1.1.16 arrives only through ' +
                 'eslint > minimatch@3, and upstream ships no 1.x backport, so the fix cannot ' +
                 'be pulled onto this path without forcing a major of minimatch under eslint. ' +
+                'Measured, not assumed: an override to >=5.0.8 was applied and the tree was ' +
+                'rebuilt — ESLint then died with `expand is not a function`, because 1.x ' +
+                'exported the function directly and 5.x exports named members, and minimatch@3 ' +
+                'calls it the old way. The same 1.x reaches the second path through ' +
+                'openapi-typescript, a code generator run on this repository own contract. ' +
                 'Dev-only: eslint is not in the distributed image, and the only patterns it ' +
                 'expands come from eslint.config.js in this repository, so the untrusted input ' +
                 'the advisory needs does not exist here. Re-review when eslint drops ' +

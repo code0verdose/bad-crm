@@ -39,7 +39,10 @@
     "prepare": "husky"
   },
   "pnpm": {
-    "onlyBuiltDependencies": ["esbuild"]
+    "onlyBuiltDependencies": ["esbuild"],
+    "overrides": {
+      "js-yaml@<4.3.0": ">=4.3.0"
+    }
   },
   "devDependencies": {
     "@commitlint/cli": "21.2.1",
