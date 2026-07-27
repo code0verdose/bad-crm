@@ -21,6 +21,7 @@ estimate: M
 - **Given** два последовательных интеграционных теста **When** между ними выполняется очистка **Then** используется `TRUNCATE ... RESTART IDENTITY CASCADE` по списку таблиц, а не пересоздание контейнера; второй тест не видит данных первого.
 - **Given** миграция с `DROP COLUMN` в одном релизе со сменой кода **When** запускается проверка миграций **Then** она падает: разрушающие операции требуют двухфазного плана expand → migrate → contract.
 - **Given** миграция с `CREATE INDEX` без `CONCURRENTLY` на таблице с данными **When** запускается линт миграций **Then** он выдаёт блокирующее замечание.
+- **Given** применённая миграция **When** следом выполняется `pnpm db:grants` **Then** у `backup_role` есть `SELECT` на каждой таблице, партиции и последовательности (иначе `pg_dump` падает на `LOCK TABLE`), а у `app_user` — права по правилам `packages/server/prisma/sql/01-grants.sql`; повторный запуск ничего не меняет.
 - **Given** отсутствие Docker в окружении **When** запускаю `pnpm test` (юнит-уровень) **Then** он проходит: интеграционные тесты выделены в отдельный vitest-проект `test:integration` и не блокируют быстрый цикл.
 
 ## Задачи
@@ -29,7 +30,7 @@ estimate: M
 - [ ] Инициализировать Prisma: `packages/server/prisma/schema.prisma`, генератор клиента, `previewFeatures` при необходимости для `postgresqlExtensions`.
 - [ ] Создать первую миграцию: включение расширений + платформенная таблица (`schema_meta` / `app_setting`) без `organizationId`.
 - [ ] Реализовать `infrastructure/persistence/prisma/prisma-client.ts` — создание клиента, логирование медленных запросов через `LoggerPort`, единая точка `$disconnect` в shutdown.
-- [ ] Реализовать харнесс `test/integration/setup/testcontainers.ts`: `globalSetup` с поднятием контейнера, применением `prisma migrate deploy`, экспортом `DATABASE_URL` для тестов; `truncateAll()` между тестами.
+- [ ] Реализовать харнесс `test/integration/setup/testcontainers.ts`: `globalSetup` с поднятием контейнера, применением `prisma migrate deploy` **и последующим прогоном `01-grants.sql`**, экспортом `DATABASE_URL` для тестов; `truncateAll()` между тестами. Без грантов интеграционные тесты пойдут под `app_migrator` и не заметят ни одной ошибки в правах.
 - [ ] Настроить отдельный vitest-проект `integration` и скрипт `pnpm test:integration`; подключить его к CI-джобе из [STORY-002-01](../../epic-002-ci-and-commit-gate/stories/story-002-01-ci-pipeline-turbo-checks.md).
 - [ ] Реализовать `scripts/migration-lint.ts`: запрет `DROP COLUMN`/`DROP TABLE` в одном релизе с изменением кода, переименований, `CREATE INDEX` без `CONCURRENTLY`, `SET NOT NULL` без `CHECK ... NOT VALID`.
 - [ ] Добавить шаблон миграции с обязательным блоком RLS-заготовки (полное наполнение — [EPIC-005](../../epic-005-multi-tenancy-rls/epic.md)) и подключить агента `db-reviewer` к гейту.

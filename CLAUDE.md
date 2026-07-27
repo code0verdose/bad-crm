@@ -12,24 +12,31 @@ Notion-подобные документы, Obsidian-подобная база �
 **Лицензия:** AGPL-3.0-or-later. **Языки интерфейса:** EN и RU (равноправные).
 **Модель поставки:** `docker compose up` на одном хосте; SaaS-версии нет.
 
-### Текущее состояние — фаза 0
+### Текущее состояние — M1, EPIC-001
 
-**Кода нет.** В репозитории есть только спецификация и декомпозиция работ:
+Спецификация завершена (фаза 0), реализация начата.
 
 | Артефакт | Сколько | Где |
 |---|---|---|
-| Продуктовые и архитектурные документы | 39 файлов (включая 21 ADR) | `docs/` |
+| Продуктовые и архитектурные документы | 40 файлов (включая 22 ADR) | `docs/` |
 | Правила разработки | 34 файла `.mdc` | `rules/` |
 | Проектные агенты-ревьюеры | 9 | `.claude/agents/` |
 | Эпики | 46 (`epic.md`) | `epics/` |
 | Пользовательские истории | 113 (написаны для M1–M2) | `epics/*/stories/` |
 
-Нет: `packages/`, `package.json`, `docker-compose.yml`, `.env.example`, `docs/api/openapi.yaml`,
-CI-воркфлоу (в `.github/` пока только `dco.yml`). Всё это появляется в эпиках M1 (EPIC-001 … EPIC-010).
+**Что уже работает** (EPIC-001): монорепо pnpm + turborepo с четырьмя пакетами, `tsconfig.base.json`
+strict и project references, ESLint 9 flat config с архитектурными запретами, Prettier, husky +
+lint-staged + commitlint, `docker-compose.yml` (postgres+pgvector, redis, minio, meilisearch,
+mailpit), `.env.example` + zod-схемы окружения (сервер и клиент раздельно), наполненный
+`packages/shared` (zod-примитивы, branded id, заготовка каталога permissions, коды ошибок).
+`pnpm turbo run typecheck lint build test` — зелёный.
 
-**Следствие для любой работы в этом репозитории:** нельзя ссылаться на файлы кода как на
-существующие, нельзя утверждать «работает» — только «спроектировано». Первая содержательная задача
-проекта — EPIC-001.
+**Чего ещё нет:** HTTP-сервер и `/health` (EPIC-003), Vite dev-server и клиентский шелл (EPIC-004),
+`docs/api/openapi.yaml` (STORY-003-05), Prisma-схема и миграции (EPIC-003/005), CI-воркфлоу
+(EPIC-002 — в `.github/` пока только `dco.yml`).
+
+**Следствие для любой работы в этом репозитории:** проверяй по факту, а не по этому списку — он
+устаревает быстрее кода. Не утверждай «работает», не запустив.
 
 ---
 
@@ -213,7 +220,7 @@ pnpm turbo run typecheck lint build test
 | Слой | Технология | Версия | ADR |
 |---|---|---|---|
 | Монорепо | pnpm workspaces + turborepo | pnpm 9+, turbo 2+ | [ADR-0001](docs/architecture/adr/0001-monorepo-pnpm-turborepo.md) |
-| Язык / рантайм | TypeScript strict / Node.js LTS | 5.6+ / 22.x | [ADR-0001](docs/architecture/adr/0001-monorepo-pnpm-turborepo.md) |
+| Язык / рантайм | TypeScript strict / Node.js LTS | 5.9.3 (пин, одна версия на воркспейс) / `>=22.22.1 <23` | [ADR-0001](docs/architecture/adr/0001-monorepo-pnpm-turborepo.md), [ADR-0022](docs/architecture/adr/0022-typescript-version-policy.md) |
 | HTTP + архитектура сервера | Express 5 + hexagonal (ports & adapters) | 5.x | [ADR-0002](docs/architecture/adr/0002-hexagonal-backend-express-prisma.md) |
 | БД | PostgreSQL + pgvector | 16 / 0.7+ | [ADR-0004](docs/architecture/adr/0004-multi-tenancy-postgres-rls.md) |
 | ORM | Prisma | 5.x/6.x | [ADR-0002](docs/architecture/adr/0002-hexagonal-backend-express-prisma.md) |
@@ -236,6 +243,7 @@ pnpm turbo run typecheck lint build test
 | i18n | i18next, EN + RU | — | [ADR-0019](docs/architecture/adr/0019-i18n-en-ru-i18next.md) |
 | Поставка | Docker Compose, профили `minimal`/`default`/`scaled` | — | [ADR-0020](docs/architecture/adr/0020-self-host-packaging-docker.md) |
 | События и очереди | transactional outbox + BullMQ + Redis | 5.x / 7.x | [ADR-0021](docs/architecture/adr/0021-transactional-outbox.md) |
+| Версия TypeScript | одна на весь воркспейс, точный пин | 5.9.3 | [ADR-0022](docs/architecture/adr/0022-typescript-version-policy.md) |
 | Тесты | Vitest, supertest, Testcontainers, Playwright, RTL | latest | — |
 
 Отдельно: `@node-rs/argon2` (argon2id для паролей), pino 9 (логи), nodemailer (почта), helmet/cors/
@@ -331,7 +339,7 @@ realtime, поиск, i18n, FSD или обновляемость, обязан�
 | `pnpm db:migrate` | `prisma migrate dev` (dev) / `deploy` (prod-образ) |
 | `pnpm db:seed` | Демо-данные, идемпотентно |
 | `pnpm api:gen` | `openapi-typescript docs/api/openapi.yaml` → типы клиента (в CI проверяется пустой diff) |
-| `pnpm docker:up` | Postgres, Redis, MinIO, Meilisearch, mailhog |
+| `pnpm docker:up` | Postgres, Redis, MinIO, Meilisearch, Mailpit |
 | `pnpm turbo run typecheck lint build test` | **CI-before-push** |
 
 ---

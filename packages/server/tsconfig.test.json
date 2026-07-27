@@ -1,0 +1,18 @@
+{
+  // The test suite is typechecked but never built: it lives outside `rootDir: src` and must not
+  // reach `dist`, so it needs a project of its own.
+  //
+  // Typechecking the tests is what makes their compile-time assertions real. `tsconfig.json`
+  // includes `src/**` only, so anything under `test/**` was invisible to `tsc`: a suite could
+  // call `loadEnv` with the wrong shape, or keep a `@ts-expect-error` whose error no longer
+  // occurs, and `pnpm typecheck` would stay green.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "incremental": false,
+    // `rootDir` widens from `src` to the package, so `test/**` and `vitest.config.ts` are allowed
+    // to be part of the program at all.
+    "rootDir": "."
+  },
+  "include": ["test/**/*.ts", "vitest.config.ts"]
+}

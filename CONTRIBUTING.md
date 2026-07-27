@@ -50,7 +50,7 @@ cd bad-crm
 corepack enable
 pnpm install
 cp .env.example .env          # then fill in the CHANGE_ME_ placeholders
-pnpm docker:up                # Postgres, Redis, MinIO, Meilisearch, mailhog
+pnpm docker:up                # Postgres, Redis, MinIO, Meilisearch, Mailpit
 pnpm db:migrate && pnpm db:seed
 pnpm dev
 ```

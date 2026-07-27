@@ -1,0 +1,12 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "lib": ["ES2023"],
+    "types": ["node"],
+    "noEmit": true
+  },
+  // No `references`: e2e drives the running stack over HTTP and UI, never its sources.
+  "include": ["src/**/*.ts", "tests/**/*.ts"]
+}

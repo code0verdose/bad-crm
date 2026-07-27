@@ -24,7 +24,7 @@ updated: 2026-07-26
 | Слой | Технология | Версия | Зачем | ADR |
 |---|---|---|---|---|
 | Монорепо | pnpm workspaces + turborepo | pnpm 9+, turbo 2+ | Общие типы и OpenAPI между client/server без publish; кеш задач в CI | [ADR-0001](./adr/0001-monorepo-pnpm-turborepo.md) |
-| Язык | TypeScript strict | 5.6+ | Один язык на весь стек, доменные инварианты в типах | [ADR-0001](./adr/0001-monorepo-pnpm-turborepo.md) |
+| Язык | TypeScript strict | **5.9.3** (точный пин, одна версия на весь воркспейс) | Один язык на весь стек, доменные инварианты в типах; TS 7 не берём, пока `typescript-eslint` не поддержит его API — иначе type-aware правила молча отключаются | [ADR-0001](./adr/0001-monorepo-pnpm-turborepo.md), [ADR-0022](./adr/0022-typescript-version-policy.md) |
 | Runtime | Node.js LTS | 22.x | LTS до 2027, native fetch/test runner/WebCrypto | — |
 | HTTP-фреймворк | Express | 5.x | Текущая рекомендованная ветка (5.2+): та же предсказуемость и тот же объём готовых middleware, плюс встроенная обработка async-ошибок (отклонённый промис сам доходит до error-handler); вся структура всё равно в use-cases. ADR-0002 охватывает и выбор ветки Express 5.x | [ADR-0002](./adr/0002-hexagonal-backend-express-prisma.md) |
 | Архитектура сервера | Hexagonal (ports & adapters) | — | Домен и правила доступа тестируются без БД; инфраструктура заменяема | [ADR-0002](./adr/0002-hexagonal-backend-express-prisma.md) |
@@ -34,20 +34,20 @@ updated: 2026-07-26
 | Контракт API | OpenAPI 3.1 + `openapi-typescript` | 3.1 / 7.x | Спека — source of truth; клиент типизирован генерацией, а не руками | [ADR-0003](./adr/0003-openapi-as-source-of-truth.md) |
 | Логи | pino + pino-http | 9.x | Structured JSON, самый низкий overhead в Node | — |
 | Очереди | BullMQ + ioredis | 5.x | Ретраи, DLQ, delayed/repeatable jobs поверх уже нужного Redis | [ADR-0021](./adr/0021-transactional-outbox.md) |
-| Кеш/pub-sub | Redis | 7.x | Сессии-ревокации, rate-limit, backplane для socket.io, брокер BullMQ | [ADR-0010](./adr/0010-realtime-socketio-redis-adapter.md), [ADR-0021](./adr/0021-transactional-outbox.md) |
+| Кеш/pub-sub | Redis | **8.x** | Сессии-ревокации, rate-limit, backplane для socket.io, брокер BullMQ. Именно 8.x: 7.4 распространяется только под RSALv2/SSPLv1 (запрещены), AGPLv3 появился в Redis 8.0 — см. [`../legal/licensing.md`](../legal/licensing.md) §4 | [ADR-0010](./adr/0010-realtime-socketio-redis-adapter.md), [ADR-0021](./adr/0021-transactional-outbox.md) |
 | Хеш паролей | `@node-rs/argon2` | 2.x | argon2id — рекомендация OWASP; Rust-биндинг быстрее `node-argon2` и не требует node-gyp | — |
 | Токены | `jsonwebtoken` + `otplib` | 9.x / 12.x | Короткий JWT access + rotating refresh в cookie; TOTP как второй фактор | — |
 | HTTP-безопасность | helmet, cors, cookie-parser, `rate-limiter-flexible` | latest | CSP/HSTS, строгий CORS, распределённый лимит на Redis | — |
 | Файлы | `@aws-sdk/client-s3` + `s3-request-presigner` | 3.x | S3-совместимость: MinIO локально, любой S3 в проде; presigned upload минует Node | [ADR-0015](./adr/0015-s3-file-storage-presigned-urls.md) |
 | Поиск | Meilisearch | 1.x | Мгновенный typo-tolerant поиск, MIT, лёгкий по RAM; **опционален** (профиль `minimal` → `postgres-fts.adapter.ts`) | [ADR-0011](./adr/0011-meilisearch-permission-aware-search.md) |
 | Realtime | `socket.io` + `@socket.io/redis-streams-adapter` | 4.x | Комнаты по тенанту/сущности, авто-fallback, горизонтальное масштабирование | [ADR-0010](./adr/0010-realtime-socketio-redis-adapter.md) |
-| Почта | nodemailer | 6.x | SMTP без вендор-лока; mailhog в dev | — |
+| Почта | nodemailer | 6.x | SMTP без вендор-лока; Mailpit в dev (MailHog заброшен с 2020) | — |
 | AI | `@anthropic-ai/sdk`, `openai` (в т.ч. `openai_compat` и `openrouter` через OpenAI-совместимый клиент) | latest | Четыре вида провайдера за одним портом; **опционально**, ключи вводит администратор организации в UI и они хранятся зашифрованными в `AIProvider` | [ADR-0014](./adr/0014-ai-provider-abstraction.md) |
 | Тесты | Vitest, supertest, Testcontainers, Playwright, RTL | latest | Один раннер на монорепо; реальный Postgres — единственный способ проверить RLS | — |
 | Клиент | React 19, Vite, Mantine 7, TanStack Query v5 / Router, i18next | latest | Детали — в [`ux-architecture.md`](./ux-architecture.md) | [ADR-0005](./adr/0005-fsd-units-frontend-architecture.md), [ADR-0006](./adr/0006-mantine-css-modules-no-tailwind.md), [ADR-0007](./adr/0007-tanstack-router-and-query.md) |
 | Лицензии | Только AGPL-совместимые | — | Никаких BSL/SSPL/Commons Clause/«free for non-commercial» | [ADR-0018](./adr/0018-license-agpl-3.md) |
 
-Нумерация ADR — единая на весь проект (21 запись, полный список — в
+Нумерация ADR — единая на весь проект (22 записи, полный список — в
 [`overview.md`](./overview.md#ключевые-архитектурные-решения) и каталоге [`adr/`](./adr/)).
 Прочерк означает, что решение зафиксировано этим документом и отдельного ADR не имеет; заводить
 новые номера в обход общего списка нельзя.
@@ -66,9 +66,10 @@ self-host инстансе), Kafka (несоразмерно масштабу; B
 
 | Что | Требование | Как фиксируется |
 |---|---|---|
-| Node.js | 22 LTS (`>=22.11 <23`) | `.nvmrc` (`22`), `engines` в корневом `package.json` |
-| pnpm | 9+ | `packageManager: "pnpm@9.x.x"` в корневом `package.json` (Corepack) |
-| Docker | 24+ с Compose v2 | `docker compose up -d` поднимает Postgres/Redis/MinIO/Meilisearch/mailhog |
+| Node.js | 22 LTS (`>=22.22.1 <23`) | `.nvmrc` (`22.22.1`), `engines` в корневом `package.json`; флор задан хуками — `lint-staged@17` требует `node >=22.22.1`, `@commitlint/cli@21` — `>=22.12.0` |
+| pnpm | 10+ | `packageManager: "pnpm@10.x.x"` в корневом `package.json` (Corepack) |
+| TypeScript | 5.9.3, одна версия на весь воркспейс | точный пин в корне и в каждом пакете; проверяется `test/repo/toolchain-versions.test.ts` ([ADR-0022](./adr/0022-typescript-version-policy.md)) |
+| Docker | 24+ с Compose v2 | `pnpm docker:up` поднимает Postgres/Redis/MinIO/Meilisearch/Mailpit; голый `docker compose up -d` — только минимальный набор |
 | ОС | Linux / macOS / WSL2 | Windows — только через WSL2 (Testcontainers, права на volume) |
 
 Ресурсы для разработки: 8 GB RAM (4 GB — если поднимать профиль `minimal`), 10 GB диска.
@@ -938,25 +939,36 @@ describe.each(TENANT_SCOPED_TABLES)('RLS isolation: %s', (table) => {
 
 Все команды запускаются из корня репозитория; корневые скрипты — обёртки над `turbo`.
 
+Таблица описывает то, что реально объявлено в корневом `package.json`. Команды, помеченные
+«планируется», ещё не существуют — соответствующий пакет появится в указанном эпике.
+
 | Команда | Что делает |
 |---|---|
 | `pnpm install` | Устанавливает зависимости всех пакетов (Corepack подтянет нужный pnpm) |
-| `pnpm docker:up` | Поднимает Postgres, Redis, MinIO, Meilisearch, mailhog из `docker-compose.yml` |
+| `pnpm docker:up` | Поднимает полный dev-стек: Postgres, Redis, MinIO (+бакет), Meilisearch, Mailpit |
+| `pnpm docker:up:minimal` | То же без Meilisearch и Mailpit — профиль `minimal` |
+| `pnpm docker:down` | Останавливает стек во всех профилях, тома сохраняются |
+| `pnpm docker:logs` | `logs -f --tail=100` по всем сервисам во всех профилях |
+| `pnpm docker:reset` | **Разрушительно:** удаляет все тома и поднимает стек заново с нуля (спросит подтверждение; `--yes` пропускает) |
+| `pnpm db:bootstrap` | Переприменяет роли БД, их атрибуты и пароли, а также создаёт базу, если её нет. Нужен потому, что `initdb.d` отрабатывает только на пустом томе: смена пароля роли иначе не доедет до существующей инсталляции. Выполняется через `docker compose run` (одноразовый контейнер), а не `exec`: окружение работающего контейнера зафиксировано в момент его создания, поэтому `exec` после ротации пароля в `.env` переприменил бы **старый** пароль и отрапортовал об успехе |
+| `pnpm db:grants` | Переприменяет гранты по каталогу (`packages/server/prisma/sql/01-grants.sql`), идемпотентно. Запускается **после каждой миграции** и **после каждого восстановления из бэкапа**: `pg_restore --no-privileges` не оставляет от грантов ничего, а `prisma migrate deploy` их не вернёт — после восстановления у него нет pending-миграций |
 | `pnpm dev` | Параллельно: `server` (tsx watch), `client` (vite), воркеры в процессе сервера |
 | `pnpm build` | Сборка `shared` → `server` (tsc + tsc-alias) и `client` (vite build), с кешем turbo |
 | `pnpm typecheck` | `tsc --noEmit` во всех пакетах |
 | `pnpm lint` | ESLint 9 flat config + проверка запретов (`prisma.*` вне persistence, raw `fetch` на клиенте) |
-| `pnpm format` | Prettier по всему репозиторию |
+| `pnpm lint:repo` | ESLint по файлам репозитория вне `packages/` (конфиги, скрипты, `test/`) |
+| `pnpm format` / `pnpm format:check` | Prettier по всему репозиторию: правка / проверка без записи |
 | `pnpm test` | Vitest: unit + application во всех пакетах |
+| `pnpm test:repo` | Контрактные тесты репозитория: раскладка воркспейса, tsconfig, compose, `.env.example` |
 | `pnpm test:integration` | Vitest integration-проект: поднимает Testcontainers, гоняет RLS и репозитории |
 | `pnpm test:e2e` | Playwright из `packages/e2e` поверх поднятого стека |
-| `pnpm db:migrate` | `prisma migrate dev` (dev) / `prisma migrate deploy` (prod-образ) |
-| `pnpm db:reset` | Дропает и пересоздаёт локальную БД, применяет миграции и seed |
-| `pnpm db:seed` | Наполняет БД демо-данными (идемпотентно) |
-| `pnpm db:studio` | Prisma Studio для локального просмотра данных |
-| `pnpm api:gen` | `openapi-typescript docs/api/openapi.yaml` → `api-schema.d.ts` в клиенте |
-| `pnpm api:lint` | Валидация `openapi.yaml` (Spectral) |
+| `pnpm db:migrate` | `prisma migrate dev` (dev) / `prisma migrate deploy` (prod-образ) — *планируется, EPIC-003* |
+| `pnpm db:seed` | Наполняет БД демо-данными, идемпотентно — *планируется, EPIC-003* |
+| `pnpm api:gen` | `openapi-typescript docs/api/openapi.yaml` → `api-schema.d.ts` в клиенте — *планируется, STORY-003-05* |
 | `pnpm turbo run typecheck lint build test` | **CI-before-push:** полный набор проверок одной командой |
+
+Полное пересоздание локальной БД делается через `pnpm docker:reset` (сносит том), а не отдельной
+`db:reset`: `initdb.d` в любом случае отрабатывает только на пустом томе.
 
 `pnpm api:gen` дополнительно прогоняется в CI с проверкой `git diff --exit-code` — забытая
 регенерация типов после правки спеки блокирует PR.

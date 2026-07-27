@@ -1,0 +1,35 @@
+# Build output, dependencies, tool caches
+node_modules/
+dist/
+build/
+coverage/
+.turbo/
+*.tsbuildinfo
+pnpm-lock.yaml
+
+# Generated artefacts: regenerated, never hand-edited
+**/*.gen.ts
+packages/client/src/shared/api/schemas/
+packages/server/prisma/migrations/
+
+# Deliberately broken lint fixtures — reformatting them would rewrite the very
+# violations `test/lint/architecture-rules.test.ts` asserts on.
+test/lint/fixtures/
+
+# Specification and long-form documentation. These are the project's source of
+# truth (CLAUDE.md → «Порядок источников истины»), hand-formatted with wide
+# tables and fixed line breaks; a Prettier reflow would produce a diff far
+# larger than any change it is meant to review.
+docs/
+epics/
+rules/
+.claude/
+CLAUDE.md
+README.md
+README.ru.md
+CONTRIBUTING.md
+CODE_OF_CONDUCT.md
+SECURITY.md
+CHANGELOG.md
+NOTICE
+LICENSE

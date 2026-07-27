@@ -55,12 +55,12 @@ updated: 2026-07-26
 ```bash
 # ПРАВИЛЬНО — роль с BYPASSRLS
 docker compose exec -T postgres \
-  pg_dump -U backup_role -d badcrm -Fc --no-owner --no-privileges \
+  pg_dump -U backup_role -d bad_crm -Fc --no-owner --no-privileges \
   > backups/$(date +%F)/db.dump
 
 # НЕПРАВИЛЬНО — под владельцем таблиц; молча выгрузит частичные данные
 docker compose exec -T postgres \
-  pg_dump -U app_migrator -d badcrm --enable-row-security -Fc > db.dump
+  pg_dump -U app_migrator -d bad_crm --enable-row-security -Fc > db.dump
 ```
 
 Проверьте атрибут роли перед первым бэкапом:
@@ -78,7 +78,7 @@ SELECT rolname, rolsuper, rolbypassrls FROM pg_roles WHERE rolname = 'backup_rol
 Снимайте счётчики вместе с дампом:
 
 ```bash
-docker compose exec -T postgres psql -U backup_role -d badcrm -At -F',' -c "
+docker compose exec -T postgres psql -U backup_role -d bad_crm -At -F',' -c "
   SELECT relname, n_live_tup
   FROM pg_stat_user_tables
   WHERE n_live_tup > 0
@@ -94,6 +94,32 @@ docker compose exec -T postgres psql -U backup_role -d badcrm -At -F',' -c "
 > `n_live_tup` — оценка планировщика, не точный счёт. Для контрольных таблиц (те, где расхождение
 > критично) используйте точный `COUNT(*)` под ролью с `BYPASSRLS`. Оценка годится для выявления
 > катастрофического расхождения (10 000 против 0), точный счёт — для проверки целостности.
+
+### Что именно должно быть выдано `backup_role`, чтобы дамп вообще снялся
+
+`BYPASSRLS` снимает применение *политик*, но не отменяет проверку *грантов*. Забытый `GRANT` — это
+не «таблица выгрузится частично», а падение всего дампа: `pg_dump` берёт `ACCESS SHARE` на все
+таблицы одним `LOCK TABLE` до того, как прочитает первую строку. Три места, где это ловится:
+
+| Объект | Нужен | Что видно без него |
+|---|---|---|
+| Доменная таблица | `GRANT SELECT … TO backup_role` | `ERROR: permission denied for table tasks` |
+| **Лист партиции** | `GRANT SELECT … TO backup_role` | `ERROR: permission denied for table audit_logs_2026_07` |
+| **Sequence** | `GRANT SELECT … TO backup_role` | `ERROR: permission denied for sequence audit_logs_id_seq` |
+
+Партиции — самый неочевидный из трёх. `GRANT` на родительскую таблицу **не распространяется** на
+листы, а `pg_dump` выгружает партиционированную таблицу полистно и проверяет права на листе. То
+есть `audit_logs` — единственная таблица, ради которой бэкап нужен при разборе инцидента, — без
+гранта на партиции роняет бэкап целиком. Правило и его связь с изоляцией арендаторов —
+[`../security/rls-design.md`](../security/rls-design.md), раздел про партиционированные таблицы.
+
+Ничего из этого не поддерживается вручную: гранты раздаёт `packages/server/prisma/sql/01-grants.sql`,
+который обходит каталог и потому покрывает и таблицы, и партиции, и последовательности, созданные
+любой будущей миграцией. Он запускается **после каждой миграции** и **после каждого восстановления**:
+
+```bash
+pnpm db:grants
+```
 
 ### Смежное ограничение: `COPY FROM` не работает с RLS
 
@@ -222,11 +248,11 @@ mkdir -p "$DEST"
 
 # 1. база — под ролью с BYPASSRLS, custom-формат
 docker compose exec -T postgres \
-  pg_dump -U backup_role -d badcrm -Fc --no-owner --no-privileges \
+  pg_dump -U backup_role -d bad_crm -Fc --no-owner --no-privileges \
   > "$DEST/db.dump"
 
 # 2. счётчики строк для последующей сверки
-docker compose exec -T postgres psql -U backup_role -d badcrm -At -F',' \
+docker compose exec -T postgres psql -U backup_role -d bad_crm -At -F',' \
   -c "SELECT relname, n_live_tup FROM pg_stat_user_tables ORDER BY n_live_tup DESC LIMIT 25;" \
   > "$DEST/rowcounts.csv"
 
@@ -237,7 +263,7 @@ mc mirror --overwrite --remove local/bad-crm "$DEST/minio/"
 {
   echo "date=$(date -Is)"
   echo "app_version=$(git describe --tags --always)"
-  docker compose exec -T postgres psql -U backup_role -d badcrm -At \
+  docker compose exec -T postgres psql -U backup_role -d bad_crm -At \
     -c "SELECT migration_name FROM _prisma_migrations ORDER BY finished_at DESC LIMIT 1;"
 } > "$DEST/manifest.txt"
 
@@ -280,22 +306,93 @@ rm -rf "$DEST"
 # 1. расшифровать архив
 gpg --decrypt backup-2026-07-26.tar.gz.gpg | tar xzf -
 
-# 2. создать чистую базу (или пересоздать существующую — осознанно)
-docker compose exec -T postgres psql -U postgres -c "DROP DATABASE IF EXISTS badcrm;"
-docker compose exec -T postgres psql -U postgres -c "CREATE DATABASE badcrm OWNER app_migrator;"
-
-# 3. восстановить ПОД РОЛЬЮ С BYPASSRLS — иначе политики заблокируют вставку
+# 2. если восстанавливаемся поверх существующей базы — снести её ОСОЗНАННО.
+#    На новом хосте этого шага нет: базы ещё нет и создаст её следующий шаг.
+#    `-d postgres` обязателен: без него psql подключается к базе, одноимённой пользователю, и
+#    команда падает с `cannot drop the currently open database`. `-v ON_ERROR_STOP=1` — чтобы
+#    падение остановило процедуру, а не уехало в лог, оставив следующий шаг работать с непустой
+#    базой: тогда `pg_restore` обрывается на `relation "…" already exists`.
+#    Каждая команда отдельным `-c`: psql оборачивает несколько команд в одну транзакцию,
+#    а DROP DATABASE внутри транзакции невозможен.
 docker compose exec -T postgres \
-  pg_restore -U backup_role -d badcrm --no-owner --no-privileges --exit-on-error \
-  < backups/<дата>/db.dump
+  psql -U "${POSTGRES_USER:-bad_crm}" -d postgres -v ON_ERROR_STOP=1 -c "DROP DATABASE IF EXISTS bad_crm WITH (FORCE);"
+
+# 3. РОЛИ И БАЗА. Идёт первым и создаёт всё, чего нет: четыре роли, саму базу
+#    (`CREATE DATABASE … OWNER app_migrator`), владельца схемы `public`, CONNECT и USAGE.
+#    Именно поэтому шага «CREATE DATABASE вручную» здесь нет: на новом хосте он падал бы
+#    с `role "app_migrator" does not exist` — роли к этому моменту ещё не создан.
+pnpm db:bootstrap   # роли app_migrator / app_user / app_auth / backup_role + база, идемпотентно
+
+# 4. СУПЕРПОЛЬЗОВАТЕЛЕМ создать расширения.
+#    Дамп содержит `CREATE EXTENSION IF NOT EXISTS vector`, а pgvector не является
+#    trusted-расширением — создать его может только суперпользователь. Без этого шага
+#    `pg_restore --exit-on-error` под app_migrator оборвётся на
+#    `permission denied to create extension "vector"`. После него команда из дампа
+#    становится no-op: PostgreSQL проверяет существование раньше привилегий.
+docker compose exec -T postgres \
+  psql -U "${POSTGRES_USER:-bad_crm}" -d bad_crm -v ON_ERROR_STOP=1 -f /opt/bad-crm/sql/initdb/01-extensions.sql
+
+# 5. ВЫРЕЗАТЬ ИЗ ОГЛАВЛЕНИЯ ДАМПА КОММЕНТАРИИ К РАСШИРЕНИЯМ.
+#    pg_dump кладёт в дамп не только `CREATE EXTENSION`, но и `COMMENT ON EXTENSION` — по одной
+#    записи на каждое из пяти. `COMMENT ON EXTENSION` требует ВЛАДЕНИЯ расширением, владелец —
+#    суперпользователь, а `ALTER EXTENSION … OWNER TO` в PostgreSQL не существует. Под
+#    app_migrator восстановление обрывается на первой же такой записи (по алфавиту —
+#    `btree_gist`), не восстановив ни одной таблицы:
+#      pg_restore: error: could not execute query: ERROR:  must be owner of extension btree_gist
+#    Отсюда фильтрация оглавления: пять записей выбрасываются, всё остальное восстанавливается.
+#    Терять нечего — эти комментарии уже созданы в базе шагом 4 самим `CREATE EXTENSION`.
+#    `--no-comments` не годится: он снёс бы и комментарии к таблицам и колонкам, которых нет
+#    больше нигде, кроме дампа.
+docker compose cp backups/<дата>/db.dump postgres:/tmp/db.dump
+docker compose exec -T postgres sh -c \
+  "pg_restore -l /tmp/db.dump | grep -v 'COMMENT - EXTENSION' > /tmp/db.toc"
+
+# 6. восстановить ПОД ВЛАДЕЛЬЦЕМ СХЕМЫ — он создаёт объекты и не подчиняется политикам,
+#    пока FORCE ещё не восстановлен вместе со схемой
+docker compose exec -T postgres \
+  pg_restore -U app_migrator -d bad_crm --no-owner --no-privileges --exit-on-error \
+  -L /tmp/db.toc /tmp/db.dump
+
+# 7. ВЕРНУТЬ ГРАНТЫ. `--no-privileges` на обеих сторонах цикла означает, что ни один GRANT
+#    не пережил дамп: после восстановления app_user не видит ни одной таблицы, а backup_role
+#    не может снять следующий бэкап. Их возвращает идемпотентный `01-grants.sql`, который
+#    обходит каталог и раздаёт права по правилам, а не по списку таблиц.
+pnpm db:grants
+
+# 8. ANALYZE. pg_restore не собирает статистику: `pg_statistic` после восстановления пуст,
+#    планировщик строит планы вслепую, а партиционированную родительскую таблицу автовакуум
+#    не анализирует вообще никогда — без явного ANALYZE у неё так и останется `reltuples = -1`.
+#    Через vacuumdb со `--schema=public`, а не голым `ANALYZE;`: последний под app_migrator
+#    пытается зайти и в общие каталоги (`pg_authid`, `pg_database`, …) и печатает десяток
+#    `WARNING: permission denied to analyze`, за которыми не видно настоящих проблем.
+docker compose exec -T postgres \
+  vacuumdb --analyze-only --schema=public -U app_migrator -d bad_crm
+
+# 9. убрать дамп из контейнера — он не должен там жить
+docker compose exec -T postgres rm -f /tmp/db.dump /tmp/db.toc
 ```
 
 Почему `--exit-on-error`: без него `pg_restore` продолжает после ошибок и оставляет базу частично
 восстановленной, отрапортовав об успехе.
 
-Почему роль с `BYPASSRLS`: восстановление вставляет строки во все организации сразу; под ролью, к
-которой применяются политики, вставка либо провалится, либо (при неудачной конфигурации) пройдёт
-частично.
+**Почему не `pnpm db:migrate` для возврата грантов.** Это выглядит естественно и не работает по
+трём независимым причинам. `prisma migrate deploy` применяет только **pending**-миграции, а
+`_prisma_migrations` приезжает из дампа, где все миграции уже помечены применёнными, — команда
+печатает «No pending migrations to apply» и выходит с нулём, не выполнив ни одного `GRANT`. В dev
+`pnpm db:migrate` — это `prisma migrate dev`, который при расхождении схемы предлагает **reset базы**;
+в раннбуке аварийного восстановления это прямой путь к потере только что восстановленных данных. И
+сами миграции не идемпотентны: обычный `CREATE TABLE` без `IF NOT EXISTS` упадёт, если бы они всё же
+запустились.
+
+**Почему снимает дамп `backup_role`, а восстанавливает `app_migrator` — разные роли.**
+Восстановление создаёт таблицы, индексы и политики, то есть выполняет DDL; `backup_role` создана
+read-only и права на запись не имеет **специально** — роль, которой достаточно прав, чтобы
+перезаписать базу, не должна лежать в кроне бэкапа. Владелец схемы (`app_migrator`) при
+`FORCE ROW LEVEL SECURITY` тоже подчиняется политикам, но на момент `pg_restore` политик ещё нет:
+они приезжают из дампа вместе с таблицами и начинают действовать после восстановления. Если
+восстанавливаете в базу, где схема уже есть, включите режим обслуживания
+(`SET app.maintenance = 'on'`, политика `maintenance_access` в
+[`../security/rls-design.md`](../security/rls-design.md)) или восстанавливайте суперпользователем.
 
 ### 7.3 Восстановление файлов
 
@@ -307,14 +404,30 @@ mc mirror --overwrite backups/<дата>/minio/ local/bad-crm
 
 ```bash
 # 1. сверка числа строк
-docker compose exec -T postgres psql -U backup_role -d badcrm -At -F',' \
+docker compose exec -T postgres psql -U backup_role -d bad_crm -At -F',' \
   -c "SELECT relname, n_live_tup FROM pg_stat_user_tables ORDER BY n_live_tup DESC LIMIT 25;" \
   > /tmp/rowcounts-after.csv
 diff <(sort backups/<дата>/rowcounts.csv) <(sort /tmp/rowcounts-after.csv)
 ```
 
 - [ ] **Числа строк совпадают** с `rowcounts.csv`. Любое расхождение по мультиарендной таблице —
-      стоп: скорее всего, дамп снимался под неправильной ролью (раздел 2).
+      стоп: скорее всего, дамп снимался под неправильной ролью (раздел 2). Сверка имеет смысл
+      только **после** `ANALYZE` (шаг 8): `n_live_tup` — счётчик, который восстановление наполняет
+      по ходу вставки, а планировочную статистику не собирает вовсе. У партиционированной
+      родительской таблицы (`audit_logs`) значение равно нулю с обеих сторон — строки лежат в
+      партициях, и это не расхождение.
+- [ ] **Гранты вернулись** — иначе восстановлена база, к которой нет доступа: приложение не видит
+      ни одной таблицы, а следующий бэкап падает на первой же из них.
+      ```sql
+      SELECT c.relname,
+             has_table_privilege('app_user',    c.oid, 'SELECT') AS app_user,
+             has_table_privilege('backup_role', c.oid, 'SELECT') AS backup_role
+      FROM   pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+      WHERE  n.nspname = 'public' AND c.relkind IN ('r','p')
+      ORDER  BY 1;
+      -- backup_role = true везде, включая партиции; app_user = true на доменных таблицах
+      -- и false на партициях (к ним приложение не обращается).
+      ```
 - [ ] RLS включён и форсирован на всех таблицах:
       ```sql
       SELECT relname FROM pg_class

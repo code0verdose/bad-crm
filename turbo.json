@@ -1,0 +1,120 @@
+{
+  "$schema": "https://turborepo.com/schema.json",
+  "ui": "tui",
+  "globalDependencies": [
+    "tsconfig.base.json",
+    ".npmrc",
+    ".nvmrc",
+    "eslint.config.js",
+    "eslint/**",
+    ".prettierrc"
+  ],
+  "globalEnv": ["NODE_ENV"],
+  "tasks": {
+    "build": {
+      "dependsOn": ["^build"],
+      "inputs": ["$TURBO_DEFAULT$", "!**/*.test.ts", "!**/*.test.tsx", "!test/**"],
+      // `.tsbuildinfo` lives inside `dist` and is cached with it: restoring one without the other
+      // would make `tsc -b` skip a rebuild it still owes.
+      "outputs": ["dist/**"]
+    },
+    "typecheck": {
+      "dependsOn": ["^build"],
+      "outputs": []
+    },
+    "lint": {
+      // Type-aware ESLint rules read the declarations of upstream packages, so `shared` has to be
+      // built first — otherwise `@bad-crm/shared` resolves to `any` and the typed rules go quiet.
+      //
+      // `//#lint:repo` rides along for the same reason `test` pulls in `//#test:repo`: the files
+      // outside `packages/**` belong to no package, so `pnpm lint` would otherwise skip them.
+      "dependsOn": ["^build", "//#lint:repo"],
+      "outputs": []
+    },
+    "lint:fix": {
+      "dependsOn": ["^build"],
+      "cache": false
+    },
+    "test": {
+      "dependsOn": ["^build", "//#test:repo"],
+      // Real since the coverage provider landed: `coverage.thresholds` in every package's
+      // `vitest.config.ts` is what makes rules/testing.mdc §7 a gate rather than a document.
+      "outputs": ["coverage/**"]
+    },
+    "test:integration": {
+      "dependsOn": ["^build"],
+      "cache": false
+    },
+    "test:e2e": {
+      "dependsOn": ["^build"],
+      "cache": false
+    },
+    "db:migrate": {
+      "cache": false
+    },
+    "db:seed": {
+      "cache": false
+    },
+    "api:gen": {
+      "inputs": ["../../docs/api/openapi.yaml"],
+      "outputs": ["src/shared/api/schemas/**"]
+    },
+    "dev": {
+      "dependsOn": ["^build"],
+      "cache": false,
+      "persistent": true
+    },
+    "//#test:repo": {
+      // `test/**`, not a list of subdirectories: a new suite (test/infra, test/env, ...) must
+      // invalidate this cache entry on the day it is added, not on the day someone remembers to
+      // extend this array.
+      //
+      // `inputs` is an allow-list, and anything missing from it turns this task into a cached PASS
+      // over a file it never re-read. `test/env/env-example-sync.test.ts` is the only gate proving
+      // `.env.example` still matches both env schemas — and those schemas are `packages/*/src/**`,
+      // while the "no real `.env` is ever committed" assertion reads `.gitignore`. Without those
+      // two entries, adding a variable to a schema and forgetting the template ships green.
+      // `test/repo/workspace-layout.test.ts` asserts this list against what the suite reads.
+      "inputs": [
+        "test/**",
+        "package.json",
+        "pnpm-workspace.yaml",
+        "turbo.json",
+        "tsconfig.base.json",
+        "docker-compose.yml",
+        ".env.example",
+        ".gitignore",
+        "packages/*/package.json",
+        "packages/*/tsconfig.json",
+        "packages/*/src/**",
+        // `test/infra/compose.test.ts` reads the bootstrap SQL and asserts the RLS invariants of
+        // the database roles — the only automated guard of tenant isolation that exists today.
+        // Omitted here, a change dropping NOBYPASSRLS from app_user is served from cache.
+        "packages/*/prisma/**",
+        // `test/repo/coverage-contract.test.ts` imports every vitest config: without these, the
+        // coverage thresholds of rules/testing.mdc §7 can be lowered behind a cached pass.
+        "packages/*/vitest.config.ts",
+        "vitest.config.ts",
+        // `packages/*/tsconfig.json` is a literal glob and does NOT match `tsconfig.test.json`.
+        // `test/repo/tsconfig-contract.test.ts` reads it: dropping `test/**` from its `include`
+        // makes every @ts-expect-error in that package vacuous — and would be cached as a pass.
+        "packages/*/tsconfig.test.json",
+        // `test/repo/runbook-restore.test.ts` reads both. The restore runbook is an executable
+        // procedure: each of its three past defects ended in an empty or unusable database, and an
+        // edit reintroducing one of them must not be served from cache.
+        "docs/runbooks/backup-restore.md",
+        "docs/security/rls-design.md"
+      ],
+      "outputs": ["coverage/**"]
+    },
+
+    // Everything outside `packages/**` belongs to no package, so `turbo run lint` never reached it:
+    // `test/**` (half the suite), the root configs and the custom ESLint plugin. That silently
+    // disabled `vitest/no-focused-tests` on the repository suite. `--ignore-pattern packages/`
+    // keeps the split clean: each package still lints itself, this task lints the rest.
+    "//#lint:repo": {
+      "inputs": ["test/**", "eslint/**", "*.js", "*.ts", "package.json", "!test/lint/fixtures/**"],
+      "outputs": []
+    }
+  }
+}

@@ -1,0 +1,127 @@
+// Conventional Commits, enforced by the `commit-msg` hook.
+// Contract: CLAUDE.md → «Сообщения коммитов — Conventional Commits, на английском».
+
+/**
+ * Canonical scopes: the four workspace packages, the cross-cutting concerns that own their own rule
+ * file, and the domain units from `docs/product/glossary.md` (singular, no synonyms — the same name
+ * runs through Prisma model, unit folder and API resource).
+ */
+const SCOPES = [
+  // packages
+  'shared',
+  'server',
+  'client',
+  'e2e',
+  // cross-cutting
+  'api',
+  'auth',
+  'ci',
+  'config',
+  'db',
+  'deps',
+  'docker',
+  'docs',
+  'i18n',
+  'a11y',
+  'lint',
+  'outbox',
+  'perf',
+  'rls',
+  'realtime',
+  'search',
+  'security',
+  'test',
+  // domain units (docs/product/glossary.md)
+  'ai',
+  'audit',
+  'billing',
+  'board',
+  'call',
+  'chat',
+  'collaboration',
+  'contract',
+  'dashboard',
+  'doc',
+  'employee',
+  'file',
+  'github',
+  'iam',
+  'kb',
+  'notification',
+  'onboarding',
+  'organization',
+  'project',
+  'saved-view',
+  'secure-link',
+  'sprint',
+  'task',
+  'time',
+  'timesheet',
+  'vault',
+];
+
+/**
+ * Attribution is authored, not generated: no assistant trailers, no "generated with" footers, no
+ * robot emoji. Matching is deliberately narrow — `CLAUDE.md` is a real file in this repository, so
+ * `docs(config): document claude.md sections` stays a valid commit message while
+ * `chore(lint): let claude write the config` does not.
+ */
+const AI_ATTRIBUTION = [
+  {
+    pattern: /co-authored-by:[^\n]*\b(claude|anthropic|copilot|chatgpt|openai|\bai\b)/i,
+    hint: 'a Co-Authored-By trailer crediting an assistant',
+  },
+  { pattern: /generated\s+with\b/i, hint: 'a "generated with …" footer' },
+  { pattern: /🤖/u, hint: 'the robot emoji' },
+  { pattern: /\bclaude\b(?!\.md)/i, hint: 'a mention of Claude' },
+  { pattern: /\banthropic\b/i, hint: 'a mention of Anthropic' },
+];
+
+const noAiAttribution = {
+  rules: {
+    'no-ai-attribution': (parsed) => {
+      const raw = String(parsed.raw ?? '');
+      const found = AI_ATTRIBUTION.find(({ pattern }) => pattern.test(raw));
+
+      return [
+        found === undefined,
+        found === undefined
+          ? ''
+          : `commit message must not contain ${found.hint} — authorship in this repository is plain (CLAUDE.md → «Сообщения коммитов»)`,
+      ];
+    },
+  },
+};
+
+export default {
+  extends: ['@commitlint/config-conventional'],
+  plugins: [noAiAttribution],
+  rules: {
+    'type-enum': [
+      2,
+      'always',
+      [
+        'feat',
+        'fix',
+        'docs',
+        'style',
+        'refactor',
+        'perf',
+        'test',
+        'build',
+        'ci',
+        'chore',
+        'revert',
+      ],
+    ],
+    'scope-enum': [2, 'always', SCOPES],
+    'scope-case': [2, 'always', 'kebab-case'],
+    'subject-case': [2, 'always', 'lower-case'],
+    'subject-empty': [2, 'never'],
+    'subject-full-stop': [2, 'never', '.'],
+    'subject-max-length': [2, 'always', 50],
+    'header-max-length': [2, 'always', 72],
+    'body-max-line-length': [2, 'always', 72],
+    'no-ai-attribution': [2, 'always'],
+  },
+};

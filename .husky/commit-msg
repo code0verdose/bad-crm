@@ -1,0 +1,3 @@
+#!/usr/bin/env sh
+# Conventional Commits + the project's authorship rules — see commitlint.config.js.
+pnpm exec commitlint --edit "$1"

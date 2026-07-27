@@ -1,0 +1,27 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    // NodeNext gives correct ESM/CJS semantics; `tsc-alias` rewrites the `@/*` alias after `tsc`,
+    // because NodeNext does not resolve `paths` at runtime.
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "lib": ["ES2023"],
+    "types": ["node"],
+
+    "rootDir": "src",
+    "outDir": "dist",
+    "tsBuildInfoFile": "dist/tsconfig.tsbuildinfo",
+    // `baseUrl` anchors the `paths` targets to this directory. `tsc-alias` reads both fields to
+    // rewrite `@/*` into relative specifiers after `tsc`, because NodeNext does not resolve
+    // `paths` at runtime (ADR-0022 keeps the whole workspace on TypeScript 5.x).
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["./src/*"]
+    }
+  },
+  "include": ["src/**/*.ts"],
+  "references": [{ "path": "../shared" }],
+  "tsc-alias": {
+    "resolveFullPaths": true
+  }
+}

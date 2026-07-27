@@ -1,0 +1,12 @@
+{
+  // A composite project cannot run with `--noEmit`, so `pnpm typecheck` uses this emit-free twin.
+  // Everything else is inherited from tsconfig.json.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "composite": false,
+    "declaration": false,
+    "declarationMap": false,
+    "incremental": false,
+    "noEmit": true
+  }
+}

@@ -1,0 +1,29 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "jsx": "react-jsx",
+    "useDefineForClassFields": true,
+    "noEmit": true,
+
+    // FSD layer aliases, anchored to this directory by `baseUrl`. The same set must be mirrored
+    // in `vite.config.ts` (STORY-004-01); the required keys and targets are asserted by
+    // `test/repo/tsconfig-contract.test.ts`.
+    "baseUrl": ".",
+    "paths": {
+      "@app": ["./src/app"],
+      "@app/*": ["./src/app/*"],
+      "@pages": ["./src/pages"],
+      "@pages/*": ["./src/pages/*"],
+      "@widgets/*": ["./src/widgets/*"],
+      "@units/*": ["./src/units/*"],
+      "@shared": ["./src/shared"],
+      "@shared/*": ["./src/shared/*"],
+      "@/*": ["./src/*"]
+    }
+  },
+  "include": ["src/**/*.ts", "src/**/*.tsx"],
+  "references": [{ "path": "../shared" }]
+}

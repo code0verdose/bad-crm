@@ -1,0 +1,14 @@
+#!/usr/bin/env sh
+# husky owns `core.hooksPath`, so `.git/hooks/pre-commit` is no longer consulted by git.
+# Anything a developer installed there keeps running as `.git/hooks/pre-commit.local`:
+# it stays untracked, so personal tooling (secret and cruft scanners, corporate policy
+# hooks) survives without leaking machine-specific paths into the repository.
+# `--git-common-dir` (not `--git-path hooks/...`) on purpose: the latter resolves against
+# `core.hooksPath`, which husky owns, and would point back into `.husky/_`.
+LOCAL_HOOK="$(git rev-parse --git-common-dir)/hooks/pre-commit.local"
+if [ -x "$LOCAL_HOOK" ]; then
+  "$LOCAL_HOOK" || exit 1
+fi
+
+# ESLint --fix + Prettier over the staged files only; the formatted result is re-staged.
+pnpm exec lint-staged

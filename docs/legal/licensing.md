@@ -206,6 +206,38 @@ allow-list без ADR — повод отклонить PR.
 лицензией. В AGPL-репозиторий не помещается по той же причине, что и Schedule-X premium.
 Решение: Schedule-X MIT + собственная модалка.
 
+### Redis — только 8.x, ветка AGPLv3; 7.x запрещён
+
+Redis сменил лицензию дважды, и для нас это не исторический факт, а граница версий.
+
+| Версия | Лицензия | Можно? |
+|---|---|---|
+| ≤ 7.2 | BSD-3-Clause | да, но это конец жизненного цикла |
+| **7.4** | **RSALv2 / SSPLv1** (двойная, третьего варианта нет) | ❌ **нет** — обе в запрещающей строке §3 |
+| **8.0+** | **RSALv2 / SSPLv1 / AGPLv3** (тройная, выбор наш) | ✅ да, по ветке **AGPLv3** |
+
+Начиная с Redis 8.0 репозиторий `redis/redis` предлагает тройное лицензирование: *"contributions are
+subject to your choice of: (a) the Redis Source Available License v2 (RSALv2); or (b) the Server Side
+Public License v1 (SSPLv1); or (c) the GNU Affero General Public License v3 (AGPLv3)"*
+([`LICENSE.txt`](https://raw.githubusercontent.com/redis/redis/8.0/LICENSE.txt)). Мы выбираем **(c)**:
+это ровно лицензия нашего проекта ([ADR-0018](../architecture/adr/0018-license-agpl-3.md)), совместимость
+тривиальна, а §4 таблицы «разрешено с фиксацией в ADR» выполнена этой записью.
+
+Почему **7.4 нельзя, хотя он «просто в compose»**: `docker-compose.yml` и дистрибутивный
+`docker-compose.prod.yml` — часть поставки, а не среда разработчика. Мы указываем образ, который
+скачает и запустит каждый владелец инсталляции; SSPL распространяется на предоставление сервиса и
+прямо перечислен как запрещённый в §3 и в
+[`rules/dependencies.mdc`](../../rules/dependencies.mdc) (п. 10). Выбора «взять 7.4 по RSALv2» тоже
+нет: RSALv2 — source-available, не open-source, и несовместим с обязательствами AGPL перед тем, кто
+форкнет репозиторий.
+
+→ **Действия:**
+- В compose закреплён точный тег `redis:8.x-alpine`; понижение мажора до 7 — блокирующее замечание.
+- Регрессию ловит тест `test/infra/compose.test.ts` («runs Redis from a release that offers AGPLv3»):
+  мажор образа Redis ниже 8 роняет сборку.
+- Команда запуска (`redis-server --appendonly yes --appendfsync everysec`) и проба `redis-cli ping`
+  в 8.x работают без изменений — переход версии не потребовал правок конфигурации.
+
 ### Meilisearch вместо Elasticsearch
 
 Elasticsearch — SSPL / Elastic License 2.0, **запрещён**. Выбран Meilisearch (MIT) —

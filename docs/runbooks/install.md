@@ -6,10 +6,13 @@ updated: 2026-07-26
 
 # Runbook — установка self-host
 
-> **Статус: процедура спроектирована, поставки ещё нет.** `docker-compose.yml`, `Dockerfile`,
-> `.env.example` и образ появляются в [EPIC-017](../../epics/epic-017-self-host-alpha/epic.md)
-> (майлстоун M2). Команды ниже — целевой интерфейс, зафиксированный до реализации, чтобы его можно
-> было отревьюить. Сегодня они не работают.
+> **Статус: поставки ещё нет, но часть команд уже работает.** `.env.example` и dev-стек
+> (`docker-compose.yml` с Postgres, Redis, MinIO, Meilisearch, Mailpit) существуют с EPIC-001.
+> Дистрибутивный `docker-compose.prod.yml`, `Dockerfile` и публикуемый образ появляются в
+> [EPIC-017](../../epics/epic-017-self-host-alpha/epic.md) (майлстоун M2) — это отдельный файл, а
+> не переименованный dev-овский (амендмент [ADR-0020](../architecture/adr/0020-self-host-packaging-docker.md)
+> от 2026-07-27). Пока его нет, разделы про `api`/`worker`/`migrate` и про запуск приложения из
+> контейнера описывают целевой интерфейс, зафиксированный до реализации.
 
 Связанные документы: [`upgrade.md`](upgrade.md) · [`backup-restore.md`](backup-restore.md) ·
 [`incident.md`](incident.md) · [`../architecture/overview.md`](../architecture/overview.md) (раздел
@@ -116,13 +119,31 @@ openssl rand -base64 24
 
 ### 2.4 Запуск
 
+**Установка (EPIC-017), дистрибутивный файл:**
+
 ```bash
 # полный профиль (с поиском)
-docker compose up -d
+docker compose -f docker-compose.prod.yml --profile default up -d
 
 # минимальный профиль (без Meilisearch)
-docker compose --profile minimal up -d
+docker compose -f docker-compose.prod.yml --profile minimal up -d
 ```
+
+**Разработка, репозиторий:** `docker-compose.yml` поднимает только backing-сервисы; приложение
+бежит на хосте через `pnpm dev`.
+
+```bash
+pnpm docker:up            # полный набор: + Meilisearch и Mailpit
+pnpm docker:up:minimal    # минимальный набор
+```
+
+> **`docker compose up -d` без флагов поднимает `minimal`, а не полный набор.** Compose умеет
+> добавлять сервис в профиль, но не умеет исключать: Meilisearch и Mailpit объявлены с
+> `profiles: [default, full]` и поэтому по умолчанию не стартуют, а остальные сервисы стартуют в
+> любом профиле. Полный набор — это `pnpm docker:up`, `docker compose --profile default up -d` или
+> `COMPOSE_PROFILES=default` в `.env`. Обёртка `pnpm docker:up` нужна ещё и потому, что `--wait`
+> считает падением любой вышедший контейнер, включая одноразовый инициализатор бакета MinIO,
+> который обязан выйти с кодом 0.
 
 Порядок старта: контейнеры БД → одноразовый job миграций → `api` и `worker`. Миграции выполняются
 под отдельной ролью-владельцем схемы, приложение — под ролью без `BYPASSRLS`. Это не деталь
@@ -254,9 +275,30 @@ Caddy сам получает сертификат Let's Encrypt и прокси
 
 - [ ] Бэкап настроен **до** появления боевых данных.
 - [ ] Бэкапится `pgdata` и `minio-data`; `meili-data` не бэкапится (производный индекс).
-- [ ] Дамп снимается **под ролью с `BYPASSRLS`** — под владельцем таблиц `pg_dump` при
+- [ ] Дамп снимается **под ролью `backup_role`** — она создаётся bootstrap-скриптом ролей с
+      `BYPASSRLS` и без прав на запись. Под владельцем таблиц `pg_dump` при
       `FORCE ROW LEVEL SECURITY` либо падает, либо выгружает частичные данные. Подробно и с
       командами — [`backup-restore.md`](backup-restore.md).
+      ```sql
+      SELECT rolname, rolbypassrls FROM pg_roles WHERE rolname = 'backup_role';
+      -- одна строка, rolbypassrls = true
+      ```
+- [ ] Каждая таблица, **каждая партиция** и каждая последовательность имеют
+      `GRANT SELECT … TO backup_role`. `BYPASSRLS` снимает политики, но не гранты, а `pg_dump`
+      берёт `ACCESS SHARE` на всё сразу, до чтения первой строки: один забытый `GRANT` роняет
+      весь бэкап. Партиции — самый частый пропуск: грант родителя на лист не распространяется.
+      ```sql
+      SELECT c.relname, c.relkind, c.relispartition
+      FROM   pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+      WHERE  n.nspname = 'public'
+        AND  ((c.relkind IN ('r','p') AND NOT has_table_privilege('backup_role', c.oid, 'SELECT'))
+           OR (c.relkind =  'S'       AND NOT has_sequence_privilege('backup_role', c.oid, 'SELECT')));
+      -- выдача должна быть пустой. Если запрос падает с `role "backup_role" does not exist` —
+      -- bootstrap ролей на этой инсталляции не выполнялся, и бэкап снимать нечем.
+      ```
+      Раздаёт их `pnpm db:grants` (`packages/server/prisma/sql/01-grants.sql`) — он обходит каталог,
+      поэтому покрывает и `_prisma_migrations`, и партиции, созданные джобом обслуживания. Запускать
+      после каждой миграции и после каждого восстановления.
 - [ ] Бэкапы уезжают **с этого хоста** и зашифрованы.
 - [ ] `APP_ENCRYPTION_KEY` хранится **не там же**, где единственная копия бэкапов.
 - [ ] Тестовое восстановление выполнено хотя бы один раз. Невосстановленный бэкап — это гипотеза.

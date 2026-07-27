@@ -63,7 +63,7 @@ updated: 2026-07-26
 # снимок состояния до вмешательства
 docker compose ps > /tmp/ir/ps.txt
 docker compose logs --since 72h > /tmp/ir/logs.txt
-docker compose exec -T postgres psql -U backup_role -d badcrm -c "
+docker compose exec -T postgres psql -U backup_role -d bad_crm -c "
   SELECT pid, usename, client_addr, state, backend_start, left(query,200)
   FROM pg_stat_activity;" > /tmp/ir/pg-activity.txt
 ```
@@ -318,12 +318,12 @@ docker compose logs --since 72h --no-color > app-logs.txt
 
 # состояние контейнеров и соединений с БД
 docker compose ps > ps.txt
-docker compose exec -T postgres psql -U backup_role -d badcrm \
+docker compose exec -T postgres psql -U backup_role -d bad_crm \
   -c "SELECT pid, usename, client_addr, state, backend_start, left(query,200) FROM pg_stat_activity;" \
   > pg-activity.txt
 
 # выгрузка аудита за окно
-docker compose exec -T postgres psql -U backup_role -d badcrm -At -F'|' -c "
+docker compose exec -T postgres psql -U backup_role -d bad_crm -At -F'|' -c "
   SELECT occurred_at, organization_id, actor_user_id, action, entity_type, entity_id, ip, user_agent
   FROM audit_logs
   WHERE occurred_at >= now() - interval '7 days'

@@ -104,7 +104,7 @@ flowchart TB
         redis[("Redis<br/>очереди BullMQ, presence, realtime-стримы")]
         minio[("MinIO / S3<br/>файлы, аватары, вложения")]
         meili[("Meilisearch<br/>поисковый индекс")]
-        smtp["SMTP / mailhog"]
+        smtp["SMTP / Mailpit"]
     end
 
     spa -->|"HTTPS/JSON по openapi.yaml"| api
@@ -657,7 +657,7 @@ flowchart TB
         redis[("redis<br/>том redis-data, AOF")]
         minio[("minio<br/>том minio-data")]
         meili[("meilisearch<br/>том meili-data")]
-        mail["mailhog (только dev)"]
+        mail["Mailpit (только dev)"]
     end
 
     backup["Бэкапы: pg_dump/pgBackRest + mc mirror бакета<br/>вне хоста"]

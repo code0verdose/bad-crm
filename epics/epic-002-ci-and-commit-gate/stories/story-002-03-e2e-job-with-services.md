@@ -26,7 +26,7 @@ Playwright **чтобы** сценарии «как у пользователя�
 ## Задачи
 
 - [ ] Написать e2e-заглушку `packages/e2e/tests/smoke/health.spec.ts` (открыть корень, дождаться загрузки оболочки) — она делает джобу проверяемой до появления реальных сценариев из [EPIC-010](../../epic-010-e2e-harness/epic.md).
-- [ ] Создать job `e2e` в `.github/workflows/ci.yml` (или отдельный `e2e.yml`): `docker compose --profile default up -d --wait`, `pnpm db:migrate`, `pnpm db:seed`, старт приложения, `pnpm test:e2e`.
+- [ ] Создать job `e2e` в `.github/workflows/ci.yml` (или отдельный `e2e.yml`): `docker compose --profile default up -d --wait`, `pnpm db:migrate`, **`pnpm db:grants`**, `pnpm db:seed`, старт приложения, `pnpm test:e2e`. Шаг грантов идёт сразу за миграциями: без него приложение ходит в БД под ролью без единого права, и e2e падают на первом же запросе.
 - [ ] Настроить кеш браузеров Playwright и установку только нужных браузеров (`--with-deps chromium` для PR, полный набор — по расписанию).
 - [ ] Настроить условную выгрузку артефактов: `if: failure()` для trace/video/логов контейнеров, `always()` для HTML-отчёта.
 - [ ] Добавить сбор логов контейнеров (`docker compose logs --no-color`) в артефакты при падении.

@@ -1,0 +1,20 @@
+{
+  // The test suite is typechecked, but never built: it lives outside `rootDir: src` and must not
+  // reach `dist`. It is a separate project because the tests need `@types/node` (they read the
+  // source tree from disk) while the package under test must stay free of Node typings.
+  //
+  // Typechecking the tests is what makes the `@ts-expect-error` assertions on branded ids real:
+  // if `UserId` stopped being distinct from `OrganizationId`, the unused expectation would fail
+  // here rather than pass silently in the runner.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "composite": false,
+    "declaration": false,
+    "declarationMap": false,
+    "incremental": false,
+    "noEmit": true,
+    "rootDir": ".",
+    "types": ["node"]
+  },
+  "include": ["test/**/*.ts", "vitest.config.ts"]
+}

@@ -1,0 +1,29 @@
+{
+  // Standalone project for the lint fixtures: typescript-eslint's project service walks up from
+  // each linted file, so the deliberately broken fixtures need a tsconfig of their own to make
+  // type-aware rules (`no-floating-promises`, `no-misused-promises`) resolvable here.
+  // It is intentionally NOT wired into the build: nothing references it and `include` never
+  // reaches the real packages.
+  "compilerOptions": {
+    "target": "ES2023",
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "jsx": "react-jsx",
+    "moduleDetection": "force",
+    "strict": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "paths": {
+      "@/*": ["./packages/server/src/*"],
+      "@app/*": ["./packages/client/src/app/*"],
+      "@pages": ["./packages/client/src/pages"],
+      "@pages/*": ["./packages/client/src/pages/*"],
+      "@widgets/*": ["./packages/client/src/widgets/*"],
+      "@units/*": ["./packages/client/src/units/*"],
+      "@shared": ["./packages/client/src/shared"],
+      "@shared/*": ["./packages/client/src/shared/*"]
+    }
+  },
+  "include": ["packages/**/*.ts", "packages/**/*.tsx"]
+}

@@ -49,19 +49,32 @@ policy-слой домена. Она не защищает от суперпол
 
 ## Роли и права БД
 
-### Три роли и почему именно три
+### Четыре роли и почему именно четыре
 
 | Роль | Кто под ней ходит | RLS | Владение |
 |---|---|---|---|
 | `app_user` | процесс приложения (HTTP + воркеры), 99 % запросов | **подчиняется**, `BYPASSRLS` нет | ничем не владеет |
 | `app_migrator` | `prisma migrate deploy`, обслуживание партиций, ручные операции | владелец схемы и таблиц → **поэтому `FORCE`** | владеет схемой `public` и всеми объектами |
 | `app_auth` | логин/refresh до определения организации; владелец `SECURITY DEFINER`-функций | `BYPASSRLS` | владеет функциями-резолверами |
+| `backup_role` | только `pg_dump` и снятие контрольных счётчиков строк | `BYPASSRLS` | ничем не владеет, прав на запись нет |
 
-Смысл разделения: единственная роль с `BYPASSRLS` (`app_auth`) не имеет прямого доступа ни к одной
-доменной таблице — её поверхность ограничена несколькими функциями с фиксированной сигнатурой.
-Роль, которая ходит в доменные таблицы (`app_user`), обойти RLS не может ни при каких условиях,
-включая SQL-инъекцию. Роль, которая может всё (`app_migrator`), в рантайме приложения не
-используется вообще.
+Смысл разделения: роли с `BYPASSRLS` не имеют прав на запись ни в одну доменную таблицу.
+У `app_auth` поверхность ограничена несколькими функциями с фиксированной сигнатурой; у
+`backup_role` — правом `SELECT`, выдаваемым таблице за таблицей. Роль, которая ходит в доменные
+таблицы на запись (`app_user`), обойти RLS не может ни при каких условиях, включая SQL-инъекцию.
+Роль, которая может всё (`app_migrator`), в рантайме приложения не используется вообще.
+
+**Почему бэкапу нужна собственная роль, а не `app_migrator`.** При `FORCE ROW LEVEL SECURITY`
+политики применяются и к владельцу таблиц, поэтому `pg_dump` под `app_migrator` либо падает, либо —
+с `--enable-row-security` — выгружает **частичные** данные: формально успешный дамп правдоподобного
+размера, в котором строк меньше, чем было. Обнаруживается это при восстановлении после аварии.
+Процедура — [`../runbooks/backup-restore.md`](../runbooks/backup-restore.md).
+
+**И почему `BYPASSRLS` тут недостаточно.** `BYPASSRLS` снимает применение *политик*, но не отменяет
+проверку *грантов*: без `GRANT SELECT` на таблицу `pg_dump` под `backup_role` получит
+`42501 permission denied`. `ALTER DEFAULT PRIVILEGES` запрещён (см. ниже), поэтому строка
+`GRANT SELECT ON <table> TO backup_role;` входит в канонический шаблон новой таблицы наравне с
+`ENABLE`/`FORCE`/`POLICY`. Забыть её — значит тихо потерять таблицу из бэкапа.
 
 ### Bootstrap: создание ролей и базы
 
@@ -74,21 +87,54 @@ Prisma ходит под `app_migrator`, который к моменту пер
 -- 00-bootstrap-roles.sql · выполняется суперпользователем, идемпотентен
 \set ON_ERROR_STOP on
 
--- NOINHERIT и отсутствие взаимного членства принципиальны: ни одна роль не может
--- «стать» другой через SET ROLE. Единственный способ получить права app_migrator —
--- знать его пароль, который живёт только в CI/деплой-скрипте.
+-- Создание только создаёт. Все атрибуты переутверждаются ниже безусловно.
 DO $$
 BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_migrator') THEN
-    CREATE ROLE app_migrator LOGIN NOINHERIT;
+    CREATE ROLE app_migrator LOGIN;
   END IF;
   IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_user') THEN
-    CREATE ROLE app_user     LOGIN NOINHERIT;
+    CREATE ROLE app_user     LOGIN;
   END IF;
   IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_auth') THEN
-    CREATE ROLE app_auth     LOGIN NOINHERIT BYPASSRLS;
+    CREATE ROLE app_auth     LOGIN;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'backup_role') THEN
+    CREATE ROLE backup_role  LOGIN;
   END IF;
 END $$;
+
+-- Атрибуты выставляются на КАЖДОМ прогоне, а не только при создании, и это принципиально.
+-- Managed-инстанс переиспользуют: роли могут уже существовать, созданные прошлой инсталляцией
+-- или руками. Условный `CREATE ROLE … NOINHERIT BYPASSRLS` в этом случае молча пропускается и
+-- рапортует об успехе, а app_user остаётся с тем, что у него было, — с INHERIT, возможно с
+-- BYPASSRLS и с членством в app_migrator. Это работающий `SET ROLE app_migrator` и полное
+-- отсутствие изоляции на инсталляции, чей bootstrap не напечатал ни одной ошибки.
+ALTER ROLE app_migrator LOGIN NOINHERIT NOSUPERUSER NOCREATEROLE NOCREATEDB NOREPLICATION NOBYPASSRLS;
+ALTER ROLE app_user     LOGIN NOINHERIT NOSUPERUSER NOCREATEROLE NOCREATEDB NOREPLICATION NOBYPASSRLS;
+ALTER ROLE app_auth     LOGIN NOINHERIT NOSUPERUSER NOCREATEROLE NOCREATEDB NOREPLICATION   BYPASSRLS;
+ALTER ROLE backup_role  LOGIN NOINHERIT NOSUPERUSER NOCREATEROLE NOCREATEDB NOREPLICATION   BYPASSRLS;
+
+-- Членства, выданные прошлой инсталляцией, снимаются здесь: NOINHERIT сам по себе только отменяет
+-- автоматическое применение прав — членом можно оставаться и получить их через SET ROLE.
+-- Обход по pg_auth_members, а не двенадцать `REVOKE a FROM b`: у последних каждый холостой вызов
+-- печатает WARNING, и чистая установка заканчивалась бы двенадцатью предупреждениями.
+DO $memberships$
+DECLARE
+  membership record;
+BEGIN
+  FOR membership IN
+    SELECT granted.rolname AS granted_role, member.rolname AS member_role
+    FROM   pg_auth_members am
+    JOIN   pg_roles granted ON granted.oid = am.roleid
+    JOIN   pg_roles member  ON member.oid  = am.member
+    WHERE  granted.rolname IN ('app_migrator', 'app_user', 'app_auth', 'backup_role')
+      AND  member.rolname  IN ('app_migrator', 'app_user', 'app_auth', 'backup_role')
+  LOOP
+    EXECUTE format('REVOKE %I FROM %I', membership.granted_role, membership.member_role);
+    RAISE WARNING 'снято членство % в %', membership.member_role, membership.granted_role;
+  END LOOP;
+END $memberships$;
 
 ALTER ROLE app_migrator PASSWORD
   :'migrator_pw';
@@ -96,25 +142,22 @@ ALTER ROLE app_user     PASSWORD
   :'app_pw';
 ALTER ROLE app_auth     PASSWORD
   :'auth_pw';
-
--- ни одна из ролей не является суперпользователем и не может создавать роли
-ALTER ROLE app_migrator NOSUPERUSER NOCREATEROLE NOREPLICATION;
-ALTER ROLE app_user     NOSUPERUSER NOCREATEROLE NOREPLICATION NOBYPASSRLS NOCREATEDB;
-ALTER ROLE app_auth     NOSUPERUSER NOCREATEROLE NOREPLICATION NOCREATEDB;
+ALTER ROLE backup_role  PASSWORD
+  :'backup_pw';
 ```
 
 ```sql
 -- база принадлежит мигратору, PUBLIC не имеет к ней ничего
 CREATE DATABASE bad_crm OWNER app_migrator;
 REVOKE ALL ON DATABASE bad_crm FROM PUBLIC;
-GRANT CONNECT ON DATABASE bad_crm TO app_user, app_auth;
+GRANT CONNECT ON DATABASE bad_crm TO app_user, app_auth, backup_role;
 ```
 
 ```sql
 -- \c bad_crm  · дальше внутри базы
 ALTER SCHEMA public OWNER TO app_migrator;
 REVOKE ALL   ON SCHEMA public FROM PUBLIC;      -- в PG15+ CREATE у PUBLIC уже снят, но фиксируем явно
-GRANT  USAGE ON SCHEMA public TO app_user, app_auth;
+GRANT  USAGE ON SCHEMA public TO app_user, app_auth, backup_role;
 
 CREATE EXTENSION IF NOT EXISTS pgcrypto;        -- gen_random_uuid()
 CREATE EXTENSION IF NOT EXISTS citext;          -- User.email
@@ -175,7 +218,7 @@ export async function assertRuntimeDbRole(prisma: PrismaClient): Promise<void> {
     SELECT current_user::text                       AS current_user,
            r.rolsuper,
            r.rolbypassrls,
-           pg_has_role(current_user, 'app_migrator', 'USAGE') AS can_become_migrator
+           pg_has_role(current_user, 'app_migrator', 'MEMBER') AS can_become_migrator
     FROM   pg_roles r
     WHERE  r.rolname = current_user
   `;
@@ -191,6 +234,21 @@ export async function assertRuntimeDbRole(prisma: PrismaClient): Promise<void> {
   }
 }
 ```
+
+**Режим `MEMBER`, а не `USAGE` — это не придирка, а разница между работающей проверкой и
+декоративной.** `pg_has_role(..., 'USAGE')` отвечает «права роли действуют автоматически», то есть
+требует членства **и** `INHERIT`. Все наши роли создаются `NOINHERIT` (в этом и смысл), поэтому у
+`app_user`, которому по ошибке выдали `GRANT app_migrator TO app_user`, `USAGE` вернёт `false` — а
+`SET ROLE app_migrator` при этом отработает. Проверено на PostgreSQL 16.14:
+
+```
+ usage_check | member_check | app_user_inherits
+-------------+--------------+-------------------
+ f           | t            | f
+```
+
+и в той же сессии `SET ROLE app_migrator;` → `current_user = app_migrator`. `MEMBER` отвечает на
+нужный вопрос: «может ли эта роль стать той ролью», прямо или через цепочку членств.
 
 Вызывается в `main.ts` до `app.listen` и до старта воркеров. Отказ старта — правильное поведение:
 инстанс, который не может гарантировать изоляцию, не должен принимать трафик.
@@ -315,7 +373,28 @@ CREATE POLICY maintenance_access ON tasks
 
 -- 5. Права. Явно, без ALTER DEFAULT PRIVILEGES.
 GRANT SELECT, INSERT, UPDATE, DELETE ON tasks TO app_user;
+
+-- 6. Право на чтение для бэкапа. BYPASSRLS у backup_role снимает политики, но НЕ снимает проверку
+--    грантов, а ALTER DEFAULT PRIVILEGES у нас запрещён. Без этой строки pg_dump получит
+--    `42501 permission denied for table tasks` — или, если дамп снимается без ON_ERROR_STOP,
+--    просто не привезёт таблицу. Тихая потеря данных в бэкапе, обнаруживаемая при восстановлении.
+GRANT SELECT ON tasks TO backup_role;
+
+-- Отдельный случай — служебная таблица Prisma. Её создаёт не миграция, а сам Prisma, поэтому
+-- строки выше её не покрывают; при этом версия схемы обязана попасть в дамп, иначе восстановление
+-- нечем сверить. Без гранта `psql -U backup_role -c 'SELECT … FROM _prisma_migrations'` в скрипте
+-- бэкапа даёт 42501 и роняет бэкап целиком (`set -euo pipefail`), а проверка 4g считает таблицу
+-- нарушением. Отдельной строки в миграции для неё нет и быть не может: `01-grants.sql` обходит
+-- каталог и выдаёт `GRANT SELECT … TO backup_role` каждой таблице схемы `public`, включая эту.
 ```
+
+Строки 5–6 остаются в шаблоне миграции: они делают новую таблицу корректной сразу, в том же
+изменении, где она появляется, и читаются как утверждение о том, кому таблица доступна. Но
+**источник истины по грантам — `packages/server/prisma/sql/01-grants.sql`**: он обходит каталог,
+раздаёт те же права по правилам и запускается после каждой миграции и после каждого восстановления.
+Причина — в том, что `pg_restore --no-privileges` не оставляет от грантов ничего, а переприменить их
+прогоном миграций нельзя: `prisma migrate deploy` после восстановления не видит ни одной pending-
+миграции и честно выходит с нулём, ничего не сделав.
 
 Построчно:
 
@@ -328,7 +407,8 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON tasks TO app_user;
 | `TO app_user` | политика адресована конкретной роли | политика `TO PUBLIC` применится и к `app_migrator`, обесценив блок 4 |
 | `USING` | какие строки **видны** (`SELECT`, `UPDATE`, `DELETE`) | видны чужие |
 | `WITH CHECK` | какие строки **допустимо записать** (`INSERT`, новая версия строки в `UPDATE`) | можно вставить строку с чужим `organization_id` и «переложить» свою строку в соседнюю организацию |
-| `GRANT` | даёт роли право обращаться к таблице | `42501 permission denied` — громкий и правильный отказ |
+| `GRANT … TO app_user` | даёт роли право обращаться к таблице | `42501 permission denied` — громкий и правильный отказ |
+| `GRANT SELECT … TO backup_role` | пускает `pg_dump` в таблицу | таблицы нет в бэкапе; отказ громкий, но виден только тому, кто читает лог бэкапа |
 
 **Про `WITH CHECK` и одну неочевидную деталь PostgreSQL.** Если у политики указан `USING` и не
 указан `WITH CHECK`, PostgreSQL использует выражение `USING` в качестве проверки записи. То есть
@@ -444,11 +524,25 @@ REVOKE UPDATE, DELETE, TRUNCATE  ON audit_logs FROM app_user;
    (которых нет).
 2. Гранты тоже не наследуются: `GRANT` на родителя не даёт прав на партицию.
 
-Отсюда рабочее правило: **партициям не выдаётся ни одного гранта для `app_user`**, а приложение
-обращается только к родительской таблице. Джоб создания партиций (`app_migrator`) обязан не
-выполнять `GRANT`; CI-чек отдельно проверяет, что ни у одной партиции нет прав `app_user`.
-Дополнительно партиции получают `ENABLE`/`FORCE` — как страховка на случай, если грант когда-то
-появится по ошибке:
+Отсюда рабочее правило: **партиции не получают никаких грантов, кроме `GRANT SELECT … TO
+backup_role`**. Приложение обращается только к родительской таблице, поэтому у `app_user` на листе
+нет и не должно быть ничего; CI-чек 4c отдельно проверяет, что ни у одной партиции нет прав
+`app_user`. Дополнительно партиции получают `ENABLE`/`FORCE` — как страховка на случай, если грант
+когда-то появится по ошибке.
+
+**Исключение для `backup_role` — не послабление, а условие существования бэкапа.** `pg_dump`
+выгружает партиционированную таблицу полистно и проверяет права на листе; грант родителя на лист не
+распространяется, а `BYPASSRLS` тут не помогает — это грант, а не политика. Партиция без
+`GRANT SELECT` для `backup_role` роняет **весь** дамп, ещё до чтения первой строки:
+
+```
+pg_dump: error: query failed: ERROR:  permission denied for table audit_logs_2026_07
+pg_dump: detail: Query was: LOCK TABLE public.tasks, public.audit_logs, public.audit_logs_2026_07 …
+```
+
+То есть `audit_logs` — единственная таблица, ради которой бэкап нужен при разборе инцидента, — либо
+роняет бэкап (`set -euo pipefail`), либо, если бэкап снимается без остановки на ошибке, тихо в него
+не попадает.
 
 ```sql
 -- вызывается джобом обслуживания партиций под app_migrator
@@ -457,8 +551,13 @@ CREATE TABLE audit_logs_2026_08 PARTITION OF audit_logs
 
 ALTER TABLE audit_logs_2026_08 ENABLE ROW LEVEL SECURITY;
 ALTER TABLE audit_logs_2026_08 FORCE  ROW LEVEL SECURITY;
--- GRANT сознательно отсутствует
+
+-- Единственный грант, который партиция получает. app_user не получает ничего.
+GRANT SELECT ON audit_logs_2026_08 TO backup_role;
 ```
+
+Джоб обслуживания партиций обязан выполнить эту строку — либо, что надёжнее, вызвать после себя
+`01-grants.sql` (см. ниже), который раздаёт её по каталогу и не забывает.
 
 ### Таблицы, у которых `organization_id` «есть только через родителя»
 
@@ -891,9 +990,25 @@ export default [
 ! grep -rInE "\bSET\s+app\.(organization_id|user_id)\b" packages/server/src packages/server/prisma \
   || { echo "Найден SET без LOCAL"; exit 1; }
 
-# ни одного set_config с is_local = false
-! grep -rInE "set_config\([^)]*,\s*false\s*\)" packages/server/src packages/server/prisma \
-  || { echo "set_config с is_local=false"; exit 1; }
+# ни одного set_config с is_local = false.
+# Ровно одно исключение — глушение `log_statement` в bootstrap-скрипте ролей на время
+# `ALTER ROLE … PASSWORD`: здесь нужен именно сессионный (is_local=false) вызов, локальная
+# установка откатилась бы на выходе из блока, то есть до самой команды с паролем.
+#
+# Исключение сужено до одной строки, а не до файла. `--exclude=00-bootstrap-roles.sql` выключал
+# проверку на весь файл: будущий `set_config('app.organization_id', …, false)`, добавленный туда,
+# прошёл бы мимо чека — а это ровно та ошибка, ради которой чек существует.
+if grep -rInE "set_config\([^)]*,\s*false\s*\)" packages/server/src packages/server/prisma \
+   | grep -vF "set_config('log_statement', 'none', false)" | grep -q .; then
+  echo "set_config с is_local=false"; exit 1
+fi
+
+# и позитивная проверка на само исключение: вхождение ровно одно и оно действительно про
+# log_statement. Иначе «ничего не найдено» одинаково означает и «всё правильно», и «строку
+# переименовали, а фильтр выше молча перестал что-либо разрешать или, наоборот, разрешил лишнее».
+[ "$(grep -cF "set_config('log_statement', 'none', false)" \
+       packages/server/prisma/sql/00-bootstrap-roles.sql)" = "1" ] \
+  || { echo "ожидалось ровно одно разрешённое set_config(..., false)"; exit 1; }
 ```
 
 ### (б) Миграционный чек: каталог БД против списка таблиц
@@ -1028,14 +1143,78 @@ WHERE  n.nspname = 'public' AND c.relkind = 'v'
 SELECT c.relname, 'MATERIALIZED VIEW не поддерживает RLS' AS problem
 FROM   pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
 WHERE  n.nspname = 'public' AND c.relkind = 'm';
+
+-- 4g. каждая таблица читается бэкапом. BYPASSRLS снимает политики, но не гранты, а
+--     ALTER DEFAULT PRIVILEGES запрещён — значит забытый GRANT роняет pg_dump на LOCK TABLE.
+--     Это единственная машинная защита от «бэкап отстаёт от схемы на каждую новую таблицу».
+--
+--     has_table_privilege с несуществующей ролью не возвращает false, а падает
+--     (`ERROR: role "backup_role" does not exist`) и уносит с собой весь чек — поэтому
+--     EXISTS-гард: отсутствие роли должно диагностироваться, а не выглядеть сбоем запроса.
+SELECT c.relname, 'нет GRANT SELECT для backup_role — таблица выпадет из бэкапа' AS problem
+FROM   pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+WHERE  EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'backup_role')
+  AND  n.nspname = 'public' AND c.relkind IN ('r','p') AND NOT c.relispartition
+  AND  NOT has_table_privilege('backup_role', c.oid, 'SELECT');
+
+-- 4g-2. …и то же самое для листов партиций, отдельной веткой. pg_dump выгружает
+--       партиционированную таблицу полистно и проверяет права на листе; грант родителя на лист не
+--       распространяется. Без этой ветки `audit_logs` проходит 4g зелёным и роняет бэкап.
+SELECT c.relname, 'нет GRANT SELECT для backup_role на партиции — упадёт весь дамп' AS problem
+FROM   pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+WHERE  EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'backup_role')
+  AND  n.nspname = 'public'
+  AND  c.relispartition
+  AND  NOT has_table_privilege('backup_role', c.oid, 'SELECT');
+
+-- 4g-3. последовательности. pg_dump читает last_value из каждой и останавливается на первой,
+--       которую не может прочитать: `permission denied for sequence audit_logs_id_seq`.
+SELECT c.relname, 'нет GRANT SELECT для backup_role на sequence' AS problem
+FROM   pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+WHERE  EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'backup_role')
+  AND  n.nspname = 'public' AND c.relkind = 'S'
+  AND  NOT has_sequence_privilege('backup_role', c.oid, 'SELECT');
+
+-- 4h. роль бэкапа вообще существует. Без этого три проверки выше молча ничего не возвращают:
+--     EXISTS-гард делает их пустыми, и «нет находок» читается как «всё в порядке».
+SELECT 'backup_role' AS relname, 'роль backup_role не существует — бэкап снимать нечем' AS problem
+WHERE  NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'backup_role');
 ```
 
-**Запрос 5 — роль приложения.** Дублирует стартовую проверку, но выполняется в CI:
+Все эти гранты не пишутся руками в каждой миграции и не переживают восстановление из дампа
+(`--no-privileges` на обеих сторонах цикла стирает их полностью). Их источник истины —
+`packages/server/prisma/sql/01-grants.sql`: идемпотентный обход каталога, который раздаёт права по
+правилам выше и запускается **после каждой миграции** и **после каждого `pg_restore`**
+(`pnpm db:grants`, [`../runbooks/backup-restore.md`](../runbooks/backup-restore.md)). Проверки 4a–4h
+остаются независимой сверкой результата: файл, который сам себя проверяет, ничего не гарантирует.
+
+**Запрос 5 — роли.** Дублирует стартовую проверку, но выполняется в CI. Ловит и обратную ошибку:
+роль бэкапа без `BYPASSRLS` снимает частичный дамп молча, а роль бэкапа с правом записи — уже не
+роль бэкапа:
 
 ```sql
 SELECT rolname, 'роль приложения обходит RLS' AS problem
 FROM   pg_roles
 WHERE  rolname = 'app_user' AND (rolsuper OR rolbypassrls);
+
+SELECT rolname, 'backup_role без BYPASSRLS — дамп будет частичным' AS problem
+FROM   pg_roles
+WHERE  rolname = 'backup_role' AND NOT rolbypassrls;
+
+SELECT 'backup_role' AS rolname, 'backup_role имеет права на запись' AS problem
+WHERE  EXISTS (
+  SELECT 1 FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+  WHERE  n.nspname = 'public' AND c.relkind IN ('r','p')
+    AND  has_table_privilege('backup_role', c.oid, 'INSERT,UPDATE,DELETE,TRUNCATE'));
+
+-- Ни одна из четырёх ролей не может «стать» другой. Режим MEMBER, а не USAGE: при NOINHERIT
+-- USAGE вернёт false для роли, которая фактически может выполнить SET ROLE.
+SELECT m.rolname, 'может SET ROLE в ' || g.rolname AS problem
+FROM   pg_roles m CROSS JOIN pg_roles g
+WHERE  m.rolname <> g.rolname
+  AND  m.rolname IN ('app_user','app_migrator','app_auth','backup_role')
+  AND  g.rolname IN ('app_user','app_migrator','app_auth','backup_role')
+  AND  pg_has_role(m.rolname, g.oid, 'MEMBER');
 ```
 
 Обвязка на TypeScript, которая валит CI:
@@ -2135,6 +2314,7 @@ CREATE INDEX idx_outbox_pending
 - [ ] 6. Политика `tenant_isolation` для `app_user` с **USING и WITH CHECK**, оба условия идентичны
 - [ ] 7. Политика `maintenance_access` для `app_migrator`
 - [ ] 8. Явные `GRANT` для `app_user`; для журнальных таблиц — `REVOKE UPDATE, DELETE, TRUNCATE`
+- [ ] 8a. `GRANT SELECT ON <table> TO backup_role;` — иначе таблица молча выпадет из `pg_dump`
 - [ ] 9. Таблица добавлена в реестр `tenant-tables.ts` и в `ROW_FACTORIES` (иначе не компилируется)
 - [ ] 10. Isolation-тест зелёный именно для этой таблицы (не «вообще»)
 - [ ] 11. `pnpm check:rls` проходит; политика создана в **той же** миграции, что и таблица

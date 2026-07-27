@@ -1,0 +1,15 @@
+{
+  // The test suite is typechecked but never part of the bundle, so it gets a project of its own.
+  //
+  // `tsconfig.json` includes `src/**` only, which left every suite under `test/**` outside the
+  // program: `tsc` never looked at it, and any compile-time assertion it contains — a
+  // `@ts-expect-error`, a schema's inferred type — was unenforced. Node typings come in because
+  // `vitest.config.ts` is Node-side code, while the application config stays browser-only.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "incremental": false,
+    "types": ["node"]
+  },
+  "include": ["test/**/*.ts", "test/**/*.tsx", "vitest.config.ts"]
+}

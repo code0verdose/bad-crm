@@ -1,7 +1,7 @@
 ---
 id: EPIC-001
 title: Монорепо и dev-окружение
-status: backlog
+status: review
 blocked: false
 milestone: M1
 owner: unassigned
@@ -27,7 +27,7 @@ Bad CRM состоит из клиента, сервера, общего изо�
 - `turbo.json` с задачами `build`, `typecheck`, `lint`, `test`, `test:e2e`, `dev`, `db:*` и корректным кешированием.
 - `tsconfig.base.json` в strict-режиме + path-алиасы всех пакетов; отдельный tsconfig для `shared` без DOM и Node-типов.
 - ESLint 9 flat config, Prettier, husky, lint-staged, commitlint (Conventional Commits).
-- `docker-compose.yml`: PostgreSQL 16 + pgvector, Redis 7, MinIO, Meilisearch, mailhog — с healthcheck и именованными томами.
+- `docker-compose.yml`: PostgreSQL 16 + pgvector, Redis 8, MinIO, Meilisearch, Mailpit — с healthcheck и именованными томами.
 - `.env.example` со всеми переменными и Zod-схема `env`, парсящаяся один раз при старте.
 - `pnpm dev` — одна команда до работающего локального стека; quickstart в `README.md`.
 - `packages/shared`: базовые branded-типы, Zod-примитивы, каталог кодов ошибок, заготовка каталога permissions.

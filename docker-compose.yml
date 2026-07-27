@@ -1,0 +1,207 @@
+# Bad CRM — local development services (STORY-001-04).
+#
+# SCOPE: this file is the DEVELOPMENT artefact and nothing else. It starts the five backing services
+# the application needs while the application itself runs on the host (`pnpm dev`). It deliberately
+# keeps the canonical name, because `docker-compose.yml` is what a contributor gets after `git clone`
+# and it must work with no extra flags.
+#
+# The self-host distribution file is a SEPARATE artefact called `docker-compose.prod.yml`, created in
+# EPIC-017: it also ships `api`/`worker`/`migrate`, publishes NO infrastructure port at all, and
+# refuses to start without a prepared `.env` (ADR-0020 amendment of 2026-07-27, threat model T-SH-02,
+# rules/self-host-packaging.mdc). Nothing in this file is part of the distribution.
+#
+# PORTS: every published port is bound to 127.0.0.1. The host process needs to reach these services,
+# but nothing outside this machine may. Docker publishes straight into iptables and bypasses ufw, so
+# a `0.0.0.0` binding here would expose the database of every developer laptop and CI runner
+# (docs/security/threat-model.md, T-SH-02; docs/runbooks/install.md §5.1). Each port is overridable
+# via .env (`POSTGRES_PORT`, ...) so a busy host port is fixed in one variable, not in this file.
+#
+# SECRETS: no literal credential lives here. Every value is `${VAR:-dev_default}`; the fallbacks are
+# development-only, deliberately prefixed `dev_`, and MUST be overridden in .env for anything that
+# is not a laptop. Production installs get generated secrets (ADR-0020, T-SH-01).
+#
+# PROFILES (ADR-0020):
+#   minimal — postgres + redis + minio (+ the one-shot bucket initialiser). These services declare
+#             no `profiles` key, so Compose starts them in every profile: `docker compose up -d`
+#             and `docker compose --profile minimal up -d` are equivalent.
+#   default — the above plus meilisearch and mailpit. Compose cannot exclude a service from a
+#             profile, so the extras opt in explicitly: use `pnpm docker:up`, which passes
+#             `--profile default`, or set `COMPOSE_PROFILES=default` in .env.
+#
+# DATA: named volumes survive `docker compose down`. `docker compose down -v` deletes them —
+# that is what `pnpm docker:reset` does, on purpose and behind a confirmation.
+
+name: bad-crm
+
+services:
+  # PostgreSQL 16 with pgvector. Extensions and the app_migrator/app_user/app_auth roles are created
+  # once, on first initialisation of an empty pgdata volume, from packages/server/prisma/sql/initdb.
+  postgres:
+    image: pgvector/pgvector:0.8.5-pg16
+    restart: unless-stopped
+    environment:
+      # Superuser of the local cluster — dev only; a self-host install never exposes this account.
+      POSTGRES_USER: ${POSTGRES_USER:-bad_crm}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-dev_postgres_password}
+      POSTGRES_DB: ${POSTGRES_DB:-bad_crm}
+      # Consumed by initdb/00-bootstrap-roles.sh and by `pnpm db:bootstrap` — passwords of the four
+      # database roles. They stay in the container environment rather than in the wrapper's argv:
+      # the wrapper feeds them to psql over stdin so they never appear in `ps`.
+      APP_MIGRATOR_PASSWORD: ${APP_MIGRATOR_PASSWORD:-dev_migrator_password}
+      APP_USER_PASSWORD: ${APP_USER_PASSWORD:-dev_app_user_password}
+      APP_AUTH_PASSWORD: ${APP_AUTH_PASSWORD:-dev_app_auth_password}
+      BACKUP_ROLE_PASSWORD: ${BACKUP_ROLE_PASSWORD:-dev_backup_role_password}
+    ports:
+      - '127.0.0.1:${POSTGRES_PORT:-5432}:5432'
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      # Runs once, on an empty data directory: roles, database ownership, extensions.
+      - ./packages/server/prisma/sql/initdb:/docker-entrypoint-initdb.d:ro
+      # The parameterised bootstrap SQL itself, kept out of initdb.d so it is only ever executed
+      # through its wrapper (it needs psql variables) and stays runnable by hand against any server.
+      - ./packages/server/prisma/sql:/opt/bad-crm/sql:ro
+    healthcheck:
+      # `-h 127.0.0.1` is the load-bearing flag. While docker-entrypoint-initdb.d runs, the
+      # entrypoint has a temporary server up that listens on the unix socket ONLY — a socket-local
+      # `pg_isready` reports "accepting connections" before the roles and extensions exist, so
+      # `compose up --wait` returns too early and the first `pnpm dev` on a clean volume dies with
+      # `role "app_user" does not exist`. Over TCP the probe stays honestly red until the entrypoint
+      # restarts the server on port 5432, which it only does after every init script has succeeded.
+      test:
+        [
+          'CMD-SHELL',
+          'pg_isready -h 127.0.0.1 -U ${POSTGRES_USER:-bad_crm} -d ${POSTGRES_DB:-bad_crm}',
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+
+  # Redis: BullMQ broker, socket.io backplane, rate-limit counters, session revocation list.
+  # 8.x and not 7.x for a licensing reason, not a feature one: Redis 7.4 ships only under RSALv2 /
+  # SSPLv1, both of which are on the deny-list of docs/legal/licensing.md §3 and rules/dependencies.mdc.
+  # Redis 8.0 added AGPLv3 as a third option (LICENSE.txt of the redis/redis repository), which is
+  # the licence of this project — so from 8.0 onwards the image may ship with the distribution.
+  redis:
+    image: redis:8.8.1-alpine
+    restart: unless-stopped
+    # AOF with everysec fsync: a dev restart must not silently drop queued jobs mid-debugging.
+    command: ['redis-server', '--appendonly', 'yes', '--appendfsync', 'everysec']
+    ports:
+      - '127.0.0.1:${REDIS_PORT:-6379}:6379'
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
+
+  # MinIO: S3-compatible storage for presigned uploads (ADR-0015). Community builds ship an
+  # object-browser-only console on 9001 — enough for dev; management happens through `mc`.
+  minio:
+    image: minio/minio:RELEASE.2025-09-07T16-13-09Z
+    restart: unless-stopped
+    command: ['server', '/data', '--console-address', ':9001']
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-dev_minio_root}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-dev_minio_password}
+    ports:
+      - '127.0.0.1:${MINIO_PORT:-9000}:9000'
+      - '127.0.0.1:${MINIO_CONSOLE_PORT:-9001}:9001'
+    volumes:
+      - minio-data:/data
+    healthcheck:
+      # `mc ready local` is MinIO's own readiness probe and is bundled in the server image.
+      test: ['CMD', 'mc', 'ready', 'local']
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+
+  # One-shot bucket initialiser: creates the bucket and makes sure it is not publicly readable.
+  # Idempotent (`mc mb --ignore-existing`), so re-running the stack is a no-op.
+  minio-setup:
+    image: minio/mc:RELEASE.2025-08-13T08-35-41Z
+    restart: 'no'
+    depends_on:
+      minio:
+        condition: service_healthy
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-dev_minio_root}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-dev_minio_password}
+      S3_BUCKET: ${S3_BUCKET:-bad-crm}
+    # `$$` keeps the values as shell variables inside the container instead of interpolating them
+    # into the rendered compose config, where `docker compose config` would print them.
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        set -eu
+        mc alias set local http://minio:9000 "$$MINIO_ROOT_USER" "$$MINIO_ROOT_PASSWORD"
+        mc mb --ignore-existing "local/$$S3_BUCKET"
+        mc anonymous set none "local/$$S3_BUCKET"
+        echo "minio-setup: bucket $$S3_BUCKET ready, anonymous access disabled"
+    labels:
+      # Marks a container that runs once and exits: it has no health status by definition.
+      com.bad-crm.oneshot: 'true'
+
+  # Meilisearch — optional by design. Absent in the minimal profile, where SearchPort falls back to
+  # PostgreSQL FTS (ADR-0011). meili-data is never backed up: the index is replayed from the DB.
+  meilisearch:
+    image: getmeili/meilisearch:v1.50.0
+    profiles: ['default', 'full']
+    restart: unless-stopped
+    environment:
+      MEILI_MASTER_KEY: ${MEILI_MASTER_KEY:-dev_meili_master_key_not_for_production}
+      MEILI_ENV: ${MEILI_ENV:-development}
+      MEILI_NO_ANALYTICS: 'true'
+    ports:
+      - '127.0.0.1:${MEILI_PORT:-7700}:7700'
+    volumes:
+      - meili-data:/meili_data
+    healthcheck:
+      # The image is alpine-based: busybox wget is available, curl is not. The address must be
+      # 127.0.0.1 and not `localhost`: inside the container that name resolves to ::1 first, while
+      # Meilisearch listens on IPv4 only — the probe would fail forever with "connection refused".
+      test: ['CMD', 'wget', '--no-verbose', '--spider', 'http://127.0.0.1:7700/health']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  # Mailpit intercepts every outgoing mail in dev: SMTP on 1025, web UI on 8025. Chosen over MailHog,
+  # which has been unmaintained since 2020 — Mailpit is actively released, ships its own readiness
+  # probe, persists messages and supports the same "accept anything" SMTP behaviour.
+  mailpit:
+    image: axllent/mailpit:v1.30.5
+    profiles: ['default', 'full']
+    restart: unless-stopped
+    environment:
+      MP_DATABASE: /data/mailpit.db
+      MP_MAX_MESSAGES: ${MAILPIT_MAX_MESSAGES:-5000}
+      # Dev only: accept any SMTP credentials over an unencrypted connection so nodemailer needs no
+      # special configuration. A real SMTP relay in production does the opposite.
+      MP_SMTP_AUTH_ACCEPT_ANY: 'true'
+      MP_SMTP_AUTH_ALLOW_INSECURE: 'true'
+    ports:
+      - '127.0.0.1:${MAILPIT_SMTP_PORT:-1025}:1025'
+      - '127.0.0.1:${MAILPIT_UI_PORT:-8025}:8025'
+    volumes:
+      - mailpit-data:/data
+    healthcheck:
+      test: ['CMD', '/mailpit', 'readyz']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 5s
+
+# Named volumes. `docker compose down` keeps them; `docker compose down -v` (pnpm docker:reset)
+# destroys them. pgdata and minio-data are the two that hold irreplaceable data (ADR-0020).
+volumes:
+  pgdata:
+  redis-data:
+  minio-data:
+  meili-data:
+  mailpit-data:

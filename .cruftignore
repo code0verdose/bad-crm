@@ -30,5 +30,11 @@ CONTRIBUTING.md
 SECURITY.md
 CODE_OF_CONDUCT.md
 
+# Тестовые фикстуры линтера: файлы намеренно нарушают правила (прямой `prisma.`,
+# `console.log`, `fetch`, `export default`), это входные данные для
+# test/lint/architecture-rules.test.ts, а не мусор в коммите. Реальный код
+# (packages/**) сканером по-прежнему проверяется целиком.
+test/lint/fixtures/*
+
 # Сам файл исключений — перечисляет паттерны дословно
 .cruftignore

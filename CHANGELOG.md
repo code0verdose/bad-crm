@@ -14,8 +14,115 @@ from this file.
 
 ## [Unreleased]
 
-Nothing is released yet. The project is in **phase 0**: the specification and the work breakdown
-exist, the application does not. No `packages/`, no `docker-compose.yml`, no image, no version tag.
+Nothing is released yet. The specification and the work breakdown are complete; EPIC-001 has added
+the development environment on top of them. There is still no application: no HTTP endpoints, no
+user interface, no Prisma schema, no image of the application, no version tag. The
+`docker-compose.yml` that now exists starts the **backing services**, not Bad CRM.
+
+### Added — EPIC-001: монорепо и среда разработки
+
+**Монорепо и сборка**
+
+- `package.json`, `pnpm-workspace.yaml`, `turbo.json` — pnpm-workspace с четырьмя пакетами
+  (`@bad-crm/shared`, `server`, `client`, `e2e`) и кешируемым turborepo-пайплайном; корневые
+  скрипты `dev`/`build`/`typecheck`/`lint`/`test`/`docker:*` — обёртки над `turbo`.
+- `tsconfig.base.json` и по одному `tsconfig.json` на пакет — strict, `noUncheckedIndexedAccess`,
+  `exactOptionalPropertyTypes`, project references, алиасы `@/*` (сервер) и
+  `@app|@pages|@widgets|@units|@shared` (клиент). Одна версия TypeScript на воркспейс
+  ([ADR-0022](docs/architecture/adr/0022-typescript-version-policy.md)).
+- `eslint.config.js` + `eslint/bad-crm.plugin.js` — ESLint 9 flat config, единый на все пакеты, с
+  архитектурными запретами (гексагональные слои сервера, слои FSD клиента, направление зависимостей
+  пакетов, `prisma.*` вне persistence, raw `fetch` вне `shared/api`, `import.meta.env` вне
+  `shared/config`, kebab-case + role-suffix). Прогоняется и на `test/**` через корневую задачу
+  `//#lint:repo`.
+- Prettier, husky, lint-staged, commitlint (Conventional Commits), `.editorconfig`, `.npmrc`,
+  `.nvmrc` (Node 22.22.1).
+- Покрытие тестами измеряется `@vitest/coverage-v8`; пороги из
+  [`rules/testing.mdc`](rules/testing.mdc) §7 роняют сборку.
+
+**Инфраструктура разработки**
+
+- `docker-compose.yml` — PostgreSQL 16 + pgvector, Redis, MinIO (+ `minio-setup`), Meilisearch,
+  Mailpit; профили `minimal` / `default` / `full`. Скрипты `scripts/docker/up.sh` и
+  `scripts/docker/reset.sh`, команды `pnpm docker:up|down|logs|reset`.
+- `packages/server/prisma/sql/00-bootstrap-roles.sql` — роли БД (`app_migrator`, `app_user`,
+  `app_auth`, `backup_role`) для инварианта RLS; выполняется до первой миграции.
+
+**Код**
+
+- `packages/shared` наполнен: zod-примитивы (email, пароль, slug, деньги, даты, пагинация,
+  сортировка, локаль, таймзона), branded id, каталог permissions с `can()`, коды ошибок, `Result`.
+- `packages/server/src/infrastructure/bootstrap` — разбор окружения одной zod-схемой на старте,
+  `EnvValidationError` со списком **всех** проблемных переменных, отчёт о деградациях.
+- `packages/client/src/shared/config` — отдельная, намеренно маленькая схема окружения браузера.
+
+**Тесты репозитория** (`test/**`)
+
+- `test/repo` — состав workspace, направление зависимостей, контракт tsconfig, версии тулчейна.
+- `test/env` — `.env.example` совпадает с объединением серверной и клиентской схем и переменных,
+  которые интерполирует compose; в шаблоне нет реальных секретов; серверный секрет не может
+  получить имя с префиксом `VITE_`.
+- `test/infra` — инварианты `docker-compose.yml` и bootstrap-SQL.
+- `test/lint` — архитектурные запреты проверяются линтом намеренно сломанных фикстур, с
+  положительным контролем.
+
+### Environment variables — EPIC-001
+
+Полный шаблон — [`.env.example`](.env.example); нормативные описания —
+[`docs/runbooks/install.md`](docs/runbooks/install.md). Ни одна из переменных ещё не читается
+работающим приложением: сервер — скелет. Список приведён здесь, потому что этот файл — то, из чего
+администратор self-host узнаёт об изменениях окружения.
+
+**Обязательные, без значения по умолчанию — процесс не стартует без них:**
+
+| Переменная | Что это |
+|---|---|
+| `APP_URL` | Публичный URL инсталляции: CORS, домен cookie, ссылки в письмах. В production обязан быть `https`, кроме loopback |
+| `DATABASE_URL` | Строка подключения PostgreSQL для роли приложения (без `BYPASSRLS`) |
+| `REDIS_URL` | Строка подключения Redis |
+| `JWT_SECRET` | Секрет подписи access-токенов, минимум 32 символа (`openssl rand -base64 48`) |
+| `APP_ENCRYPTION_KEY` | 32 байта в base64 (`openssl rand -base64 32`); шифрует секреты интеграций в БД. **Потеря делает их невосстановимыми** |
+| `S3_ENDPOINT`, `S3_BUCKET`, `S3_ACCESS_KEY`, `S3_SECRET_KEY` | Объектное хранилище файлов |
+
+**`NODE_ENV`** (по умолчанию `development`) стоит особняком: он не деградирует функцию, а решает,
+запустится ли процесс вообще. Preflight включён на **всём, что не `development`** — включая `test`, —
+и отвергает плейсхолдеры `CHANGE_ME`/`dev_` в секретах и `http`-`APP_URL` вне loopback. Область
+выбрана по «не development», а не по «production» осознанно: модель угроз (T-SH-01, T-SH-03) считает
+любой не-dev запуск доступным из интернета, и деплой, забытый на `NODE_ENV=test`, не должен
+стартовать на плейсхолдерном секрете. Практическое следствие: `NODE_ENV=test` с dev-значениями
+**ломает старт**, и это не регрессия.
+
+**Опциональные — их отсутствие деградирует функцию, но не ломает старт:**
+
+| Переменная | По умолчанию | Эффект |
+|---|---|---|
+| `PORT` | `3000` | Порт HTTP-сервера |
+| `DATABASE_MIGRATION_URL` | нет | Подключение под ролью-владельцем для `prisma migrate deploy` и `pnpm db:grants`. Процесс приложения её не открывает, поэтому она опциональна для старта, но **миграции без неё не идут**: у `app_user` нет `CREATE` на схеме `public` |
+| `S3_REGION` | `us-east-1` | Регион объектного хранилища |
+| `S3_FORCE_PATH_STYLE` | `true` | Path-style адресация для MinIO; для AWS S3 — `false` |
+| `MEILI_HOST`, `MEILI_MASTER_KEY`, `MEILI_ENV` | нет | Без них поиск падает на PostgreSQL FTS. `MEILI_MASTER_KEY` обязателен, если задан `MEILI_HOST` |
+| `SMTP_URL` | нет | Без неё письма пишутся в лог (dev) и падают с внятной ошибкой (prod) |
+| `AI_ENABLED` | `false` | Ключи AI-провайдеров живут в БД, а не в env ([ADR-0014](docs/architecture/adr/0014-ai-provider-abstraction.md)) |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | нет | Без неё трейсы не экспортируются; логи и метрики работают |
+| `CORS_EXTRA_ORIGINS` | нет | Дополнительные origin'ы браузера через запятую, сверх `APP_URL` |
+| `LOG_LEVEL` | `info` | `fatal`…`trace` |
+| `RUN_WORKERS_IN_PROCESS` | `false` | Исключение для профиля `minimal`: воркеры в процессе API |
+| `ARGON2_MEMORY_COST` | `19456` | Параметры argon2id для паролей. Значения `0`, отрицательные и дробные отвергаются на старте |
+| `ARGON2_TIME_COST` | `2` | |
+| `ARGON2_PARALLELISM` | `1` | |
+
+**Браузерный бандл** (Vite инлайнит только префикс `VITE_`; серверных секретов здесь нет и быть не
+может — это проверяется тестом):
+
+| Переменная | По умолчанию | Что это |
+|---|---|---|
+| `VITE_API_BASE_URL` | `/api/v1` | Адрес API: путь того же origin или абсолютный `http(s)`-URL |
+
+**Только для `docker compose` и скриптов разработки** — приложением не читаются, в production-образ
+не попадают: `COMPOSE_PROFILES`, `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB`,
+`POSTGRES_PORT`, `APP_MIGRATOR_PASSWORD`, `APP_USER_PASSWORD`, `APP_AUTH_PASSWORD`,
+`BACKUP_ROLE_PASSWORD`, `REDIS_PORT`, `MINIO_ROOT_USER`, `MINIO_ROOT_PASSWORD`, `MINIO_PORT`,
+`MINIO_CONSOLE_PORT`, `MEILI_PORT`, `MAILPIT_MAX_MESSAGES`, `MAILPIT_SMTP_PORT`, `MAILPIT_UI_PORT`.
 
 ### Added — Phase 0: спецификация проекта
 
@@ -118,10 +225,10 @@ exist, the application does not. No `packages/`, no `docker-compose.yml`, no ima
 
 ### Not yet present
 
-`packages/` (`shared`, `server`, `client`, `e2e`), `package.json`, `pnpm-workspace.yaml`,
-`turbo.json`, `tsconfig.base.json`, `eslint.config.js`, `docker-compose.yml`, `Dockerfile`,
-`.env.example`, `docs/api/openapi.yaml`, `epics/README.md` (борд эпиков — генерируемый файл),
-CI-воркфлоу. Всё перечисленное создаётся эпиками майлстоуна M1, начиная с EPIC-001.
+HTTP-сервер и `/health` (EPIC-003), Vite dev-server и клиентский шелл (EPIC-004),
+`prisma/schema.prisma` и миграции (EPIC-003/005), `docs/api/openapi.yaml` (STORY-003-05),
+`Dockerfile` и образ приложения (EPIC-017), CI-воркфлоу (EPIC-002 — в `.github/workflows/` пока
+пусто). Всё перечисленное создаётся эпиками майлстоунов M1–M2.
 
 ---
 

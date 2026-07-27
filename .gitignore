@@ -79,3 +79,6 @@ tmp/
 temp/
 scratch/
 *.bak
+
+# Compose подхватывает override автоматически — в репозитории он открыл бы порты БД и на бою
+docker-compose.override.yml

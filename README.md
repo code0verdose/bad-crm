@@ -11,16 +11,24 @@ Licensed under **AGPL-3.0-or-later**. Interface in **English and Russian**.
 
 ---
 
-> ## ⚠️ Project status: design phase — there is no code yet
+> ## ⚠️ Project status: design phase — there is no application yet
 >
-> This repository currently contains **specification and work breakdown only**: product and
-> architecture documents, ADRs, security design, development rules, and epics with user stories.
-> There is no `packages/` directory, no `docker-compose.yml`, no runnable application, no release,
-> and no Docker image.
+> This repository contains the **specification and work breakdown** (product and architecture
+> documents, ADRs, security design, development rules, epics with user stories) and, since
+> EPIC-001, the **development environment**: a pnpm workspace with four packages
+> (`shared`, `server`, `client`, `e2e`), a cached turborepo pipeline, a strict shared TypeScript
+> configuration, an ESLint 9 flat config that enforces the architectural boundaries, a
+> `docker-compose.yml` with the backing services (PostgreSQL + pgvector, Redis, MinIO,
+> Meilisearch, Mailpit), and `.env.example` backed by Zod schemas. Only `shared` has real code so
+> far — Zod primitives, branded ids, the permission catalogue and the error codes.
 >
-> Every feature described below is **planned**, not shipped. Every command in the Quick start section
-> is **the intended interface**, not something you can run today. Nothing here has been built,
-> benchmarked, or audited.
+> There is still no application: no HTTP endpoints, no user interface, no Prisma schema, no
+> release, and no Docker image of the application itself. `docker compose up` starts the services
+> the application will need, not the application.
+>
+> Every feature described below is **planned**, not shipped. The self-hosted install flow in the
+> Quick start section is **the intended interface**, not something you can run today; the
+> development flow next to it is what actually works on a clean clone.
 >
 > If you are looking for software to install right now, this is not it yet. If you are interested in
 > how it is being designed — or want to help build it — read on.
@@ -102,11 +110,15 @@ AI (features are hidden and return a clear "feature disabled" response).
 
 ## Quick start
 
-> **Not available yet.** The self-hosted alpha ships in **EPIC-017**, at the end of milestone M2.
-> Until then there is no image to pull and no compose file to run. The commands below are the
-> intended interface, recorded here so the design is reviewable — they will not work today.
+### Installing the application — not available yet
 
-### Requirements (planned)
+> The self-hosted alpha ships in **EPIC-017**, at the end of milestone M2. The `docker-compose.yml`
+> in the repository today starts the **backing services** for development (PostgreSQL, Redis,
+> MinIO, Meilisearch, Mailpit); there is no application image for it to run yet. The commands
+> below are the intended interface, recorded here so the design is reviewable — they will not give
+> you a working installation today.
+
+#### Requirements (planned)
 
 | | Minimum | Recommended |
 |---|---|---|
@@ -115,7 +127,7 @@ AI (features are hidden and return a clear "feature disabled" response).
 | Software | Docker 24+ with Compose v2 | Same, plus a reverse proxy with TLS |
 | OS | Linux (x86-64 or arm64) | Same |
 
-### Intended flow
+#### Intended flow
 
 ```bash
 git clone https://github.com/<org>/bad-crm.git
@@ -132,6 +144,52 @@ including the mandatory post-install security checklist, is in
 
 The `minimal` profile drops Meilisearch and runs the workers inside the API process, for small
 installations on constrained hardware.
+
+### Working on the code — works today
+
+Requirements: **Node 22 LTS** (`>=22.22.1 <23`, see `.nvmrc`), **pnpm 10** (installed by Corepack
+from the `packageManager` field), Git. Docker is optional — the checks below run without it; you
+need it only to start the backing services.
+
+```bash
+git clone https://github.com/<org>/bad-crm.git
+cd bad-crm
+corepack enable                          # picks up pnpm 10.x pinned in package.json
+pnpm install                             # installs all four workspace packages
+pnpm turbo run typecheck lint build test # the full check set, run before every push
+pnpm dev                                 # all packages in watch mode, Ctrl+C stops the whole tree
+```
+
+`pnpm dev` currently starts three parallel watchers: the `shared` build (`tsc -b --watch`), the
+server skeleton (`tsx watch src/main.ts`, prints one startup line), and a client type-check watcher.
+
+| Command | State today |
+|---|---|
+| `pnpm install`, `pnpm build`, `pnpm typecheck`, `pnpm test`, `pnpm dev` | work |
+| `pnpm lint`, `pnpm format:check` | work — ESLint 9 flat config with the architectural bans, plus Prettier |
+| `pnpm docker:up`, `pnpm docker:down`, `pnpm docker:logs`, `pnpm docker:reset` | work — they start and stop the backing services, not the application |
+| `pnpm test:integration`, `pnpm test:e2e`, `pnpm db:migrate`, `pnpm db:seed`, `pnpm api:gen` | wired to turbo, but no package implements them yet (EPIC-003, EPIC-010) |
+
+To run the services locally, copy the template and fill in the placeholders:
+
+```bash
+cp .env.example .env
+openssl rand -base64 32   # → APP_ENCRYPTION_KEY
+openssl rand -base64 48   # → JWT_SECRET
+pnpm docker:up            # PostgreSQL + pgvector, Redis, MinIO, Meilisearch, Mailpit
+```
+
+Nothing in the repository connects to those services yet — the server is still a skeleton that
+prints one line. They are there so that the first migration and the first endpoint have somewhere
+to land.
+
+The repository contract itself (workspace layout, dependency direction, tsconfig contract, the
+compose file, and the agreement between `.env.example` and the env schemas) is covered by tests in
+[`test/`](test/) — they run as part of `pnpm test`.
+
+Conventions, architecture, and the current work breakdown live in [`docs/`](docs/),
+[`rules/`](rules/), and [`epics/`](epics/); start with
+[`CONTRIBUTING.md`](CONTRIBUTING.md).
 
 ---
 

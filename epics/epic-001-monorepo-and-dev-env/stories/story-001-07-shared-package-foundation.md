@@ -1,7 +1,7 @@
 ---
 id: STORY-001-07
 epic: EPIC-001
-status: backlog
+status: review
 blocked: false
 priority: must
 estimate: S
