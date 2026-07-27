@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { lintFixture } from './eslint-fixture.util.js';
+import { configForRepoFile, lintFixture } from './eslint-fixture.util.js';
 
 /**
  * Every case is a file in `test/lint/fixtures/` that violates one architectural invariant, plus the
@@ -90,6 +90,39 @@ const CLIENT_FSD: ForbiddenCase[] = [
     fixture: 'packages/client/src/units/task/api/tasks.api.ts',
     rule: 'no-restricted-syntax',
     hint: 'tanstack-query',
+  },
+  {
+    // `shared` is the bottom layer: a utility there that knows about a domain unit inverts the
+    // whole dependency direction, and it is the one direction no other fixture covered.
+    fixture: 'packages/client/src/shared/lib/domain-import.util.ts',
+    rule: 'no-restricted-imports',
+    hint: 'shared',
+  },
+  {
+    // Reaching into *another* unit's segments — the barrel of that unit is its only surface.
+    fixture: 'packages/client/src/units/task/ui/foreign-unit.component.tsx',
+    rule: 'bad-crm/no-foreign-unit-internals',
+    hint: 'barrel',
+  },
+];
+
+/**
+ * `useEffect` is the escape hatch, and an escape hatch that costs nothing is used for everything.
+ *
+ * Both cases below are things the runtime never complains about: the first renders twice per
+ * change and drifts out of sync the moment a render is skipped, the second is simply unexplained —
+ * and an unexplained effect is how the first kind gets added next to it.
+ */
+const EFFECT_DISCIPLINE: ForbiddenCase[] = [
+  {
+    fixture: 'packages/client/src/units/task/service/hooks/use-derived-state.hook.ts',
+    rule: 'bad-crm/no-effect-for-derived-state',
+    hint: 'during render',
+  },
+  {
+    fixture: 'packages/client/src/units/task/service/hooks/use-unjustified-effect.hook.ts',
+    rule: 'bad-crm/no-effect-for-derived-state',
+    hint: 'why',
   },
 ];
 
@@ -193,6 +226,14 @@ const CLEAN_FIXTURES = [
   'packages/server/src/infrastructure/persistence/task.repository.ts',
   'packages/client/src/units/task/service/hooks/use-task-list.hook.ts',
   'packages/client/src/shared/api/http.client.ts',
+  // A unit reaching into its *own* segments: the counterpart of `foreign-unit.component.tsx`, and
+  // the case that a plain `@units/*/*` ban gets wrong. Without it a unit cannot be written at all —
+  // `ui` could not import the hook next door, and the ban would read as correct while making the
+  // architecture it defends impossible.
+  'packages/client/src/units/task/service/hooks/use-own-segment.hook.ts',
+  // An effect that is a real side effect, carries its cleanup and says why it exists. The negative
+  // controls above cannot prove the rule distinguishes the two.
+  'packages/client/src/units/task/service/hooks/use-subscription.hook.ts',
   'test/recorded-read.util.ts',
 ];
 
@@ -223,11 +264,81 @@ const describeForbidden = (title: string, cases: ForbiddenCase[]): void => {
 describeForbidden('monorepo package boundaries', PACKAGE_BOUNDARIES);
 describeForbidden('server hexagonal layers', HEXAGONAL_LAYERS);
 describeForbidden('client FSD layers', CLIENT_FSD);
+describeForbidden('effect discipline', EFFECT_DISCIPLINE);
 describeForbidden('naming and file structure', NAMING);
 describeForbidden('general hygiene', GENERAL);
 describeForbidden('environment access', ENVIRONMENT_ACCESS);
 describeForbidden('layer exceptions stay narrow', NARROW_LAYER_EXCEPTIONS);
 describeForbidden('repository suite reads', REPOSITORY_SUITE_READS);
+
+/**
+ * The fixtures live at invented paths. This block asks the opposite question: for a file that
+ * actually ships, does ESLint still hand it the rule that is supposed to guard its layer?
+ *
+ * A `files` glob is silently satisfiable — it matched the fixture tree in every case above, and it
+ * would keep matching it after the real directory it was written for had been renamed, split or
+ * moved one level deeper. What follows names real files of `packages/client/src` and reads the
+ * configuration ESLint resolves for them.
+ */
+describe('the shipped client tree is really covered, not only the fixtures', () => {
+  /** `calculateConfigForFile` normalises severities to numbers; 2 is `error`, 0 is off or absent. */
+  const severityOf = (rules: object, rule: string): unknown => {
+    const entry = (rules as Record<string, unknown>)[rule];
+    return Array.isArray(entry) ? entry[0] : (entry ?? 0);
+  };
+
+  const optionsOf = async (path: string, rule: string): Promise<string> => {
+    const { rules } = await configForRepoFile(path);
+    const entry = (rules as Record<string, unknown>)[rule];
+    return JSON.stringify(entry ?? null);
+  };
+
+  it.each([
+    ['packages/client/src/pages/home/page.tsx', 'react/no-multi-comp'],
+    ['packages/client/src/pages/home/page.tsx', 'bad-crm/require-role-suffix'],
+    ['packages/client/src/pages/home/page.tsx', 'bad-crm/no-effect-for-derived-state'],
+    ['packages/client/src/widgets/app-status/app-status.widget.tsx', 'unicorn/filename-case'],
+    [
+      'packages/client/src/units/session/ui/session-status-badge.component.tsx',
+      'bad-crm/no-foreign-unit-internals',
+    ],
+    ['packages/client/src/units/session/ui/session-status-badge.component.tsx', 'react/no-danger'],
+    ['packages/client/src/shared/config/env.schema.ts', 'no-restricted-imports'],
+  ])('%s has %s enabled', async (path, rule) => {
+    const { rules } = await configForRepoFile(path);
+
+    expect(severityOf(rules, rule), `${rule} is not applied to ${path}`).toBe(2);
+  });
+
+  it.each([
+    ['packages/client/src/pages/home/page.tsx', 'no-restricted-syntax', 'tanstack-query'],
+    [
+      'packages/client/src/widgets/app-status/app-status.widget.tsx',
+      'no-restricted-imports',
+      'TanStack Query or axios',
+    ],
+    [
+      'packages/client/src/shared/config/env.schema.ts',
+      'no-restricted-imports',
+      'bottom FSD layer',
+    ],
+  ])('%s carries the %s ban about %s', async (path, rule, hint) => {
+    expect(await optionsOf(path, rule)).toContain(hint);
+  });
+
+  /**
+   * The exemption has to be as real as the ban: a unit is where TanStack Query is supposed to live,
+   * and a config that bans it everywhere would push fetching back up into the pages.
+   */
+  it('does not ban TanStack Query inside a unit, which is where it belongs', async () => {
+    expect(
+      await optionsOf(
+        'packages/client/src/units/session/service/hooks/use-session-status.hook.ts',
+        'no-restricted-imports',
+      ),
+    ).not.toContain('TanStack Query or axios');
+  });
+});
 
 describe('positive control', () => {
   it.each(CLEAN_FIXTURES)(

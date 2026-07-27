@@ -1,3 +1,10 @@
+/**
+ * @vitest-environment node
+ *
+ * The package default is `jsdom`, because most of this suite renders components. This file does
+ * not: it reads the contract off disk and regenerates it, and under `jsdom` `import.meta.url` is
+ * not a `file:` URL, so `fileURLToPath` throws before the first assertion.
+ */
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 

@@ -1,7 +1,7 @@
 ---
 id: EPIC-004
 title: Каркас клиента на FSD
-status: backlog
+status: in-progress
 blocked: false
 milestone: M1
 owner: unassigned

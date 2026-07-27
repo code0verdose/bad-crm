@@ -1,7 +1,7 @@
 ---
 id: STORY-004-01
 epic: EPIC-004
-status: backlog
+status: in-progress
 blocked: false
 priority: must
 estimate: M
@@ -25,7 +25,7 @@ estimate: M
 
 ## Задачи
 
-- [ ] **Достроить CSP под реальный браузерный рендер** (пробел [ADR-0023](../../../docs/architecture/adr/0023-csp-for-wasm-crypto.md),
+- [x] **Достроить CSP под реальный браузерный рендер** (пробел [ADR-0023](../../../docs/architecture/adr/0023-csp-for-wasm-crypto.md),
       найден при ревью EPIC-003). Сейчас `style-src 'self'` заблокирует Mantine: UI-kit раздаёт
       CSS-переменные инлайновым атрибутом `style=""`, а `style-src-attr` наследуется от `style-src`.
       Решение — **не** `style-src 'unsafe-inline'`, а раздельные `style-src-elem` с nonce и
@@ -34,22 +34,49 @@ estimate: M
       Проверяется **в браузере**, а не тестом на строку политики: обе ошибки дают зелёный тест.
       Правится `packages/server/src/presentation/http/content-security-policy.util.ts`, обновляется
       ADR-0023 и `docs/security/e2ee-design.md` §12.
+      **Сделано, и браузер поправил само решение.** Измерено на production-сборке React 19 +
+      Mantine 7 под этим заголовком: (1) `style-src-attr 'unsafe-inline'` **не нужен** — React
+      применяет `style` через CSSOM, а CSP регулирует парсинг атрибута, поэтому стоит
+      `style-src-attr 'none'`; (2) `<style>`-элементы Mantine действительно нужно пускать по nonce
+      (`style-src-elem`), Mantine принимает его через `getStyleNonce`; (3) найден третий дефект,
+      которого не было в пробеле: `require-trusted-types-for 'script'` роняет монтирование React
+      целиком (пустая страница), поэтому добавлено `trusted-types default` и требование к клиенту
+      установить единственную политику. `media-src`/`frame-src` добавлены. Подробности и таблица
+      измерений — в ADR-0023 и §12. Генерация nonce на запрос — за историей, где сервер начинает
+      отдавать `index.html`.
 
-- [ ] Написать тесты первыми: `test/config/aliases.test.ts` (совпадение алиасов в трёх конфигах), `test/config/naming.test.ts` (kebab-case + role-суффиксы по всему `src/**`), `test/config/env-prefix.test.ts` (нет обращений к не-`VITE_` переменным).
-- [ ] Создать `packages/client` с `vite.config.ts` (плагины `@vitejs/plugin-react`, `vite-tsconfig-paths` либо явный `resolve.alias`), `index.html`, `src/app/main.tsx`.
-- [ ] Настроить единый источник алиасов (`config/aliases.ts`), из которого читают и `vite.config.ts`, и тесты; `tsconfig.json` синхронизируется тестом.
-- [ ] Настроить `vitest` с `environment: jsdom`, `@testing-library/react`, `setupFiles` для матчеров и очистки.
-- [ ] Настроить `size-limit` с бюджетом начального чанка и отдельной строкой-исключением для крипто-чанка vault (появится в M7).
-- [ ] Добавить ESLint-правила именования файлов и «один компонент на файл» (`unicorn/filename-case` + собственное правило/тест).
-- [ ] Настроить `vite preview` и добавить скрипт `pnpm --filter @bad-crm/client preview` для проверки production-сборки.
+- [x] Написать тесты первыми: `test/config/aliases.test.ts` (совпадение алиасов в трёх конфигах), `test/config/naming.test.ts` (kebab-case + role-суффиксы по всему `src/**`), `test/config/env-prefix.test.ts` (нет обращений к не-`VITE_` переменным).
+      Разложились иначе: алиасы — `test/repo/client-aliases.test.ts` (три конфига как данные) плюс
+      `packages/client/test/config/aliases.test.ts` (резолвятся в рантайме); имена — общий тест
+      дерева `test/architecture/structure.test.ts` и фикстуры `test/lint`; префикс `VITE_` — уже
+      существующий `packages/client/test/config/env.test.ts` плюс фикстура
+      `use-api-url.hook.ts` (запрет `import.meta.env` вне `shared/config`).
+- [x] Создать `packages/client` с `vite.config.ts` (плагины `@vitejs/plugin-react`, `vite-tsconfig-paths` либо явный `resolve.alias`), `index.html`, `src/app/main.tsx`.
+      Явный `resolve.alias`: плагин читал бы `tsconfig` и сделал бы расхождение невозможным, но
+      вместе с ним — и непроверяемым, а история требует именно проверки двух объявлений.
+- [x] Настроить единый источник алиасов (`config/aliases.ts`), из которого читают и `vite.config.ts`, и тесты; `tsconfig.json` синхронизируется тестом.
+      Лежит в `src/shared/config/fsd-aliases.constant.ts` — внутри дерева, которое уже покрыто
+      ESLint, `inputs` турбо и coverage; список из `test/repo/tsconfig-contract.test.ts` удалён,
+      чтобы не было третьего источника правды.
+- [x] Настроить `vitest` с `environment: jsdom`, `@testing-library/react`, `setupFiles` для матчеров и очистки.
+- [x] Настроить `size-limit` с бюджетом начального чанка и отдельной строкой-исключением для крипто-чанка vault (появится в M7).
+      Бюджет взят из `ux-architecture.md` (250 KB gzip), а не из текста этой истории (250 KB (по `docs/architecture/ux-architecture.md`)) —
+      расхождение вынесено в отчёт: `docs/` выше `epics/`, и более строгая цифра ничего не прячет.
+- [x] Добавить ESLint-правила именования файлов и «один компонент на файл» (`unicorn/filename-case` + собственное правило/тест).
+      Правила были с EPIC-001; здесь проверено, что они реально применяются к настоящему дереву
+      (`ESLint.calculateConfigForFile` по реальным путям в `test/lint/architecture-rules.test.ts`).
+- [x] Настроить `vite preview` и добавить скрипт `pnpm --filter @bad-crm/client preview` для проверки production-сборки.
 
 ## Definition of Done
 
-- [ ] Тесты написаны первыми (TDD), проходят, изменённый код покрыт
+- [x] Тесты написаны первыми (TDD), проходят, изменённый код покрыт — `packages/client` 100 % строк
+      и ветвей, `coverage-baseline.json` подтянут вверх
 - [ ] Commit-гейт зелёный (test-coverage, security-auditor, db-reviewer при изменении схемы, production-readiness, commit-hygiene)
-- [ ] Документация обновлена (docs/ + запись в `docs/brain/`)
-- [ ] a11y-проверка (для UI-историй) — базовая разметка `index.html` (`lang`, `title`) проверена
-- [ ] i18n: строки в обоих языках, хардкода нет (для UI-историй) — на этом этапе UI-строк нет
+- [ ] Документация обновлена (docs/ + запись в `docs/brain/`) — ADR-0023 и `e2ee-design.md` §12
+      обновлены; запись журнала `docs/brain/` не создавалась
+- [x] a11y-проверка (для UI-историй) — базовая разметка `index.html` (`lang`, `title`) проверена
+- [x] i18n: строки в обоих языках, хардкода нет (для UI-историй) — на этом этапе UI-строк нет
+      (продуктовое имя и ключ перевода в качестве текста-заглушки)
 
 ## Ссылки
 

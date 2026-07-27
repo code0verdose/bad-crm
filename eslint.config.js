@@ -169,6 +169,20 @@ const UNIT_DEEP_IMPORT = {
   message:
     'A unit exposes exactly one public surface — its namespace barrel. Import `{ TaskService } from "@units/task"`, never a path inside the unit (rules/frontend-fsd.mdc, rule 3).',
 };
+/**
+ * The same ban, minus the part a unit cannot live under.
+ *
+ * Inside `units/**` the pattern above forbids a unit from importing *its own* segments — `ui` may
+ * not reach the hook next door — while `../` is banned everywhere, which leaves a unit with no way
+ * to be written at all. Measured on the first real unit (STORY-004-02), not deduced. The unit-to-unit
+ * half of the ban is kept by `bad-crm/no-foreign-unit-internals`, which compares the specifier with
+ * the importing file's own unit and so can tell the two cases apart.
+ */
+const DEEP_IMPORT_INSIDE_UNITS = {
+  group: ['@shared/*/*/**', '@app/*/*/**', '@widgets/*/*/**'],
+  message:
+    'Import a layer through its barrel (`@shared`, `@widgets/<widget>`), not through a path inside a segment (rules/frontend-fsd.mdc, rule 3).',
+};
 const NO_DATA_LAYER_IN_CONSUMERS = {
   group: ['@tanstack/react-query', '@tanstack/react-query/*', 'axios', 'axios/*'],
   message:
@@ -275,6 +289,30 @@ const TYPE_SAFETY_RULES = {
   'unicorn/filename-case': ['error', { case: 'kebabCase' }],
   'bad-crm/require-role-suffix': 'error',
 };
+
+/**
+ * Layer aliases are their own import group, above the rest.
+ *
+ * `import/order` classifies `@units/session` as an external package — it is not relative and it is
+ * not a configured internal path — so the layer imports had to sit in the same block as `react`
+ * with no blank line between them. Naming them here makes the FSD layer a visible group in every
+ * file, which is the point of having aliases at all. Client-only: the server's `@/…` alias has its
+ * own arrangement and passes under the shared rule.
+ */
+const CLIENT_IMPORT_ORDER = [
+  'error',
+  {
+    groups: [['builtin', 'external'], 'internal', ['parent', 'sibling', 'index']],
+    // Braces, not `@(…)`: the latter is an extglob meaning "one of app|pages|…" and would never
+    // match a specifier starting with `@`.
+    pathGroups: [
+      { pattern: '@{app,pages,widgets,units,shared}', group: 'internal', position: 'before' },
+      { pattern: '@{app,pages,widgets,units,shared}/**', group: 'internal', position: 'before' },
+    ],
+    pathGroupsExcludedImportTypes: ['builtin'],
+    'newlines-between': 'always',
+  },
+];
 
 const TYPE_AWARE_LANGUAGE_OPTIONS = { parserOptions: { projectService: true } };
 
@@ -418,6 +456,7 @@ export default tseslint.config(
     plugins: { unicorn, import: importPlugin, 'bad-crm': badCrmPlugin },
     rules: {
       ...TYPE_SAFETY_RULES,
+      'import/order': CLIENT_IMPORT_ORDER,
       'no-restricted-imports': [
         'error',
         {
@@ -432,6 +471,10 @@ export default tseslint.config(
       'no-restricted-globals': ['error', ...NO_FETCH_GLOBALS],
       'no-restricted-syntax': ['error', IMPORT_META_ENV_OUTSIDE_CONFIG],
       'no-restricted-properties': PROCESS_ENV_OUTSIDE_BOOTSTRAP,
+      // Declared on the whole client rather than on components only: a hook file under
+      // `service/hooks` is exactly where an effect that should have been a query gets written.
+      'bad-crm/no-effect-for-derived-state': 'error',
+      'bad-crm/no-foreign-unit-internals': 'error',
     },
   },
   {
@@ -460,7 +503,7 @@ export default tseslint.config(
           patterns: [
             CLIENT_STAYS_CLIENT,
             NO_PARENT_RELATIVE,
-            UNIT_DEEP_IMPORT,
+            DEEP_IMPORT_INSIDE_UNITS,
             AXIOS_OUTSIDE_SHARED_API,
             UNITS_DO_NOT_LOOK_UP,
           ],

@@ -1228,14 +1228,39 @@ RLS работает **поверх шифротекста** и решает о�
 ### Обязательно
 
 12. **CSP на всём приложении, ужесточённая на `/vault/**` и `/link/**`:**
-    `default-src 'self'; script-src 'self' 'nonce-<per-request>' 'wasm-unsafe-eval';
-    style-src 'self' 'nonce-…'; connect-src 'self' <S3_PUBLIC_ORIGIN>;
-    img-src 'self' data: blob: <S3_PUBLIC_ORIGIN>; object-src 'none'; base-uri 'none';
-    frame-ancestors 'none'; form-action 'self'; require-trusted-types-for 'script'`.
+    `default-src 'self'; script-src 'self' 'wasm-unsafe-eval';
+    style-src 'self'; style-src-elem 'self' 'nonce-<per-request>'; style-src-attr 'none';
+    connect-src 'self' <S3_PUBLIC_ORIGIN>;
+    img-src 'self' data: blob: <S3_PUBLIC_ORIGIN>;
+    media-src 'self' <S3_PUBLIC_ORIGIN>; frame-src 'self' <S3_PUBLIC_ORIGIN>;
+    object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self';
+    require-trusted-types-for 'script'; trusted-types default`.
     Плюс `Referrer-Policy: no-referrer`, `X-Content-Type-Options: nosniff`,
     `Cross-Origin-Opener-Policy: same-origin`.
 
-    Три директивы здесь неочевидны, и каждая была бы обнаружена только в браузере — см.
+    Реализация — `packages/server/src/presentation/http/content-security-policy.util.ts`; текущий
+    вид политики получен **измерением в браузере** на STORY-004-01 (production-сборка React 19 +
+    Mantine под этим самым заголовком), а не выводом из документации. Три отличия от прежней
+    редакции этого пункта:
+
+    - **`style-src-elem` с nonce вместо `style-src 'nonce-…'`.** `MantineProvider` создаёт
+      `<style>`-элементы в рантайме (CSS-переменные темы и глобальные классы `hiddenFrom`/
+      `visibleFrom`). Nonce им передаётся через проп `getStyleNonce`; без него страница
+      **рендерится**, но перестают работать все адаптивные пропсы — тест на заголовок зелёный,
+      вёрстка сломана.
+    - **`style-src-attr 'none'`, а не `'unsafe-inline'`.** Ожидалось обратное (см. «известный
+      пробел» в ADR-0023). Измерено: React применяет проп `style` через CSSOM
+      (`style.setProperty`), а CSP регулирует **парсинг** атрибута, а не запись через CSSOM —
+      атрибут применяется и при `'none'`, нарушения нет. Токен понадобился бы при SSR или при
+      библиотеке, вызывающей `setAttribute('style', …)`; в SPA (ADR-0005) нет ни того, ни другого.
+    - **`trusted-types default` и требование политики на клиенте.** `require-trusted-types-for
+      'script'` делает любое присваивание `innerHTML` бросающим, а Mantine пишет свои `<style>`
+      именно через `dangerouslySetInnerHTML` — в браузере это дало **пустую страницу**
+      (`TypeError: … requires 'TrustedHTML' assignment`, React не смонтировал дерево). Клиент
+      обязан установить единственную политику с именем `default`, отвергающую строки с разметкой
+      (см. п. 13); имя политики зафиксировано в директиве, чтобы инъекция не завела свою.
+
+    Ниже — директивы, неочевидность которых зафиксирована в
     [ADR-0023](../architecture/adr/0023-csp-for-wasm-crypto.md):
 
     - **`'wasm-unsafe-eval'` обязателен.** Крипто-модуль vault — `libsodium-wrappers-sumo`, то есть
@@ -1244,9 +1269,11 @@ RLS работает **поверх шифротекста** и решает о�
       компиляцию WASM: источник модуля по-прежнему ограничен `script-src`, а `eval()` остаётся
       запрещён. **`'unsafe-eval'` не использовать никогда** — он открывает и `eval`, и
       `new Function`, то есть ровно тот примитив, ради запрета которого CSP здесь и стоит.
-    - **`connect-src` и `img-src` включают origin объектного хранилища.** Presigned-ссылки ведут
-      на MinIO/S3, а не на наш origin: без этого загрузка файла (`PUT` по presigned URL) и показ
-      вложений-картинок блокируются. Значение подставляется из конфигурации, а не хардкодится.
+    - **`connect-src`, `img-src`, `media-src` и `frame-src` включают origin объектного хранилища.**
+      Presigned-ссылки ведут на MinIO/S3, а не на наш origin: без этого загрузка файла (`PUT` по
+      presigned URL) и показ вложений блокируются. `media-src` — видео и аудио, `frame-src` —
+      предпросмотр PDF в iframe: необъявленные, они наследуют `default-src 'self'` и ломаются на
+      первом же загруженном файле. Значение подставляется из конфигурации, а не хардкодится.
     - **`Cross-Origin-Embedder-Policy` не выставляем.** `require-corp` требует, чтобы каждый
       кросс-оригинный ресурс присылал `Cross-Origin-Resource-Policy`; MinIO его не отдаёт, и
       политика молча ломает все presigned-картинки. Взамен она даёт только cross-origin isolation,
@@ -1255,9 +1282,26 @@ RLS работает **поверх шифротекста** и решает о�
 
     Отчёты CSP собираются и алертятся — нарушение на vault-маршруте это инцидент. Политика
     проверяется **в реальном браузере** (e2e: открыть vault, расшифровать элемент, показать
-    вложение-картинку), а не тестом на наличие заголовка: все три ошибки выше дают зелёный тест
+    вложение-картинку), а не тестом на наличие заголовка: все ошибки выше дают зелёный тест
     на строку политики и чёрный экран у пользователя.
-13. **Trusted Types** с единственной политикой, не допускающей произвольный HTML.
+13. **Trusted Types** — ровно одна политика, с именем `default`, определяющая **только
+    `createHTML`** и отвергающая любую строку, в которой есть разметка (`<` или `>`).
+
+    > **`createScript` и `createScriptURL` не определять — это не забывчивость, а требование.**
+    > Правило «отвергать разметку» для них не работает: URL разметки не содержит, и политика,
+    > проверяющая только `<` и `>`, пропустила бы `script.src` — то есть открыла бы ровно тот sink,
+    > ради закрытия которого Trusted Types и включены. Пока фабрика не определена, браузер
+    > отказывает сам, с явной ошибкой `requires 'TrustedScriptURL' assignment and no 'default'
+    > policy for 'TrustedScriptURL' has been defined` (измерено). Определить их «на всякий случай»
+    > со сквозным пропуском — значит собственноручно снять защиту.
+
+    Устанавливается в бутстрапе клиента до первого рендера, потому что
+    UI-kit пишет свои `<style>` через `dangerouslySetInnerHTML`, и без политики приложение вообще не
+    монтируется (измерено, см. п. 12). Политика с именем `default` — не послабление, а единственная
+    точка контроля: HTML-строка через любой sink проходит через неё и отвергается, а имя закреплено
+    директивой `trusted-types default`, так что вторую политику инъекция не создаст. Проводка
+    (`getStyleNonce` у `MantineProvider`, установка политики) — STORY-004-03; nonce в HTML
+    подставляет процесс, отдающий `index.html`.
 14. **Очистка буфера обмена** через 30 с с проверкой, что содержимое всё ещё наше (иначе не затираем
     чужое копирование), стабильный `id` тоста, честная подсказка о том, что при закрытии вкладки
     очистка не гарантируется. Реализация — общий `CopyToClipboard` в режиме `sensitive`.

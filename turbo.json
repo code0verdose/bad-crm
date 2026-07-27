@@ -129,6 +129,11 @@
         // coverage thresholds of rules/testing.mdc §7 can be lowered behind a cached pass.
         "packages/*/vitest.config.ts",
         "vitest.config.ts",
+        // `test/repo/client-aliases.test.ts` imports the client's Vite config and compares its
+        // resolver against `tsconfig.json`. That comparison is the only thing standing between the
+        // two declarations of the FSD aliases and a build that resolves `@units/...` differently
+        // from the editor — cached over an edited `vite.config.ts`, it would prove nothing.
+        "packages/*/vite.config.ts",
         // `packages/*/tsconfig.json` is a literal glob and does NOT match `tsconfig.test.json`.
         // `test/repo/tsconfig-contract.test.ts` reads it: dropping `test/**` from its `include`
         // makes every @ts-expect-error in that package vacuous — and would be cached as a pass.

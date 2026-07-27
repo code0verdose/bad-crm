@@ -15,20 +15,11 @@ interface TsConfig {
 }
 
 /**
- * Client path aliases required by the FSD layout. The same set has to be mirrored in
- * `vite.config.ts` once the Vite setup lands (STORY-004-01).
+ * The client path aliases used to be written out here as a second copy. They are not any more:
+ * `packages/client/src/shared/config/fsd-aliases.constant.ts` is the single declaration, and
+ * `test/repo/client-aliases.test.ts` checks this `tsconfig.json` and `vite.config.ts` against it.
+ * A third list would be a third thing to forget (STORY-004-01).
  */
-const CLIENT_ALIASES: Record<string, string> = {
-  '@app': './src/app',
-  '@app/*': './src/app/*',
-  '@pages': './src/pages',
-  '@pages/*': './src/pages/*',
-  '@widgets/*': './src/widgets/*',
-  '@units/*': './src/units/*',
-  '@shared': './src/shared',
-  '@shared/*': './src/shared/*',
-  '@/*': './src/*',
-};
 
 const tsconfigOf = (dir: string): TsConfig => readJson<TsConfig>(join(dir, 'tsconfig.json'));
 
@@ -137,12 +128,12 @@ describe('per-package tsconfig', () => {
     },
   );
 
-  it('client declares exactly the FSD aliases', () => {
-    const paths = tsconfigOf(PACKAGE_DIRS.client).compilerOptions?.paths ?? {};
+  it('client resolves modules as a bundler does, which is what the aliases depend on', () => {
+    const options = tsconfigOf(PACKAGE_DIRS.client).compilerOptions ?? {};
 
-    expect(Object.keys(paths).sort()).toEqual(Object.keys(CLIENT_ALIASES).sort());
-    for (const [alias, target] of Object.entries(CLIENT_ALIASES)) {
-      expect(paths[alias]).toEqual([target]);
-    }
+    // `Bundler` is what lets `./page.js` in an import resolve to `page.tsx` on disk, the form both
+    // Vite and this package's own barrels use. Under `NodeNext` every one of those imports breaks.
+    expect(options.moduleResolution).toBe('Bundler');
+    expect(options.jsx).toBe('react-jsx');
   });
 });

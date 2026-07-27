@@ -1,0 +1,33 @@
+/*
+ * The only global stylesheet in the client (rules/design-system.mdc, rule 2): a reset, and nothing
+ * that belongs to a component. Design tokens, the Mantine theme and `light-dark()` colours arrive
+ * with STORY-004-03 — every value here is structural, so none of them is a token in disguise.
+ */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+}
+
+/* Tells the browser both themes are supported, so form controls and scrollbars follow the system
+   setting from the first paint instead of flashing light. */
+:root {
+  color-scheme: light dark;
+}
+
+/* An animation that ignores this preference is a bug, not a style choice (rules/a11y.mdc). */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

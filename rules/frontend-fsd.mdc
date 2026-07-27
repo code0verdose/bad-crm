@@ -28,6 +28,13 @@ alwaysApply: true
    `export * as SharedUi from './ui'` и т. д. Юнит: `export * as TaskService from './service'`,
    `TaskUi`, `TaskApi`, `TaskModel`, `TaskTypes`. Потребление — через namespace
    (`TaskService.useTaskList()`), deep-import `@units/task/service/hooks/...` запрещён.
+
+   **Уточнение (2026-07-28, найдено на первом настоящем дереве):** запрет относится к **чужому**
+   юниту. Внутри своего юнита сегменты импортируют друг друга напрямую — `ui` берёт хук из
+   `service`, `service` берёт тип из `types`, — иначе юнит невыразим: barrel собирает сегменты, а
+   не может быть их внутренним связующим. Раньше запрет был написан как `@units/*/*` и вместе с
+   запретом `../` делал `units/<x>/ui`, обращающийся к `units/<x>/service`, нарушением. На фикстурах
+   это не проявлялось — только на реальном юните.
 4. **Call-chain фиксирован:** `ui → service/hooks → service/{queries,mutations} → api → SharedApi`.
    Каждое звено вызывает только следующее. `ui`, дергающий `api` напрямую, — нарушение.
 5. **`fetch`, `useQuery`, `useMutation`, `useInfiniteQuery` запрещены в `pages`, `widgets`, `app`.**
@@ -113,7 +120,8 @@ import { BoardPage } from '@pages/board';   // ❌
 | Механизм | Что ловит |
 |---|---|
 | ESLint `boundaries/element-types` (слои `app/pages/widgets/units/shared`) | импорт вверх и между юнитами мимо barrel |
-| ESLint `no-restricted-imports` c `patterns: ['@units/*/*']` | deep-import в юнит |
+| ESLint `bad-crm/no-foreign-unit-internals` | deep-import в **чужой** юнит (сравнивает импорт с юнитом импортирующего файла; свои сегменты разрешены) |
+| ESLint `bad-crm/no-effect-for-derived-state` | `useEffect` там, где хватает вычисления при рендере |
 | ESLint `import/no-relative-parent-imports` | относительные `../` |
 | ESLint `no-restricted-imports` на `@tanstack/react-query` в `pages/**`, `widgets/**`, `app/**` | `useQuery`/`useMutation` вне юнитов |
 | ESLint `no-restricted-globals: ['fetch']` вне `shared/api/**` | raw-запросы |

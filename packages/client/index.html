@@ -1,0 +1,18 @@
+<!doctype html>
+<!--
+  `lang` is not decoration: a screen reader picks the voice from it, and the value is replaced at
+  runtime from the profile locale (docs/architecture/ux-architecture.md → «Направление и
+  переключатель»). `en` is the fallback for the document that is served before a session exists.
+-->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <!-- Product name, not a translatable string: the per-route title is set by the router. -->
+    <title>Bad CRM</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/app/main.tsx"></script>
+  </body>
+</html>

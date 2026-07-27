@@ -8,9 +8,10 @@
     "useDefineForClassFields": true,
     "noEmit": true,
 
-    // FSD layer aliases, anchored to this directory by `baseUrl`. The same set must be mirrored
-    // in `vite.config.ts` (STORY-004-01); the required keys and targets are asserted by
-    // `test/repo/tsconfig-contract.test.ts`.
+    // FSD layer aliases, anchored to this directory by `baseUrl`. The same set is declared once,
+    // in `src/shared/config/fsd-aliases.constant.ts`, and read from there by `vite.config.ts`;
+    // `test/repo/client-aliases.test.ts` asserts this table and the Vite table against it, so a
+    // path that resolves for the bundler but not for the compiler fails a test.
     "baseUrl": ".",
     "paths": {
       "@app": ["./src/app"],
@@ -20,10 +21,13 @@
       "@widgets/*": ["./src/widgets/*"],
       "@units/*": ["./src/units/*"],
       "@shared": ["./src/shared"],
-      "@shared/*": ["./src/shared/*"],
-      "@/*": ["./src/*"]
+      "@shared/*": ["./src/shared/*"]
     }
   },
   "include": ["src/**/*.ts", "src/**/*.tsx"],
+  // Tests sit beside the code they cover, but they are not part of the application program: they
+  // import `vitest` and `@testing-library`, which must never resolve from application code.
+  // `tsconfig.test.json` picks them up instead.
+  "exclude": ["src/**/*.test.ts", "src/**/*.test.tsx"],
   "references": [{ "path": "../shared" }]
 }

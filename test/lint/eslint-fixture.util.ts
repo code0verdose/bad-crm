@@ -22,6 +22,27 @@ const eslintForFixtures = (): ESLint => {
   return sharedEslint;
 };
 
+/** Repository root, one level above the fixture tree's `packages/`. */
+const repoRoot = resolve(fixturesRoot, '..', '..', '..');
+
+/** One instance for the real tree too — same reason as above, and a different `cwd`. */
+let repoEslint: ESLint | undefined;
+
+/**
+ * The configuration ESLint would apply to a file of the real repository.
+ *
+ * The fixtures prove a rule fires; they cannot prove it is aimed at anything that ships, because
+ * their paths are invented. A `files` glob that matches `packages/client/src/units/task/ui/**` in
+ * the fixture tree and nothing under `packages/client/src` — a renamed directory, a `.tsx` the
+ * pattern misses — would leave every fixture green and the codebase unguarded.
+ */
+export const configForRepoFile = async (relativePath: string): Promise<{ rules: object }> => {
+  repoEslint ??= new ESLint({ cwd: repoRoot });
+  return (await repoEslint.calculateConfigForFile(join(repoRoot, relativePath))) as {
+    rules: object;
+  };
+};
+
 export interface LintOutcome {
   /** Rule ids reported for the file, with fatal parse errors surfacing as `null`. */
   ruleIds: (string | null)[];

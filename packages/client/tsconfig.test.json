@@ -5,11 +5,24 @@
   // program: `tsc` never looked at it, and any compile-time assertion it contains — a
   // `@ts-expect-error`, a schema's inferred type — was unenforced. Node typings come in because
   // `vitest.config.ts` is Node-side code, while the application config stays browser-only.
+  //
+  // Component tests live beside the component they cover (`rules/testing.mdc`, client row), so
+  // `src/**/*.test.tsx` is typechecked here as well — `tsconfig.json` excludes it for the opposite
+  // reason: the application program must not compile against `vitest` or `@testing-library`.
+  // `vite.config.ts` is in this project for the same reason `vitest.config.ts` is: it is Node-side
+  // configuration, and it is the file that has to agree with `tsconfig.json` about the aliases.
   "extends": "./tsconfig.json",
   "compilerOptions": {
     "noEmit": true,
     "incremental": false,
     "types": ["node"]
   },
-  "include": ["test/**/*.ts", "test/**/*.tsx", "vitest.config.ts"]
+  "include": [
+    "test/**/*.ts",
+    "test/**/*.tsx",
+    "src/**/*.test.ts",
+    "src/**/*.test.tsx",
+    "vitest.config.ts",
+    "vite.config.ts"
+  ]
 }
