@@ -1,8 +1,23 @@
+import { fileURLToPath } from 'node:url';
+
 import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
+  // `@/*` → `src/*`, the same alias `tsconfig.json` declares and `tsc-alias` rewrites at build
+  // time. Vite resolves neither on its own, so without this the suite could only import the
+  // sources through relative paths — and the code under test could not use the alias at all.
+  resolve: {
+    alias: { '@': fileURLToPath(new URL('./src', import.meta.url)) },
+  },
   test: {
-    include: ['test/unit/**/*.test.ts', 'src/**/*.test.ts'],
+    /**
+     * `test/integration/http/**` runs here on purpose: those specs drive the Express application
+     * through supertest, which needs no container and no external service, so keeping them out of
+     * `pnpm test` would mean the HTTP surface is only exercised by a task nobody runs locally. The
+     * Testcontainers project (STORY-003-06) lands under `test/integration/db/**` behind
+     * `pnpm test:integration`, which is where the "needs Docker" boundary actually is.
+     */
+    include: ['test/unit/**/*.test.ts', 'test/integration/http/**/*.test.ts', 'src/**/*.test.ts'],
     environment: 'node',
     coverage: {
       enabled: true,

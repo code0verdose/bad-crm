@@ -1,7 +1,7 @@
 ---
 id: STORY-003-01
 epic: EPIC-003
-status: backlog
+status: in-progress
 blocked: false
 priority: must
 estimate: M
@@ -26,21 +26,30 @@ estimate: M
 
 ## Задачи
 
-- [ ] Написать тесты первыми: `test/integration/http/bootstrap.test.ts` (старт приложения через supertest, 200 на `/health`), `test/unit/shutdown.test.ts` (последовательность шагов, идемпотентность, таймаут), `test/unit/http-hardening.test.ts` (заголовки, лимит тела, CORS allow-list).
-- [ ] Реализовать `packages/server/src/presentation/http/server.ts`: `createHttpServer(container)` — helmet, cors, cookie-parser, `express.json({ limit: '1mb' })`, монтирование `routes.ts`, error-handler последним.
-- [ ] Реализовать `packages/server/src/main.ts` как composition root: загрузка env, создание логгера/Prisma/Redis, `buildContainer`, `listen`, регистрация обработчиков сигналов.
-- [ ] Реализовать `packages/server/src/infrastructure/bootstrap/shutdown.ts`: `createShutdownHandler({ server, container, timeoutMs: 30_000 })` с идемпотентностью и принудительным выходом.
-- [ ] Реализовать `packages/server/src/infrastructure/bootstrap/container.ts` — явная сборка зависимостей функциями, без DI-фреймворка и декораторов.
-- [ ] Добавить флаг готовности (`setReady`) как разделяемое состояние для `/ready` (полная реализация — [EPIC-009](../../epic-009-observability/epic.md)).
-- [ ] Написать архитектурный тест: в `src/**` нет `asyncHandler`-обёрток и нет `try/catch` вокруг вызова use-case в контроллерах.
-- [ ] **Ошибки конфигурации приходят двумя волнами.** В Zod 4 `superRefine` не выполняется, если провалился разбор хотя бы одного поля. При `.env`, где одновременно битый `APP_ENCRYPTION_KEY` и `MEILI_HOST` без `MEILI_MASTER_KEY`, оператор получает только первую проблему, чинит её, перезапускает — и лишь тогда узнаёт про вторую. Для инсталляции, которую поднимают один раз, это превращает пятиминутную настройку в перебор. Хуже того, комментарий над `serverEnvSchema` в [`packages/server/src/infrastructure/bootstrap/env.schema.ts`](../../../packages/server/src/infrastructure/bootstrap/env.schema.ts) обещает ровно обратное («a single parse reports *every* problem at once»), то есть код документирует поведение, которого у него нет. **Сделано, когда:** ошибка поля и нарушение cross-field-правила приходят одним списком (двухэтапный разбор с объединением issue либо вынос cross-field-проверок из `superRefine`); тест на комбинацию «битый `APP_ENCRYPTION_KEY` + `MEILI_HOST` без ключа» ожидает **обе** записи; комментарий приведён в соответствие с фактическим поведением. *(технический долг EPIC-001, зафиксирован 2026-07-27)*
+- [x] Написать тесты первыми: `test/integration/http/bootstrap.test.ts` (старт приложения через supertest, 200 на `/health`), `test/unit/shutdown.test.ts` (последовательность шагов, идемпотентность, таймаут), `test/unit/http-hardening.test.ts` (заголовки, лимит тела, CORS allow-list).
+- [x] Реализовать `packages/server/src/presentation/http/server.ts`: `createHttpServer(container)` — helmet, cors, cookie-parser, `express.json({ limit: '1mb' })`, монтирование `routes.ts`, error-handler последним.
+- [x] Реализовать `packages/server/src/main.ts` как composition root: загрузка env, создание логгера/Prisma/Redis, `buildContainer`, `listen`, регистрация обработчиков сигналов.
+- [x] Реализовать `packages/server/src/infrastructure/bootstrap/shutdown.ts`: `createShutdownHandler({ server, container, timeoutMs: 30_000 })` с идемпотентностью и принудительным выходом.
+- [x] Реализовать `packages/server/src/infrastructure/bootstrap/container.ts` — явная сборка зависимостей функциями, без DI-фреймворка и декораторов.
+- [x] Добавить флаг готовности (`setReady`) как разделяемое состояние для `/ready` (полная реализация — [EPIC-009](../../epic-009-observability/epic.md)).
+- [x] Написать архитектурный тест: в `src/**` нет `asyncHandler`-обёрток и нет `try/catch` вокруг вызова use-case в контроллерах.
+- [x] **Ошибки конфигурации приходят двумя волнами.** В Zod 4 `superRefine` не выполняется, если провалился разбор хотя бы одного поля. При `.env`, где одновременно битый `APP_ENCRYPTION_KEY` и `MEILI_HOST` без `MEILI_MASTER_KEY`, оператор получает только первую проблему, чинит её, перезапускает — и лишь тогда узнаёт про вторую. Для инсталляции, которую поднимают один раз, это превращает пятиминутную настройку в перебор. Хуже того, комментарий над `serverEnvSchema` в [`packages/server/src/infrastructure/bootstrap/env.schema.ts`](../../../packages/server/src/infrastructure/bootstrap/env.schema.ts) обещает ровно обратное («a single parse reports *every* problem at once»), то есть код документирует поведение, которого у него нет. **Сделано, когда:** ошибка поля и нарушение cross-field-правила приходят одним списком (двухэтапный разбор с объединением issue либо вынос cross-field-проверок из `superRefine`); тест на комбинацию «битый `APP_ENCRYPTION_KEY` + `MEILI_HOST` без ключа» ожидает **обе** записи; комментарий приведён в соответствие с фактическим поведением. *(технический долг EPIC-001, зафиксирован 2026-07-27)*
 - [x] ADR о выборе ветки Express 5 заводить не нужно — решение уже зафиксировано в [ADR-0002](../../../docs/architecture/adr/0002-hexagonal-backend-express-prisma.md) («Гексагональный backend на Express 5 и Prisma поверх PostgreSQL 16», статус `accepted`), где разобраны причины, отличия от Express 4 и влияние на middleware-экосистему. *Приведено в соответствие 2026-07-26.*
+
+> **Отклонение от формулировок задач — только в именах файлов.** Закрытый словарь role-суффиксов
+> (`rules/naming-and-structure.mdc`, ESLint `bad-crm/require-role-suffix`) не допускает имён
+> `server.ts`, `routes.ts`, `shutdown.ts`, `container.ts`. Суффикс `.factory.ts` добавлен в словарь
+> штатным путём (правка правила + плагина), реализация лежит в
+> `presentation/http/http-server.factory.ts`, `presentation/http/api.routes.ts`,
+> `infrastructure/bootstrap/shutdown.factory.ts`, `infrastructure/bootstrap/container.factory.ts`.
+> Composition root разделён на `main.ts` (три строки) и
+> `infrastructure/bootstrap/api-process.factory.ts` — иначе порядок старта не покрывается тестами.
 
 ## Definition of Done
 
-- [ ] Тесты написаны первыми (TDD), проходят, изменённый код покрыт
+- [x] Тесты написаны первыми (TDD), проходят, изменённый код покрыт
 - [ ] Commit-гейт зелёный (test-coverage, security-auditor, db-reviewer при изменении схемы, production-readiness, commit-hygiene)
-- [ ] Документация обновлена (docs/ + запись в `docs/brain/`)
+- [x] Документация обновлена (docs/ + запись в `docs/brain/`)
 - [ ] a11y-проверка (для UI-историй) — не применимо
 - [ ] i18n: строки в обоих языках, хардкода нет (для UI-историй) — не применимо
 

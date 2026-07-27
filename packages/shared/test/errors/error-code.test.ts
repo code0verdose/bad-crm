@@ -31,6 +31,10 @@ describe('error code catalog', () => {
     ['internal_error', 500],
     ['feature_disabled', 501],
     ['idempotency_key_reuse', 409],
+    // Transport-level refusals, added by STORY-003-01: the body limit and the unmatched route are
+    // answered before any resource is known, so neither can borrow a `<resource>_…` code.
+    ['payload_too_large', 413],
+    ['route_not_found', 404],
   ] as const)('maps %s to HTTP %i (stack.md, «Формат ошибок»)', (code, status) => {
     expect(errorCodeStatus(code)).toBe(status);
   });

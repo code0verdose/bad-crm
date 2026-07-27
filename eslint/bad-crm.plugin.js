@@ -39,6 +39,10 @@ const ROLE_SUFFIXES = new Set([
   'controller',
   'middleware',
   'routes',
+  // Composition: a function that assembles something out of dependencies and returns it —
+  // `createHttpServer`, `buildContainer`, `createShutdownHandler`. Added by STORY-003-01; the
+  // dictionary in rules/naming-and-structure.mdc carries the same row.
+  'factory',
   'validator',
   'serializer',
   'handler',

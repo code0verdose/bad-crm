@@ -1,5 +1,7 @@
 import { z } from 'zod';
 
+import { type EnvIssue } from './env.errors.js';
+
 /**
  * Environment schema of the API and worker processes.
  *
@@ -192,15 +194,21 @@ export const insecureMarkerIn = (value: string | undefined): string | undefined 
   value === undefined ? undefined : INSECURE_VALUE_MARKERS.find((marker) => value.includes(marker));
 
 /**
- * Cross-field rules and the production preflight, expressed as one `superRefine` so that a single
- * parse reports *every* problem at once. An operator fixing four variables one restart at a time is
- * how a five-minute install turns into an afternoon.
+ * Cross-field rules and the production preflight, as a pure function over whatever fields parsed.
+ *
+ * It takes a `Partial` on purpose. In Zod 4 an object check is skipped when a field failed
+ * **fatally** — a wrong enum value, a failed coercion — while a non-fatal failure (`min`, `refine`)
+ * still lets it run. Measured, not assumed: `PORT=abc` together with a plaintext `APP_URL` in
+ * production reported only `PORT`, so the operator fixed it, restarted, and only then learned about
+ * the second problem. `load-env.util.ts` therefore runs these rules a second time over the fields
+ * that did parse and merges both lists, and this function has to tolerate the ones that did not.
  */
-export const serverEnvSchema = fields.superRefine((env: EnvFields, ctx) => {
+export const crossFieldEnvIssues = (env: Partial<EnvFields>): EnvIssue[] => {
+  const issues: EnvIssue[] = [];
+
   if (env.MEILI_HOST !== undefined && env.MEILI_MASTER_KEY === undefined) {
-    ctx.addIssue({
-      code: 'custom',
-      path: ['MEILI_MASTER_KEY'],
+    issues.push({
+      variable: 'MEILI_MASTER_KEY',
       message: 'MEILI_MASTER_KEY is required when MEILI_HOST is set',
     });
   }
@@ -208,27 +216,59 @@ export const serverEnvSchema = fields.superRefine((env: EnvFields, ctx) => {
   // Scoped by what is *not* development, not by what is production: `docs/security/threat-model.md`
   // (T-SH-01, T-SH-03) treats every non-development boot as internet-reachable. Checking for
   // `production` alone would let a deployment left on NODE_ENV=test start on a placeholder secret.
-  if (env.NODE_ENV === 'development') return;
+  //
+  // An unreadable NODE_ENV skips the preflight rather than assuming a mode: telling an operator who
+  // meant `development` that their placeholder secret is unacceptable would be wrong advice, and
+  // the issue naming NODE_ENV is already in the list.
+  if (env.NODE_ENV === undefined || env.NODE_ENV === 'development') return issues;
 
   for (const key of SECRET_BEARING_ENV_KEYS) {
     const marker = insecureMarkerIn(env[key]);
 
     if (marker !== undefined) {
-      ctx.addIssue({
-        code: 'custom',
-        path: [key],
+      issues.push({
+        variable: key,
         message: `${key} still contains the development placeholder "${marker}". Generate a real secret: openssl rand -base64 32`,
       });
     }
   }
 
-  if (!env.APP_URL.startsWith('https://') && !isLoopback(env.APP_URL)) {
-    ctx.addIssue({
-      code: 'custom',
-      path: ['APP_URL'],
+  if (
+    env.APP_URL !== undefined &&
+    !env.APP_URL.startsWith('https://') &&
+    !isLoopback(env.APP_URL)
+  ) {
+    issues.push({
+      variable: 'APP_URL',
       message:
         'APP_URL must use https in production: session cookies and password reset links travel over it',
     });
+  }
+
+  return issues;
+};
+
+/**
+ * Field-by-field parse, keeping only what succeeded.
+ *
+ * The input for the second pass over the cross-field rules: a whole-object parse gives back nothing
+ * when one field fails, and the rules still have something to say about the fields that were fine.
+ */
+export const parseKnownEnvFields = (
+  source: Record<string, string | undefined>,
+): Partial<EnvFields> =>
+  Object.fromEntries(
+    Object.entries(fields.shape).flatMap(([key, schema]) => {
+      const parsed = schema.safeParse(source[key]);
+
+      return parsed.success && parsed.data !== undefined ? [[key, parsed.data]] : [];
+    }),
+  );
+
+/** Fields plus the cross-field rules. `loadEnv` is the entry point that also merges both passes. */
+export const serverEnvSchema = fields.superRefine((env: EnvFields, ctx) => {
+  for (const issue of crossFieldEnvIssues(env)) {
+    ctx.addIssue({ code: 'custom', path: [issue.variable], message: issue.message });
   }
 });
 

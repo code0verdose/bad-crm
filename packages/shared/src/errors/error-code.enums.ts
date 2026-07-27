@@ -42,6 +42,17 @@ export type ErrorResource = (typeof ERROR_RESOURCES)[number];
 const GENERIC_ERROR_CODE_STATUS = {
   validation_failed: 422,
   unauthenticated: 401,
+  /**
+   * The two transport-level refusals, decided before any resource is identified.
+   *
+   * `route_not_found` is deliberately *not* spelled as a `<resource>_not_found`: an unmatched path
+   * belongs to no resource, and reusing a resource code here would make the client translate
+   * "task not found" for a typo in the URL. `payload_too_large` is raised by the body parser at
+   * 1 MB (rules/security.mdc, rule 14) — uploads go straight to S3 through a presigned URL, so a
+   * request body of that size is a client defect rather than a file.
+   */
+  route_not_found: 404,
+  payload_too_large: 413,
   /** Right present, vault key absent — the server could not help even if it wanted to. */
   vault_locked: 423,
   stale_version: 409,

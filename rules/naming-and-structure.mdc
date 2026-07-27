@@ -9,6 +9,10 @@ alwaysApply: true
 Раскладка слоёв — `rules/frontend-fsd.mdc` (клиент) и `rules/hexagonal-backend.mdc` (сервер).
 Здесь — как называются файлы и что в них лежит.
 
+Готовый шаблон нового серверного контекста (обязательные каталоги, порядок работы, чем каждое
+правило проверяется) — [`docs/architecture/backend-context-template.md`](../docs/architecture/backend-context-template.md);
+эталон для копирования — контекст `platform` из EPIC-003.
+
 ## Когда применяется
 
 Создаёшь файл, переименовываешь файл, добавляешь экспорт, выносишь хелпер.
@@ -57,6 +61,8 @@ alwaysApply: true
    | `.adapter.ts` · `.repository.ts` · `.client.ts` | infrastructure |
    | `.controller.ts` · `.middleware.ts` · `.routes.ts` · `.validator.ts` · `.serializer.ts` | presentation |
    | `.handler.ts` | обработчик очереди |
+   | `.factory.ts` | сборка зависимостей: `create*`/`build*`, возвращающая готовый объект — `http-server.factory.ts`, `container.factory.ts`, `shutdown.factory.ts` (STORY-003-01) |
+   | `.types.ts` · `.constant.ts` · `.util.ts` · `.errors.ts` | общие для обоих слоёв роли из таблицы frontend |
 
 3. **Fixed-имена без описательного префикса** в `app/` и `pages/`: `page.tsx`, `layout.tsx`,
    `index.ts`, `main.tsx`, `providers.tsx`, `router.tsx`, `global.css`. Под-страницы внутри одной

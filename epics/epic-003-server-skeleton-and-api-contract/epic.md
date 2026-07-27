@@ -1,7 +1,7 @@
 ---
 id: EPIC-003
 title: Скелет сервера и контракт API
-status: backlog
+status: in-progress
 blocked: false
 milestone: M1
 owner: unassigned

@@ -1,7 +1,7 @@
 ---
 id: STORY-003-03
 epic: EPIC-003
-status: backlog
+status: in-progress
 blocked: false
 priority: must
 estimate: M
@@ -26,20 +26,27 @@ estimate: M
 
 ## Задачи
 
-- [ ] Написать тесты первыми: `test/unit/logging/redaction.test.ts` (все чувствительные пути замаскированы), `test/unit/logging/request-context.test.ts` (контекст доступен во вложенных вызовах и не течёт между запросами), `test/integration/http/error-handler.test.ts` (маппинг доменных ошибок и непредвиденных исключений).
-- [ ] Реализовать `infrastructure/logging/request-context.ts`: `AsyncLocalStorage<RequestContext>` + `contextMiddleware` (генерация/проброс `requestId`, установка заголовка ответа).
-- [ ] Реализовать `infrastructure/logging/pino.adapter.ts`: `mixin` из контекста, `redact` по путям (`req.headers.authorization`, `req.headers.cookie`, `res.headers["set-cookie"]`, `*.password`, `*.token`, `*.refreshToken`, `*.apiKey`, `*.apiKeyEnc`, `*.secret`, `*.otp`, `*.recoveryCode`), сериализатор ошибок без `config.headers`.
-- [ ] Подключить `pino-http` с извлечением шаблона маршрута Express для поля `route`.
-- [ ] Реализовать типизированный `AppError` в `domain/shared/errors/` (поля `code`, `status`, `details?`) и маппинг `code → HTTP` из `packages/shared/errors/codes.ts`.
-- [ ] Реализовать `presentation/http/error-handler.ts`: доменные ошибки → соответствующий статус, `ZodError` → 422, всё остальное → 500 без утечки деталей; в ответ всегда добавляется `requestId`.
-- [ ] Добавить объявление `LoggerPort` в `application/platform/ports/` — домен и use-cases логируют через порт, а не через глобальный pino.
-- [ ] Зафиксировать в `docs/runbooks/` рецепт «найти всё по requestId».
+- [x] Написать тесты первыми: `test/unit/logging/redaction.test.ts` (все чувствительные пути замаскированы), `test/unit/logging/request-context.test.ts` (контекст доступен во вложенных вызовах и не течёт между запросами), `test/integration/http/error-handler.test.ts` (маппинг доменных ошибок и непредвиденных исключений).
+- [x] Реализовать `infrastructure/logging/request-context.ts`: `AsyncLocalStorage<RequestContext>` + `contextMiddleware` (генерация/проброс `requestId`, установка заголовка ответа).
+- [x] Реализовать `infrastructure/logging/pino.adapter.ts`: `mixin` из контекста, `redact` по путям (`req.headers.authorization`, `req.headers.cookie`, `res.headers["set-cookie"]`, `*.password`, `*.token`, `*.refreshToken`, `*.apiKey`, `*.apiKeyEnc`, `*.secret`, `*.otp`, `*.recoveryCode`), сериализатор ошибок без `config.headers`.
+- [x] Подключить `pino-http` с извлечением шаблона маршрута Express для поля `route`.
+- [x] Реализовать типизированный `AppError` в `domain/shared/errors/` (поля `code`, `status`, `details?`) и маппинг `code → HTTP` из `packages/shared/errors/codes.ts`.
+- [x] Реализовать `presentation/http/error-handler.ts`: доменные ошибки → соответствующий статус, `ZodError` → 422, всё остальное → 500 без утечки деталей; в ответ всегда добавляется `requestId`.
+- [x] Добавить объявление `LoggerPort` в `application/platform/ports/` — домен и use-cases логируют через порт, а не через глобальный pino.
+- [x] Зафиксировать в `docs/runbooks/` рецепт «найти всё по requestId».
+
+> **Отклонения от формулировок задач.** Файлы названы по словарю суффиксов:
+> `infrastructure/logging/async-request-context.adapter.ts` (+ `RequestContextPort` в
+> `application/platform/ports/`, иначе `presentation` импортировал бы `infrastructure`),
+> `infrastructure/logging/pino-logger.adapter.ts`, `presentation/http/error-handler.middleware.ts`.
+> Тело запроса не логируется **вообще** (ни на каком уровне) — строже, чем требовала задача: URL и
+> тело содержат секреты (`/l/:token`), поэтому pino-http сериализует только метод и статус.
 
 ## Definition of Done
 
-- [ ] Тесты написаны первыми (TDD), проходят, изменённый код покрыт
+- [x] Тесты написаны первыми (TDD), проходят, изменённый код покрыт
 - [ ] Commit-гейт зелёный (test-coverage, security-auditor, db-reviewer при изменении схемы, production-readiness, commit-hygiene)
-- [ ] Документация обновлена (docs/ + запись в `docs/brain/`)
+- [x] Документация обновлена (docs/ + запись в `docs/brain/`)
 - [ ] a11y-проверка (для UI-историй) — не применимо
 - [ ] i18n: строки в обоих языках, хардкода нет (для UI-историй) — коды ошибок переводятся на клиенте, см. [EPIC-008](../../epic-008-i18n-en-ru/epic.md)
 

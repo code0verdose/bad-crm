@@ -25,6 +25,16 @@ estimate: M
 
 ## Задачи
 
+- [ ] **Достроить CSP под реальный браузерный рендер** (пробел [ADR-0023](../../../docs/architecture/adr/0023-csp-for-wasm-crypto.md),
+      найден при ревью EPIC-003). Сейчас `style-src 'self'` заблокирует Mantine: UI-kit раздаёт
+      CSS-переменные инлайновым атрибутом `style=""`, а `style-src-attr` наследуется от `style-src`.
+      Решение — **не** `style-src 'unsafe-inline'`, а раздельные `style-src-elem` с nonce и
+      `style-src-attr 'unsafe-inline'`. Плюс добавить origin хранилища в `media-src` и `frame-src`
+      (видео/аудио-вложения и предпросмотр PDF иначе упрутся в `default-src 'self'`).
+      Проверяется **в браузере**, а не тестом на строку политики: обе ошибки дают зелёный тест.
+      Правится `packages/server/src/presentation/http/content-security-policy.util.ts`, обновляется
+      ADR-0023 и `docs/security/e2ee-design.md` §12.
+
 - [ ] Написать тесты первыми: `test/config/aliases.test.ts` (совпадение алиасов в трёх конфигах), `test/config/naming.test.ts` (kebab-case + role-суффиксы по всему `src/**`), `test/config/env-prefix.test.ts` (нет обращений к не-`VITE_` переменным).
 - [ ] Создать `packages/client` с `vite.config.ts` (плагины `@vitejs/plugin-react`, `vite-tsconfig-paths` либо явный `resolve.alias`), `index.html`, `src/app/main.tsx`.
 - [ ] Настроить единый источник алиасов (`config/aliases.ts`), из которого читают и `vite.config.ts`, и тесты; `tsconfig.json` синхронизируется тестом.

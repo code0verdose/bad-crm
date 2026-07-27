@@ -1,19 +1,14 @@
 /**
- * Composition root of the API process.
+ * Entry point of the API process.
  *
- * Today it only proves that the toolchain works end to end: TypeScript resolves `@bad-crm/shared`
- * and the `@/*` alias, `tsx watch` restarts on change, and `tsc -b && tsc-alias` produces a
- * runnable `dist/main.js`. The Express application, env parsing, Prisma and graceful shutdown
- * land in EPIC-003.
+ * Three lines by design. The composition root itself lives in
+ * `infrastructure/bootstrap/api-process.factory.ts`, where the startup sequence — validate the
+ * environment, build the logger, create the infrastructure clients, assemble the container, open
+ * the port — is expressed with injectable seams and is therefore covered by tests. Code that only
+ * exists in a module executed by `node dist/main.js` is code no test can reach, and the startup
+ * order is exactly the part that must not regress: it is what guarantees a misconfigured
+ * installation refuses to start instead of accepting requests it cannot serve.
  */
-import { SHARED_PACKAGE_NAME } from '@bad-crm/shared';
+import { startApiProcess } from '@/infrastructure/bootstrap/api-process.factory.js';
 
-import { APP_INFO } from '@/app-info.constant.js';
-
-// Structured logging (pino) arrives with EPIC-009; the skeleton writes a single startup line.
-// It is the only console call in the codebase and is replaced by the pino logger in EPIC-009,
-// see rules/observability.mdc.
-// eslint-disable-next-line no-console -- startup line until the pino logger lands (EPIC-009)
-console.info(
-  `[${APP_INFO.name}] ${APP_INFO.role} skeleton started, linked against ${SHARED_PACKAGE_NAME}`,
-);
+await startApiProcess();

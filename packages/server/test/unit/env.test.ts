@@ -241,6 +241,91 @@ describe('CORS_EXTRA_ORIGINS', () => {
 });
 
 /**
+ * A misconfigured installation must learn about **all** of its problems from one start attempt.
+ *
+ * In Zod 4 a `superRefine` does not run when the object parse already failed, so the cross-field
+ * rules were invisible whenever any single field was invalid: the operator fixed
+ * `APP_ENCRYPTION_KEY`, restarted, and only then heard that `MEILI_HOST` needs a master key. For an
+ * installation that is brought up once, that turns a five-minute setup into an afternoon of
+ * restarts — and the comment above `serverEnvSchema` promised exactly the opposite behaviour.
+ */
+describe('every configuration problem arrives in one list', () => {
+  const issuesOf = (source: Record<string, string>): { variable: string; message: string }[] => {
+    try {
+      loadEnv(source);
+    } catch (error) {
+      return [...(error as EnvValidationError).issues];
+    }
+
+    throw new Error('expected loadEnv to reject this configuration');
+  };
+
+  it('reports a broken field and a violated cross-field rule together', () => {
+    const variables = issuesOf(
+      withEnv({
+        APP_ENCRYPTION_KEY: 'nope',
+        MEILI_HOST: 'http://localhost:7700',
+        MEILI_MASTER_KEY: undefined,
+      }),
+    ).map((issue) => issue.variable);
+
+    expect(variables).toContain('APP_ENCRYPTION_KEY');
+    expect(variables).toContain('MEILI_MASTER_KEY');
+  });
+
+  it('reports a broken field together with the production hardening preflight', () => {
+    const variables = issuesOf(
+      withEnv({
+        NODE_ENV: 'production',
+        JWT_SECRET: 'too-short',
+        APP_URL: 'http://crm.example.com',
+      }),
+    ).map((issue) => issue.variable);
+
+    expect(variables).toContain('JWT_SECRET');
+    expect(variables).toContain('APP_URL');
+  });
+
+  /**
+   * The case that actually regressed. Zod treats a failed coercion as fatal and abandons the
+   * object, so the `superRefine` never ran: `PORT=abc` in a production `.env` with a plaintext
+   * `APP_URL` reported the port alone. A `min()` or `refine()` failure does not abort, which is why
+   * the defect looked absent whenever it was reproduced with a short secret.
+   */
+  it.each([
+    ['PORT', 'abc'],
+    ['NODE_ENV', 'production'],
+    ['LOG_LEVEL', 'verbose'],
+  ])('reports the preflight even when %s fails fatally', (key, value) => {
+    const variables = issuesOf(
+      withEnv({ NODE_ENV: 'production', APP_URL: 'http://crm.example.com', [key]: value }),
+    ).map((issue) => issue.variable);
+
+    expect(variables).toContain('APP_URL');
+  });
+
+  it('does not repeat an issue that both passes found', () => {
+    const issues = issuesOf(
+      withEnv({ MEILI_HOST: 'http://localhost:7700', MEILI_MASTER_KEY: undefined }),
+    );
+    const keys = issues.map((issue) => `${issue.variable}: ${issue.message}`);
+
+    expect(new Set(keys).size).toBe(keys.length);
+  });
+
+  it('skips the preflight when NODE_ENV itself is unreadable, instead of guessing', () => {
+    // Which rules apply depends on the value that failed to parse. Telling an operator who meant
+    // `development` that their placeholder secret is unacceptable would be wrong advice, and the
+    // issue naming NODE_ENV is already in the list.
+    const variables = issuesOf(
+      withEnv({ NODE_ENV: 'staging', JWT_SECRET: 'CHANGE_ME_placeholder_secret_value_long' }), // scan-secrets:allow gitleaks:allow
+    ).map((issue) => issue.variable);
+
+    expect(variables).toEqual(['NODE_ENV']);
+  });
+});
+
+/**
  * Not every failure has a variable to blame: a `.env` that parses to something other than an
  * object produces an issue with an empty path. `toEnvIssues` labels it `<root>` so the message
  * stays a complete sentence instead of `: Invalid input`.

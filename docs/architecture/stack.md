@@ -32,7 +32,7 @@ updated: 2026-07-26
 | ORM | Prisma | 5.x/6.x | Типобезопасные запросы, миграции, `$extends` для tenant-контекста | [ADR-0002](./adr/0002-hexagonal-backend-express-prisma.md) |
 | Валидация | zod | 4.x | Одна схема = рантайм-проверка + тип; общая с клиентом через `packages/shared` | — |
 | Контракт API | OpenAPI 3.1 + `openapi-typescript` | 3.1 / 7.x | Спека — source of truth; клиент типизирован генерацией, а не руками | [ADR-0003](./adr/0003-openapi-as-source-of-truth.md) |
-| Логи | pino + pino-http | 9.x | Structured JSON, самый низкий overhead в Node | — |
+| Логи | pino + pino-http | **10.x / 11.x** | Structured JSON, самый низкий overhead в Node. Взята текущая стабильная ветка (STORY-003-03): `pino-http@11` требует `pino@^10`, и брать 9.x означало бы ставить заведомо устаревшую пару в первый же коммит сервера | — |
 | Очереди | BullMQ + ioredis | 5.x | Ретраи, DLQ, delayed/repeatable jobs поверх уже нужного Redis | [ADR-0021](./adr/0021-transactional-outbox.md) |
 | Кеш/pub-sub | Redis | **8.x** | Сессии-ревокации, rate-limit, backplane для socket.io, брокер BullMQ. Именно 8.x: 7.4 распространяется только под RSALv2/SSPLv1 (запрещены), AGPLv3 появился в Redis 8.0 — см. [`../legal/licensing.md`](../legal/licensing.md) §4 | [ADR-0010](./adr/0010-realtime-socketio-redis-adapter.md), [ADR-0021](./adr/0021-transactional-outbox.md) |
 | Хеш паролей | `@node-rs/argon2` | 2.x | argon2id — рекомендация OWASP; Rust-биндинг быстрее `node-argon2` и не требует node-gyp | — |
@@ -356,6 +356,22 @@ async function bootstrap() {
 HTTP-обработчика. `RUN_WORKERS_IN_PROCESS=true` — осознанное исключение для профиля `minimal`
 (одна машина, минимум памяти), а не значение по умолчанию.
 
+**Сигнал обязан дойти до процесса Node — иначе весь graceful shutdown не выполняется, и это не
+видно ни в одном тесте.** Проверено при реализации (STORY-003-01), требования к образу:
+
+- **`CMD` только в exec-форме** (`CMD ["node", "dist/main.js"]`). В shell-форме PID 1 становится
+  `/bin/sh`, который ничего не пересылает: контейнер каждый раз досиживает полный stop-timeout и
+  умирает по `SIGKILL`, обрывая все запросы в полёте. Симптом на стороне пользователей — обрывы
+  ровно во время деплоя, при формально «корректном» коде остановки.
+- **Node как PID 1 сигнал получает** — но только потому, что обработчик зарегистрирован: для PID 1
+  ядро отбрасывает сигналы, у которых нет обработчика (действия по умолчанию не применяются).
+  Следствие: обработчики регистрируются в `startApiProcess` сразу после `listen`, до первого
+  запроса.
+- **`init: true` в compose (или `docker run --init`)** — не ради сигналов, а ради reaping зомби:
+  PID 1 без этого не собирает потомков (`prisma migrate`, вызовы дочерних процессов).
+- Таймаут остановки контейнера должен быть **больше** 30-секундного жёсткого таймаута shutdown,
+  иначе `SIGKILL` приходит раньше, чем процесс успевает закрыть Prisma и Redis.
+
 ### Алиасы и модульная система
 
 `"module": "NodeNext"`, `"moduleResolution": "NodeNext"`, алиас `@/*` → `src/*`, на билде пути
@@ -433,10 +449,17 @@ docs/api/openapi.yaml   ←── source of truth, правится руками
 | не аутентифицирован / access истёк | 401 | `unauthenticated` |
 | нет прав (policy `denied`) | 403 | `<resource>_forbidden` |
 | объект не найден **или** не виден тенанту | 404 | `<resource>_not_found` |
+| маршрута не существует | 404 | `route_not_found` |
+| тело запроса больше 1 MB | 413 | `payload_too_large` |
 | конфликт версий (optimistic lock) | 409 | `stale_version` |
 | дубликат по уникальному ключу | 409 | `<resource>_already_exists` |
 | превышен rate limit | 429 | `rate_limited` (+ `Retry-After`) |
 | внутренняя ошибка | 500 | `internal_error` (без `detail` наружу) |
+
+Две последние строки — транспортные отказы, решение по которым принимается **до** того, как известен
+ресурс, поэтому они не могут заимствовать `<resource>_…`-код: `route_not_found` вместо
+`task_not_found` на опечатку в URL, `payload_too_large` вместо валидации на теле, которое парсер
+отверг целиком (добавлены в каталог в STORY-003-01).
 
 Важное правило приватности: «нет доступа к чужой организации» отдаётся как **404**, а не 403 —
 иначе API становится оракулом существования сущностей в других тенантах. 403 отдаём только

@@ -1,7 +1,7 @@
 ---
 id: STORY-003-02
 epic: EPIC-003
-status: backlog
+status: in-progress
 blocked: false
 priority: must
 estimate: M
@@ -25,20 +25,26 @@ estimate: M
 
 ## Задачи
 
-- [ ] Написать тесты первыми: `test/unit/architecture/layers.test.ts` (запрещённые импорты по слоям через анализ AST/зависимостей), `test/unit/architecture/naming.test.ts` (role-суффиксы `*.use-case.ts`, `*.query.ts`, `*.port.ts`, `*.entity.ts`, `*.policy.ts`, `*.repository.ts`, `*.controller.ts`), `application/platform/use-cases/check-health.use-case.test.ts`.
-- [ ] Создать каркас каталогов `packages/server/src/{domain,application,infrastructure,presentation}` с `domain/shared/{errors,ids,result}`.
-- [ ] Реализовать `domain/shared/errors/` — `DomainError`, `NotFoundError`, `ForbiddenError`, `ConflictError` с полем `code` из каталога `packages/shared`.
-- [ ] Реализовать `application/platform/ports/health-probe.port.ts` и `clock.port.ts`, `id-generator.port.ts` (базовые порты, нужные всем контекстам).
-- [ ] Реализовать `application/platform/use-cases/check-health.use-case.ts` — возвращает статус процесса и версию приложения, без обращений к БД.
-- [ ] Реализовать адаптеры `infrastructure/platform/process-health.adapter.ts`, `infrastructure/platform/system-clock.adapter.ts`, `infrastructure/platform/ulid-id-generator.adapter.ts`.
-- [ ] Реализовать `presentation/http/controllers/health.controller.ts`, `presentation/http/serializers/health.serializer.ts`, регистрацию в `routes.ts`.
-- [ ] Задокументировать шаблон нового контекста в `docs/architecture/` (какие каталоги обязательны, куда что кладётся) и сослаться на него из `rules/naming-and-structure.mdc`.
+- [x] Написать тесты первыми: `test/unit/architecture/layers.test.ts` (запрещённые импорты по слоям через анализ AST/зависимостей), `test/unit/architecture/naming.test.ts` (role-суффиксы `*.use-case.ts`, `*.query.ts`, `*.port.ts`, `*.entity.ts`, `*.policy.ts`, `*.repository.ts`, `*.controller.ts`), `application/platform/use-cases/check-health.use-case.test.ts`.
+- [x] Создать каркас каталогов `packages/server/src/{domain,application,infrastructure,presentation}` с `domain/shared/{errors,ids,result}`.
+- [x] Реализовать `domain/shared/errors/` — `DomainError`, `NotFoundError`, `ForbiddenError`, `ConflictError` с полем `code` из каталога `packages/shared`.
+- [x] Реализовать `application/platform/ports/health-probe.port.ts` и `clock.port.ts`, `id-generator.port.ts` (базовые порты, нужные всем контекстам).
+- [x] Реализовать `application/platform/use-cases/check-health.use-case.ts` — возвращает статус процесса и версию приложения, без обращений к БД.
+- [x] Реализовать адаптеры `infrastructure/platform/process-health.adapter.ts`, `infrastructure/platform/system-clock.adapter.ts`, `infrastructure/platform/ulid-id-generator.adapter.ts`.
+- [x] Реализовать `presentation/http/controllers/health.controller.ts`, `presentation/http/serializers/health.serializer.ts`, регистрацию в `routes.ts`.
+- [x] Задокументировать шаблон нового контекста в `docs/architecture/` (какие каталоги обязательны, куда что кладётся) и сослаться на него из `rules/naming-and-structure.mdc`.
+
+> **Отклонения от формулировок задач.** Контроллер и сериализатор названы по словарю суффиксов;
+> `/ready` реализован через отдельный `check-readiness.use-case.ts` + `ReadinessProbePort`, а не как
+> алиас `/health` — полные проверки Postgres/Redis добавляются в EPIC-009 регистрацией пробы в
+> `container.factory.ts`. Шаблон контекста задокументирован в
+> [`docs/architecture/backend-context-template.md`](../../../docs/architecture/backend-context-template.md).
 
 ## Definition of Done
 
-- [ ] Тесты написаны первыми (TDD), проходят, изменённый код покрыт
+- [x] Тесты написаны первыми (TDD), проходят, изменённый код покрыт
 - [ ] Commit-гейт зелёный (test-coverage, security-auditor, db-reviewer при изменении схемы, production-readiness, commit-hygiene)
-- [ ] Документация обновлена (docs/ + запись в `docs/brain/`)
+- [x] Документация обновлена (docs/ + запись в `docs/brain/`)
 - [ ] a11y-проверка (для UI-историй) — не применимо
 - [ ] i18n: строки в обоих языках, хардкода нет (для UI-историй) — не применимо
 
