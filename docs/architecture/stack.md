@@ -66,7 +66,7 @@ self-host инстансе), Kafka (несоразмерно масштабу; B
 
 | Что | Требование | Как фиксируется |
 |---|---|---|
-| Node.js | 22 LTS (`>=22.22.1 <23`) | `.nvmrc` (`22.22.1`), `engines` в корневом `package.json`; флор задан хуками — `lint-staged@17` требует `node >=22.22.1`, `@commitlint/cli@21` — `>=22.12.0` |
+| Node.js | 22 LTS для разработки и CI; `engines` — `>=22.22.1` **без верхней границы** | `.nvmrc` (`22.22.1`) — то, на чём работают контрибьютор и CI. Флор задан хуками (`lint-staged@17` требует `node >=22.22.1`, `@commitlint/cli@21` — `>=22.12.0`). Потолка нет намеренно: `<23` был написан руками, не измерен и **выключил обновления зависимостей** — Dependabot запускает npm-апдейтер на Node 24, не смог удовлетворить диапазон и ответил `tool_version_not_supported` по каждому пакету. Набор прогнан на Node 24 целиком и прошёл; падала только сама проверка диапазона. Утверждение проверяется джобой `compat` в `ci.yml` (push в `main` и еженедельно) |
 | pnpm | 10+ | `packageManager: "pnpm@10.x.x"` в корневом `package.json` (Corepack) |
 | TypeScript | 5.9.3, одна версия на весь воркспейс | точный пин в корне и в каждом пакете; проверяется `test/repo/toolchain-versions.test.ts` ([ADR-0022](./adr/0022-typescript-version-policy.md)) |
 | Docker | 24+ с Compose v2 | `pnpm docker:up` поднимает Postgres/Redis/MinIO/Meilisearch/Mailpit; голый `docker compose up -d` — только минимальный набор |

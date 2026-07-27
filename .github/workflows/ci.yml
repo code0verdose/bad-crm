@@ -16,6 +16,12 @@ on:
   pull_request:
   push:
     branches: [main]
+  # Only the `compat` job runs on this schedule. It checks the claim `engines.node` makes about
+  # Node versions newer than the one CI pins, and that claim goes stale on the pace of Node
+  # releases, not of commits — so a weekly run catches a break within days without taxing a pull
+  # request. Monday morning UTC: a failure lands at the start of a working week, not into it.
+  schedule:
+    - cron: '17 6 * * 1'
 
 # Read-only by default. Any job that needs more asks for it explicitly, at the job level.
 permissions:
@@ -42,6 +48,8 @@ env:
 jobs:
   checks:
     name: typecheck, lint, build, test
+    # The scheduled run exists for `compat` alone; re-running the same commit weekly proves nothing.
+    if: github.event_name != 'schedule'
     # Pinned image rather than `ubuntu-latest`: a runner image rollover is a change to the build
     # environment and should arrive as a reviewable commit, not overnight.
     runs-on: ubuntu-24.04
@@ -125,6 +133,7 @@ jobs:
           if-no-files-found: ignore
 
   scan:
+    if: github.event_name != 'schedule'
     name: secrets and cruft
     runs-on: ubuntu-24.04
     timeout-minutes: 10
@@ -262,3 +271,44 @@ jobs:
           # The wording above avoids the literal patterns on purpose: this file is scanned like any
           # other, and a comment naming them would block the pull request that edits this step.
           if [ "$status" -ge 2 ]; then exit 1; fi
+
+  # `engines.node` declares a floor and no ceiling. That is a claim about every Node above the
+  # floor, and an untested claim is how the previous ceiling got there: it was written by hand,
+  # never measured, and quietly disabled the project's dependency updates — Dependabot runs its npm
+  # updater on Node 24, could not satisfy the range, and answered every package with
+  # `tool_version_not_supported`, so no security update could ever open a pull request.
+  #
+  # Not part of `checks`, and not a matrix on it: doubling the wall clock of every pull request buys
+  # a signal that changes at the pace of Node releases. On the branch that gates merges and once a
+  # week is fast enough to catch a break within a day, and the fix is either the code or a ceiling
+  # put back with a measurement behind it.
+  compat:
+    name: newest supported Node
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ['24']
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Node ${{ matrix.node }}
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ matrix.node }}
+
+      - name: Activate pnpm through Corepack
+        run: corepack enable
+
+      - name: Install dependencies
+        # `engine-strict` is left on: refusing to install here is exactly the failure this job is
+        # meant to surface, and silencing it would make the job green on the one thing it tests.
+        run: pnpm install --frozen-lockfile
+
+      - name: Run the full check set
+        run: pnpm turbo run typecheck lint build test

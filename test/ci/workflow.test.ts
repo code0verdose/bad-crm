@@ -107,9 +107,13 @@ describe('CI runs exactly the CI-before-push task set', () => {
     expect(turboSteps().length).toBeGreaterThan(0);
   });
 
+  /**
+   * Compared as sets: `compat` runs the same command on a newer Node, so every task legitimately
+   * appears twice. What must not drift is *which* tasks CI runs versus which the rule demands.
+   */
   it('asks turbo for the same tasks the rule requires before a push', () => {
-    const required = taskSetOfTheRule();
-    const covered = turboSteps().flatMap((run) => tasksOf(run));
+    const required = new Set(taskSetOfTheRule());
+    const covered = new Set(turboSteps().flatMap((run) => tasksOf(run)));
 
     expect([...covered].sort()).toEqual([...required].sort());
   });
@@ -127,11 +131,32 @@ describe('toolchain versions come from the repository, not from the workflow', (
     expect(setupNodeSteps().length).toBeGreaterThan(0);
   });
 
-  it('takes the Node version from .nvmrc', () => {
-    for (const step of setupNodeSteps()) {
-      expect(step.with?.['node-version-file']).toBe('.nvmrc');
-      expect(step.with?.['node-version'], 'a pinned node-version shadows .nvmrc').toBeUndefined();
+  /**
+   * Every job except `compat`. That one exists precisely to run on a Node the repository does *not*
+   * pin — it checks the claim `engines.node` makes about versions above the floor, which is what
+   * `.nvmrc` cannot express. Reading `.nvmrc` there would make the job a duplicate of `checks`.
+   */
+  it('takes the Node version from .nvmrc everywhere except the compatibility job', () => {
+    for (const [name, job] of jobs()) {
+      if (name === 'compat') continue;
+
+      for (const step of (job.steps ?? []).filter((candidate) =>
+        candidate.uses?.startsWith('actions/setup-node'),
+      )) {
+        expect(step.with?.['node-version-file'], name).toBe('.nvmrc');
+        expect(
+          step.with?.['node-version'],
+          `${name}: a pinned version shadows .nvmrc`,
+        ).toBeUndefined();
+      }
     }
+  });
+
+  it('pins an explicit newer Node in the compatibility job, from a matrix', () => {
+    const compat = jobs().find(([name]) => name === 'compat')?.[1];
+
+    expect(compat, 'the compat job is what tests the open-ended engines range').toBeDefined();
+    expect(compat?.strategy?.matrix?.node).toBeDefined();
   });
 
   /**

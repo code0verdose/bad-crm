@@ -147,7 +147,7 @@ installations on constrained hardware.
 
 ### Working on the code — works today
 
-Requirements: **Node 22 LTS** (`>=22.22.1 <23`, see `.nvmrc`), **pnpm 10** (installed by Corepack
+Requirements: **Node 22 LTS** (`>=22.22.1`, pinned to 22.22.1 in `.nvmrc`), **pnpm 10** (installed by Corepack
 from the `packageManager` field), Git, and **Docker** — `pnpm dev` runs a preflight check and
 refuses to start without a configuration file and the required services. The check set
 (`typecheck`, `lint`, `build`, `test`) runs without Docker.

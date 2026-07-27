@@ -84,8 +84,18 @@ describe('Node version floor', () => {
     expect(floorOf(engineRange())).toEqual([22, 22, 1]);
   });
 
-  it('stays inside the Node 22 LTS line', () => {
-    expect(engineRange()).toContain('<23');
+  /**
+   * Replaces an assertion that required `<23`.
+   *
+   * That ceiling was never measured — and it silently disabled the project's dependency updates:
+   * Dependabot runs its npm updater on Node 24, saw a range it could not satisfy, and answered
+   * every package with `tool_version_not_supported`. No security update could open a pull request.
+   * The suite was then run on Node 24 in full and passed; the only failure was this range being
+   * enforced by pnpm. `.nvmrc` still pins what contributors and CI use — a ceiling here would be a
+   * claim about code we have, not about tooling we run.
+   */
+  it('declares no upper bound, so tooling on a newer Node can still resolve the workspace', () => {
+    expect(engineRange()).not.toMatch(/</);
   });
 
   it('matches .nvmrc', () => {
