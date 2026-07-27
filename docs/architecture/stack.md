@@ -76,10 +76,10 @@ self-host инстансе), Kafka (несоразмерно масштабу; B
 
 **Self-host (продакшен)**
 
-| Профиль | Сервисы | CPU / RAM | Кого тянет |
+| Профиль | Сервисы | CPU / RAM (порог старта) | Что это значит |
 |---|---|---|---|
-| `minimal` | app + Postgres + Redis + MinIO | 2 vCPU / 2 GB | до ~20 активных пользователей, без поиска и AI |
-| `default` | + Meilisearch | 2 vCPU / 4 GB | до ~100 пользователей |
+| `minimal` | app + Postgres + Redis + MinIO | 2 vCPU / 2 GB | Минимум, при котором стек стартует. Без поиска и AI |
+| `default` | + Meilisearch | 2 vCPU / 4 GB | Минимум, при котором стартует полный набор. **Не рабочая нагрузка:** сайзинг под реальную команду — [hosting.md](../runbooks/hosting.md) |
 | `scaled` | + отдельные worker-контейнеры, внешний S3/managed Postgres | 4+ vCPU / 8+ GB | 100+ пользователей, несколько организаций |
 
 Приложение обязано стартовать и работать без Meilisearch и без AI-ключей — деградация функций,
@@ -1019,6 +1019,10 @@ GPL-3.0 — использование допускается, но каждый
 [ADR-0012](./adr/0012-docs-editor-blocknote-json-content.md) с указанием лицензии.
 
 **Крипто на клиенте (E2EE-vault):** источник правды — [`../security/e2ee-design.md`](../security/e2ee-design.md).
+Отдельно: библиотека поставляется как WebAssembly, поэтому CSP приложения обязана содержать
+`'wasm-unsafe-eval'` в `script-src` (и **никогда** `'unsafe-eval'`), а
+`Cross-Origin-Embedder-Policy` не выставляется — обоснование и отвергнутые альтернативы в
+[ADR-0023](./adr/0023-csp-for-wasm-crypto.md).
 Он предписывает `libsodium-wrappers-sumo` как **единственную** зависимость крипто-модуля
 (Argon2id `crypto_pwhash`, XChaCha20-Poly1305-IETF, `crypto_box_seal`, Ed25519). Лицензия — ISC,
 для AGPL-3.0 препятствий нет. **Размер — принятое осознанное исключение (решение от 2026-07-26):**

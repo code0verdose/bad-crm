@@ -274,3 +274,24 @@ describe('00-bootstrap-roles.sh — the wrapper both entry points share', () => 
     expect(wrapper).toMatch(/PGPASSWORD/);
   });
 });
+
+/**
+ * Meilisearch defaults `MEILI_MAX_INDEXING_MEMORY` to two thirds of the host's RAM. On a
+ * single-host installation — the only shape this project ships — that is not a limit, it is a
+ * promise to take the memory PostgreSQL is using. The first full reindex then pushes the database
+ * under the OOM killer, and the symptom is `exit 137` on a container nobody was touching.
+ * Found while sizing the server (docs/runbooks/hosting.md), before anyone ran an import.
+ */
+describe('meilisearch memory is bounded', () => {
+  const meili = services.find(([name]) => name === 'meilisearch')?.[1] as ComposeService;
+
+  it('caps indexing memory instead of inheriting the two-thirds-of-RAM default', () => {
+    expect(environmentOf(meili)).toHaveProperty('MEILI_MAX_INDEXING_MEMORY');
+  });
+
+  it('takes the cap from a variable, so an operator can size it for the host', () => {
+    expect(environmentOf(meili)['MEILI_MAX_INDEXING_MEMORY']).toMatch(
+      /\$\{MEILI_MAX_INDEXING_MEMORY:-/,
+    );
+  });
+});

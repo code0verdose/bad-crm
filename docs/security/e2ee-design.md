@@ -1227,13 +1227,36 @@ RLS работает **поверх шифротекста** и решает о�
 
 ### Обязательно
 
-12. **CSP на всём приложении, ужесточённая на `/vault/**` и `/l/**`:**
-    `default-src 'self'; script-src 'self' 'nonce-<per-request>'; style-src 'self' 'nonce-…';
-    connect-src 'self'; img-src 'self' data:; object-src 'none'; base-uri 'none';
+12. **CSP на всём приложении, ужесточённая на `/vault/**` и `/link/**`:**
+    `default-src 'self'; script-src 'self' 'nonce-<per-request>' 'wasm-unsafe-eval';
+    style-src 'self' 'nonce-…'; connect-src 'self' <S3_PUBLIC_ORIGIN>;
+    img-src 'self' data: blob: <S3_PUBLIC_ORIGIN>; object-src 'none'; base-uri 'none';
     frame-ancestors 'none'; form-action 'self'; require-trusted-types-for 'script'`.
     Плюс `Referrer-Policy: no-referrer`, `X-Content-Type-Options: nosniff`,
-    `Cross-Origin-Opener-Policy: same-origin`, `Cross-Origin-Embedder-Policy: require-corp`.
-    Отчёты CSP собираются и алертятся — нарушение на vault-маршруте это инцидент.
+    `Cross-Origin-Opener-Policy: same-origin`.
+
+    Три директивы здесь неочевидны, и каждая была бы обнаружена только в браузере — см.
+    [ADR-0023](../architecture/adr/0023-csp-for-wasm-crypto.md):
+
+    - **`'wasm-unsafe-eval'` обязателен.** Крипто-модуль vault — `libsodium-wrappers-sumo`, то есть
+      WebAssembly. Под `script-src 'self' 'nonce-…'` без этого токена `WebAssembly.instantiate`
+      бросает `CompileError`, и хранилище не открывается вообще. Токен разрешает **только**
+      компиляцию WASM: источник модуля по-прежнему ограничен `script-src`, а `eval()` остаётся
+      запрещён. **`'unsafe-eval'` не использовать никогда** — он открывает и `eval`, и
+      `new Function`, то есть ровно тот примитив, ради запрета которого CSP здесь и стоит.
+    - **`connect-src` и `img-src` включают origin объектного хранилища.** Presigned-ссылки ведут
+      на MinIO/S3, а не на наш origin: без этого загрузка файла (`PUT` по presigned URL) и показ
+      вложений-картинок блокируются. Значение подставляется из конфигурации, а не хардкодится.
+    - **`Cross-Origin-Embedder-Policy` не выставляем.** `require-corp` требует, чтобы каждый
+      кросс-оригинный ресурс присылал `Cross-Origin-Resource-Policy`; MinIO его не отдаёт, и
+      политика молча ломает все presigned-картинки. Взамен она даёт только cross-origin isolation,
+      нужную для `SharedArrayBuffer` и высокоточных таймеров — ни того, ни другого в продукте нет.
+      Защиту от XS-Leaks обеспечивает `Cross-Origin-Opener-Policy: same-origin`, который остаётся.
+
+    Отчёты CSP собираются и алертятся — нарушение на vault-маршруте это инцидент. Политика
+    проверяется **в реальном браузере** (e2e: открыть vault, расшифровать элемент, показать
+    вложение-картинку), а не тестом на наличие заголовка: все три ошибки выше дают зелёный тест
+    на строку политики и чёрный экран у пользователя.
 13. **Trusted Types** с единственной политикой, не допускающей произвольный HTML.
 14. **Очистка буфера обмена** через 30 с с проверкой, что содержимое всё ещё наше (иначе не затираем
     чужое копирование), стабильный `id` тоста, честная подсказка о том, что при закрытии вкладки

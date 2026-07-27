@@ -157,6 +157,11 @@ services:
       MEILI_MASTER_KEY: ${MEILI_MASTER_KEY:-dev_meili_master_key_not_for_production}
       MEILI_ENV: ${MEILI_ENV:-development}
       MEILI_NO_ANALYTICS: 'true'
+      # Without this, Meilisearch takes up to two thirds of the host's RAM while indexing. On a
+      # single-host install — the only shape we ship — the first full reindex then pushes
+      # PostgreSQL under the OOM killer, and the symptom is `exit 137` on a container nobody
+      # touched. Size it for the host: docs/runbooks/hosting.md, section on memory.
+      MEILI_MAX_INDEXING_MEMORY: ${MEILI_MAX_INDEXING_MEMORY:-512Mb}
     ports:
       - '127.0.0.1:${MEILI_PORT:-7700}:7700'
     volumes:
