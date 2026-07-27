@@ -38,7 +38,7 @@ faster than the code.
 
 | Tool | Version |
 |---|---|
-| Node.js | 22 LTS (`>=22.22.1` in `package.json`) — pinned in `.nvmrc` |
+| Node.js | 22 LTS (`>=22.22.2` in `package.json`) — pinned in `.nvmrc` |
 | pnpm | 10 via Corepack (`packageManager` in `package.json` pins the exact version) |
 | Docker | 24+ with Compose v2 |
 | OS | Linux, macOS, or WSL2 (native Windows is not supported — Testcontainers and volume permissions) |

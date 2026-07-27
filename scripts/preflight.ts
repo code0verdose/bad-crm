@@ -12,6 +12,7 @@
  * more; the deep verification (extensions, roles, bucket, credentials) is `pnpm check:services`.
  */
 import { skipReasonFor, skippedCheck } from './lib/check-plan.util.js';
+import { createNodeVersionCheck } from './lib/checks/node-version.check.js';
 import { createReachabilityCheck } from './lib/checks/reachability.check.js';
 import { hostPortOf, postgresTargetOf, redisTargetOf } from './lib/connection-target.util.js';
 import { connectTcp } from './lib/io/tcp.io.js';
@@ -43,6 +44,7 @@ const createChecks = (env: ServerEnv, profile: string): ServiceCheck[] => {
     });
 
   return [
+    createNodeVersionCheck(),
     reachable('postgres', postgresTargetOf(env.DATABASE_URL), 'required'),
     reachable('redis', redisTargetOf(env.REDIS_URL), 'required'),
     reachable('minio', hostPortOf(env.S3_ENDPOINT), 'required'),

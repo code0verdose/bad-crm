@@ -220,7 +220,7 @@ pnpm turbo run typecheck lint build test
 | Слой | Технология | Версия | ADR |
 |---|---|---|---|
 | Монорепо | pnpm workspaces + turborepo | pnpm 9+, turbo 2+ | [ADR-0001](docs/architecture/adr/0001-monorepo-pnpm-turborepo.md) |
-| Язык / рантайм | TypeScript strict / Node.js LTS | 5.9.3 (пин, одна версия на воркспейс) / `>=22.22.1 <23` | [ADR-0001](docs/architecture/adr/0001-monorepo-pnpm-turborepo.md), [ADR-0022](docs/architecture/adr/0022-typescript-version-policy.md) |
+| Язык / рантайм | TypeScript strict / Node.js LTS | 5.9.3 (пин, одна версия на воркспейс) / `>=22.22.2`, без верхней границы | [ADR-0001](docs/architecture/adr/0001-monorepo-pnpm-turborepo.md), [ADR-0022](docs/architecture/adr/0022-typescript-version-policy.md) |
 | HTTP + архитектура сервера | Express 5 + hexagonal (ports & adapters) | 5.x | [ADR-0002](docs/architecture/adr/0002-hexagonal-backend-express-prisma.md) |
 | БД | PostgreSQL + pgvector | 16 / 0.7+ | [ADR-0004](docs/architecture/adr/0004-multi-tenancy-postgres-rls.md) |
 | ORM | Prisma | 5.x/6.x | [ADR-0002](docs/architecture/adr/0002-hexagonal-backend-express-prisma.md) |

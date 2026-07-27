@@ -80,8 +80,10 @@ describe('Node version floor', () => {
   };
 
   it('requires at least the Node version the git hooks need', () => {
-    // lint-staged >= 17 and @commitlint/cli >= 21 both declare `node >=22.22.1`.
-    expect(floorOf(engineRange())).toEqual([22, 22, 1]);
+    // Raised from 22.22.1 by jsdom@30, which declares `^22.22.2 || ^24.15.0 || >=26.0.0`. The
+    // floor is whatever the strictest dependency demands, and CI is where that is discovered:
+    // locally nvm resolved `22` to 22.22.2, so `.nvmrc` pinned a version nobody was running.
+    expect(floorOf(engineRange())).toEqual([22, 22, 2]);
   });
 
   /**

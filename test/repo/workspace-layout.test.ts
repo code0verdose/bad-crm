@@ -96,7 +96,8 @@ describe('root package.json', () => {
   /**
    * A floor, and deliberately no ceiling.
    *
-   * The floor is real: `lint-staged` and `@commitlint/cli` both refuse to install below 22.22.1.
+   * The floor is real: today `jsdom@30` refuses to install below 22.22.2 (`lint-staged` and
+   * `@commitlint/cli` set the previous floor of 22.22.1).
    * The ceiling was not — it was written by hand and never tested, and it cost the project its
    * dependency updates: Dependabot runs its npm updater on Node 24 and answered every package with
    * `tool_version_not_supported`, so no security update could ever open a pull request. The suite
@@ -106,7 +107,7 @@ describe('root package.json', () => {
   it('declares a Node floor and no ceiling, so tooling on a newer Node can still run', () => {
     const node = rootPackageJson().engines?.node;
 
-    expect(node).toBe('>=22.22.1');
+    expect(node).toBe('>=22.22.2');
     expect(node, 'an upper bound blocks Dependabot; see the compat job in ci.yml').not.toMatch(/</);
   });
 
