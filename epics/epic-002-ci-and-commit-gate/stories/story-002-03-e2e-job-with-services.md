@@ -2,7 +2,7 @@
 id: STORY-002-03
 epic: EPIC-002
 status: in-progress
-blocked: false
+blocked: true
 priority: should
 estimate: M
 ---
