@@ -126,6 +126,10 @@ jobs:
             'CC0-1.0',
             'ISC',
             'MIT',
+            // MIT without the attribution clause — strictly more permissive than MIT, OSI-approved.
+            // Arrived with the client shell through Vite's CSS tooling (rules/dependencies.mdc §8,
+            // docs/legal/licensing.md §3).
+            'MIT-0',
             'MPL-2.0',
             'Python-2.0',
             'Unlicense',
