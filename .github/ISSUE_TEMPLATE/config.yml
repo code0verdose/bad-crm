@@ -1,0 +1,18 @@
+# Issue chooser configuration.
+#
+# Blank issues are disabled on purpose: a bug report without the version and the installation
+# profile costs one round trip per field, and a self-hosted product has many shapes.
+blank_issues_enabled: false
+
+contact_links:
+  # MAINTAINER TODO (before the repository is published): point this at
+  # https://github.com/<org>/bad-crm/security/advisories/new once the slug exists, and enable
+  # private vulnerability reporting in Settings → Code security. A `<org>` placeholder is not
+  # used in the URL itself: an invalid URL makes GitHub reject the whole file, which would
+  # silently re-enable blank issues and drop this notice.
+  - name: Security vulnerability — report privately, never as an issue
+    url: https://docs.github.com/en/code-security/security-advisories/guidance-on-reporting-and-writing-information-about-vulnerabilities/privately-reporting-a-security-vulnerability
+    about: >-
+      Cross-tenant data access, permission bypass, anything touching the encrypted vault: use
+      Security → Report a vulnerability on this repository. Details, scope and safe harbour are
+      in SECURITY.md. Public disclosure before a fix puts every installation at risk.

@@ -1,0 +1,21 @@
+{
+  "tolerance": 0.5,
+  "projects": {
+    ".": {
+      "lines": 80.39,
+      "branches": 74.62
+    },
+    "packages/shared": {
+      "lines": 100,
+      "branches": 100
+    },
+    "packages/server": {
+      "lines": 97.01,
+      "branches": 100
+    },
+    "packages/client": {
+      "lines": 91.66,
+      "branches": 100
+    }
+  }
+}

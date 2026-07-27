@@ -1,0 +1,133 @@
+name: Bug report
+description: Something in a Bad CRM installation behaves incorrectly
+title: '[Bug]: '
+labels: [bug, needs-triage]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **Not for security problems.** A vulnerability — cross-tenant data access, a permission
+        bypass, anything touching the encrypted vault — goes through private reporting, never a
+        public issue. See `SECURITY.md`.
+
+        **Never attach `.env`, database dumps, backups, access or refresh tokens, API keys, or
+        anything from the vault.** Redact before pasting; a public issue is public forever.
+
+  - type: textarea
+    id: summary
+    attributes:
+      label: What happens
+      description: What you observed, and what you expected instead.
+      placeholder: |
+        Observed: ...
+        Expected: ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to reproduce
+      description: Numbered steps, starting from a fresh installation or a known state.
+      placeholder: |
+        1. Sign in as an organization admin
+        2. Open ...
+        3. ...
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: Version and commit SHA from the "About" screen, or the image tag you deployed.
+      placeholder: '1.4.2 (a1b2c3d)'
+    validations:
+      required: true
+
+  - type: dropdown
+    id: profile
+    attributes:
+      label: Installation profile
+      description: The Compose profile the installation runs with (`COMPOSE_PROFILES`).
+      options:
+        - minimal
+        - default
+        - scaled
+        - other / modified
+    validations:
+      required: true
+
+  - type: dropdown
+    id: deployment
+    attributes:
+      label: How it is deployed
+      options:
+        - docker compose on a single host (unmodified compose file)
+        - docker compose with local modifications
+        - Kubernetes or another orchestrator
+        - built from source, run without containers
+        - other
+    validations:
+      required: true
+
+  - type: input
+    id: environment
+    attributes:
+      label: Host and client
+      description: Host OS and architecture; for a UI problem also the browser and its version.
+      placeholder: 'Ubuntu 24.04 arm64; Firefox 141'
+    validations:
+      required: true
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      description: Where the problem shows up. Guess if unsure — triage will correct it.
+      options:
+        - install / upgrade / compose
+        - authentication and sessions
+        - permissions and roles
+        - projects, tasks, boards
+        - documents and knowledge base
+        - files and uploads
+        - chat and realtime
+        - time tracking and timesheets
+        - dashboards and reports
+        - vault, secure links, crypto
+        - AI assistant
+        - search
+        - notifications and email
+        - internationalisation (EN/RU)
+        - accessibility
+        - other / unsure
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: |
+        Relevant server or browser-console output. **Redact first**: tokens, cookies, API keys,
+        `Authorization` headers, presigned URLs, email addresses. Never paste `.env`.
+      render: shell
+
+  - type: textarea
+    id: extra
+    attributes:
+      label: Anything else
+      description: Screenshots, when it started, whether an upgrade preceded it, workarounds found.
+
+  - type: checkboxes
+    id: acknowledgements
+    attributes:
+      label: Before submitting
+      options:
+        - label: I searched existing issues and this is not a duplicate.
+          required: true
+        - label: This is not a security vulnerability (those go through `SECURITY.md`, privately).
+          required: true
+        - label: Everything I pasted is redacted — no secrets, tokens, credentials, or personal data.
+          required: true

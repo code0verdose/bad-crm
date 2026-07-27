@@ -1,7 +1,7 @@
 ---
 id: STORY-002-01
 epic: EPIC-002
-status: backlog
+status: in-progress
 blocked: false
 priority: must
 estimate: M
@@ -26,11 +26,16 @@ estimate: M
 ## Задачи
 
 - [ ] Написать/зафиксировать проверочный сценарий: `.github/workflows/ci.yml` валидируется `actionlint` в отдельном шаге, а тест `test/ci/workflow.test.ts` проверяет наличие обязательных джобов и шагов (frozen lockfile, кеш, все четыре задачи).
-- [ ] Создать `.github/workflows/ci.yml`: триггеры `pull_request` и `push` в `main`, `concurrency` с отменой предыдущих прогонов ветки, `permissions` минимальные (`contents: read`).
-- [ ] Настроить шаги: `actions/checkout` (fetch-depth для diff), `pnpm/action-setup` + `actions/setup-node@v4` с `cache: pnpm`, кеш turborepo (`.turbo`), `pnpm install --frozen-lockfile`.
-- [ ] Настроить запуск `turbo run typecheck lint build test` одной командой с `--output-logs=errors-only` и публикацией summary.
+  — наполовину: `test/ci/workflow.test.ts` написан первым и проверяет джобы, шаги, кеши, пины действий и совпадение набора задач с `rules/ci-before-push.mdc`. Шага `actionlint` в workflow нет; локально прогнан actionlint 1.7.12 — 0 замечаний.
+- [x] Создать `.github/workflows/ci.yml`: триггеры `pull_request` и `push` в `main`, `concurrency` с отменой предыдущих прогонов ветки, `permissions` минимальные (`contents: read`).
+- [x] Настроить шаги: `actions/checkout` (fetch-depth для diff), `pnpm/action-setup` + `actions/setup-node@v4` с `cache: pnpm`, кеш turborepo (`.turbo`), `pnpm install --frozen-lockfile`.
+  — сделано с отклонением: pnpm ставится Corepack по полю `packageManager`, а не `pnpm/action-setup`; `actions/cache` по `.turbo/cache` и по пути pnpm-store (`cache: pnpm` в `setup-node` требует pnpm ещё до его установки). Все действия запинены на commit SHA.
+- [x] Настроить запуск `turbo run typecheck lint build test` одной командой с `--output-logs=errors-only` и публикацией summary.
+  — в summary публикуются покрытие и находки cruft-скана; имена упавших тестов приходят GitHub-аннотациями vitest.
 - [ ] Добавить job `integration` с сервисами Postgres 16 + pgvector и Redis (или Testcontainers) для `pnpm test:integration` — точка подключения RLS-тестов из [EPIC-005](../../epic-005-multi-tenancy-rls/epic.md).
+  — отложено: ни один пакет не объявляет скрипт `test:integration`, поэтому джоба подняла бы Postgres и Redis и не запустила ни одного теста. Подключается вместе с первыми RLS-тестами (EPIC-005).
 - [ ] Настроить path-фильтры и «always green» заглушку для doc-only PR.
+  — осознанно не делается сейчас: при тёплом кеше turbo doc-only PR — это 15 попаданий в кеш и секунды прогона (проверено: `>>> FULL TURBO`), а «always green» заглушка — самый частый способ получить обязательную проверку, которая рапортует успех, ничего не проверив. Возвращаться, когда появится e2e-джоба с реальной ценой прогона.
 - [ ] Описать в `docs/runbooks/ci.md`: состав джобов, как воспроизвести падение локально, как чистить кеш.
 - [ ] Включить branch protection на `main`: обязательные проверки, запрет прямого push, требование актуальности ветки.
 - [ ] **Parity-тест `.env.example` сверяет только имена переменных, но не значения.** `test/env/env-example-sync.test.ts` доказывает, что множество ключей шаблона совпадает с ключами обеих Zod-схем и с `${VAR}` из `docker-compose.yml`, — и на этом останавливается. Смена дефолта в схеме (`S3_REGION`, `LOG_LEVEL`, `ARGON2_*`, любой порт) шаблон не ломает: он молча начинает описывать поведение, которого больше нет, а копирует его именно владелец инсталляции. **Сделано, когда:** тест сравнивает значение каждой переменной шаблона с дефолтом схемы (там, где дефолт есть) и с дефолтом compose (`${VAR:-…}`), расхождение валит сборку, а осознанные исключения перечислены явным списком с обоснованием каждой строки. *(технический долг EPIC-001, зафиксирован 2026-07-27)*

@@ -1,0 +1,264 @@
+# Bad CRM — the gate every pull request has to pass.
+#
+# The contract with contributors is `rules/ci-before-push.mdc`: one command, the full set, from the
+# repository root. This workflow runs that same command — not a hand-written sequence of package
+# scripts — so that "green locally" and "green on main" cannot mean different things. The
+# assertions in `test/ci/workflow.test.ts` hold the two together: the task list below is compared
+# against the one stated in the rule.
+#
+# No OS matrix on purpose. Bad CRM ships as a Linux container and is installed with
+# `docker compose` (`rules/self-host-packaging.mdc`); a macOS or Windows leg would triple the
+# minutes and the wall clock to test platforms nothing runs on. Node itself is pinned by `.nvmrc`,
+# which is the difference this project actually cares about.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+# Read-only by default. Any job that needs more asks for it explicitly, at the job level.
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  # Superseded pull-request runs are cancelled; pushes to main are not, because the run on a merge
+  # commit is the record that the commit was ever checked.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  # Corepack downloads the pnpm release named by `packageManager` in package.json. The prompt is
+  # interactive-only, but an unset variable has meant a hung runner often enough to be worth a line.
+  COREPACK_ENABLE_DOWNLOAD_PROMPT: '0'
+  # NFR-9: nothing in this project phones home, including its build tools.
+  TURBO_TELEMETRY_DISABLED: '1'
+  DO_NOT_TRACK: '1'
+  # Pinned by version *and* by checksum: the release archive is verified before it is unpacked, so
+  # a replaced asset fails the step instead of running as root on the runner.
+  GITLEAKS_VERSION: '8.30.1'
+  GITLEAKS_SHA256: '551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb'
+
+jobs:
+  checks:
+    name: typecheck, lint, build, test
+    # Pinned image rather than `ubuntu-latest`: a runner image rollover is a change to the build
+    # environment and should arrive as a reviewable commit, not overnight.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Check out the pull request
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          # `.nvmrc` is the single source of the Node version — the same file nvm, the contributor
+          # and `engines` already agree on (`test/repo/toolchain-versions.test.ts`). Repeating the
+          # number here would create a second one, and CI is where the two would diverge silently.
+          node-version-file: .nvmrc
+
+      - name: Activate pnpm through Corepack
+        # The version comes from `packageManager` in package.json, so the runner uses exactly the
+        # pnpm a contributor uses. `pnpm/action-setup` would need that version repeated in an input.
+        run: corepack enable
+
+      - name: Locate the pnpm store
+        id: pnpm-store
+        run: echo "path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
+
+      - name: Restore the pnpm store
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ steps.pnpm-store.outputs.path }}
+          key: ${{ runner.os }}-pnpm-store-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: ${{ runner.os }}-pnpm-store-
+
+      - name: Restore the turbo cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          # Turborepo 2.x keeps its filesystem cache in `.turbo/cache`; the rest of `.turbo` is
+          # logs and daemon state, which must not be restored between runs.
+          #
+          # Remote Cache is deliberately not used: `docs/architecture/stack.md` rules out tying a
+          # public repository to a vendor service. `actions/cache` buys most of it, with limits
+          # worth knowing: a cache entry is immutable, so the key carries the commit SHA and the
+          # prefix in `restore-keys` is what actually restores anything; a pull-request branch can
+          # only read caches written by itself or by its base branch, so the first run of a new
+          # branch warms up from main and a fork PR starts cold; and the repository quota is 10 GB
+          # with least-recently-used eviction, so a busy week can evict an old branch's entry.
+          # Every one of those degrades to a slower run, never to a wrong one — the cache key is
+          # turbo's own content hash, and a miss just re-runs the task.
+          path: .turbo/cache
+          key: ${{ runner.os }}-turbo-${{ github.sha }}
+          restore-keys: ${{ runner.os }}-turbo-
+
+      - name: Install dependencies
+        # A lockfile that does not match package.json fails here instead of being silently
+        # recomputed into a different dependency tree than the one that was reviewed.
+        run: pnpm install --frozen-lockfile
+
+      - name: Run the full check set
+        # The one command of `rules/ci-before-push.mdc`. `errors-only` keeps the log to the output
+        # of tasks that failed; vitest adds its own GitHub annotations for failing specs, so the
+        # names show up in the run without expanding a log.
+        run: pnpm turbo run typecheck lint build test --output-logs=errors-only
+
+      - name: Check coverage against the baseline
+        # `--silent` so that pnpm's own `> bad-crm@0.0.0 …` banner does not land in the summary;
+        # the table is written before the non-zero exit, so a regression is both visible and red.
+        run: pnpm --silent coverage:baseline >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload the coverage reports
+        # `always()`: the run where coverage matters most is the one that failed a threshold, and
+        # the report is what says which lines.
+        if: ${{ always() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: coverage-${{ github.run_id }}
+          path: |
+            coverage/
+            packages/*/coverage/
+          retention-days: 14
+          if-no-files-found: ignore
+
+  scan:
+    name: secrets and cruft
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    # No `needs`: a failing test must not be able to skip the secret scan. The two jobs are
+    # independent gates and both are required by branch protection.
+    steps:
+      - name: Check out the full history
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # The push scan walks every commit, and the pull-request scan needs the base commit to
+          # diff against; neither is present in a shallow clone.
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+
+      - name: Activate pnpm through Corepack
+        run: corepack enable
+
+      - name: Locate the pnpm store
+        id: pnpm-store
+        run: echo "path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
+
+      - name: Restore the pnpm store
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ steps.pnpm-store.outputs.path }}
+          key: ${{ runner.os }}-pnpm-store-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: ${{ runner.os }}-pnpm-store-
+
+      - name: Install dependencies
+        # Only for `tsx`, which runs the cruft scanner. `--ignore-scripts` keeps this job from
+        # executing any package's lifecycle script: it needs a resolver, not a build.
+        run: pnpm install --frozen-lockfile --ignore-scripts
+
+      - name: Install gitleaks
+        # The official action is not used: it requires `GITLEAKS_LICENSE` for repositories owned by
+        # an organisation, and secrets are unavailable to pull requests from forks — the scan would
+        # degrade exactly where an unknown contributor's diff needs it. The released binary has no
+        # such condition, and pinning it by checksum is stronger than pinning an action by tag.
+        run: |
+          set -euo pipefail
+          archive="gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          curl --fail --silent --show-error --location --retry 3 \
+            --output "$RUNNER_TEMP/$archive" \
+            "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/${archive}"
+          echo "${GITLEAKS_SHA256}  $RUNNER_TEMP/$archive" | sha256sum --check --strict -
+          tar -xzf "$RUNNER_TEMP/$archive" -C "$RUNNER_TEMP" gitleaks
+          "$RUNNER_TEMP/gitleaks" version
+
+      - name: Scan for secrets
+        env:
+          # A pull request is scanned as a diff — everything the branch adds on top of its base.
+          # A push to main is scanned as history, so that a secret introduced before this workflow
+          # existed is still found.
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          report="$RUNNER_TEMP/gitleaks-report.json"
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            log_opts="--no-merges ${BASE_SHA}...${HEAD_SHA}"
+          else
+            log_opts="--all"
+          fi
+          # `--redact`: a finding must name the file, the line and the rule, and must never print
+          # the value — a CI log is world-readable on a public repository, and echoing the secret
+          # into it would make the leak worse than the commit did.
+          "$RUNNER_TEMP/gitleaks" git . \
+            --config .gitleaks.toml \
+            --log-opts "$log_opts" \
+            --redact \
+            --no-banner \
+            --report-format json \
+            --report-path "$report" \
+            --exit-code 2 || status=$?
+          # 2 is the code this run asked for on a finding; anything else non-zero is the scanner
+          # itself failing — an unreadable config, a bad range — and must not be reported as a leak.
+          if [ "${status:-0}" -ne 0 ] && [ "${status:-0}" -ne 2 ]; then
+            echo "gitleaks failed to run (exit ${status})" >&2
+            exit 1
+          fi
+          if [ "${status:-0}" -eq 2 ]; then
+            {
+              echo "### Secret scan failed"
+              echo
+              echo "A value matching a secret pattern was found in this change."
+              echo "The value itself is redacted here and in the artifact — read it from your"
+              echo "working copy, not from this log."
+              echo
+              echo "Rotate first, clean the history second: \`docs/runbooks/incident.md\`."
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+
+      - name: Upload the redacted secret-scan report
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: gitleaks-report-${{ github.run_id }}
+          path: ${{ runner.temp }}/gitleaks-report.json
+          retention-days: 7
+          if-no-files-found: ignore
+
+      - name: Scan for cruft
+        # Runs even when the secret scan failed: both findings belong in the same report, and
+        # fixing them is one pass over the diff, not two rounds of CI.
+        if: ${{ !cancelled() }}
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            git diff --no-color "${BASE_SHA}...${HEAD_SHA}" > "$RUNNER_TEMP/diff.patch"
+          elif git rev-parse --verify --quiet "${{ github.event.before }}^{commit}" > /dev/null; then
+            git diff --no-color "${{ github.event.before }}..${{ github.sha }}" > "$RUNNER_TEMP/diff.patch"
+          else
+            # First push of a branch, or a force-push whose predecessor is gone: there is no range
+            # to diff, so the whole commit is the change.
+            git show --no-color --format= "${{ github.sha }}" > "$RUNNER_TEMP/diff.patch"
+          fi
+          set +e
+          pnpm exec tsx scripts/ci/scan-cruft.ts --diff \
+            < "$RUNNER_TEMP/diff.patch" >> "$GITHUB_STEP_SUMMARY"
+          status=$?
+          set -e
+          # 2 — BLOCK level (breakpoint statements, focused specs, conflict markers): does not merge.
+          # 1 — WARN level (task markers, debug prints, development endpoints): visible in the job
+          #     summary for the reviewer, not a reason to stop the pipeline.
+          #
+          # The wording above avoids the literal patterns on purpose: this file is scanned like any
+          # other, and a comment naming them would block the pull request that edits this step.
+          if [ "$status" -ge 2 ]; then exit 1; fi

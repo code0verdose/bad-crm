@@ -1,0 +1,92 @@
+# Dependabot version updates.
+#
+# Story: STORY-002-06. Epic: EPIC-002. Policy: rules/dependencies.mdc §13.
+#
+# Three shapes of noise are managed here on purpose:
+#   * grouping — patch and minor updates arrive as one pull request per group, so a normal
+#     week is three or four pull requests rather than twenty;
+#   * majors stay ungrouped — a major is read against its migration guide and reviewed on
+#     its own (rules/dependencies.mdc §3), which is impossible inside a batch;
+#   * cooldown — a freshly published version is not installed the same day. Most
+#     compromised npm releases are yanked within days, and rules/dependencies.mdc §6 puts
+#     malware above freshness.
+#
+# Dependabot pull requests run the full CI, including the licence and audit gates, and are
+# never merged automatically.
+version: 2
+
+updates:
+  # ── npm / pnpm workspaces ────────────────────────────────────────────────────────────
+  # One entry at the root: pnpm-lock.yaml is a single workspace-wide lockfile, and
+  # Dependabot resolves `packages/*` manifests through it. Per-package entries would
+  # produce conflicting updates of the same lockfile.
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: '05:00'
+      timezone: Etc/UTC
+    open-pull-requests-limit: 5
+    cooldown:
+      semver-patch-days: 3
+      semver-minor-days: 5
+      semver-major-days: 7
+    commit-message:
+      # `deps` is the only dependency scope allowed by commitlint.config.js; the default
+      # `include: scope` would emit `deps-dev`, which the scope-enum rejects.
+      prefix: chore(deps)
+      prefix-development: chore(deps)
+    groups:
+      dev:
+        dependency-type: development
+        update-types: [minor, patch]
+      prod-patch:
+        dependency-type: production
+        update-types: [patch]
+      prod-minor:
+        dependency-type: production
+        update-types: [minor]
+
+  # ── GitHub Actions ───────────────────────────────────────────────────────────────────
+  # Every action in this repository is pinned to a commit SHA with the tag in a comment.
+  # Dependabot moves the SHA and rewrites the comment, which is exactly why pinning by SHA
+  # does not have to mean going stale.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: '05:30'
+      timezone: Etc/UTC
+    open-pull-requests-limit: 3
+    cooldown:
+      default-days: 5
+    commit-message:
+      prefix: ci(deps)
+    groups:
+      github-actions:
+        patterns: ['*']
+        update-types: [minor, patch]
+
+  # ── Docker images in docker-compose.yml ──────────────────────────────────────────────
+  # The compose file is part of the distribution, not a developer convenience: the tags
+  # here are what every installation pulls. Majors stay ungrouped — for Redis a major is a
+  # licensing question first and an upgrade second (docs/legal/licensing.md §4: only the
+  # 8.x line offers an AGPLv3 branch, 7.4 is RSALv2/SSPLv1 and forbidden).
+  - package-ecosystem: docker-compose
+    directory: /
+    schedule:
+      interval: weekly
+      day: tuesday
+      time: '05:00'
+      timezone: Etc/UTC
+    open-pull-requests-limit: 3
+    cooldown:
+      default-days: 5
+    commit-message:
+      prefix: build(docker)
+    groups:
+      docker-images:
+        patterns: ['*']
+        update-types: [minor, patch]

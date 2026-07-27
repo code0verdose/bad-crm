@@ -1,0 +1,62 @@
+# Dependency review on the pull-request delta.
+#
+# Story: STORY-002-05. Epic: EPIC-002.
+#
+# This is the *first* of two independent barriers and it only sees what the pull request
+# adds or bumps. The second barrier — an allow-list over the whole installed tree, where
+# an unknown licence counts as forbidden — is `license-check.yml`. Deliberately different
+# mechanisms: a deny-list here, an allow-list there, so a gap in one is not a gap in both.
+#
+# Requires the dependency graph to be enabled for the repository (Settings → Code security).
+# On a private repository the action additionally needs GitHub Advanced Security.
+name: Dependency review
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: dependency-review-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  dependency-review:
+    name: Review dependency changes
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    # No `pull-requests: write`: the action writes its report to the job summary, and a
+    # PR comment would need a token that fork pull requests are not given anyway.
+    permissions:
+      contents: read
+
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Nothing here pushes: the checkout must not leave a usable token in `.git/config`.
+          persist-credentials: false
+
+      - name: Review dependency changes
+        uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
+        with:
+          # `high` matches the project gate ("no High/Critical findings") and the audit
+          # threshold in `license-check.yml`. Blocking at `moderate` would mean blocking
+          # on the steady background noise of dev-only ReDoS advisories, and a gate that
+          # is red by default is a gate that gets bypassed by default.
+          fail-on-severity: high
+          # The default scope is `runtime` only. Build tooling runs on the machines of
+          # every contributor and on the CI runner that holds the release credentials, so
+          # a compromised dev dependency is not a lesser problem here.
+          fail-on-scopes: runtime, development
+          # Known and accepted, with the reasoning and the review date in the dated
+          # exception in `license-check.yml`: brace-expansion 1.x ReDoS via
+          # eslint > minimatch@3, dev-only, no 1.x backport exists. Re-review 2026-10-27.
+          allow-ghsas: GHSA-mh99-v99m-4gvg
+          # SPDX identifiers of the licences forbidden by rules/dependencies.mdc §10 and
+          # docs/legal/licensing.md §3. Commons Clause and "source-available" wording have
+          # no SPDX identifier and cannot be listed here — they are caught by the
+          # allow-list in `license-check.yml`, which treats anything unlisted as forbidden.
+          deny-licenses: GPL-2.0-only, SSPL-1.0, BUSL-1.1, Elastic-2.0

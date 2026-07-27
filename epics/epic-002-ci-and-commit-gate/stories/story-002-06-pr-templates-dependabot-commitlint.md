@@ -1,7 +1,7 @@
 ---
 id: STORY-002-06
 epic: EPIC-002
-status: backlog
+status: in-progress
 blocked: false
 priority: should
 estimate: S
@@ -26,12 +26,12 @@ estimate: S
 ## Задачи
 
 - [ ] Написать тест `test/ci/templates.test.ts`: проверяет наличие и структуру `.github/pull_request_template.md`, `.github/ISSUE_TEMPLATE/*.yml`, `.github/dependabot.yml` (наличие групп и расписаний).
-- [ ] Создать `.github/pull_request_template.md` по описанной структуре.
-- [ ] Создать `.github/ISSUE_TEMPLATE/bug_report.yml` и `feature_request.yml` (форматы форм GitHub), а также `config.yml` с ссылкой на документацию.
-- [ ] Создать `.github/dependabot.yml`: экосистемы `npm` (еженедельно, группы `dev`/`prod-patch`/`prod-minor`), `github-actions`, `docker`; лимит открытых PR.
-- [ ] Добавить в CI job `commit-lint`: проверка заголовка PR и всех коммитов ветки через `commitlint --from origin/main`.
-- [ ] Добавить проверку «PR ссылается на историю» с возможностью явного исключения `no-story:` и обоснованием.
-- [ ] Описать в `docs/runbooks/contributing.md` порядок: ветка → коммиты → PR → гейт → мерж, включая политику атрибуции коммитов.
+- [x] Создать `.github/pull_request_template.md` по описанной структуре.
+- [x] Создать `.github/ISSUE_TEMPLATE/bug_report.yml` и `feature_request.yml` (форматы форм GitHub), а также `config.yml` с ссылкой на документацию.
+- [x] Создать `.github/dependabot.yml`: экосистемы `npm` (еженедельно, группы `dev`/`prod-patch`/`prod-minor`), `github-actions`, `docker-compose`; лимит открытых PR.
+- [x] Добавить в CI job `commit-lint`: проверка заголовка PR и всех коммитов ветки через `commitlint --from origin/main` (реализовано как `.github/workflows/pr-conventions.yml`, диапазон `base.sha..head.sha`).
+- [x] Добавить проверку «PR ссылается на историю» с возможностью явного исключения `no-story:` и обоснованием.
+- [x] Описать порядок: ветка → коммиты → PR → гейт → мерж, включая политику атрибуции коммитов — в `CONTRIBUTING.md` §11 «From branch to merge» (и в русской секции), а не отдельным файлом: дублировать существующий CONTRIBUTING.md нечем.
 
 ## Definition of Done
 

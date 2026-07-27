@@ -1,7 +1,7 @@
 ---
 id: EPIC-002
 title: CI и commit-гейт
-status: backlog
+status: in-progress
 blocked: false
 milestone: M1
 owner: unassigned

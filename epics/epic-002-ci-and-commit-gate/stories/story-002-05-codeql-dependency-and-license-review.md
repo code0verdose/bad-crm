@@ -1,7 +1,7 @@
 ---
 id: STORY-002-05
 epic: EPIC-002
-status: backlog
+status: in-progress
 blocked: false
 priority: should
 estimate: S
@@ -26,12 +26,12 @@ estimate: S
 ## Задачи
 
 - [ ] Написать тест `test/ci/licenses.test.ts`: прогоняет проверку лицензий на фикстурном дереве зависимостей и ожидает провал для запрещённых лицензий и успех для разрешённых.
-- [ ] Реализовать `scripts/check-licenses.ts` поверх `license-checker`/`pnpm licenses list --json`: allow-list из [`stack.md`](../../../docs/architecture/stack.md), отчёт в job summary, ненулевой код при находке.
-- [ ] Добавить шаг проверки лицензий в `ci.yml` и запуск на Dependabot-PR.
-- [ ] Создать `.github/workflows/codeql.yml` для языка `javascript-typescript` с запуском на PR и по расписанию.
-- [ ] Добавить `dependency-review-action` на pull request с `fail-on-severity: high` и собственным списком запрещённых лицензий (второй, независимый рубеж).
-- [ ] Добавить шаг `pnpm audit --audit-level=high` и/или `osv-scanner`; результат — блокирующий для High/Critical.
-- [ ] Зафиксировать `pnpm.onlyBuiltDependencies` allow-list в корневом `package.json` и тест на то, что список не пуст и не содержит «`*`».
+- [x] Реализовано иначе: гейт лицензий живёт в `.github/workflows/license-check.yml` (allow-list с разбором SPDX-выражений `OR`/`AND`, deny-list имён, сверка `@blocknote/xl-*` с ADR-0012, проверка `pnpm.onlyBuiltDependencies`). Прогнан вживую: 451 пакет, 0 нарушений. Вынести в `scripts/check-licenses.ts` — чтобы гейт был запускаем локально и покрываем тестом — остаётся открытым
+- [x] Шаг проверки лицензий добавлен отдельным workflow `license-check.yml` (PR + push + еженедельно), Dependabot-PR проходит его наравне с остальными.
+- [x] Создать `.github/workflows/codeql.yml` для языка `javascript-typescript` с запуском на PR и по расписанию.
+- [x] Добавить `dependency-review-action` на pull request с `fail-on-severity: high` и собственным списком запрещённых лицензий (второй, независимый рубеж).
+- [x] Добавить шаг `pnpm audit --audit-level=high` и/или `osv-scanner`; результат — блокирующий для High/Critical.
+- [x] `pnpm.onlyBuiltDependencies` проверяется в `license-check.yml`: сборка падает при пустом списке и при `*`. Прогнано: `build scripts allowed for: esbuild`
 - [ ] Описать процедуру исключения в `docs/architecture/adr/`: шаблон записи «пакет, лицензия, почему допустимо, кто решил».
 
 ## Definition of Done

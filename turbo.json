@@ -107,6 +107,24 @@
         // `test/repo/service-checks.test.ts` and `test/repo/preflight.test.ts` import the preflight
         // check modules directly, so the scripts are code under test here, not tooling beside it.
         "scripts/**",
+        // `test/ci/workflow.test.ts` reads both and asserts one against the other: the task list
+        // CI runs has to be the task list `rules/ci-before-push.mdc` demands before a push. Omit
+        // either and a workflow edited to drop `test` — or a rule that grew a task CI never
+        // learned about — is served from cache as a pass.
+        ".github/workflows/ci.yml",
+        "rules/ci-before-push.mdc",
+        // `test/ci/cruft-scan.test.ts` asserts that `.cruftignore` still exempts the scanner's own
+        // source — an exemption removed there blocks every pull request that touches the scanner,
+        // and the suite must not report that from cache. `coverage-baseline.json` is the committed
+        // side of the coverage gate: lowering a number in it is exactly the edit that has to
+        // invalidate the suite that reads it.
+        ".cruftignore",
+        "coverage-baseline.json",
+        // `test/ci/gitleaks-config.test.ts` holds the secret-scanner config to what was measured of
+        // it: a `paths` key in an allowlist silently excludes a whole file from the scan. A cached
+        // pass over a reintroduced `paths` line is a scanner that stopped looking at the suites
+        // about secret handling.
+        ".gitleaks.toml",
         // The task command is `tsc -p tsconfig.scripts.json && vitest run`. The runtime read
         // registry only sees what vitest reads — never what the first half of the command line
         // reads — so a project file named on the command line has to be listed by hand.

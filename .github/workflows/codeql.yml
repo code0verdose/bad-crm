@@ -1,0 +1,75 @@
+# CodeQL static analysis for the TypeScript/JavaScript sources.
+#
+# Story: STORY-002-05. Epic: EPIC-002.
+#
+# Scope is deliberately narrow. `packages/**` and `scripts/**` are the code that ships or
+# runs; `test/lint/fixtures/**` is deliberately broken code that exists to prove ESLint
+# rules fire, so every finding there would be a false positive by construction.
+#
+# Severity gating is a repository setting, not a workflow input: Settings → Code security →
+# "Code scanning results" → check failure severity. Set it to `error` (plus security
+# severity `high`) so that `note`/`low` alerts stay informational, as the story requires,
+# and add "CodeQL" to the required status checks in branch protection.
+name: CodeQL
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  schedule:
+    # Weekly: a dependency or a query-suite update can turn today's clean tree into
+    # tomorrow's alert without anyone touching the code.
+    - cron: '31 4 * * 1'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: codeql-${{ github.ref }}
+  # Never cancel a run whose result is published to the security tab for `main`.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  analyze:
+    name: Analyze javascript-typescript
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      security-events: write
+      # The action reads the status of other runs of the same workflow.
+      actions: read
+
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Nothing here pushes: the checkout must not leave a usable token in `.git/config`.
+          persist-credentials: false
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@e4fba868fa4b1b91e1fdab776edc8cfbe6e9fb81 # v4.37.3
+        with:
+          languages: javascript-typescript
+          # No compilation step: the analyzer reads the sources directly, so CI does not
+          # depend on `pnpm build` succeeding for the security scan to run.
+          build-mode: none
+          # The default `security` suite only. `security-extended` trades precision for
+          # recall, and a gate that cries wolf gets waved through — EPIC-002 lists false
+          # positives as an explicit risk.
+          config: |
+            paths:
+              - packages
+              - scripts
+            paths-ignore:
+              # Redundant while `paths` excludes `test/**`, and kept on purpose: the day
+              # someone adds the test suite to `paths`, the fixtures must not come with it.
+              - test/lint/fixtures
+              - '**/dist'
+              - '**/node_modules'
+
+      - name: Perform CodeQL analysis
+        uses: github/codeql-action/analyze@e4fba868fa4b1b91e1fdab776edc8cfbe6e9fb81 # v4.37.3
+        with:
+          category: /language:javascript-typescript

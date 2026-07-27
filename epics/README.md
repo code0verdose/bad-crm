@@ -5,7 +5,7 @@
 | ID | Эпик | Статус | Milestone | Истории (done/всего) |
 |----|------|--------|-----------|----------------------|
 | EPIC-001 | Монорепо и dev-окружение | 🔵 review | M1 | 4/7 |
-| EPIC-002 | CI и commit-гейт | ⚫ backlog | M1 | 0/6 |
+| EPIC-002 | CI и commit-гейт | 🟡 in-progress | M1 | 0/6 |
 | EPIC-003 | Скелет сервера и контракт API | ⚫ backlog | M1 | 0/7 |
 | EPIC-004 | Каркас клиента на FSD | ⚫ backlog | M1 | 0/7 |
 | EPIC-005 | Мультиарендность и Row Level Security | ⚫ backlog | M1 | 0/6 |

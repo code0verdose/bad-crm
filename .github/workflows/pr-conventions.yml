@@ -1,0 +1,119 @@
+# Conventional Commits and pull-request metadata.
+#
+# Story: STORY-002-06. Epic: EPIC-002.
+#
+# The `commit-msg` hook already runs commitlint locally, but a hook is advisory: `--no-verify`
+# exists, and a fresh clone has no hooks until `pnpm install` has run once. This workflow is
+# the copy that cannot be skipped, and it checks **every** commit of the branch, not just the
+# last one — a rebase or a squash-merge of a branch whose middle commits are malformed is
+# exactly the case the local hook never sees.
+name: Pull request conventions
+
+on:
+  pull_request:
+    branches: [main]
+    # `edited` matters: the title and the body are what two of these checks read, and both
+    # can change after the pull request is opened.
+    types: [opened, edited, reopened, synchronize]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pr-conventions-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  conventions:
+    name: Commits, title and story reference
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Every commit between base and head has to exist locally for commitlint to read it.
+          fetch-depth: 0
+          # Nothing here pushes: the checkout must not leave a usable token in `.git/config`.
+          persist-credentials: false
+
+      - name: Set up Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          # `.nvmrc` is the single source of the Node version, as in `ci.yml`.
+          node-version-file: .nvmrc
+
+      - name: Activate pnpm through Corepack
+        # Same idiom as `ci.yml`: the version comes from `packageManager` in package.json, so
+        # the runner uses exactly the pnpm a contributor uses, and no third-party action is
+        # added to the supply chain of a workflow whose whole job is supply-chain checking.
+        run: corepack enable
+
+      - name: Locate the pnpm store
+        id: pnpm-store
+        run: echo "path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
+
+      - name: Restore the pnpm store
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ steps.pnpm-store.outputs.path }}
+          key: ${{ runner.os }}-pnpm-store-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: ${{ runner.os }}-pnpm-store-
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile --ignore-scripts
+
+      # Dependabot writes its own commit messages: the prefix is configured in
+      # `.github/dependabot.yml`, but "bump @typescript-eslint/eslint-plugin from 8.65.0 to
+      # 8.66.0" is longer than the 50-character subject limit and nothing can shorten it. The
+      # job still runs and still reports success, so it stays usable as a required check.
+      - name: Lint every commit of the branch
+        if: github.event.pull_request.user.login != 'dependabot[bot]'
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: pnpm exec commitlint --from "$BASE_SHA" --to "$HEAD_SHA" --verbose
+
+      - name: Lint the pull-request title
+        # The title becomes the commit message on a squash merge, so it obeys the same rules.
+        # Passed through the environment, never interpolated into the shell: a title is
+        # attacker-controlled text.
+        if: github.event.pull_request.user.login != 'dependabot[bot]'
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+        run: printf '%s\n' "$PR_TITLE" | pnpm exec commitlint --verbose
+
+      - name: Check the pull request references a story
+        # "No code without an active epic and story" (rules/epic-driven-development.mdc). The
+        # escape hatch is deliberate and visible: `no-story:` plus a reason a reviewer can weigh.
+        if: github.event.pull_request.user.login != 'dependabot[bot]'
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: |
+          node --input-type=module -e '
+            // HTML comments are stripped first: the pull-request template carries an example
+            // story id and an example waiver inside comments, and a body where the author
+            // deleted neither would otherwise satisfy this check by quoting the instructions.
+            const body = (process.env.PR_BODY ?? "").replace(/<!--[\s\S]*?-->/g, "");
+            const story = body.match(/\bSTORY-\d{3}-\d{2}\b/);
+            const waiver = body.match(/^\s*no-story:\s*(\S.*)$/mi);
+
+            if (story !== null) {
+              console.log(`references ${story[0]}`);
+              process.exit(0);
+            }
+            if (waiver !== null) {
+              console.log(`no story, reason given: ${waiver[1].trim()}`);
+              process.exit(0);
+            }
+
+            console.error(
+              "the pull request description must reference a story as STORY-NNN-NN," +
+                " or state `no-story: <reason>` on its own line." +
+                " Stories live in epics/epic-NNN-<slug>/stories/ (CONTRIBUTING.md section 7)."
+            );
+            process.exit(1);
+          '

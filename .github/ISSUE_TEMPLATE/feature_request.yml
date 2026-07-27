@@ -1,0 +1,101 @@
+name: Feature request or proposal
+description: Propose a capability, a change of behaviour, or a different approach
+title: '[Proposal]: '
+labels: [enhancement, needs-triage]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Scope is a decision, not a backlog. Before writing, check `docs/product/prd.md` — the
+        MoSCoW scope and the explicit "Won't" list — and `docs/product/roadmap.md`. A proposal
+        that argues with a recorded decision is welcome; one that has not read it is not.
+
+        Architectural decisions live in `docs/architecture/adr/`. To change one, argue against
+        the ADR, not around it.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem
+      description: |
+        Whose problem, in what situation, and what it costs today. Not the solution yet.
+      placeholder: 'As a team lead reviewing timesheets, I cannot ... so every Friday I ...'
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposal
+      description: What should happen instead, described from the user's side.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: What else would solve the same problem, and why this one is better.
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - install / upgrade / self-hosting
+        - authentication and sessions
+        - permissions and roles
+        - projects, tasks, boards
+        - documents and knowledge base
+        - files and uploads
+        - chat and realtime
+        - time tracking and timesheets
+        - dashboards and reports
+        - vault, secure links, crypto
+        - AI assistant
+        - search
+        - notifications and email
+        - internationalisation (EN/RU)
+        - accessibility
+        - developer experience / CI
+        - other / unsure
+    validations:
+      required: true
+
+  - type: textarea
+    id: scope-impact
+    attributes:
+      label: Impact on scope
+      description: |
+        How this sits against `docs/product/prd.md`: does it fit the current milestone, does it
+        belong to a later one, or does it contradict something on the "Won't" list? If it
+        contradicts, say what changed since that decision was made.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: profile-impact
+    attributes:
+      label: Effect on the minimal installation
+      description: |
+        The product must stay installable with `docker compose up` on one host. A proposal that
+        needs a new service has to say so.
+      options:
+        - works with the existing services
+        - needs a new optional service (degrades gracefully without it)
+        - needs a new required service
+        - unsure
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: acknowledgements
+    attributes:
+      label: Before submitting
+      options:
+        - label: I searched existing issues and this is not a duplicate.
+          required: true
+        - label: I read the scope and the "Won't" list in `docs/product/prd.md`.
+          required: true
+        - label: I understand that contributions are accepted under AGPL-3.0-or-later with a DCO sign-off.
+          required: true

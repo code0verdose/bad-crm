@@ -1,0 +1,431 @@
+# Licence allow-list and vulnerability audit over the whole installed tree.
+#
+# Story: STORY-002-05. Epic: EPIC-002.
+#
+# `dependency-review.yml` only sees the delta of a pull request. This workflow answers a
+# different question: is the tree that is actually installed today legally distributable
+# under AGPL-3.0, and free of known high/critical advisories. Hence the weekly schedule —
+# an advisory can be published without anybody touching the code.
+#
+# Sources of truth, in this order:
+#   rules/dependencies.mdc      §8 allow-list, §10 forbidden, §11 fixed decisions
+#   docs/legal/licensing.md     §3 compatibility policy, §4 settled library decisions
+# Neither list is duplicated here by choice: this workflow enforces them, and an addition
+# needs an ADR (docs/legal/licensing.md §3), not a workflow edit.
+name: License check
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  schedule:
+    - cron: '17 5 * * 1'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: license-check-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  licenses:
+    name: Licences of the installed tree
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Nothing here pushes: the checkout must not leave a usable token in `.git/config`.
+          persist-credentials: false
+
+      - name: Set up Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          # `.nvmrc` is the single source of the Node version, as in `ci.yml`.
+          node-version-file: .nvmrc
+
+      - name: Activate pnpm through Corepack
+        # Same idiom as `ci.yml`: the version comes from `packageManager` in package.json, so
+        # the runner uses exactly the pnpm a contributor uses, and no third-party action is
+        # added to the supply chain of a workflow whose whole job is supply-chain checking.
+        run: corepack enable
+
+      - name: Locate the pnpm store
+        id: pnpm-store
+        run: echo "path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
+
+      - name: Restore the pnpm store
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ steps.pnpm-store.outputs.path }}
+          key: ${{ runner.os }}-pnpm-store-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: ${{ runner.os }}-pnpm-store-
+
+      - name: Install dependencies
+        # No `--ignore-scripts`: the point is to see pnpm refuse the install scripts of
+        # packages missing from `pnpm.onlyBuiltDependencies`, and that refusal is only
+        # printed by a real install.
+        run: pnpm install --frozen-lockfile 2>&1 | tee "$RUNNER_TEMP/install.log"
+
+      - name: Report ignored build scripts
+        run: |
+          {
+            echo '## Install scripts'
+            echo
+            if grep -q 'Ignored build scripts' "$RUNNER_TEMP/install.log"; then
+              echo 'pnpm refused these install scripts (not in `pnpm.onlyBuiltDependencies`):'
+              echo
+              echo '```'
+              grep -A2 'Ignored build scripts' "$RUNNER_TEMP/install.log"
+              echo '```'
+            else
+              echo 'pnpm reported no ignored build scripts for this install.'
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Check the build-script allow-list
+        # A wildcard or an empty allow-list would silently re-enable every `postinstall`
+        # in the tree, which is the supply-chain hole `onlyBuiltDependencies` exists to
+        # close (rules/dependencies.mdc §7).
+        run: |
+          node --input-type=module -e '
+            import { readFileSync } from "node:fs";
+            const allowed = JSON.parse(readFileSync("package.json", "utf8")).pnpm?.onlyBuiltDependencies;
+            if (!Array.isArray(allowed) || allowed.length === 0) {
+              console.error("pnpm.onlyBuiltDependencies must be a non-empty allow-list (rules/dependencies.mdc §7)");
+              process.exit(1);
+            }
+            if (allowed.includes("*")) {
+              console.error("pnpm.onlyBuiltDependencies must not contain \"*\" — that is not an allow-list");
+              process.exit(1);
+            }
+            console.log(`build scripts allowed for: ${allowed.join(", ")}`);
+          '
+
+      - name: Check licences against the allow-list
+        run: |
+          cat > "$RUNNER_TEMP/license-gate.mjs" <<'NODE'
+          // Input: `pnpm licenses list --json` on stdin, run from the repository root.
+          // Anything not on the allow-list — including an unknown or missing licence —
+          // is a failure, not a warning (docs/legal/licensing.md §3, last row).
+          import { readFileSync, appendFileSync } from 'node:fs';
+
+          const ALLOWED_LICENSES = new Set([
+            '0BSD',
+            'Apache-2.0',
+            'BSD-2-Clause',
+            'BSD-3-Clause',
+            'BlueOak-1.0.0',
+            'CC-BY-4.0',
+            'CC0-1.0',
+            'ISC',
+            'MIT',
+            'MPL-2.0',
+            'Python-2.0',
+            'Unlicense',
+          ]);
+
+          // Names, not licences: packages whose per-file licence may look fine but whose
+          // redistribution inside an AGPL repository is settled as forbidden
+          // (rules/dependencies.mdc §11, docs/legal/licensing.md §4).
+          // An entry ending in `/` matches a whole scope.
+          const FORBIDDEN_PACKAGES = [
+            ['elasticsearch', 'SSPL / Elastic-2.0 — Meilisearch is the decision (ADR-0011)'],
+            ['@elastic/elasticsearch', 'SSPL / Elastic-2.0 — Meilisearch is the decision (ADR-0011)'],
+            ['@schedule-x/event-modal', 'Schedule-X premium — per-project commercial licence'],
+            ['@schedule-x/drag-to-create', 'Schedule-X premium — per-project commercial licence'],
+            ['@schedule-x/draw', 'Schedule-X premium — per-project commercial licence'],
+            ['@schedule-x/resource-view', 'Schedule-X premium — per-project commercial licence'],
+            ['@schedule-x/sidebar', 'Schedule-X premium — per-project commercial licence'],
+            ['@fullcalendar/', 'FullCalendar rejected: the views we need are premium-only'],
+            ['ag-grid-enterprise', 'commercial data grid — TanStack Table v8 is the decision'],
+            ['@ag-grid-enterprise/', 'commercial data grid — TanStack Table v8 is the decision'],
+            ['@mui/x-data-grid-pro', 'commercial data grid — TanStack Table v8 is the decision'],
+            ['@mui/x-data-grid-premium', 'commercial data grid — TanStack Table v8 is the decision'],
+            ['handsontable', 'commercial data grid — TanStack Table v8 is the decision'],
+          ];
+
+          const WORKSPACE_MANIFESTS = [
+            'package.json',
+            'packages/client/package.json',
+            'packages/e2e/package.json',
+            'packages/server/package.json',
+            'packages/shared/package.json',
+          ];
+
+          const ADR_0012 = 'docs/architecture/adr/0012-docs-editor-blocknote-json-content.md';
+
+          const isAllowedExpression = (expression) => {
+            const normalized = String(expression).trim().replace(/^\((.*)\)$/s, '$1').trim();
+
+            if (ALLOWED_LICENSES.has(normalized)) return true;
+            if (/\sOR\s/.test(normalized)) return normalized.split(/\s+OR\s+/).some(isAllowedExpression);
+            if (/\sAND\s/.test(normalized)) return normalized.split(/\s+AND\s+/).every(isAllowedExpression);
+
+            return false;
+          };
+
+          const readStdin = async () => {
+            const chunks = [];
+            for await (const chunk of process.stdin) chunks.push(chunk);
+            return Buffer.concat(chunks).toString('utf8');
+          };
+
+          const matchesForbidden = (name, pattern) =>
+            pattern.endsWith('/') ? name.startsWith(pattern) : name === pattern;
+
+          const grouped = JSON.parse(await readStdin());
+          const violations = [];
+          const counts = [];
+          let packageCount = 0;
+
+          for (const [license, packages] of Object.entries(grouped)) {
+            counts.push([license, packages.length]);
+            packageCount += packages.length;
+
+            for (const pkg of packages) {
+              const version = (pkg.versions ?? []).join(', ');
+
+              if (!isAllowedExpression(license)) {
+                violations.push(
+                  `licence not on the allow-list: ${pkg.name}@${version} — ${license}` +
+                    ' (rules/dependencies.mdc §8; unknown counts as forbidden)',
+                );
+              }
+
+              for (const [pattern, reason] of FORBIDDEN_PACKAGES) {
+                if (matchesForbidden(pkg.name, pattern)) {
+                  violations.push(`forbidden package: ${pkg.name}@${version} — ${reason}`);
+                }
+              }
+
+              if (pkg.name.startsWith('@blocknote/xl-')) {
+                const adr = readFileSync(ADR_0012, 'utf8');
+                if (!adr.includes(pkg.name)) {
+                  violations.push(
+                    `${pkg.name}@${version} is dual-licensed GPL-3.0 / commercial and is missing` +
+                      ` from the table in ${ADR_0012} (docs/legal/licensing.md §4)`,
+                  );
+                }
+              }
+            }
+          }
+
+          for (const manifest of WORKSPACE_MANIFESTS) {
+            const { license } = JSON.parse(readFileSync(manifest, 'utf8'));
+            if (license !== 'AGPL-3.0-or-later') {
+              violations.push(`${manifest}: license is "${license}", expected "AGPL-3.0-or-later"`);
+            }
+          }
+
+          counts.sort((a, b) => b[1] - a[1]);
+
+          const summary = [
+            '## License check',
+            '',
+            `Packages in the installed tree: **${packageCount}**`,
+            '',
+            '| Licence | Packages | Allowed |',
+            '|---|---:|---|',
+            ...counts.map(
+              ([license, count]) =>
+                `| \`${license}\` | ${count} | ${isAllowedExpression(license) ? 'yes' : '**NO**'} |`,
+            ),
+            '',
+            violations.length === 0
+              ? 'No violations. Allow-list: `rules/dependencies.mdc` §8.'
+              : `### Violations (${violations.length})\n\n${violations.map((v) => `- ${v}`).join('\n')}`,
+            '',
+          ].join('\n');
+
+          console.log(summary);
+
+          if (process.env.GITHUB_STEP_SUMMARY) {
+            appendFileSync(process.env.GITHUB_STEP_SUMMARY, `${summary}\n`);
+          }
+
+          if (violations.length > 0) {
+            console.error(
+              `\nlicense check failed: ${violations.length} violation(s).` +
+                ' Allowed licences and the exception procedure: rules/dependencies.mdc §8-§12,' +
+                ' docs/legal/licensing.md §3. An exception needs an ADR, not a workflow edit.',
+            );
+            process.exit(1);
+          }
+          NODE
+          pnpm licenses list --json | node "$RUNNER_TEMP/license-gate.mjs"
+
+  audit:
+    name: Known vulnerabilities
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Nothing here pushes: the checkout must not leave a usable token in `.git/config`.
+          persist-credentials: false
+
+      - name: Set up Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          # `.nvmrc` is the single source of the Node version, as in `ci.yml`.
+          node-version-file: .nvmrc
+
+      - name: Activate pnpm through Corepack
+        # Same idiom as `ci.yml`: the version comes from `packageManager` in package.json, so
+        # the runner uses exactly the pnpm a contributor uses, and no third-party action is
+        # added to the supply chain of a workflow whose whole job is supply-chain checking.
+        run: corepack enable
+
+      - name: Locate the pnpm store
+        id: pnpm-store
+        run: echo "path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
+
+      - name: Restore the pnpm store
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ steps.pnpm-store.outputs.path }}
+          key: ${{ runner.os }}-pnpm-store-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: ${{ runner.os }}-pnpm-store-
+
+      - name: Install dependencies
+        # `--ignore-scripts` here: this job only needs the resolved tree, never a build.
+        run: pnpm install --frozen-lockfile --ignore-scripts
+
+      - name: Audit dependencies
+        run: |
+          cat > "$RUNNER_TEMP/audit-gate.mjs" <<'NODE'
+          // Input: `pnpm audit --json` on stdin. High and critical block the build.
+          //
+          // Exceptions are dated, scoped and self-expiring. An exception that has expired,
+          // that no longer matches any advisory, or that matches a dependency path it was
+          // not granted for is itself a failure — a stale ignore is how an audit gate
+          // quietly stops being one (EPIC-002: "an explicit, versioned exception file with
+          // a justification on every line").
+          import { appendFileSync } from 'node:fs';
+
+          const EXCEPTIONS = [
+            {
+              ghsa: 'GHSA-mh99-v99m-4gvg',
+              module: 'brace-expansion',
+              // Every dependency path this exception covers. A new path fails the gate.
+              paths: ['.>eslint>minimatch>brace-expansion'],
+              expires: '2026-10-27',
+              reason:
+                'CVE-2026-14257 (High, CVSS 7.5) in brace-expansion 1.x: unbounded expansion ' +
+                'exhausts memory and kills the process — an OOM crash that try/catch cannot ' +
+                'intercept, not a ReDoS. Patched in 5.0.8, and 5.0.8 is already in this ' +
+                'lockfile for other consumers; the vulnerable 1.1.16 arrives only through ' +
+                'eslint > minimatch@3, and upstream ships no 1.x backport, so the fix cannot ' +
+                'be pulled onto this path without forcing a major of minimatch under eslint. ' +
+                'Dev-only: eslint is not in the distributed image, and the only patterns it ' +
+                'expands come from eslint.config.js in this repository, so the untrusted input ' +
+                'the advisory needs does not exist here. Re-review when eslint drops ' +
+                'minimatch@3 — not by extending this date.',
+            },
+          ];
+
+          const BLOCKING = new Set(['high', 'critical']);
+
+          const readStdin = async () => {
+            const chunks = [];
+            for await (const chunk of process.stdin) chunks.push(chunk);
+            return Buffer.concat(chunks).toString('utf8');
+          };
+
+          const raw = (await readStdin()).trim();
+          // `pnpm audit --json` prints nothing when the registry reports no advisories.
+          const report = raw === '' ? { advisories: {} } : JSON.parse(raw);
+          const advisories = Object.values(report.advisories ?? {});
+
+          const today = new Date().toISOString().slice(0, 10);
+          const blocking = [];
+          const excused = [];
+          const usedExceptions = new Set();
+
+          for (const advisory of advisories) {
+            if (!BLOCKING.has(advisory.severity)) continue;
+
+            const ghsa = advisory.github_advisory_id;
+            const paths = (advisory.findings ?? []).flatMap((finding) => finding.paths ?? []);
+            const label = `${advisory.module_name} — ${ghsa} (${advisory.severity})`;
+            const exception = EXCEPTIONS.find((e) => e.ghsa === ghsa && e.module === advisory.module_name);
+
+            if (exception === undefined) {
+              blocking.push(
+                `${label}\n    paths: ${paths.join(', ')}\n    fixed in: ${advisory.patched_versions}`,
+              );
+              continue;
+            }
+
+            usedExceptions.add(exception.ghsa);
+
+            if (exception.expires < today) {
+              blocking.push(
+                `${label}\n    exception expired on ${exception.expires} — re-review it, do not extend it blindly`,
+              );
+              continue;
+            }
+
+            const unexpected = paths.filter((path) => !exception.paths.includes(path));
+            if (unexpected.length > 0) {
+              blocking.push(
+                `${label}\n    exception covers only ${exception.paths.join(', ')}; new path(s): ${unexpected.join(', ')}`,
+              );
+              continue;
+            }
+
+            excused.push(`${label} — excused until ${exception.expires}: ${exception.reason}`);
+          }
+
+          for (const exception of EXCEPTIONS) {
+            if (!usedExceptions.has(exception.ghsa)) {
+              blocking.push(
+                `stale exception: ${exception.ghsa} (${exception.module}) no longer matches any advisory — remove it`,
+              );
+            }
+          }
+
+          const counts = report.metadata?.vulnerabilities ?? {};
+          const summary = [
+            '## Dependency audit',
+            '',
+            `Advisories by severity: ${Object.entries(counts).map(([k, v]) => `${k} ${v}`).join(', ') || 'none'}`,
+            '',
+            excused.length > 0
+              ? `### Excused (dated exceptions)\n\n${excused.map((e) => `- ${e}`).join('\n')}\n`
+              : '',
+            blocking.length > 0
+              ? `### Blocking (${blocking.length})\n\n${blocking.map((b) => `- ${b}`).join('\n')}`
+              : 'No blocking high or critical advisories.',
+            '',
+          ].join('\n');
+
+          console.log(summary);
+
+          if (process.env.GITHUB_STEP_SUMMARY) {
+            appendFileSync(process.env.GITHUB_STEP_SUMMARY, `${summary}\n`);
+          }
+
+          if (blocking.length > 0) {
+            console.error(
+              '\naudit gate failed. Fix the dependency, or add a dated and justified exception' +
+                ' (rules/dependencies.mdc §5-§7). Silence is not an option the gate offers.',
+            );
+            process.exit(1);
+          }
+          NODE
+          # `pnpm audit` exits non-zero whenever any advisory exists at all; the gate below
+          # decides what actually blocks, so the exit code of the report itself is ignored.
+          pnpm audit --json > "$RUNNER_TEMP/audit.json" || true
+          node "$RUNNER_TEMP/audit-gate.mjs" < "$RUNNER_TEMP/audit.json"

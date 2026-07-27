@@ -3,15 +3,41 @@
 # `~/.claude/security/scan-secrets.sh` prefers gitleaks when it is installed and falls back to a
 # perl matcher when it is not. The two disagree about exemptions: the perl fallback honours a
 # `scan-secrets:allow` marker on the line, gitleaks honours `gitleaks:allow` and knows nothing about
-# the other spelling. Without this file, three lines that are green on a machine without gitleaks
-# turn red the moment gitleaks is installed — and red in CI, which will install it. Every exemption
-# therefore exists twice: as an inline marker in both syntaxes (rules/security.mdc, «Исключения»)
-# and as an entry here, so that stripping one of the two markers cannot silently change the verdict.
+# the other spelling. Every exemption **in code** therefore exists twice: as an inline marker in both
+# syntaxes (rules/security.mdc, «Исключения») and as an entry here, so that stripping one of the two
+# markers cannot silently change the verdict.
 #
-# The entries below are scoped by path *and* by value pattern (`condition = "AND"`). Allowlisting a
-# whole file is what makes a scanner stop finding things: `packages/server/test/unit/env.test.ts` is
-# a suite about secret handling, and it is exactly the file where a real secret is most likely to be
-# pasted next to a fake one.
+# One exemption is config-only and has no inline marker: the prose line in
+# epics/epic-033-e2ee-crypto-foundation/epic.md that reads as a secret to the default ruleset. An
+# `# gitleaks:allow` comment inside a sentence of a specification would be noise in the document
+# that matters more than the redundancy buys here — the entry below is scoped to that exact
+# wording, so a real secret on that line would still be found.
+#
+# ## Why no entry below has a `paths` key (measured, gitleaks 8.30.1, 2026-07-27)
+#
+# This file used to scope every exemption by path *and* by value, on the assumption that
+# `condition = "AND"` means "this value, in this file". It does not. A `paths` entry in a global
+# `[[allowlists]]` block makes gitleaks skip the file before any rule runs, `condition` or no
+# `condition`. Measured on a scratch repository with this config: a freshly planted
+# `const awsSecret = "…40 random characters…"` was reported in
+# `packages/server/test/unit/other.test.ts` and *not* reported in
+# `packages/server/test/unit/env.test.ts`, `packages/client/test/config/env.test.ts` or
+# `test/repo/service-checks.test.ts` — the three paths this file listed. Deleting the `paths` lines
+# and changing nothing else brought all three back. The config was therefore doing the one thing its
+# own comment forbade: `packages/server/test/unit/env.test.ts` is a suite about secret handling, and
+# it is exactly the file where a real secret is most likely to be pasted next to a fake one.
+#
+# So the exemptions are scoped by value only. That is wider than "this line in this file" — a line
+# matching one of these patterns is exempt anywhere in the repository — which is why every pattern
+# below has to stay specific enough to describe a fixture and nothing else. In exchange, no file is
+# ever excluded from the scan.
+#
+# ## Also measured, and worth knowing before trusting this file
+#
+# With the default ruleset none of the five fixture lines below is detected in the first place
+# (checked with `--ignore-gitleaks-allow`, which disables the inline markers too). The entries are
+# insurance against a future release of the default ruleset, not something holding a red build back
+# today. The only finding this configuration actually suppresses is the prose one at the end.
 
 title = "bad-crm"
 
@@ -22,8 +48,6 @@ useDefault = true
 
 [[allowlists]]
 description = "Development Postgres password from the compose defaults, used as a loadEnv fixture"
-condition = "AND"
-paths = ['''^packages/server/test/unit/env\.test\.ts$''']
 regexTarget = "line"
 # The pattern, not the literal: a config file that quotes the values it exempts is a file that
 # leaks them, and gitleaks scans its own configuration like any other tracked file.
@@ -31,28 +55,31 @@ regexes = ['''dev_[a-z]+_password''']
 
 [[allowlists]]
 description = "The .env.example placeholder, asserted to be rejected by the hardening preflight"
-condition = "AND"
-paths = ['''^packages/server/test/unit/env\.test\.ts$''']
 regexTarget = "line"
 regexes = ['''CHANGE_ME_generate_with_openssl_rand_base64_\d+''']
 
 [[allowlists]]
 description = "Dummy server-only value, asserted to be dropped instead of reaching the browser"
-condition = "AND"
-paths = ['''^packages/client/test/config/env\.test\.ts$''']
 regexTarget = "line"
 regexes = ['''const serverOnlySecret''']
 
 [[allowlists]]
 description = "Deliberately invalid JWT_SECRET, asserted never to be echoed into a preflight issue"
-condition = "AND"
-paths = ['''^test/repo/service-checks\.test\.ts$''']
 regexTarget = "line"
 regexes = ['''JWT_SECRET: .too-short.''']
 
 [[allowlists]]
 description = "AWS SigV4 documentation test vector — the expected signature is derived from it"
-condition = "AND"
-paths = ['''^test/repo/service-checks\.test\.ts$''']
 regexTarget = "line"
 regexes = ['''secretKey: .wJalrXUtnFEMI''']
+
+[[allowlists]]
+description = """
+Prose, not a credential: `generic-api-key` fires because "WebAuthn" contains the keyword "auth" \
+and the words that follow it are random enough to clear the entropy bar. Found by the first real \
+gitleaks run (8.30.1, 2026-07-27) — the only finding in the whole history, on a line of a \
+scope list in epics/epic-033-e2ee-crypto-foundation/epic.md. Without it the history scan of main \
+is red from the day the workflow lands.\
+"""
+regexTarget = "line"
+regexes = ['''WebAuthn PRF, OPAQUE/augmented PAKE''']

@@ -4,10 +4,12 @@ Thank you for considering a contribution. Please read this document before openi
 this project has stricter-than-usual process rules, and they are enforced by automation, not by
 goodwill.
 
-**Current phase: design.** There is no code yet — no `packages/`, no `docker-compose.yml`, no
-release. The most valuable contributions right now are review of the specification in [`docs/`](docs/)
-and the work breakdown in [`epics/`](epics/): finding a hole in the threat model or an inconsistency
-between the data model and a story is worth more than a patch to code that does not exist.
+**Current phase: early implementation (milestone M1).** The monorepo, the toolchain and the local
+Docker stack exist (EPIC-001); there is no HTTP server, no client shell and no release yet. Review of
+the specification in [`docs/`](docs/) and the work breakdown in [`epics/`](epics/) is still worth more
+than most patches: finding a hole in the threat model or an inconsistency between the data model and a
+story saves work that has not been done yet. Check the tree rather than this paragraph — it ages
+faster than the code.
 
 Русская версия ключевых разделов — в конце документа: [По-русски](#по-русски).
 
@@ -25,7 +27,8 @@ between the data model and a story is worth more than a patch to code that does 
 8. [Code review](#8-code-review)
 9. [DCO — Developer Certificate of Origin](#9-dco--developer-certificate-of-origin)
 10. [Definition of Done](#10-definition-of-done)
-11. [По-русски](#по-русски)
+11. [From branch to merge](#11-from-branch-to-merge)
+12. [По-русски](#по-русски)
 
 ---
 
@@ -35,14 +38,14 @@ between the data model and a story is worth more than a patch to code that does 
 
 | Tool | Version |
 |---|---|
-| Node.js | 22 LTS (`>=22.11 <23`) — pinned in `.nvmrc` |
-| pnpm | 9+ via Corepack |
+| Node.js | 22 LTS (`>=22.22.1 <23`, as in `package.json`) — pinned in `.nvmrc` |
+| pnpm | 10 via Corepack (`packageManager` in `package.json` pins the exact version) |
 | Docker | 24+ with Compose v2 |
 | OS | Linux, macOS, or WSL2 (native Windows is not supported — Testcontainers and volume permissions) |
 
 Resources: 8 GB RAM (4 GB with the `minimal` profile), 10 GB of disk.
 
-**Intended flow** (available from EPIC-001 onward; today only the clone step works):
+**Flow** (working since EPIC-001; the migrate/seed and `pnpm dev` steps land with EPIC-003 and EPIC-004):
 
 ```bash
 git clone https://github.com/<org>/bad-crm.git
@@ -351,6 +354,70 @@ A story is done when **all** of the following are true:
 
 ---
 
+## 11. From branch to merge
+
+The order of operations, and what checks what.
+
+**1. Branch.** One story, one branch, off `main`. Never commit to `main` directly — it is protected.
+
+**2. Commits.** Conventional Commits (§5), signed off with `git commit -s` (§9). The `commit-msg`
+hook runs commitlint locally; the same commitlint runs in CI over **every** commit of the branch, so
+`--no-verify` buys nothing but a later failure.
+
+**3. Open the pull request.** The description is prefilled from
+[`.github/pull_request_template.md`](.github/pull_request_template.md). Two things in it are
+machine-checked and the rest is read by a human:
+
+- the description names the story as `STORY-NNN-NN`, or states `no-story: <reason>` on its own line;
+- the title itself is a valid Conventional Commit — it becomes the commit message when the pull
+  request is squashed.
+
+**4. CI.** These workflows run on a pull request; all of them belong in the required status checks of
+branch protection, alongside `DCO`:
+
+| Workflow | What blocks the merge |
+|---|---|
+| `ci.yml` | `typecheck`, `lint`, `build`, `test`, coverage thresholds, secret and cruft scan |
+| `pr-conventions.yml` | a malformed commit, a malformed title, a missing story reference |
+| `codeql.yml` | code-scanning alerts at `error` severity |
+| `dependency-review.yml` | a new dependency with a high/critical advisory or a forbidden licence |
+| `license-check.yml` | a licence outside the allow-list anywhere in the installed tree, a forbidden package, a high/critical advisory without a dated exception |
+
+A red pipeline is not a suggestion. If a check is wrong, fix the check in its own pull request —
+do not merge around it.
+
+**5. Review.** §8. The reviewer starts at the three invariants and stops there if one is broken.
+
+**6. Merge.** A maintainer squash-merges after a green pipeline and an approval. Dependabot pull
+requests go through exactly the same pipeline and are **never** merged automatically — an update
+that the audit and licence gates approve is still a change of what ships.
+
+### Attribution
+
+Commit messages and pull-request descriptions are written as the author's own work. No
+`Co-Authored-By` trailer crediting an assistant, no "generated with …" footer, no robot emoji, no
+mention of the tool that helped. This is enforced — `commitlint.config.js` carries a
+`no-ai-attribution` rule and it runs in CI as well as in the local hook. Using tooling is fine;
+signing the work over to it is not, because the `Signed-off-by` line certifies that a **person**
+has the right to submit the contribution (§9).
+
+### Issues
+
+Bug reports and proposals use the forms in [`.github/ISSUE_TEMPLATE/`](.github/ISSUE_TEMPLATE/);
+blank issues are disabled because a report without the version and the installation profile costs a
+round trip per missing field. **Security problems never go into a public issue** — private reporting
+only, see [`SECURITY.md`](SECURITY.md).
+
+### Dependencies
+
+Dependabot opens grouped weekly pull requests (`dev`, `prod-patch`, `prod-minor`; majors on their
+own) with a cooldown before a freshly published version is proposed. Review them against
+[`rules/dependencies.mdc`](rules/dependencies.mdc): licence on the allow-list, no suspicious
+maintainer change, no new install script outside `pnpm.onlyBuiltDependencies`. A licence exception
+is an ADR, not a workflow edit ([`docs/legal/licensing.md`](docs/legal/licensing.md) §3).
+
+---
+
 # По-русски
 
 Ключевые разделы для русскоязычных контрибьюторов. Полный текст — выше, на английском; при
@@ -358,7 +425,7 @@ A story is done when **all** of the following are true:
 
 ## Поднятие окружения
 
-Node.js 22 LTS (зафиксирован в `.nvmrc`), pnpm 9+ через Corepack, Docker 24+ с Compose v2, Linux /
+Node.js 22 LTS (зафиксирован в `.nvmrc`), pnpm 10 через Corepack, Docker 24+ с Compose v2, Linux /
 macOS / WSL2. Нативный Windows не поддерживается.
 
 ```bash
@@ -370,7 +437,7 @@ pnpm db:migrate && pnpm db:seed
 pnpm dev
 ```
 
-Команды доступны начиная с EPIC-001 — сейчас работает только клонирование репозитория.
+Команды доступны начиная с EPIC-001; `db:migrate`, `db:seed` и `pnpm dev` заработают с EPIC-003 и EPIC-004.
 
 **Перед каждым push:** `pnpm turbo run typecheck lint build test`. Красный или непрогнанный
 пайплайн — push запрещён.
@@ -453,3 +520,30 @@ RU, доступность соблюдена, состояния загрузк
 expand→migrate→contract, новые обязательные переменные окружения добавлены в `.env.example` **и** в
 [`docs/runbooks/upgrade.md`](docs/runbooks/upgrade.md), `docs/` актуальна, запись в `docs/brain/`
 сделана, статус истории обновлён.
+
+## От ветки до мержа
+
+Ветка от `main` — одна история на ветку; в `main` напрямую не коммитим. Коммиты — Conventional
+Commits с `git commit -s`; локальный хук `commit-msg` и CI проверяют **все** коммиты ветки, поэтому
+`--no-verify` лишь откладывает падение. Описание пул-реквеста заполняется из
+[`.github/pull_request_template.md`](.github/pull_request_template.md); машинно проверяются две вещи:
+ссылка на историю (`STORY-NNN-NN` либо строка `no-story: <причина>`) и заголовок как валидный
+Conventional Commit — он станет сообщением коммита при squash-мерже.
+
+На пул-реквесте работают `ci.yml` (typecheck, lint, build, test, покрытие, скан секретов и мусора),
+`pr-conventions.yml` (формат коммитов и заголовка, ссылка на историю), `codeql.yml` (алерты уровня
+`error`), `dependency-review.yml` (новая зависимость с High/Critical или запрещённой лицензией) и
+`license-check.yml` (лицензия вне allow-list во всём дереве, запрещённый пакет, High/Critical без
+датированного исключения). Все они — обязательные статус-чеки в branch protection вместе с `DCO`.
+Мержит мейнтейнер, squash, только на зелёном пайплайне. Dependabot-PR проходят тот же пайплайн и
+**никогда** не мержатся автоматически.
+
+**Атрибуция.** В сообщениях коммитов и в описании PR нет трейлера `Co-Authored-By` с ассистентом,
+строки «generated with …», робота-эмодзи и упоминаний инструмента. Это проверяет правило
+`no-ai-attribution` в `commitlint.config.js` — и в хуке, и в CI. Пользоваться инструментами можно;
+подписывать работу за них — нет, потому что `Signed-off-by` удостоверяет право **человека** передать
+вклад.
+
+**Issue.** Баг-репорты и предложения — только через формы
+[`.github/ISSUE_TEMPLATE/`](.github/ISSUE_TEMPLATE/), пустые issue отключены. Уязвимости —
+**никогда** в публичный issue: приватный канал в [`SECURITY.md`](SECURITY.md).

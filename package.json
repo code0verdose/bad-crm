@@ -13,6 +13,8 @@
   "scripts": {
     "dev": "tsx scripts/preflight.ts && turbo run dev",
     "check:services": "tsx scripts/check-services.ts",
+    "coverage:baseline": "tsx scripts/ci/coverage-baseline.ts",
+    "scan:cruft": "tsx scripts/ci/scan-cruft.ts",
     "build": "turbo run build",
     "typecheck": "turbo run typecheck",
     "lint": "turbo run lint",
