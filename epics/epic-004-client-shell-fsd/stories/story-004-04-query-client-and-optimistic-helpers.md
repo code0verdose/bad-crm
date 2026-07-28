@@ -1,7 +1,7 @@
 ---
 id: STORY-004-04
 epic: EPIC-004
-status: backlog
+status: in-progress
 blocked: false
 priority: must
 estimate: M
@@ -26,22 +26,22 @@ estimate: M
 
 ## Задачи
 
-- [ ] Написать тесты первыми: `shared/api/optimistic.test.ts` (patch/remove/rollback, порядок snapshot → mutate → error → rollback), `app/query-client.test.ts` (дефолты, единственный тост, пропуск `AbortError`), `shared/lib/enums/query-keys.test.ts` (типобезопасность и иерархия ключей).
-- [ ] Реализовать `src/app/query-client.config.ts`: дефолты запросов, `MutationCache` с `onError`, `QueryCache` с логированием ошибок через порт логирования клиента.
-- [ ] Реализовать `src/shared/lib/enums/query-keys.ts` — типизированная фабрика с иерархией `all` → `list(params)` → `detail(id)`.
-- [ ] Реализовать `src/shared/api/optimistic.ts`: `runOptimisticPatch`, `runOptimisticRemove`, `rollbackOptimistic` (синхронный `setQueriesData` + snapshot, `cancelQueries` fire-and-forget).
-- [ ] Зафиксировать правило выбора стратегии: optimistic — для toggle/inline-edit/delete/dnd; pessimistic (`onSuccess` → `invalidateQueries`) — для create и тяжёлых записей.
-- [ ] Подключить `@tanstack/react-query-devtools` только в dev-сборке.
-- [ ] Добавить ESLint-правило/тест против ad-hoc query-ключей и против `useQuery` вне `units/*/service`.
+- [x] Написать тесты первыми: `test/api/optimistic.test.ts` (patch/remove/rollback, порядок snapshot → mutate → error → rollback), `test/api/query-client.test.ts` (дефолты, единственный тост, пропуск `AbortError`), `test/api/query-keys.test.ts` (типобезопасность и иерархия ключей). *Тесты живут в `packages/client/test/api/`, а не рядом с исходником: так же, как уже написанный `test/api/api-schema.test.ts`.*
+- [x] Реализовать `src/shared/api/query-client.config.ts`: дефолты запросов, `MutationCache` с `onError`, `QueryCache` с логированием ошибок через инжектируемый порт (`logError`). *Не `app/`: фабрике нужны тостер и лог-сток из слоёв выше, поэтому она принимает их аргументами, а `app/providers.tsx` вызывает `createAppQueryClient`.*
+- [x] Реализовать `src/shared/lib/enums/query-keys.constant.ts` — типизированная фабрика с иерархией `all` → `list(params)` → `detail(id)`.
+- [x] Реализовать `src/shared/api/optimistic.util.ts`: `runOptimisticPatch`, `runOptimisticRemove`, `rollbackOptimistic` (синхронный `setQueriesData` + snapshot, `cancelQueries` fire-and-forget).
+- [x] Зафиксировать правило выбора стратегии: optimistic — для toggle/inline-edit/delete/dnd; pessimistic (`onSuccess` → `invalidateQueries`) — для create и тяжёлых записей. *Записано в заголовке `optimistic.util.ts`.*
+- [ ] Подключить `@tanstack/react-query-devtools` только в dev-сборке. *Монтирование — в `app/providers.tsx`, вне этой поставки.*
+- [x] Добавить ESLint-правило/тест против ad-hoc query-ключей и против `useQuery` вне `units/*/service`. *Ключи — `test/architecture/data-layer-conventions.test.ts`; `useQuery` вне юнитов уже запрещён `QUERY_HOOK_CALLS` в `eslint.config.js`.*
 - [ ] Задокументировать паттерн в `docs/architecture/ux-architecture.md` и `rules/frontend-fsd.mdc`.
 
 ## Definition of Done
 
-- [ ] Тесты написаны первыми (TDD), проходят, изменённый код покрыт
+- [x] Тесты написаны первыми (TDD), проходят, изменённый код покрыт — `packages/client` 100 % строк и ветвей
 - [ ] Commit-гейт зелёный (test-coverage, security-auditor, db-reviewer при изменении схемы, production-readiness, commit-hygiene)
 - [ ] Документация обновлена (docs/ + запись в `docs/brain/`)
-- [ ] a11y-проверка (для UI-историй) — не применимо
-- [ ] i18n: строки в обоих языках, хардкода нет — тексты ошибок берутся из `errors.json` по коду
+- [x] a11y-проверка (для UI-историй) — не применимо
+- [ ] i18n: строки в обоих языках, хардкода нет — тексты ошибок берутся из `errors.json` по коду. *Клиент отдаёт только ключ `errors.<code>` (`errorMessageKey`); самого каталога `errors.json` ещё нет — EPIC-008.*
 
 ## Ссылки
 

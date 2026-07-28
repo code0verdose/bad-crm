@@ -22,6 +22,12 @@
     "test/**/*.tsx",
     "src/**/*.test.ts",
     "src/**/*.test.tsx",
+    // The ambient declarations of the browser program, not a suite: `vite-env.d.ts` is what
+    // augments `ImportMeta` with `env`, and nothing imports it, so a project that lists only the
+    // suites never loads it. A test that reaches `shared/config` — the one layer allowed to read
+    // `import.meta.env` — then fails to compile against a type the application compiles against
+    // fine, which reads as a broken test rather than as a missing declaration file.
+    "src/vite-env.d.ts",
     "vitest.config.ts",
     "vite.config.ts"
   ]

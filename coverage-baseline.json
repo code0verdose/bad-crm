@@ -2,8 +2,8 @@
   "tolerance": 0.5,
   "projects": {
     ".": {
-      "lines": 81.34,
-      "branches": 75
+      "lines": 81.93,
+      "branches": 75.21
     },
     "packages/shared": {
       "lines": 100,

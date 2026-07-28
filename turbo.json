@@ -164,6 +164,10 @@
         // pass over a reintroduced `paths` line is a scanner that stopped looking at the suites
         // about secret handling.
         ".gitleaks.toml",
+        // `test/repo/refresh-exception.test.ts` reads the contract to decide whether the one
+        // hand-written `fetch` in the client is still justified. Cached over an edited contract,
+        // the exception would outlive the reason for it — which is the whole point of that test.
+        "docs/api/openapi.yaml",
         // The task command is `tsc -p tsconfig.scripts.json && vitest run`. The runtime read
         // registry only sees what vitest reads — never what the first half of the command line
         // reads — so a project file named on the command line has to be listed by hand.

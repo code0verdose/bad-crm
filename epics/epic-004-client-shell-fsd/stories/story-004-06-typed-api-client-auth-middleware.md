@@ -1,7 +1,7 @@
 ---
 id: STORY-004-06
 epic: EPIC-004
-status: backlog
+status: in-progress
 blocked: false
 priority: must
 estimate: M
@@ -26,22 +26,22 @@ access-токен не приводил к каскаду параллельны
 
 ## Задачи
 
-- [ ] Написать тесты первыми (MSW + fake timers): `shared/api/auth-middleware.test.ts` (добавление заголовка, дедуп refresh при N параллельных 401, единственный повтор, петля предотвращена), `shared/api/problem.test.ts` (парсинг ошибки в типизированный объект), `shared/api/idempotency.test.ts`.
-- [ ] Реализовать `src/shared/api/client.ts`: `createClient<paths>({ baseUrl })` из `openapi-fetch` + `$api` через `openapi-react-query`.
-- [ ] Реализовать `src/shared/api/auth-middleware.ts`: подстановка токена, перехват 401, единый `refreshPromise` с дедупом, повтор исходного запроса, обработка провала.
-- [ ] Реализовать `src/units/auth/lib/auth-token-storage.ts` (только in-memory) и `auth-event-bus.ts` (события `logged-in`, `logged-out`, `refresh-failed`).
-- [ ] Реализовать `src/shared/api/problem.ts` — разбор `application/problem+json` в `ApiError { code, status, errors?, requestId }`.
-- [ ] Реализовать добавление `Idempotency-Key` для `POST`/`PATCH`/`DELETE` в middleware.
-- [ ] Добавить ESLint-правило: `fetch(`, `axios`, `XMLHttpRequest` запрещены вне `src/shared/api`; покрыть тестом.
-- [ ] Настроить MSW для тестов и dev-моков, не подключая его в production-бандл.
+- [x] Написать тесты первыми: `test/api/auth-middleware.test.ts` (добавление заголовка, дедуп refresh при N параллельных 401, единственный повтор, петля предотвращена), `test/api/problem.test.ts` (парсинг ошибки в типизированный объект), `test/api/idempotency.test.ts`. *Транспорт мокается через опцию `fetch` самого `openapi-fetch`, а не MSW — см. последний пункт.*
+- [x] Реализовать `src/shared/api/http.client.ts`: `createClient<paths>({ baseUrl })` из `openapi-fetch` + `$api` через `openapi-react-query`.
+- [x] Реализовать `src/shared/api/auth-middleware.util.ts`: подстановка токена, перехват 401, единый `refreshPromise` с дедупом, повтор исходного запроса, обработка провала.
+- [x] Реализовать `src/units/auth/lib/auth-token-storage.util.ts` (только in-memory) и `auth-event-bus.util.ts` (события `logged-in`, `logged-out`, `refresh-failed`).
+- [x] Реализовать `src/shared/api/problem.errors.ts` — разбор `application/problem+json` в `ApiError { code, status, issues, requestId }`.
+- [x] Реализовать добавление `Idempotency-Key` для `POST`/`PUT`/`PATCH`/`DELETE` в middleware.
+- [x] Добавить ESLint-правило: `fetch(`, `axios`, `XMLHttpRequest` запрещены вне `src/shared/api`; покрыть тестом. *Уже в `eslint.config.js` (`NO_FETCH_GLOBALS`, `AXIOS_OUTSIDE_SHARED_API`) с фикстурами в `test/lint/fixtures`; дополнительно `test/architecture/data-layer-conventions.test.ts` сканирует реальное дерево на Web Storage.*
+- [ ] Настроить MSW для тестов и dev-моков, не подключая его в production-бандл. *Не понадобился: `openapi-fetch` принимает свой `fetch`, и подменять сетевой слой браузера ради этого — лишняя зависимость. MSW заводить под dev-моки/e2e, когда они появятся.*
 
 ## Definition of Done
 
-- [ ] Тесты написаны первыми (TDD), проходят, изменённый код покрыт
+- [x] Тесты написаны первыми (TDD), проходят, изменённый код покрыт — `packages/client` 100 % строк и ветвей
 - [ ] Commit-гейт зелёный (test-coverage, security-auditor, db-reviewer при изменении схемы, production-readiness, commit-hygiene)
 - [ ] Документация обновлена (docs/ + запись в `docs/brain/`)
-- [ ] a11y-проверка (для UI-историй) — не применимо
-- [ ] i18n: строки в обоих языках, хардкода нет — сообщения ошибок выбираются по `code` из `errors.json`
+- [x] a11y-проверка (для UI-историй) — не применимо
+- [ ] i18n: строки в обоих языках, хардкода нет — сообщения ошибок выбираются по `code` из `errors.json`. *Клиент отдаёт только ключ `errors.<code>`; каталога ещё нет — EPIC-008.*
 
 ## Ссылки
 
