@@ -20,6 +20,13 @@ export const ERROR_RESOURCES = [
   'user',
   'role',
   'invitation',
+  /**
+   * A login session (`Session` in `data-model.md` §1), as addressed by
+   * `DELETE /api/v1/auth/sessions/{sessionId}`. Its ids are enumerable and belong to one person, so
+   * "not yours" is answered `session_not_found` rather than `session_forbidden` — the same rule
+   * that hides entities of another organization (CLAUDE.md, invariant 2).
+   */
+  'session',
   'project',
   'board',
   'task',
@@ -43,6 +50,54 @@ const GENERIC_ERROR_CODE_STATUS = {
   validation_failed: 422,
   unauthenticated: 401,
   /**
+   * A credential was presented and refused: `POST /auth/login` with an email nobody has, with the
+   * wrong password, or `POST /auth/change-password` with the wrong `currentPassword`.
+   *
+   * **One code covers "no such user" and "wrong password", and that is the point** (EPIC-006
+   * acceptance). Two codes — or one code with two different `detail` strings — turn the login form
+   * into an oracle that answers "does this person work here" for anybody with a word list, which is
+   * the first step of every credential-stuffing campaign. The same requirement forbids branching on
+   * anything else the caller can observe: status, body and elapsed time are equal in both cases,
+   * so the use-case verifies a dummy hash when the user does not exist.
+   *
+   * Distinct from `unauthenticated` (no token, or an expired one) because the two mean opposite
+   * things to the client: `unauthenticated` is answered by refreshing the session, and
+   * `invalid_credentials` by telling the person their email or password is wrong.
+   */
+  invalid_credentials: 401,
+  /**
+   * The password was correct and the account is not allowed to open a session
+   * (`User.status = SUSPENDED`). Reached only *after* a successful verification, so it discloses
+   * nothing to somebody who does not already hold the password.
+   */
+  account_suspended: 403,
+  /** Open registration is switched off for this installation and there is nobody to register. */
+  registration_disabled: 403,
+  /**
+   * The password-reset token is unknown, already used, or expired — deliberately one code for all
+   * three. Distinguishing them would tell a holder of a random token whether it ever existed, and
+   * would let the "already used" answer confirm that somebody completed a reset.
+   */
+  password_reset_token_invalid: 400,
+  /**
+   * The operation has to send mail and this installation has no `SMTP_URL`.
+   *
+   * Not `feature_disabled`: that one means the operator switched an optional subsystem off and the
+   * honest answer is "this installation does not do that". Password recovery is not optional — the
+   * operator wanted it and the deployment is incomplete, the person on the other end should be told
+   * to contact an administrator rather than that the product lacks the feature, and the fix is a
+   * configuration change rather than a purchase. Answering "success" without a mail is the failure
+   * mode this code exists to prevent (STORY-006-08).
+   *
+   * **Where it is decided matters as much as which code it is.** On `POST /auth/forgot-password`
+   * the whole operation rests on the answer being the same for a registered address and an unknown
+   * one; a 503 raised *after* the lookup would be the difference between them, and the code would
+   * become the enumeration oracle the 202 was designed not to be. The check is therefore made
+   * before the address is resolved — stated in the operation's own description too, because that is
+   * where somebody implementing it will look.
+   */
+  mail_not_configured: 503,
+  /**
    * The two transport-level refusals, decided before any resource is identified.
    *
    * `route_not_found` is deliberately *not* spelled as a `<resource>_not_found`: an unmatched path
@@ -58,7 +113,18 @@ const GENERIC_ERROR_CODE_STATUS = {
   stale_version: 409,
   idempotency_key_reuse: 409,
   rate_limited: 429,
-  /** Optional subsystem switched off in this installation (search, AI, SMTP). */
+  /**
+   * An optional subsystem is switched off in this installation, and the honest answer is "this
+   * installation does not do that": search without Meilisearch, the assistant with `AI_ENABLED`
+   * off.
+   *
+   * **SMTP is deliberately not in that list** — it used to be, one line away from the paragraph on
+   * `mail_not_configured` that says the opposite, which left the next reader to pick between two
+   * statements of this file. The two codes differ in what they promise the caller, which is what
+   * the status carries: 501 means the server does not implement this and retrying is pointless,
+   * 503 means it would if it could and retrying after the operator acts is the correct behaviour.
+   * Password recovery is not an optional feature; a deployment without `SMTP_URL` is incomplete.
+   */
   feature_disabled: 501,
   /** A dependency needed to answer is unavailable — including "could not resolve the ACL". */
   service_unavailable: 503,

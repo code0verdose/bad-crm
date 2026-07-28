@@ -83,3 +83,16 @@ is red from the day the workflow lands.\
 """
 regexTarget = "line"
 regexes = ['''WebAuthn PRF, OPAQUE/augmented PAKE''']
+
+[[allowlists]]
+description = """
+Specification examples, not credentials. `openapi.yaml` shows the shape of a login response, and \
+the shape of an access token is three dot-separated segments — which is exactly what the `jwt` \
+rule looks for. The anchor is the third segment, `o7-signature`: a real HS256 signature is \
+base64url of 32 bytes and cannot be that string, so this pattern describes the example and nothing \
+that could ever be a working token. Anchoring on the header instead (`eyJhbGciOiJIUzI1NiI…`, the \
+standard `{"alg":"HS256","typ":"JWT"}`) would have exempted every genuine HS256 token in the \
+repository — the opposite of what an allowlist is for.\
+"""
+regexTarget = "line"
+regexes = ['''\.o7-signature''']

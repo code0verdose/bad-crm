@@ -41,10 +41,612 @@ servers:
   - url: /api/v1
     description: This installation.
 
-# No document-level `security` yet: the only operation published so far is public. EPIC-006 sets
-# the default to `bearerAuth` and marks the handful of anonymous operations with `security: []`.
+# The default is "a session is required". An operation reachable without one repeats `security: []`
+# and states why in `x-public-reason`; an operation reachable with a session declares either the
+# permission that gates it (`x-permission`) or why no capability applies (`x-self-service-reason`).
+# Exactly one of the three, on every operation, checked by
+# `packages/server/test/contract/route-authorization.test.ts` — a route that is anonymous by
+# omission is the failure invariant 2 of CLAUDE.md exists to prevent.
+security:
+  - bearerAuth: []
 
 paths:
+  # ── auth ──────────────────────────────────────────────────────────────────────────────────────
+  #
+  # Every operation below is marked `x-implemented-by`: it is published here before the route
+  # exists, because this contract is written first and implemented afterwards (ADR-0003). The marker
+  # is not a comment — `packages/server/test/contract/planned-operations.test.ts` refuses a marker
+  # that names a story which does not exist, and refuses a marker on an operation the router already
+  # serves, so it has to be deleted in the same commit that implements the route.
+  #
+  # Two rules hold across the whole group and are stated once here rather than ten times below.
+  #
+  # **The refresh token is never in a body.** It is issued in `Set-Cookie`, presented by the browser
+  # from a cookie, and appears in no request schema and no response schema of this document. A token
+  # in a body is a token in `sessionStorage` an hour later, and from there in the next XSS. The
+  # cookie is described as an `apiKey` security scheme (`refreshCookie`) rather than as a parameter
+  # for the same reason: a parameter is something a caller sets, and no script in the bundle can set
+  # or read this one.
+  #
+  # **Nothing secret travels in a path or a query.** The password-reset token is a body field of
+  # `POST /auth/reset-password`, not `?token=…`: a query string reaches the access log of every
+  # proxy in front of the installation, the `Referer` of the next request, and the clipboard of
+  # anybody who "sends the link". This is the same reasoning that keeps `instance` out of `Problem`.
+  /auth/register:
+    post:
+      operationId: registerOrganization
+      summary: Create an organization together with its owner.
+      description: |
+        The first door of an empty installation. Organization, owner and system roles are created in
+        one transaction, and the answer is a session — the person who filled in the form is signed in
+        rather than sent to the login screen to type the same password again.
+
+        `Idempotency-Key` is mandatory here and is the reason this operation can be retried at all:
+        a connection dropped after the request left and before the answer arrived would otherwise
+        produce a second organization on retry. A replay carrying the same request hash gets the
+        stored response, cookie included. The stored key has no organization to be scoped to — the
+        organization is what the request creates — so it is stored per key alone until the row it
+        produced exists.
+      tags: [auth]
+      security: []
+      x-public-reason: >-
+        Bootstrap of an empty installation: the subject a permission would be checked against is
+        created by this very request. Bounded instead by the installation-wide "open registration"
+        setting (403 registration_disabled) and by 3 requests per hour per IP.
+      x-implemented-by: STORY-006-01
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterOrganizationRequest'
+            examples:
+              firstOrganization:
+                summary: The installation's first organization.
+                value:
+                  organization:
+                    name: Bad Company
+                    slug: bad-company
+                  owner:
+                    email: ada@example.com
+                    password: correct-horse-battery
+                    locale: en
+                    timezone: Europe/Berlin
+      responses:
+        '201':
+          description: |
+            The organization, its owner and the system roles exist, and the caller holds a session.
+          headers:
+            Set-Cookie:
+              $ref: '#/components/headers/RefreshCookieSet'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthenticatedSession'
+              examples:
+                registered:
+                  value:
+                    status: authenticated
+                    accessToken: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJiM2YxYzJkNC01ZTZhLTRiN2MtOGQ5ZS0wZjFhMmIzYzRkNWUifQ.o7-signature
+                    tokenType: Bearer
+                    expiresIn: 900
+                    user:
+                      id: b3f1c2d4-5e6a-4b7c-8d9e-0f1a2b3c4d5e
+                      email: ada@example.com
+                      locale: en
+                      timezone: Europe/Berlin
+                    organization:
+                      id: 7c9e6679-7425-40de-944b-e07fc1f90ae7
+                      name: Bad Company
+                      slug: bad-company
+        '403':
+          $ref: '#/components/responses/RegistrationDisabled'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /auth/login:
+    post:
+      operationId: login
+      summary: Exchange an email and a password for a session.
+      description: |
+        The access token comes back in the body and lives in the memory of one tab; the refresh token
+        comes back in `Set-Cookie` and is never readable by script. Splitting them that way is what
+        makes an XSS expensive: it can spend the fifteen minutes it stole, not the thirty days.
+
+        **A refused login is one answer, never two.** An email nobody has and a wrong password
+        produce the same status, the same `code` (`invalid_credentials`), the same wording and — by
+        verifying a dummy hash when there is no user — the same elapsed time. Anything that
+        distinguishes them turns this form into a directory of who works here, which is where
+        credential stuffing starts.
+
+        A person who belongs to more than one organization on this installation gets
+        `organization_selection_required` instead of a session, with the organizations to choose
+        from, and repeats the call with `organizationSlug`. That list is only ever produced *after*
+        the password verified, so it discloses nothing to somebody guessing.
+
+        `Idempotency-Key` is not honoured: the client sends it on every unsafe request, and this
+        operation ignores it. Replaying a stored 200 would hand back an access token and a refresh
+        cookie that have since been rotated or revoked — a cached credential — and would let a
+        repeat of one key slip past the failed-attempt counter that the lockout is built on.
+      tags: [auth]
+      security: []
+      x-public-reason: >-
+        Sign-in itself: the session a permission would be read from is what this operation issues.
+        Bounded by 5 failed attempts per 15 minutes per IP + email, with an exponential delay.
+      x-implemented-by: STORY-006-02
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+            examples:
+              singleOrganization:
+                summary: The address belongs to exactly one organization.
+                value:
+                  email: ada@example.com
+                  password: correct-horse-battery
+              chosenOrganization:
+                summary: The repeat call after `organization_selection_required`.
+                value:
+                  email: ada@example.com
+                  password: correct-horse-battery
+                  organizationSlug: bad-company
+      responses:
+        '200':
+          description: |
+            Either a session, or the list of organizations to pick from. Discriminated by `status`.
+          headers:
+            Set-Cookie:
+              $ref: '#/components/headers/RefreshCookieSetConditional'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginResult'
+              examples:
+                authenticated:
+                  summary: Signed in.
+                  value:
+                    status: authenticated
+                    accessToken: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJiM2YxYzJkNC01ZTZhLTRiN2MtOGQ5ZS0wZjFhMmIzYzRkNWUifQ.o7-signature
+                    tokenType: Bearer
+                    expiresIn: 900
+                    user:
+                      id: b3f1c2d4-5e6a-4b7c-8d9e-0f1a2b3c4d5e
+                      email: ada@example.com
+                      locale: en
+                      timezone: Europe/Berlin
+                    organization:
+                      id: 7c9e6679-7425-40de-944b-e07fc1f90ae7
+                      name: Bad Company
+                      slug: bad-company
+                selectionRequired:
+                  summary: The address is used in two organizations.
+                  value:
+                    status: organization_selection_required
+                    organizations:
+                      - id: 7c9e6679-7425-40de-944b-e07fc1f90ae7
+                        name: Bad Company
+                        slug: bad-company
+                      - id: 1d0f8a2b-6c34-4e51-b8aa-9f2e7c5d31b4
+                        name: Side Project
+                        slug: side-project
+        '401':
+          $ref: '#/components/responses/InvalidCredentials'
+        '403':
+          $ref: '#/components/responses/AccountSuspended'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+
+  /auth/refresh:
+    post:
+      operationId: refreshSession
+      summary: Rotate the refresh cookie and mint a new access token.
+      description: |
+        Called on start-up to restore a session into an empty tab, and again whenever an access token
+        expires. Takes no body: the only credential is the cookie, and the browser attaches it.
+
+        Every call rotates. The presented token is marked used and a new one is issued in the same
+        family, so presenting a token twice is by definition either theft or a race. Theft revokes
+        the whole family, writes an audit event and mails the owner; the answer to the request in
+        hand is a plain 401. A losing tab in a race gets the same 401 without the family being
+        touched — the client's middleware deduplicates concurrent refreshes precisely so that this
+        stays rare.
+
+        Expired, unknown, revoked, replayed, or sent from a foreign `Origin`: one status, one code,
+        no `detail` that separates them. The cookie is cleared on every refusal, so a client that
+        keeps retrying stops.
+
+        `Idempotency-Key` is not honoured and must not be — replaying a stored response is exactly
+        what reuse detection is built to catch, and storing this response would store a credential.
+      tags: [auth]
+      security:
+        - refreshCookie: []
+      x-self-service-reason: >-
+        Authorised by possession of the refresh cookie, which identifies one session of one person;
+        there is no capability to check, and the account has no say over its own session rotation.
+      x-implemented-by: STORY-006-03
+      responses:
+        '200':
+          description: Rotated. The previous refresh token is now spent.
+          headers:
+            Set-Cookie:
+              $ref: '#/components/headers/RefreshCookieSet'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthenticatedSession'
+        '401':
+          description: |
+            No usable session. Expired, unknown, already spent, or from a foreign origin — one
+            answer for all of them, with the cookie cleared.
+          headers:
+            Set-Cookie:
+              $ref: '#/components/headers/RefreshCookieCleared'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+              examples:
+                refused:
+                  value:
+                    type: https://bad-crm.dev/problems/unauthenticated
+                    title: Unauthenticated
+                    status: 401
+                    code: unauthenticated
+                    requestId: 01J8Z2F5Q3K9V6N0R4T7YB3XQD
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+
+  /auth/logout:
+    post:
+      operationId: logout
+      summary: End the current session.
+      description: |
+        Revokes the session this request belongs to, clears the refresh cookie and puts the session
+        id on the denylist, so the access token that is already in the caller's memory stops working
+        immediately instead of at the end of its fifteen minutes.
+
+        Either credential identifies the session: an expired access token must not make it impossible
+        to sign out, so the refresh cookie is accepted on its own.
+
+        Answers 204 whether or not the session was still alive. `Idempotency-Key` is therefore
+        pointless and is ignored — the operation is idempotent by construction.
+      tags: [auth]
+      security:
+        - bearerAuth: []
+        - refreshCookie: []
+      x-self-service-reason: >-
+        Ending one's own session is not a capability anybody can be denied; the subject and the
+        object are the same person.
+      x-implemented-by: STORY-006-04
+      responses:
+        '204':
+          description: The session is over. Clearing the client's query cache is the caller's job.
+          headers:
+            Set-Cookie:
+              $ref: '#/components/headers/RefreshCookieCleared'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /auth/sessions:
+    get:
+      operationId: listSessions
+      summary: The caller's own active sessions.
+      description: |
+        What `/settings/security` shows: one row per place this account is signed in, with the device
+        as read from the user agent, when it started, when it last rotated, and which row is this one.
+
+        Deliberately not paginated. The set is one row per live device, bounded by a thirty-day
+        expiry and swept by the cleanup job; a page control over a list that never fills a screen is
+        a control nobody uses and a contract everybody has to carry. A list that could grow —
+        the audit trail of sign-ins — is a different resource and belongs to EPIC-009.
+
+        The full IP address is never returned, and is never stored either. `Session.ipHash` answers
+        "the same address as that other session" and cannot be un-hashed for display, so the readable
+        half is `Session.ipMasked` — a separate column holding the address with its host part already
+        removed, computed at sign-in (`data-model.md`, «Про адрес сессии»).
+      tags: [auth]
+      x-self-service-reason: >-
+        Reading one's own sessions. `user:read_sessions` — listed in `docs/security/permission-model.md`
+        §3 and not yet in the code catalog, which EPIC-011 fills — is the administrator's right over
+        *another* person's sessions and belongs to a different operation.
+      x-implemented-by: STORY-006-04
+      responses:
+        '200':
+          description: Every session of the caller that is neither revoked nor expired.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SessionList'
+              examples:
+                twoDevices:
+                  value:
+                    items:
+                      - id: 4f1c2f4a-0a6d-4a7b-9a1e-2d3c4b5a6f70
+                        current: true
+                        device: Firefox on macOS
+                        ipMasked: 203.0.113.0/24
+                        createdAt: '2026-07-27T09:41:12.004Z'
+                        lastUsedAt: '2026-07-28T11:02:44.881Z'
+                        expiresAt: '2026-08-26T09:41:12.004Z'
+                      # Never rotated, so `lastUsedAt` is the moment it was opened.
+                      - id: 9b7d6e55-31a2-4c0f-8f21-6ac0d9e14b83
+                        current: false
+                        device: Chrome on Android
+                        ipMasked: 2001:db8:85a3::/48
+                        createdAt: '2026-07-20T18:12:00.000Z'
+                        lastUsedAt: '2026-07-20T18:12:00.000Z'
+                        expiresAt: '2026-08-19T18:12:00.000Z'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /auth/sessions/{sessionId}:
+    delete:
+      operationId: revokeSession
+      summary: Revoke one of the caller's own sessions.
+      description: |
+        The row stops working at once: its refresh token is dead and its session id goes on the
+        denylist for the remainder of the access token's life.
+
+        A session id that does not exist and a session id that belongs to somebody else are both
+        `404 session_not_found`. 403 would confirm that the id is real and in use by another person —
+        the same rule that hides entities of another organization, applied to a resource whose ids
+        are enumerable.
+
+        Revoking the current session is allowed and behaves like signing out, cookie clearing
+        included; the confirmation the story asks for is the client's dialog, not a second endpoint.
+        Revoking an already revoked session answers 204 again, which is why `Idempotency-Key` buys
+        nothing here and is ignored.
+      tags: [auth]
+      x-self-service-reason: >-
+        Closing one's own session. Ownership is the check, and it is made in the use-case by
+        matching the session against the caller rather than by a capability.
+      x-implemented-by: STORY-006-04
+      parameters:
+        - $ref: '#/components/parameters/SessionId'
+      responses:
+        '204':
+          description: |
+            The session is revoked. `Set-Cookie` is present only when the revoked session was the
+            caller's own current one.
+          headers:
+            Set-Cookie:
+              $ref: '#/components/headers/RefreshCookieClearedConditional'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /auth/sessions/revoke-others:
+    post:
+      operationId: revokeOtherSessions
+      summary: Close every session except this one.
+      description: |
+        One button for "I signed in on a machine that is not mine". Every other session of the
+        account is revoked and denylisted; the caller stays signed in.
+
+        Running it twice leaves the same state and answers `revokedCount: 0` the second time, so
+        `Idempotency-Key` is ignored.
+      tags: [auth]
+      x-self-service-reason: >-
+        Same subject and object as `POST /auth/logout`, over the rest of one's own sessions.
+      x-implemented-by: STORY-006-04
+      responses:
+        '200':
+          description: The other sessions are gone.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RevokeOtherSessionsResult'
+              examples:
+                two:
+                  value:
+                    revokedCount: 2
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /auth/change-password:
+    post:
+      operationId: changePassword
+      summary: Change the caller's password and close the other sessions.
+      description: |
+        One action that returns control of the account: the password changes, every other session is
+        revoked and denylisted, the current one survives, and a notification is mailed.
+
+        A wrong `currentPassword` is `401 invalid_credentials` — the same code a refused login
+        produces, because it is the same fact. It is not `422`: the field is well-formed, it is
+        simply wrong, and dressing a refused credential as a validation issue would put the count of
+        wrong-password attempts outside the counter that rate-limits them. The client attaches the
+        message to the `currentPassword` field; that is a rendering decision, not a contract one.
+
+        A new password equal to the current one, or one that fails the policy, is `422
+        validation_failed` with `newPassword` in `errors[]` — both are decidable from the request.
+
+        `Idempotency-Key` is honoured. The retry of a request whose answer was lost is exactly the
+        case that would otherwise fail with `invalid_credentials`, because the password it sends as
+        "current" has already been replaced; the stored response makes the retry succeed. It also
+        stops the notification mail from going out twice.
+      tags: [auth]
+      x-self-service-reason: >-
+        Changing one's own password is verified by knowing it, not by holding a capability — the same
+        reasoning `docs/security/permission-model.md` §3.20 applies to a person's own key pair.
+      x-implemented-by: STORY-006-06
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChangePasswordRequest'
+            examples:
+              rotate:
+                value:
+                  currentPassword: correct-horse-battery
+                  newPassword: staple-generator-lantern
+      responses:
+        '204':
+          description: |
+            The password is changed and the other sessions are closed. No new tokens: the current
+            session is untouched, and the access token in the caller's memory stays valid.
+        '401':
+          $ref: '#/components/responses/InvalidCredentials'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '503':
+          $ref: '#/components/responses/MailNotConfigured'
+
+  /auth/forgot-password:
+    post:
+      operationId: requestPasswordReset
+      summary: Ask for a password-reset link.
+      description: |
+        **Answers 202 whether or not the address is registered**, and the wording the client renders
+        says so: "if this address is registered, a message has been sent". A 404 for an unknown
+        address, or a slower answer for a known one, would make this the enumeration oracle that the
+        login form is carefully not.
+
+        The mail carries a single-use token with a sixty-minute lifetime; the database stores only
+        its hash. An address used in several organizations gets one message per account, each with
+        its own token — which is why the request takes no `organizationSlug`: asking for one would
+        require the caller to know where the account lives, and answering "wrong organization" would
+        leak where it does not.
+
+        The rate limiter is per address as well as per IP, and its 429 keeps the same property: it
+        says nothing about whether the address exists.
+
+        **The 503 is decided before the address is looked up.** `mail_not_configured` is the one
+        answer here that is not constant by construction, so the order of the two steps is part of
+        the contract rather than an implementation detail: an installation with no `SMTP_URL`
+        refuses *every* request with 503, and an installation that has one answers *every* request
+        with 202. Raising the 503 only when a message was actually about to be sent would make the
+        code say "this address exists, the mail just did not leave" — the enumeration oracle this
+        operation is built to avoid, reintroduced through the error path.
+
+        `Idempotency-Key` is honoured, so that a retry after a dropped connection does not send a
+        second message.
+      tags: [auth]
+      security: []
+      x-public-reason: >-
+        Account recovery is for people who cannot sign in; requiring a session would defeat it. The
+        answer is constant, so no permission decision is being skipped.
+      x-implemented-by: STORY-006-08
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ForgotPasswordRequest'
+            examples:
+              ask:
+                value:
+                  email: ada@example.com
+      responses:
+        '202':
+          description: |
+            Accepted. Carries no body — a body would be a place for the difference between "sent"
+            and "not sent" to appear.
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '503':
+          $ref: '#/components/responses/MailNotConfigured'
+
+  /auth/reset-password:
+    post:
+      operationId: confirmPasswordReset
+      summary: Set a new password with a token from the reset mail.
+      description: |
+        **The token is a body field, never a query parameter.** A query string is written to the
+        access log of every proxy in front of the installation, is handed to the next origin in
+        `Referer`, and is the part of a URL people paste into support tickets. The emailed link
+        carries it in a path segment of the SPA route (`/reset-password/$token`,
+        `docs/architecture/ux-architecture.md`), and the browser turns it into this body — so the
+        token never appears in a URL this API sees, in a route template it logs, or in the `instance`
+        member of a problem document, which this API does not emit at all.
+
+        Unknown, already used and expired are one answer, `400 password_reset_token_invalid`. Telling
+        them apart would let a holder of a guessed token learn whether it ever existed, and would let
+        "already used" confirm that a reset happened.
+
+        A new password that fails the policy is `422` and leaves the token usable until it expires,
+        so a rejected form can be corrected instead of restarted.
+
+        Success revokes **every** session of the account and issues none: whoever completes a reset
+        signs in afterwards. A session minted straight from an emailed token would be a session
+        minted from something that sat in a mailbox.
+
+        `Idempotency-Key` is honoured, so the retry of a lost answer succeeds instead of hitting the
+        single-use token it already spent.
+      tags: [auth]
+      security: []
+      x-public-reason: >-
+        Same reason as the request half: the person is by definition unable to sign in. The token in
+        the body is the credential, and it is single-use, short-lived and stored only as a hash.
+      x-implemented-by: STORY-006-08
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ResetPasswordRequest'
+            examples:
+              confirm:
+                value:
+                  token: example-only-not-a-real-reset-token
+                  newPassword: staple-generator-lantern
+      responses:
+        '204':
+          description: |
+            The password is set and every session of the account is revoked. No tokens are issued;
+            the client sends the person to `/login`.
+        '400':
+          $ref: '#/components/responses/PasswordResetTokenInvalid'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
   /meta:
     get:
       operationId: getApiMeta
@@ -57,6 +659,9 @@ paths:
         silently ignores an unknown query parameter is how a typo reaches production as a 200.
       tags: [platform]
       security: []
+      x-public-reason: >-
+        Read before a session exists, and by definition: the client compares API versions and clocks
+        on start-up. It returns two constants of the installation and no tenant data.
       responses:
         '200':
           description: The API described itself.
@@ -80,9 +685,395 @@ components:
       type: http
       scheme: bearer
       bearerFormat: JWT
-      description: Short-lived access token issued by `POST /auth/login`.
+      description: |
+        Short-lived access token issued by `POST /auth/login`. HS256, fifteen minutes, claims `sub`,
+        `org`, `sid`, `role`, `pv`. It lives in the memory of one tab and nowhere else — not in
+        `localStorage`, not in `sessionStorage`, not in a cookie (CLAUDE.md, «Чувствительность
+        данных»). Revocation is immediate rather than at expiry: `sid` goes on a Redis denylist for
+        the remaining lifetime whenever the session is closed.
+
+    refreshCookie:
+      type: apiKey
+      in: cookie
+      name: bad_crm_refresh
+      description: |
+        The refresh token, as the browser holds it: `HttpOnly`, `Secure`, `SameSite=Lax`,
+        `Path=/api/v1/auth`, thirty days. Opaque 32 random bytes; the database stores only its
+        SHA-256 hash, so a dump of `sessions` is not a set of usable credentials.
+
+        Described as a security scheme rather than as a parameter on purpose. A parameter is
+        something a caller supplies, and no code in the client can supply or read this one — that is
+        the entire point of `HttpOnly`, and the reason an XSS that steals the access token gets
+        fifteen minutes rather than a month. It follows that the token appears in **no** request or
+        response schema of this document.
+
+        `SameSite=Lax` rather than `Strict` so that following a link from a notification mail does
+        not look like a signed-out visitor. That is safe here because the cookie authorises nothing
+        but `/auth/refresh` and `/auth/logout`: every other operation needs the `Authorization`
+        header, which a cross-site request cannot set. `/auth/refresh` additionally checks `Origin`.
 
   schemas:
+    EmailAddress:
+      type: string
+      format: email
+      maxLength: 254
+      description: |
+        Trimmed and lower-cased before it is compared or stored, and held in a `citext` column, so
+        `"  Ada@Example.COM "` and `ada@example.com` are one address. Unique per organization rather
+        than globally (`data-model.md` §1, `uq_users_org_email`): the same person may legitimately
+        have an account in two organizations of one installation.
+      examples: ['ada@example.com']
+
+    Password:
+      type: string
+      format: password
+      minLength: 12
+      maxLength: 128
+      writeOnly: true
+      description: |
+        A password in the clear, over TLS — the only shape in this contract that carries one, and
+        only ever in a request. `writeOnly` states that no response ever contains it; the stored form
+        is an argon2id hash (`memoryCost ≥ 19456`, `timeCost ≥ 2`) which is likewise never returned.
+
+        The bounds repeated here are the half a generated client can enforce before a round trip. The
+        policy itself is one schema for both sides —
+        `packages/shared/src/validation/password.schema.ts` — and everything it rejects is `422
+        validation_failed` naming the field, never a bare 400.
+      examples: ['correct-horse-battery']
+
+    OrganizationSlug:
+      type: string
+      pattern: '^[a-z0-9]+(?:-[a-z0-9]+)*$'
+      maxLength: 64
+      description: |
+        URL-safe identifier of the organization, unique across the installation. Lower-case ASCII
+        words joined by single hyphens; case and surrounding whitespace are normalised away, so two
+        organizations cannot end up with URLs a human reads as the same
+        (`packages/shared/src/validation/slug.schema.ts`).
+      examples: ['bad-company']
+
+    SessionUser:
+      type: object
+      additionalProperties: false
+      required: [id, email, locale, timezone]
+      description: |
+        The account the session belongs to — the minimum the shell needs to render before it asks for
+        anything else. Fields are the ones `data-model.md` §1 puts on `User`; `passwordHash`,
+        `totpSecretEnc`, `authVerifierHash` and the rest of that row are not part of any response.
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: |
+            Identifier of the user, stable for the lifetime of the account. Every entity key in this
+            product is a UUID (`data-model.md`, «Первичные и внешние ключи»); the ULID-shaped values
+            in this document are `requestId` and nothing else.
+          examples: ['b3f1c2d4-5e6a-4b7c-8d9e-0f1a2b3c4d5e']
+        email:
+          $ref: '#/components/schemas/EmailAddress'
+        locale:
+          type: string
+          description: The person's interface language, one of the locales this installation ships.
+          examples: ['en']
+        timezone:
+          type: string
+          description: |
+            Personal IANA timezone, used for delivery and presentation. The *working* timezone of an
+            employee lives on `EmployeeProfile` and is a different field (`data-model.md` §1).
+          examples: ['Europe/Berlin']
+
+    SessionOrganization:
+      type: object
+      additionalProperties: false
+      required: [id, name, slug]
+      description: The organization the session is scoped to — the `org` claim of the access token.
+      properties:
+        id:
+          type: string
+          format: uuid
+          examples: ['7c9e6679-7425-40de-944b-e07fc1f90ae7']
+        name:
+          type: string
+          examples: ['Bad Company']
+        slug:
+          $ref: '#/components/schemas/OrganizationSlug'
+
+    AuthenticatedSession:
+      type: object
+      additionalProperties: false
+      required: [status, accessToken, tokenType, expiresIn, user, organization]
+      description: |
+        A session, as far as a body is allowed to describe one. The other half of it — the refresh
+        token — is in `Set-Cookie` and deliberately has no field here.
+      properties:
+        status:
+          type: string
+          const: authenticated
+          description: Discriminator, so that `POST /auth/login` has one shape to switch on.
+        accessToken:
+          type: string
+          description: |
+            JWT for the `Authorization: Bearer` header. Kept in memory only; writing it to Web
+            Storage is what turns any XSS into a persistent session (CLAUDE.md, invariant 3 and
+            «Чувствительность данных»).
+        tokenType:
+          type: string
+          const: Bearer
+        expiresIn:
+          type: integer
+          minimum: 1
+          description: |
+            Lifetime of `accessToken` in seconds, so the client can refresh before a request fails
+            rather than after. A *hint*: expiry is decided by the token, not by this number.
+          examples: [900]
+        user:
+          $ref: '#/components/schemas/SessionUser'
+        organization:
+          $ref: '#/components/schemas/SessionOrganization'
+
+    OrganizationSelectionRequired:
+      type: object
+      additionalProperties: false
+      required: [status, organizations]
+      description: |
+        The password verified and the account exists in more than one organization on this
+        installation, so the session has no `org` to be scoped to yet. The client repeats the login
+        with `organizationSlug`.
+
+        Only ever produced *after* a correct password, which is what keeps it from being a way to ask
+        "where does this address have accounts".
+      properties:
+        status:
+          type: string
+          const: organization_selection_required
+        organizations:
+          type: array
+          minItems: 2
+          description: |
+            The organizations this address can sign in to. Two or more by construction: with one, the
+            server picks it and returns a session.
+          items:
+            $ref: '#/components/schemas/SessionOrganization'
+
+    LoginResult:
+      description: |
+        A session, or the choice that has to be made before one exists. Discriminated by `status`, so
+        a client switches on a field rather than on the presence of another one.
+      oneOf:
+        - $ref: '#/components/schemas/AuthenticatedSession'
+        - $ref: '#/components/schemas/OrganizationSelectionRequired'
+      discriminator:
+        propertyName: status
+        mapping:
+          authenticated: '#/components/schemas/AuthenticatedSession'
+          organization_selection_required: '#/components/schemas/OrganizationSelectionRequired'
+
+    RegisterOrganizationRequest:
+      type: object
+      additionalProperties: false
+      required: [organization, owner]
+      properties:
+        organization:
+          type: object
+          additionalProperties: false
+          required: [name, slug]
+          properties:
+            name:
+              type: string
+              minLength: 1
+              maxLength: 120
+              description: Display name. Free text; the slug is what has to be unique.
+              examples: ['Bad Company']
+            slug:
+              $ref: '#/components/schemas/OrganizationSlug'
+        owner:
+          type: object
+          additionalProperties: false
+          required: [email, password]
+          description: |
+            The first account of the organization, and its owner (`Organization.ownerId`). No display
+            name is asked for: `data-model.md` §1 does not put one on `User`, and inventing a field
+            here would be the contract disagreeing with the model.
+          properties:
+            email:
+              $ref: '#/components/schemas/EmailAddress'
+            password:
+              $ref: '#/components/schemas/Password'
+            locale:
+              type: string
+              description: Defaults to the installation's default locale when omitted.
+              examples: ['en']
+            timezone:
+              type: string
+              description: |
+                IANA name. Defaults to the organization's timezone, which the installer sets.
+              examples: ['Europe/Berlin']
+
+    LoginRequest:
+      type: object
+      additionalProperties: false
+      required: [email, password]
+      properties:
+        email:
+          $ref: '#/components/schemas/EmailAddress'
+        password:
+          $ref: '#/components/schemas/Password'
+        organizationSlug:
+          allOf:
+            - $ref: '#/components/schemas/OrganizationSlug'
+          description: |
+            Which organization to sign in to, when the address is used in more than one. Omitted on
+            the first attempt; supplied on the repeat that follows an
+            `organization_selection_required` answer.
+
+            A slug that does not exist, or one the account has no membership in, is refused as
+            `invalid_credentials` like every other failed login — it must not become a way to ask
+            which organizations exist.
+
+    ChangePasswordRequest:
+      type: object
+      additionalProperties: false
+      required: [currentPassword, newPassword]
+      properties:
+        currentPassword:
+          allOf:
+            - $ref: '#/components/schemas/Password'
+          description: |
+            Proof that the person at the keyboard is the account holder rather than somebody who sat
+            down at an unlocked machine. Wrong ⇒ `401 invalid_credentials`, nothing changes, no
+            session is touched.
+        newPassword:
+          allOf:
+            - $ref: '#/components/schemas/Password'
+          description: |
+            Subject to the same policy as registration, and additionally refused when it equals
+            `currentPassword` — both are `422 validation_failed` pointing at this field.
+
+    ForgotPasswordRequest:
+      type: object
+      additionalProperties: false
+      required: [email]
+      properties:
+        email:
+          $ref: '#/components/schemas/EmailAddress'
+
+    ResetPasswordRequest:
+      type: object
+      additionalProperties: false
+      required: [token, newPassword]
+      properties:
+        token:
+          type: string
+          minLength: 32
+          maxLength: 512
+          writeOnly: true
+          description: |
+            The single-use token from the reset mail. In the **body** and never in a query string —
+            a query string is logged by proxies, forwarded in `Referer` and copied along with the
+            link. Stored as a SHA-256 hash with a sixty-minute expiry, so the row it is checked
+            against is not itself a credential.
+          examples: ['example-only-not-a-real-reset-token']
+        newPassword:
+          $ref: '#/components/schemas/Password'
+
+    SessionSummary:
+      type: object
+      additionalProperties: false
+      required: [id, current, device, ipMasked, createdAt, lastUsedAt, expiresAt]
+      description: |
+        One live session, as `/settings/security` renders it. Nothing here identifies the credential:
+        `refreshTokenHash`, `familyId` and `ipHash` stay on the server (`data-model.md` §1).
+
+        One entry per **family**, not per row: a rotation writes a new `Session` row carrying the
+        same `familyId`, so the row this describes is the live one and the family is the device
+        (`data-model.md`, «Про refresh-семейства»).
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: |
+            Identifier of the live session row, and the `sid` claim of the access tokens minted
+            from it. It changes on every rotation, which is why the client addresses
+            `DELETE /auth/sessions/{sessionId}` with a value it has just read rather than one it
+            stored.
+          examples: ['4f1c2f4a-0a6d-4a7b-9a1e-2d3c4b5a6f70']
+        current:
+          type: boolean
+          description: |
+            True for the session this request is made from. Revoking it is allowed and behaves like
+            signing out; the client asks for confirmation first.
+        device:
+          type: string
+          description: |
+            Browser and platform, derived from the stored user agent by the server. Derived rather
+            than stored so that improving the parser improves old rows, and returned as a sentence
+            rather than as the raw user agent, which is a fingerprint nobody needs to read.
+          examples: ['Firefox on macOS']
+        ipMasked:
+          type: string
+          description: |
+            Redacted address of the session — never the full one, which is stored nowhere. IPv4 is
+            truncated to /24 and IPv6 to /48, and the redaction happens **at sign-in, before the row
+            is written** (`Session.ipMasked`, `data-model.md`, «Про адрес сессии»): the other
+            address column is a hash, and a hash cannot be masked into something readable.
+
+            `unknown` when the deployment provided no address this can read — a request over a unix
+            socket has none, and `X-Forwarded-For` is written by whatever sits in front. A stated
+            value rather than an absent field, so no client carries a branch for it.
+          examples: ['203.0.113.0/24', '2001:db8:85a3::/48', 'unknown']
+        createdAt:
+          type: string
+          format: date-time
+          description: |
+            When the session was opened — the oldest row of the family, not of the row this entry
+            describes, which is only as old as the last rotation.
+        lastUsedAt:
+          type: string
+          format: date-time
+          description: |
+            The last refresh rotation of this session — approximately "last active", at the
+            granularity of the fifteen-minute access token. Not per request: writing a row on every
+            request would turn a read path into a write path.
+
+            It is the `createdAt` of the live row (a rotation *creates* the row), and deliberately
+            not `Session.updatedAt`: Prisma's `@updatedAt` is computed by the client, so the raw
+            `UPDATE` that revokes a family never moves it, and on a live row it would only change at
+            the moment the row stops being live. Equal to `createdAt` for a session that has not
+            rotated yet.
+        expiresAt:
+          type: string
+          format: date-time
+          description: When the refresh token dies and the session ends without further action.
+
+    SessionList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      description: |
+        Not paginated, and that is a decision rather than an omission: the collection is one row per
+        signed-in device, capped by a thirty-day expiry and swept by the cleanup job. See the
+        operation description for why the sign-in *history* is a different resource.
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/SessionSummary'
+
+    RevokeOtherSessionsResult:
+      type: object
+      additionalProperties: false
+      required: [revokedCount]
+      properties:
+        revokedCount:
+          type: integer
+          minimum: 0
+          description: |
+            How many sessions were closed, so the client can say so. Zero on a repeat — the operation
+            is idempotent, and the count reports this call rather than the state.
+
+            One per device rather than per row: only the live member of a refresh family is open, so
+            closing "every other session" touches exactly one row per family and the number matches
+            what `GET /auth/sessions` had listed.
     ApiMeta:
       type: object
       additionalProperties: false
@@ -110,6 +1101,11 @@ components:
       enum:
         - validation_failed
         - unauthenticated
+        - invalid_credentials
+        - account_suspended
+        - registration_disabled
+        - password_reset_token_invalid
+        - mail_not_configured
         - route_not_found
         - payload_too_large
         - vault_locked
@@ -134,6 +1130,9 @@ components:
         - invitation_not_found
         - invitation_forbidden
         - invitation_already_exists
+        - session_not_found
+        - session_forbidden
+        - session_already_exists
         - project_not_found
         - project_forbidden
         - project_already_exists
@@ -295,7 +1294,66 @@ components:
             Opaque base64url of `{ sortKey, id }`. The `id` tie-breaker is mandatory: without it
             rows sharing a timestamp are skipped at the page boundary.
 
+  headers:
+    RefreshCookieSet:
+      description: |
+        Issues the refresh token as `bad_crm_refresh`, replacing whatever was there.
+
+        The attributes are the contract, not a suggestion: `HttpOnly` keeps it away from script,
+        `Secure` off plaintext HTTP, `SameSite=Lax` out of cross-site requests, and `Path=/api/v1/auth`
+        off every other endpoint of this API — so a bug anywhere else cannot be exploited by a
+        request that carries this cookie. `Max-Age` is thirty days.
+      required: true
+      schema:
+        type: string
+      example: bad_crm_refresh=<opaque>; Max-Age=2592000; Path=/api/v1/auth; HttpOnly; Secure; SameSite=Lax
+
+    RefreshCookieSetConditional:
+      description: |
+        As `RefreshCookieSet`, but present only on the `authenticated` branch of the answer.
+        `organization_selection_required` issues no session and therefore no cookie.
+      required: false
+      schema:
+        type: string
+      example: bad_crm_refresh=<opaque>; Max-Age=2592000; Path=/api/v1/auth; HttpOnly; Secure; SameSite=Lax
+
+    RefreshCookieCleared:
+      description: |
+        Expires `bad_crm_refresh` with the same `Path` it was set with — a clearing cookie on a
+        different path leaves the original in place, which is how "sign out" turns into "still signed
+        in after a reload".
+      required: true
+      schema:
+        type: string
+      example: bad_crm_refresh=; Max-Age=0; Path=/api/v1/auth; HttpOnly; Secure; SameSite=Lax
+
+    RefreshCookieClearedConditional:
+      description: |
+        As `RefreshCookieCleared`, and sent only when the revoked session is the caller's own current
+        one. Revoking another device changes nothing about this browser's cookie.
+      required: false
+      schema:
+        type: string
+      example: bad_crm_refresh=; Max-Age=0; Path=/api/v1/auth; HttpOnly; Secure; SameSite=Lax
+
   parameters:
+    SessionId:
+      name: sessionId
+      in: path
+      required: true
+      description: |
+        Identifier of one of the caller's own sessions, as returned by `GET /auth/sessions`. An id
+        belonging to somebody else is answered 404, not 403.
+
+        A UUID, like every entity key in this product (`data-model.md`, «Первичные и внешние ключи»),
+        and one that changes on every rotation — the client sends back a value from the list it has
+        just read.
+      schema:
+        type: string
+        format: uuid
+      examples:
+        session:
+          value: 4f1c2f4a-0a6d-4a7b-9a1e-2d3c4b5a6f70
     Page:
       name: page
       in: query
@@ -340,6 +1398,14 @@ components:
         Client-generated key, mandatory on every unsafe operation that creates an entity, sends
         mail or spends money or tokens. A replay carrying the same request hash returns the stored
         response; the same key with a different hash is refused with 409 `idempotency_key_reuse`.
+
+        The client attaches it to every unsafe request without asking, so the operations that
+        **declare** this parameter are the ones that store and replay a response. The rest ignore it,
+        and two groups of them do so deliberately (see each operation's description): the ones that
+        are idempotent by construction, where a stored response buys nothing, and `POST /auth/login`
+        and `POST /auth/refresh`, where a stored response *is* a credential — replaying it would hand
+        back tokens that have since been rotated or revoked and would let one key slip a repeat past
+        the failed-attempt counter that the lockout depends on.
       schema:
         type: string
         minLength: 16
@@ -358,6 +1424,143 @@ components:
         application/problem+json:
           schema:
             $ref: '#/components/schemas/Problem'
+
+    InvalidCredentials:
+      description: |
+        A credential was presented and refused.
+
+        **This is one answer for two situations, by design.** An email nobody has and a wrong
+        password produce this identical response — same status, same `code`, same `title`, no
+        `detail` that separates them — and the use-case verifies a dummy hash in the first case so
+        that the elapsed time does not separate them either. It is the acceptance criterion of
+        EPIC-006 and it is not an implementation detail: two answers here make the login form a
+        directory of everyone who works at the company, readable by anybody with a word list, and
+        that list is what turns a breach somewhere else into a breach here.
+
+        The same code answers a wrong `currentPassword` on `POST /auth/change-password` — the same
+        fact, and the same counter for the rate limiter.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+          examples:
+            refused:
+              summary: Wrong password — and, byte for byte, unknown address.
+              value:
+                type: https://bad-crm.dev/problems/invalid-credentials
+                title: Invalid credentials
+                status: 401
+                code: invalid_credentials
+                requestId: 01J8Z2F5Q3K9V6N0R4T7YB3XQD
+
+    AccountSuspended:
+      description: |
+        The password was right and the account may not open a session (`User.status = SUSPENDED`).
+
+        Reachable only after a successful verification, which is what keeps it from being an
+        enumeration oracle: it tells somebody who already knows the password something they can
+        anyway find out, and tells a guesser nothing at all.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+          examples:
+            suspended:
+              value:
+                type: https://bad-crm.dev/problems/account-suspended
+                title: Account suspended
+                status: 403
+                code: account_suspended
+                requestId: 01J8Z2F5Q3K9V6N0R4T7YB3XQD
+
+    RegistrationDisabled:
+      description: |
+        This installation does not accept new organizations through the form. Self-hosted installs
+        are normally one organization created once, and leaving the endpoint open afterwards means an
+        anonymous visitor can fill the database.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+          examples:
+            closed:
+              value:
+                type: https://bad-crm.dev/problems/registration-disabled
+                title: Registration disabled
+                status: 403
+                code: registration_disabled
+                requestId: 01J8Z2F5Q3K9V6N0R4T7YB3XQD
+
+    PasswordResetTokenInvalid:
+      description: |
+        The reset token is unknown, already used, or expired — one answer for all three. Separating
+        them would let a holder of a guessed token learn whether it ever existed, and would let the
+        "already used" case confirm that somebody completed a reset.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+          examples:
+            spent:
+              value:
+                type: https://bad-crm.dev/problems/password-reset-token-invalid
+                title: Password reset token is not usable
+                status: 400
+                code: password_reset_token_invalid
+                requestId: 01J8Z2F5Q3K9V6N0R4T7YB3XQD
+
+    MailNotConfigured:
+      description: |
+        The operation has to send mail and this installation has no `SMTP_URL`.
+
+        Not `feature_disabled`: nobody switched password recovery off, the deployment is incomplete.
+        The distinction is what the person on the other end is told — "ask your administrator" rather
+        than "this product does not do that" — and it is also the retry semantics: 501 says the
+        server does not implement this and coming back changes nothing, 503 says it would if it
+        could. The alternative, answering success without sending anything, is the failure this code
+        exists to prevent.
+
+        On `POST /auth/forgot-password` it is refused **before** the address is resolved, so that
+        the choice between 503 and 202 depends on the installation and never on whether the address
+        is registered.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+          examples:
+            noSmtp:
+              value:
+                type: https://bad-crm.dev/problems/mail-not-configured
+                title: Mail is not configured
+                status: 503
+                code: mail_not_configured
+                requestId: 01J8Z2F5Q3K9V6N0R4T7YB3XQD
+
+    ServiceUnavailable:
+      description: |
+        A dependency needed to answer is unavailable. On the authentication endpoints this is
+        deliberate rather than incidental: when Redis is unreachable the rate limiter cannot count,
+        and an uncounted login endpoint is an unlimited one, so the request is refused instead
+        (fail closed, STORY-006-07).
+      headers:
+        Retry-After:
+          description: Seconds to wait, when the server can estimate it.
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+          examples:
+            limiterDown:
+              value:
+                type: https://bad-crm.dev/problems/service-unavailable
+                title: Service unavailable
+                status: 503
+                code: service_unavailable
+                requestId: 01J8Z2F5Q3K9V6N0R4T7YB3XQD
     Forbidden:
       description: |
         Authenticated, and not allowed to do this **inside their own organization**. A resource
@@ -400,5 +1603,9 @@ components:
             $ref: '#/components/schemas/Problem'
 
 tags:
+  - name: auth
+    description: |
+      Registration, sign-in, session rotation and password recovery — everything that establishes or
+      ends the identity the rest of the API is authorised against.
   - name: platform
     description: Operations about the installation itself rather than about its data.

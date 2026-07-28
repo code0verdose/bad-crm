@@ -23,6 +23,17 @@ export interface TenantTableSpec {
   /** Column the tenant policy compares. `organizations` is the tenant root and compares its key. */
   readonly tenantColumn: TenantColumn;
   readonly appUserPrivileges: readonly TablePrivilege[];
+  /**
+   * The table carries `deleted_at` (docs/architecture/data-model.md, «Мягкое удаление»).
+   *
+   * Declared rather than assumed because the migration suite asserts the column list of every
+   * registry table, and "every table has `deleted_at`" is false: a session is revoked and a reset
+   * token is spent, neither is archived. Without the flag that assertion had to be dropped for all
+   * tables to accommodate the ones that lack it — and a softly deleted table shipped without its
+   * column would then pass. `tenant-tables.test.ts` holds the flag against the Prisma schema, so it
+   * cannot drift into decoration.
+   */
+  readonly softDeleted: boolean;
 }
 
 export const TENANT_TABLES = {
@@ -32,11 +43,33 @@ export const TENANT_TABLES = {
     // No DELETE: removing an organization is an `app_migrator` operation carried out in
     // maintenance mode, not something a request can trigger (docs/security/rls-design.md).
     appUserPrivileges: ['SELECT', 'INSERT', 'UPDATE'],
+    softDeleted: true,
+  },
+  password_reset_tokens: {
+    model: 'PasswordResetToken',
+    tenantColumn: 'organization_id',
+    // DELETE, because expiry is enforced by removing the row: the cleanup job runs as the
+    // application, per organization, inside `withTenant` (rules/tenancy-rls.mdc, 12).
+    appUserPrivileges: ['SELECT', 'INSERT', 'UPDATE', 'DELETE'],
+    softDeleted: false,
+  },
+  sessions: {
+    model: 'Session',
+    tenantColumn: 'organization_id',
+    appUserPrivileges: ['SELECT', 'INSERT', 'UPDATE', 'DELETE'],
+    softDeleted: false,
   },
   teams: {
     model: 'Team',
     tenantColumn: 'organization_id',
     appUserPrivileges: ['SELECT', 'INSERT', 'UPDATE', 'DELETE'],
+    softDeleted: true,
+  },
+  users: {
+    model: 'User',
+    tenantColumn: 'organization_id',
+    appUserPrivileges: ['SELECT', 'INSERT', 'UPDATE', 'DELETE'],
+    softDeleted: true,
   },
 } as const satisfies Record<string, TenantTableSpec>;
 
@@ -50,11 +83,19 @@ export type TenantTableName = keyof typeof TENANT_TABLES;
  * from the registry is a table nothing isolates, and a registry entry with no model is a stale
  * expectation that keeps a deleted table's tests green.
  */
-export const tenantTablesFromSchema = (): { model: string; table: string }[] =>
+export const tenantTablesFromSchema = (): {
+  model: string;
+  table: string;
+  softDeleted: boolean;
+}[] =>
   Prisma.dmmf.datamodel.models
     .filter(
       (model) =>
         model.name === 'Organization' ||
         model.fields.some((field) => field.name === 'organizationId'),
     )
-    .map((model) => ({ model: model.name, table: model.dbName ?? model.name }));
+    .map((model) => ({
+      model: model.name,
+      table: model.dbName ?? model.name,
+      softDeleted: model.fields.some((field) => field.name === 'deletedAt'),
+    }));

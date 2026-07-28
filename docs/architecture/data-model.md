@@ -180,7 +180,8 @@ updated: 2026-07-26
 | `Organization` | [T]* | `id`, `slug` (уникален глобально), `name`, `ownerId` → `User`, `settings Json`, `timezone`, `defaultCurrency`, `createdAt`, `deletedAt?` | корень всего графа |
 | `User` | [T] | `organizationId`, `email`, `emailVerifiedAt?`, `passwordHash`, `totpSecretEnc?`, `totpEnabledAt?`, `permissionsVersion Int`, `status ACTIVE\|SUSPENDED\|INVITED`, `lastSeenAt?`, `locale`, `timezone`, `authVerifierSalt?`, `authVerifierHash?`, `deletedAt?` | → `Organization`; 1:1 `EmployeeProfile`; 1:N `Session`, `UserRole` |
 | `EmployeeProfile` | [T] | `userId @unique`, `jobTitle`, `department`, `managerId?` → `User`, `weeklyCapacityHours Int`, `employmentType`, `hiredAt`, `terminatedAt?`, `timezone`, `emergencyContactEnc?` | 1:1 `User`, self-ref через `managerId` |
-| `Session` | [T] | `userId`, `familyId`, `rotatedFromId?` → `Session`, `refreshTokenHash`, `userAgent`, `ipHash`, `expiresAt`, `revokedAt?`, `revokedReason?` | → `User` |
+| `Session` | [T] | `userId`, `familyId`, `rotatedFromId?` → `Session`, `refreshTokenHash`, `userAgent`, `ipHash`, `ipMasked`, `expiresAt`, `revokedAt?`, `revokedReason?` | → `User` |
+| `PasswordResetToken` | [T] | `userId`, `tokenHash`, `expiresAt`, `usedAt?`, `requestedIpHash?` | → `User` |
 | `Invitation` | [T] | `email`, `roleId?`, `teamIds String[]`, `tokenHash`, `invitedById`, `expiresAt`, `acceptedAt?`, `acceptedUserId?` | → `Organization`, `Role`, `User` |
 | `Team` | [T] | `name`, `slug`, `description`, `leadId?` → `User`, `deletedAt?` | 1:N `TeamMember` |
 | `TeamMember` | [T] | `teamId`, `userId`, `teamRole MEMBER\|LEAD`, `joinedAt` | join `Team` × `User` |
@@ -195,8 +196,29 @@ updated: 2026-07-26
 - `idx_users_org_status (organization_id, status)` — списки сотрудников.
 - `uq_employee_profiles_user (user_id)`; `idx_employee_profiles_org_manager (organization_id, manager_id)`
   — построение оргструктуры; `idx_employee_profiles_org_active (organization_id) WHERE terminated_at IS NULL`.
-- `idx_sessions_user_family (user_id, family_id)`, `uq_sessions_refresh_hash (refresh_token_hash)`,
-  `idx_sessions_expires (expires_at) WHERE revoked_at IS NULL` — для джоба зачистки.
+- `idx_sessions_org_user_family (organization_id, user_id, family_id)` — список активных сессий
+  пользователя и отзыв **всего семейства** одним индексным апдейтом; `uq_sessions_refresh_hash
+  (refresh_token_hash)` — единственный уникальный ключ модели, объявленный **глобально** (см. врезку
+  «Про глобальность `uq_sessions_refresh_hash`» ниже); `idx_sessions_org_expires (organization_id,
+  expires_at) WHERE revoked_at IS NULL` — для джоба зачистки.
+
+  Обе составные записи начинаются с `organization_id` — этого требует инвариант №1
+  (`CLAUDE.md`) и раздел «`organization_id` — первая колонка составных индексов»
+  [`../security/rls-design.md`](../security/rls-design.md). Предыдущая редакция этого документа
+  называла их `idx_sessions_user_family (user_id, family_id)` и `idx_sessions_expires (expires_at)`,
+  то есть без tenant-колонки; исправлено 2026-07-28 при реализации EPIC-006. Зачистка истёкших
+  сессий — не исключение уровня `idx_outbox_pending`: кросс-организационные джобы по
+  `rules/tenancy-rls.mdc` (12) обходят организации и открывают `withTenant` на каждую, поэтому
+  выборка всегда org-скоупная.
+- `uq_password_reset_tokens_hash (token_hash)` — глобально уникален по той же причине, что и
+  `uq_invitations_token`/`uq_secure_links_token_hash`: значение генерирует сервер (32 байта CSPRNG),
+  а ссылку из письма открывают до того, как организация известна;
+  `idx_password_reset_tokens_org_user (organization_id, user_id)` — «есть ли у пользователя
+  действующий запрос» и погашение прочих токенов при успешном сбросе; **не** частичный, потому что
+  этот же индекс обслуживает `ON DELETE CASCADE` составного FK на `users`, а частичный индекс
+  каскаду не помогает;
+  `idx_password_reset_tokens_org_expires (organization_id, expires_at) WHERE used_at IS NULL` —
+  зачистка просроченных.
 - `uq_invitations_token (token_hash)`, `idx_invitations_org_email (organization_id, email) WHERE accepted_at IS NULL`.
 - `uq_team_members (team_id, user_id)`, `idx_team_members_org_user (organization_id, user_id)`.
 
@@ -229,6 +251,7 @@ erDiagram
     Organization ||--o{ Invitation : "содержит"
     User ||--o| EmployeeProfile : "кадровая запись"
     User ||--o{ Session : "сессии"
+    User ||--o{ PasswordResetToken : "запросы сброса"
     User ||--o{ TeamMember : "членства"
     Team ||--o{ TeamMember : "участники"
     EmployeeProfile }o--o| User : "руководитель"
@@ -275,6 +298,14 @@ erDiagram
         datetime expiresAt
         datetime revokedAt
     }
+    PasswordResetToken {
+        uuid id PK
+        uuid organizationId FK
+        uuid userId FK
+        bytes tokenHash UK
+        datetime expiresAt
+        datetime usedAt
+    }
     Team {
         uuid id PK
         uuid organizationId FK
@@ -302,6 +333,150 @@ erDiagram
 использованного (`revokedAt IS NOT NULL`) токена означает кражу → отзываем **всё семейство** одним
 `UPDATE … WHERE family_id = $1` и пишем в `AuditLog`. Именно поэтому семейство — колонка, а не
 вычисляемая цепочка: отзыв должен быть одним индексным апдейтом, а не рекурсивным обходом.
+
+`rotatedFromId` — самоссылка внутри той же таблицы, и она **составная**:
+`FOREIGN KEY (organization_id, rotated_from_id) REFERENCES sessions (organization_id, id)`. Проверки
+внешних ключей выполняются системными триггерами от имени владельца и обходят RLS, поэтому одиночный
+`REFERENCES sessions (id)` подтвердил бы существование сессии чужой организации и позволил бы
+пристроить свою сессию к чужой цепочке ротации. `ON DELETE SET NULL`: удаление предка не должно
+уносить потомков — цепочка ротации нужна именно для разбора инцидента.
+
+**Следствие для экрана активных сессий.** Строка `Session` — это **один refresh-токен**, а не одно
+устройство: ротация создаёт новую строку. Поэтому `GET /api/v1/auth/sessions` показывает по одной
+записи на **семейство** — живую строку (`revoked_at IS NULL`), — и два её времени берутся так:
+
+- `lastUsedAt` = `created_at` **живой строки**. Живая строка появилась в момент последней ротации,
+  то есть её `created_at` и есть «когда сессией пользовались в последний раз» с точностью до
+  пятнадцатиминутного access-токена. Брать сюда `updated_at` неверно дважды: во-первых, `@updatedAt`
+  — свойство Prisma-клиента, а не БД, и сырой `UPDATE … WHERE family_id = …` (отзыв семейства выше)
+  его не трогает; во-вторых, у живой строки `updated_at` меняется только в момент её отзыва, то есть
+  ровно тогда, когда она перестаёт быть живой.
+- `createdAt` = `min(created_at)` по семейству (`min(created_at) OVER (PARTITION BY organization_id,
+  user_id, family_id)`), то есть момент входа. Обслуживается `idx_sessions_org_user_family`.
+
+Отдельной колонки «когда сессия началась» нет сознательно: это агрегат по уже существующему индексу,
+а денормализация потребовала бы поддерживать её на каждой ротации.
+
+**Про `updated_at` и триггер.** Prisma-атрибут `@updatedAt` вычисляется **клиентом**: любой запрос,
+идущий мимо Prisma, оставляет колонку со старым значением. В этой модели такие запросы не гипотеза,
+а норматив — отзыв семейства и офбординг описаны здесь именно как `UPDATE … WHERE …`. Поэтому
+`updated_at` держится триггером `set_updated_at()` (`BEFORE UPDATE`, `NEW.updated_at = now()`),
+который вешается на **каждую** таблицу с этой колонкой. Правило проверяется механически: в
+`packages/server/test/integration/db/migrations.test.ts` есть тест, который делает сырой `UPDATE` по
+каждой таблице реестра и требует, чтобы `updated_at` сдвинулся.
+
+**Про адрес сессии: `ipHash` и `ipMasked`.** Полный IP не хранится **нигде** — это персональные
+данные (`CLAUDE.md`, «Персональные данные»), и решение принимается на входе, до записи строки:
+
+- `ipHash` — SHA-256 адреса. Отвечает только на вопрос «тот же это адрес, что и у той сессии»;
+  расхешировать его нельзя, поэтому показать пользователю из него нечего.
+- `ipMasked` — маскированная форма, **NOT NULL**, единственное, что уходит в API
+  (`SessionSummary.ipMasked`). IPv4 усекается до /24, IPv6 — до /48; функция —
+  `packages/server/src/domain/identity/mask-ip-address.util.ts`, для нечитаемого входа она отдаёт
+  `unknown` (заголовок `X-Forwarded-For` пишет прокси, а у запроса через unix-сокет адреса нет
+  вовсе).
+
+Почему адрес вообще показывается: экран активных сессий существует ради узнавания «это не я», а
+устройство и время такого сигнала не дают — сменившийся город виден только по адресу. Почему колонка
+`NOT NULL`, а поле контракта обязательное: сделано до релиза и до первой строки; после релиза это
+навсегда nullable-колонка и навсегда опциональное поле, а каждый читатель — с веткой на «адреса
+нет».
+
+**Про глобальность `uq_sessions_refresh_hash`.** Ключ намеренно не включает `organization_id`, и это
+не упущение. Три причины, по порядку значимости:
+
+1. **Иначе ключ перестаёт быть ключом на том пути, где он используется.** Refresh приходит cookie'й,
+   без организации; резолв идёт `auth_lookup_session(p_refresh_hash bytea)` под ролью `app_auth` с
+   `BYPASSRLS` (см. [`../security/rls-design.md`](../security/rls-design.md), путь 1). Уникальность
+   в паре `(organization_id, refresh_token_hash)` допускает две строки с одинаковым хешем в разных
+   организациях — и функция вернула бы две сессии там, где обязана вернуть одну. Это не
+   «менее строго», а **неоднозначность на пути аутентификации**.
+2. **Значение генерирует сервер.** 32 байта CSPRNG, хранится SHA-256; правило остаточного риска 7
+   [`../security/rls-design.md`](../security/rls-design.md) разрешает глобальную уникальность ровно
+   для серверно-сгенерированных случайных значений и запрещает для пользовательского ввода
+   (поэтому `uq_users_org_email` — тенантный, а этот — нет).
+3. **Что происходит при коллизии между арендаторами.** Уникальность проверяется **ниже** RLS,
+   поэтому вставка, столкнувшаяся со строкой чужого тенанта, падает с `23505`, а не создаёт дубль.
+   Это правильный (fail-closed) исход, но он же — оракул: по коду ошибки можно узнать, что где-то в
+   инсталляции такое значение уже есть. Цена оракула равна вероятности коллизии SHA-256 от 32
+   случайных байт, то есть пренебрежима; цена альтернативы — пункт 1. **Требование к приложению:**
+   `23505` на этой вставке никогда не выходит наружу как отдельный код ошибки — логин повторяет
+   генерацию токена, наружу идёт обычный ответ; иначе оракул из теоретического становится
+   наблюдаемым.
+
+**Про `User.status = INVITED` и `password_hash NOT NULL`.** Эти два утверждения нельзя выполнить
+одновременно: строка в статусе `INVITED` обязана нести хеш-заглушку в колонке паролей, а заглушка в
+колонке учётных данных — ровно та вещь, которую однажды кто-нибудь сверит с вводом. Источники
+расходятся между собой:
+
+- [STORY-012-01](../../epics/epic-012-employee-management/stories/story-012-01-invite-employee.md)
+  создаёт только `Invitation`, а
+  [STORY-012-02](../../epics/epic-012-employee-management/stories/story-012-02-accept-invitation.md)
+  создаёт `User(status = ACTIVE)` **в момент принятия** — то есть строки `User` в статусе `INVITED`
+  не появляется ни на одном шаге;
+- [STORY-012-04](../../epics/epic-012-employee-management/stories/story-012-04-employee-directory.md)
+  показывает в справочнике `ACTIVE` и `INVITED`, а
+  [STORY-012-06](../../epics/epic-012-employee-management/stories/story-012-06-transfer-ownership.md)
+  отказывает в передаче владения пользователю со `status = INVITED` — обе предполагают, что такие
+  строки есть.
+
+**Решение EPIC-006:** инвариант — «строка `User` создаётся тогда, когда есть пароль»; человек,
+которого пригласили и который ещё не принял приглашение, живёт в `Invitation`, а не в `users`.
+Поэтому `password_hash` — `NOT NULL`, а значение `INVITED` остаётся в enum'е недостижимым до
+EPIC-012. Выбор направления (справочник джойнит `Invitation` — или `User` создаётся сразу в статусе
+`INVITED`) принимает EPIC-012 вместе с этими четырьмя историями.
+
+Почему `NOT NULL` при этом ничего не цементирует — асимметрия ALTER'ов: снять ограничение
+(`ALTER COLUMN password_hash DROP NOT NULL`) — операция над каталогом, мгновенная и совместимая с
+rolling deploy (старый код всегда писал значение); повесить его обратно — скан таблицы под
+`ACCESS EXCLUSIVE` через `CHECK … NOT VALID` → `VALIDATE` → `SET NOT NULL`
+([`../../rules/db-migrations.mdc`](../../rules/db-migrations.mdc), 4). Дешёвое направление —
+именно то, которое понадобится, если EPIC-012 решит иначе.
+
+**Про каскады `User` → `Session` и мягкое удаление.** Это две разные операции, и они не
+взаимозаменяемы:
+
+- **Физическое удаление `users`** (операция обслуживания, не запроса) уносит сессии:
+  `FOREIGN KEY (organization_id, user_id) REFERENCES users (organization_id, id) ON DELETE CASCADE`.
+  Сессия без владельца не имеет смысла и не должна пережить строку, на которую ссылается.
+- **Мягкое удаление** (`users.deleted_at`) физически ничего не удаляет, и БД сама по себе сессии не
+  тронет. Поэтому инвариант формулируется на уровне сценария: **проставление `deleted_at`
+  выполняется в одной транзакции с отзывом всех сессий пользователя** —
+  `UPDATE sessions SET revoked_at = now(), revoked_reason = 'OFFBOARDING' WHERE organization_id = $1
+  AND user_id = $2 AND revoked_at IS NULL`, — и в той же транзакции `permissions_version`
+  инкрементируется, чтобы выданный access-токен перестал приниматься до истечения своих 15 минут.
+  Без этого «удалённый» пользователь продолжает работать до конца жизни refresh-токена. То же самое
+  верно для `status = 'SUSPENDED'`. Индекс `idx_sessions_org_user_family` обслуживает этот `UPDATE`.
+
+  Причина называется `OFFBOARDING`, а не `USER_DELETED`: **той же** причиной закрываются сессии при
+  приостановке аккаунта, при которой ничего не удалено, — и
+  [STORY-012-05](../../epics/epic-012-employee-management/stories/story-012-05-offboarding.md)
+  требует буквально этого значения (`revokedReason = 'offboarding'`), потому что одна операция
+  деактивации закрывает и приостановку, и уход. Значение PG-enum нельзя переименовать без
+  пересоздания типа, поэтому имя выбрано сейчас, пока таблица пуста.
+
+**Про `PasswordResetToken`.** Отдельная сущность, а не колонки на `User`: у пользователя может быть
+несколько запросов подряд, каждый со своим сроком, и историю попыток нельзя восстановить из одной
+пары колонок. Правила, вытекающие из [STORY-006-08](../../epics/epic-006-auth-core/stories/story-006-08-password-reset-by-email.md):
+
+- **Хранится хеш, а не токен.** `tokenHash` — SHA-256 (32 байта, `bytea`) от 32 байт CSPRNG; сам
+  токен существует только в письме и в URL. Дополнительная соль не нужна: у входа 256 бит энтропии,
+  медленный хеш здесь избыточен (тот же приём, что у `SecureLink.tokenHash`).
+- **TTL — 60 минут**, `expiresAt` проставляется при выдаче; просроченный и погашенный токены дают
+  **неразличимый** ответ, чтобы не сообщать, какой именно случай произошёл.
+- **Повторное использование отвергается на уровне БД, а не проверкой перед записью.** Погашение —
+  `UPDATE password_reset_tokens SET used_at = now() WHERE id = $1 AND used_at IS NULL RETURNING id`:
+  строк вернулось ноль — токен уже использован, гонка двух параллельных переходов по ссылке
+  разрешается атомарно. Проверка «сначала прочитать, потом обновить» здесь неверна.
+- **Зачистка.** Строки удаляются физически (мягкого удаления у таблицы нет) джобом по
+  `idx_password_reset_tokens_org_expires`; лог факта запроса и факта сброса живёт в `AuditLog`, а не
+  в этой таблице.
+- **Резолв до организации.** Ссылку открывают неаутентифицированной, поэтому поиск по `tokenHash`
+  идёт тем же путём, что и `auth_lookup_session` — `SECURITY DEFINER`-функция во владении `app_auth`
+  с фиксированным `search_path`; сам сброс выполняется уже под `app_user` в `withTenant`. Функция
+  заводится в STORY-006-08 вместе с use-case'ом; таблица и её политика — здесь.
+- `requestedIpHash` — тот же хеш IP, что и у `Session.ipHash` (полный адрес не хранится); нуллабелен,
+  потому что запрос может прийти из окружения, где адрес недоступен.
 
 **Про `Organization.ownerId`.** Инвариант «у организации всегда есть минимум один владелец» держится
 колонкой, а не соглашением: `ownerId` — FK на `User` этой же организации, и он обязателен. Владелец —

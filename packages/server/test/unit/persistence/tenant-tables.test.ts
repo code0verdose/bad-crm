@@ -22,6 +22,29 @@ describe('the tenant table registry', () => {
     }
   });
 
+  /**
+   * The flag the migration suite asserts `deleted_at` from, held against the schema it describes.
+   *
+   * Either direction is a real defect. A table marked soft-deleted without the column makes the
+   * global `deletedAt IS NULL` filter of `docs/architecture/data-model.md` read a column that is not
+   * there; a table with the column and the flag off makes the migration suite stop requiring it, and
+   * the next table to lose the column ships unnoticed.
+   */
+  it('agrees with the schema about which tables are softly deleted', () => {
+    for (const { table, softDeleted } of tenantTablesFromSchema()) {
+      expect(TENANT_TABLES[table as keyof typeof TENANT_TABLES]?.softDeleted, table).toBe(
+        softDeleted,
+      );
+    }
+  });
+
+  it('marks at least one table each way, or the assertion above is vacuous', () => {
+    const flags = Object.values(TENANT_TABLES).map((spec) => spec.softDeleted);
+
+    expect(flags).toContain(true);
+    expect(flags).toContain(false);
+  });
+
   it('reads the tenant root off its own primary key', () => {
     expect(TENANT_TABLES.organizations.tenantColumn).toBe('id');
   });

@@ -4,11 +4,12 @@
 // from that document; this file is its executable half. A model added here without a row there is
 // a divergence to escalate, not a decision to take (CLAUDE.md, «Порядок источников истины»).
 //
-// SCOPE OF THIS FILE TODAY: the tenant root and one tenant-scoped table. That is deliberate — the
-// full model is M2+ work, and the point of the first migration is to establish the shape every
-// later table is copied from: `organization_id`, ENABLE + FORCE row level security, a policy with
-// both USING and WITH CHECK, explicit grants, and an isolation test with a positive control
-// (invariant 1 of CLAUDE.md, `docs/security/rls-design.md`).
+// SCOPE OF THIS FILE TODAY: the tenant root, the identity tables of EPIC-006 and one further
+// tenant-scoped table. That is deliberate — the full model is M2+ work, and the point of the first
+// migrations is to establish the shape every later table is copied from: `organization_id`,
+// ENABLE + FORCE row level security, a policy with both USING and WITH CHECK, explicit grants,
+// composite foreign keys, and an isolation test with a positive control (invariant 1 of CLAUDE.md,
+// `docs/security/rls-design.md`).
 //
 // WHAT PRISMA CANNOT EXPRESS, AND WHERE IT THEREFORE LIVES:
 //   * row level security, policies and grants — written by hand in the migration that creates the
@@ -54,14 +55,210 @@ model Organization {
   updatedAt DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
   deletedAt DateTime? @map("deleted_at") @db.Timestamptz(6)
 
-  teams Team[]
+  teams               Team[]
+  users               User[]
+  sessions            Session[]
+  passwordResetTokens PasswordResetToken[]
 
   @@map("organizations")
 }
 
-/// Tenant-scoped table [T]. `Organization.ownerId` and `Team.leadId` of the data model are absent
-/// on purpose: both are foreign keys to `users`, a table this migration does not create. They
-/// arrive with the users table in EPIC-006, as an expand step (nullable column, then backfill).
+/// Membership state of an account, `docs/architecture/data-model.md` §1. No default: a row is
+/// created either by registration (`ACTIVE`) or by an invitation (`INVITED`), and a column default
+/// would decide that for whichever path forgets to.
+enum UserStatus {
+  ACTIVE
+  SUSPENDED
+  INVITED
+
+  @@map("user_status")
+}
+
+/// Why a session stopped being valid. A closed set defined by code and changed only by a release,
+/// which is what `docs/architecture/data-model.md` («Enum в Prisma vs строка/справочник») makes an
+/// enum rather than a free string — the database refuses a value nobody reviewed.
+///
+/// Every value answers an acceptance criterion of EPIC-006, and no value is here "for later":
+///   * `ROTATED`          — the refresh was exchanged for a new one (STORY-006-03);
+///   * `REUSE_DETECTED`   — an already-spent refresh came back, so the whole family is revoked
+///                          (STORY-006-03);
+///   * `LOGOUT`           — the owner of the session signed out (STORY-006-04);
+///   * `REVOKED_BY_USER`  — revoked from the active-sessions screen (STORY-006-04);
+///   * `PASSWORD_CHANGED` — a password change or reset closes every other session
+///                          (STORY-006-06, STORY-006-08);
+///   * `OFFBOARDING`      — the account stopped being able to hold sessions: suspended, deactivated
+///                          or softly deleted (`docs/architecture/data-model.md`, «Про каскады»).
+///
+/// `OFFBOARDING` and not `USER_DELETED`, which is what this value was called: suspension deletes
+/// nothing, and the reason would have been false for the case that produces most of these rows.
+/// STORY-012-05 names the value literally, and its one deactivation operation covers both.
+enum SessionRevokedReason {
+  ROTATED
+  REUSE_DETECTED
+  LOGOUT
+  REVOKED_BY_USER
+  PASSWORD_CHANGED
+  OFFBOARDING
+
+  @@map("session_revoked_reason")
+}
+
+/// Tenant-scoped table [T]: the subject of authentication and authorisation.
+///
+/// Deliberately *not* the HR record — that is `EmployeeProfile`, and the split is argued in
+/// `docs/architecture/data-model.md` §1. This table is read on every authenticated request, so it
+/// stays narrow.
+///
+/// Nothing here is a secret in the clear: `passwordHash` is an argon2id digest, `totpSecretEnc` is
+/// AES-256-GCM ciphertext under `APP_ENCRYPTION_KEY`, and the two `authVerifier*` columns belong to
+/// the vault's proof-of-knowledge, not to the login path (`docs/security/e2ee-design.md`).
+model User {
+  id             String @id(map: "pk_users") @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String @map("organization_id") @db.Uuid
+
+  /// `citext`, so `User@Example.COM` and `user@example.com` are the same address at the level that
+  /// decides it — the database. Case folding done in the application is case folding one caller
+  /// forgets (STORY-006-01).
+  email           String    @db.Citext
+  emailVerifiedAt DateTime? @map("email_verified_at") @db.Timestamptz(6)
+  passwordHash    String    @map("password_hash")
+
+  totpSecretEnc String?   @map("totp_secret_enc")
+  totpEnabledAt DateTime? @map("totp_enabled_at") @db.Timestamptz(6)
+
+  /// Bumped on every change to this user's roles, overrides or ACL entries, carried in the access
+  /// token as `pv`; a token whose `pv` is behind the row is stale and the rights are re-read. That
+  /// is what makes a permission revocation immediate without storing every issued token.
+  permissionsVersion Int @default(1) @map("permissions_version")
+
+  status     UserStatus
+  lastSeenAt DateTime?  @map("last_seen_at") @db.Timestamptz(6)
+  locale     String     @default("en")
+  timezone   String     @default("UTC")
+
+  /// `saltB` (16 bytes) and `argon2id(authVerifier, serverSalt)` of the vault, nullable because the
+  /// vault is switched on per user. They never derive from `passwordHash` and never derive it
+  /// (`docs/security/e2ee-design.md`, §«Разбор каждого ключа»).
+  authVerifierSalt Bytes?  @map("auth_verifier_salt")
+  authVerifierHash String? @map("auth_verifier_hash")
+
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+  deletedAt DateTime? @map("deleted_at") @db.Timestamptz(6)
+
+  organization        Organization         @relation(fields: [organizationId], references: [id], onDelete: Restrict, map: "fk_users_organization_id")
+  sessions            Session[]
+  passwordResetTokens PasswordResetToken[]
+
+  /// The target every composite foreign key into this table points at. A child referencing
+  /// `users (id)` alone would be allowed to name a user of another organization: foreign key checks
+  /// run as the table owner and bypass RLS (rules/tenancy-rls.mdc, 7).
+  @@unique([organizationId, id], map: "uq_users_org_id")
+  /// `uq_users_org_email` is not declared here: it is partial (`WHERE deleted_at IS NULL`), which
+  /// Prisma cannot express, so it lives in the migration. E-mail is unique inside an organization
+  /// and not globally — the same person may hold accounts in two self-hosted organizations.
+  @@index([organizationId, status], map: "idx_users_org_status")
+  @@map("users")
+}
+
+/// Tenant-scoped table [T]: one refresh-token family member, i.e. one signed-in device.
+///
+/// The refresh token itself is never stored — `refreshTokenHash` is its SHA-256. Rotation writes a
+/// new row carrying the same `familyId` and pointing back at its predecessor, so presenting a
+/// spent token is detectable and revokes the whole family in one indexed update
+/// (`docs/architecture/data-model.md`, «Про refresh-семейства»).
+model Session {
+  id             String @id(map: "pk_sessions") @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String @map("organization_id") @db.Uuid
+  userId         String @map("user_id") @db.Uuid
+
+  /// The family, as a column rather than a chain to walk: revocation on reuse detection has to be
+  /// one indexed `UPDATE`, not a recursive traversal.
+  familyId      String  @map("family_id") @db.Uuid
+  /// The row this one was rotated from. `SetNull`, because the chain exists to reconstruct an
+  /// incident: `Cascade` would let the cleanup job remove one expired ancestor and take every live
+  /// descendant of the family with it — every rotation extends `expiresAt`, so the ancestor is
+  /// always the first row to expire.
+  ///
+  /// `prisma validate` warns here that `SetNull` meets a required referenced field, and the warning
+  /// is expected rather than ignored: a plain composite `ON DELETE SET NULL` would null
+  /// `organization_id` too and die on its NOT NULL. The migration writes the PostgreSQL 15 column
+  /// list — `ON DELETE SET NULL (rotated_from_id)` — which nulls only the nullable half. Do not
+  /// "fix" this by relaxing the action; fix it by reading the migration.
+  rotatedFromId String? @map("rotated_from_id") @db.Uuid
+
+  /// SHA-256 of 32 CSPRNG bytes. Globally unique on purpose — see «Про глобальность
+  /// uq_sessions_refresh_hash» in `docs/architecture/data-model.md`: the refresh path resolves a
+  /// session by this value alone, before any organization is known.
+  refreshTokenHash Bytes  @map("refresh_token_hash")
+  userAgent        String @map("user_agent")
+  /// A hash, never the address itself: it answers "the same address as that session" and cannot be
+  /// read back, which is why it is not what the screen shows.
+  ipHash           String @map("ip_hash")
+  /// What the screen does show — the address with its host half removed (IPv4 /24, IPv6 /48),
+  /// computed at sign-in by `src/domain/identity/mask-ip-address.util.ts`. The full address is
+  /// stored nowhere at all; `unknown` when the deployment provided nothing readable, which is what
+  /// keeps this column NOT NULL (`docs/architecture/data-model.md`, «Про адрес сессии»).
+  ipMasked         String @map("ip_masked")
+
+  expiresAt     DateTime              @map("expires_at") @db.Timestamptz(6)
+  revokedAt     DateTime?             @map("revoked_at") @db.Timestamptz(6)
+  revokedReason SessionRevokedReason? @map("revoked_reason")
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict, map: "fk_sessions_organization_id")
+  user         User         @relation(fields: [organizationId, userId], references: [organizationId, id], onDelete: Cascade, map: "fk_sessions_user_id")
+
+  rotatedFrom Session?  @relation("SessionRotation", fields: [organizationId, rotatedFromId], references: [organizationId, id], onDelete: SetNull, map: "fk_sessions_rotated_from_id")
+  rotatedInto Session[] @relation("SessionRotation")
+
+  /// The self-reference above needs a composite target of its own: a rotation chain must not be
+  /// able to cross into another organization any more than a child table may.
+  @@unique([organizationId, id], map: "uq_sessions_org_id")
+  @@unique([refreshTokenHash], map: "uq_sessions_refresh_hash")
+  @@index([organizationId, userId, familyId], map: "idx_sessions_org_user_family")
+  /// `idx_sessions_org_expires` is partial (`WHERE revoked_at IS NULL`) and lives in the migration.
+  @@map("sessions")
+}
+
+/// Tenant-scoped table [T]: one outstanding password-reset request.
+///
+/// A table and not two columns on `User`: a user may ask more than once, each request has its own
+/// deadline, and one pair of columns cannot hold that. Only the SHA-256 of the token is stored; the
+/// token itself exists in the mail and in the URL and nowhere else. Spending a token is
+/// `UPDATE ... WHERE id = $1 AND used_at IS NULL RETURNING id`, so a second click loses the race
+/// rather than resetting the password twice (STORY-006-08).
+model PasswordResetToken {
+  id             String @id(map: "pk_password_reset_tokens") @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String @map("organization_id") @db.Uuid
+  userId         String @map("user_id") @db.Uuid
+
+  /// Globally unique for the same reason as `Session.refreshTokenHash`: the link is opened by
+  /// somebody who is not signed in, so the lookup has only this value to go on.
+  tokenHash       Bytes     @map("token_hash")
+  expiresAt       DateTime  @map("expires_at") @db.Timestamptz(6)
+  usedAt          DateTime? @map("used_at") @db.Timestamptz(6)
+  /// Same hash-not-address rule as `Session.ipHash`; nullable because a request may arrive where
+  /// no peer address is available.
+  requestedIpHash String?   @map("requested_ip_hash")
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict, map: "fk_password_reset_tokens_organization_id")
+  user         User         @relation(fields: [organizationId, userId], references: [organizationId, id], onDelete: Cascade, map: "fk_password_reset_tokens_user_id")
+
+  @@unique([tokenHash], map: "uq_password_reset_tokens_hash")
+  /// The two working indexes are partial (`WHERE used_at IS NULL`) and live in the migration.
+  @@map("password_reset_tokens")
+}
+
+/// Tenant-scoped table [T]. `Organization.ownerId` and `Team.leadId` of the data model are still
+/// absent: both are foreign keys to `users`, and both are populated by the registration use-case of
+/// STORY-006-01, which is where they arrive as an expand step (nullable column, then backfill).
+/// This migration creates the table they point at, not the columns themselves.
 model Team {
   id             String  @id(map: "pk_teams") @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   organizationId String  @map("organization_id") @db.Uuid

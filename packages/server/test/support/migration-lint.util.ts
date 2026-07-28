@@ -68,6 +68,35 @@ const CREATE_INDEX = /\bcreate\s+(unique\s+)?index\b/i;
 const INDEX_STATEMENT = /^\s*(create\s+(unique\s+)?index|drop\s+index)\b/i;
 const CONCURRENTLY = /\bconcurrently\b/i;
 
+/** Tables this file creates, and the table an index statement is built on. */
+const CREATE_TABLE = /\bcreate\s+table\s+(if\s+not\s+exists\s+)?"?(\w+)"?/gi;
+const INDEX_TARGET = /\bcreate\s+(unique\s+)?index\b.*?\bon\s+"?(\w+)"?/i;
+
+const tablesCreatedIn = (code: string): Set<string> =>
+  new Set([...code.matchAll(CREATE_TABLE)].map((match) => (match[2] ?? '').toLowerCase()));
+
+/**
+ * An index on a table this very file creates blocks nothing, so `CONCURRENTLY` is not required.
+ *
+ * `rules/db-migrations.mdc` (6) is written about a **non-empty** table: the cost of a plain
+ * `CREATE INDEX` is the ACCESS EXCLUSIVE lock it holds while it scans, and a table that came into
+ * existence three statements earlier has no rows to scan and no session to block. Demanding the
+ * concurrent form there buys nothing and costs the property the same rule set cares about most —
+ * that a table arrives complete, with its policy, its grants and its indexes in one file
+ * (rules/db-migrations.mdc, 9 and 13; rules/tenancy-rls.mdc, 3). Splitting the indexes out would
+ * also mean shipping a schema whose partial unique indexes exist one migration later than the table
+ * they protect.
+ *
+ * Deliberately narrow, and fail-closed: the exemption applies only when the `ON <table>` clause sits
+ * on the same line as `CREATE INDEX` and names a table created in this file. Anything else — an
+ * index on a table from an earlier migration, a statement split across lines — is reported.
+ */
+const indexTargetsFreshTable = (line: string, freshTables: ReadonlySet<string>): boolean => {
+  const target = INDEX_TARGET.exec(line)?.[2]?.toLowerCase();
+
+  return target !== undefined && freshTables.has(target);
+};
+
 const statementsOf = (sql: string): string[] =>
   sql
     .split(';')
@@ -82,6 +111,7 @@ export const lintMigrationSql = (file: string, sql: string): MigrationFinding[] 
 
   const isInitial = sql.includes(INITIAL_MARKER);
   const isConcurrentIndexFile = CONCURRENTLY.test(wholeFile);
+  const freshTables = tablesCreatedIn(wholeFile);
 
   // A `CHECK (... IS NOT NULL) NOT VALID` validated in the same file is the sanctioned path to
   // `SET NOT NULL`: the scan happens under a lock nobody waits on.
@@ -106,13 +136,18 @@ export const lintMigrationSql = (file: string, sql: string): MigrationFinding[] 
       });
     }
 
-    if (CREATE_INDEX.test(line) && !CONCURRENTLY.test(line) && !isInitial) {
+    if (
+      CREATE_INDEX.test(line) &&
+      !CONCURRENTLY.test(line) &&
+      !isInitial &&
+      !indexTargetsFreshTable(line, freshTables)
+    ) {
       findings.push({
         file,
         line: at,
         rule: 'blocking-index',
         message:
-          'CREATE INDEX without CONCURRENTLY blocks writes for the whole build; put the concurrent form in a migration of its own (rules/db-migrations.mdc, 6)',
+          'CREATE INDEX without CONCURRENTLY blocks writes for the whole build; put the concurrent form in a migration of its own, or build the index in the file that creates the table (rules/db-migrations.mdc, 6)',
       });
     }
   });

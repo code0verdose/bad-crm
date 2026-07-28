@@ -5,11 +5,10 @@ import { createSessionRefresher } from '@shared/api';
 import { API_BASE_URL } from './test-api.util.js';
 
 /**
- * The one request in this client that is not made through the typed client, and
- * `shared/api/session-refresh.api.ts` says why in full: `POST /auth/refresh` is not in
- * `docs/api/openapi.yaml` yet — it arrives with EPIC-006 — and the typed client cannot address a
- * path the contract does not publish. It also must not travel through the client that carries the
- * auth middleware, or a refused refresh would trigger a refresh.
+ * The refresh call goes through the typed client like everything else — `POST /auth/refresh` is
+ * published in `docs/api/openapi.yaml` (EPIC-006) — but through a *separate instance* of it, with
+ * no middleware attached. `shared/api/session-refresh.api.ts` says why: a refused refresh is a 401,
+ * and a 401 is what makes the auth middleware start a refresh.
  */
 const refreshed = (body: unknown, status = 200): Response =>
   new Response(JSON.stringify(body), {
@@ -23,22 +22,43 @@ afterEach(() => {
 
 describe('exchanging the refresh cookie for an access token', () => {
   it('posts to the refresh endpoint of this installation, with credentials', async () => {
-    let url: unknown;
-    let init: RequestInit | undefined;
+    let sent: Request | undefined;
     const refresh = createSessionRefresher({
       baseUrl: API_BASE_URL,
-      fetch: (input, requestInit) => {
-        url = input;
-        init = requestInit;
-        return Promise.resolve(refreshed({ accessToken: 'fresh' }));
+      fetch: (request) => {
+        sent = request;
+
+        return Promise.resolve(refreshed({ status: 'authenticated', accessToken: 'fresh' }));
       },
     });
 
     await refresh();
 
-    expect(url).toBe(`${API_BASE_URL}/auth/refresh`);
-    expect(init?.method).toBe('POST');
-    expect(init?.credentials).toBe('include');
+    expect(sent?.url).toBe(`${API_BASE_URL}/auth/refresh`);
+    expect(sent?.method).toBe('POST');
+    expect(sent?.credentials).toBe('include');
+  });
+
+  /**
+   * The refresh cookie is `HttpOnly`, so it is sent by the browser and by nothing else. Asserting
+   * that the request carries no `Cookie` header is asserting that this module never tries to be
+   * clever about a value it must not be able to read.
+   */
+  it('sends no cookie of its own — the browser holds the only copy', () => {
+    let sent: Request | undefined;
+    const refresh = createSessionRefresher({
+      baseUrl: API_BASE_URL,
+      fetch: (request) => {
+        sent = request;
+
+        return Promise.resolve(refreshed({ status: 'authenticated', accessToken: 'fresh' }));
+      },
+    });
+
+    return refresh().then(() => {
+      expect(sent?.headers.has('cookie')).toBe(false);
+      expect(sent?.headers.has('authorization')).toBe(false);
+    });
   });
 
   it('returns the new access token', async () => {
@@ -63,6 +83,27 @@ describe('exchanging the refresh cookie for an access token', () => {
     const refresh = createSessionRefresher({ baseUrl: API_BASE_URL, fetch: fetchImpl });
 
     await expect(refresh()).resolves.toBeNull();
+  });
+
+  /**
+   * The deployed default of `VITE_API_BASE_URL` is a same-origin path, and the typed client turns a
+   * call into a `Request`, which refuses one. A browser resolves it against the document; outside a
+   * document nothing does, and the refresh would fail with a URL error that looks exactly like an
+   * expired session — so the resolution is explicit.
+   */
+  it('resolves a same-origin base against the current origin', async () => {
+    let sent: Request | undefined;
+    const refresh = createSessionRefresher({
+      baseUrl: '/api/v1',
+      fetch: (request) => {
+        sent = request;
+
+        return Promise.resolve(refreshed({ status: 'authenticated', accessToken: 'fresh' }));
+      },
+    });
+
+    await expect(refresh()).resolves.toBe('fresh');
+    expect(sent?.url).toBe(`${globalThis.location.origin}/api/v1/auth/refresh`);
   });
 
   /**

@@ -1,11 +1,19 @@
 import { PERMISSIONS } from '@bad-crm/shared/permissions';
+import { type RequestHandler } from 'express';
 import { describe, expect, it } from 'vitest';
 
 import { createRouteRegistry } from '@/presentation/http/route-registry.factory.js';
 import {
+  authorizationFormOf,
   isGuardedRoute,
   isPublicRoute,
+  isSelfServiceRoute,
+  requiresAuthentication,
+  requiresPermission,
+  type GuardedRoute,
+  type PublicRoute,
   type RouteDeclaration,
+  type SelfServiceRoute,
 } from '@/presentation/http/route-registry.types.js';
 import { createTestApp } from '../../support/test-app.util.js';
 
@@ -13,6 +21,33 @@ const registry = (): readonly RouteDeclaration[] =>
   createRouteRegistry(createTestApp().container.http);
 
 const keyOf = (route: RouteDeclaration): string => `${route.method.toUpperCase()} ${route.path}`;
+
+const noop: RequestHandler = (_request, _response, next) => next();
+
+const GUARDED: GuardedRoute = {
+  method: 'get',
+  path: '/api/v1/tasks',
+  handlers: [noop],
+  permission: 'task:read',
+};
+
+const PUBLIC: PublicRoute = {
+  method: 'get',
+  path: '/health',
+  handlers: [noop],
+  public: true,
+  publicReason: 'liveness probe of the container manager, which runs before any session exists',
+};
+
+const SELF_SERVICE: SelfServiceRoute = {
+  method: 'get',
+  path: '/api/v1/auth/sessions',
+  handlers: [noop],
+  selfService: true,
+  selfServiceReason:
+    'reading one’s own sessions: the subject and the object are the same person, so no capability applies',
+  ownershipCheckedIn: 'ListSessionsQuery',
+};
 
 describe('the route registry', () => {
   it('is not empty, so every assertion below means something', () => {
@@ -80,5 +115,81 @@ describe('the route registry', () => {
 
       expect(missing, `no aclCheckedIn: ${missing.join(', ')}`).toEqual([]);
     });
+  });
+});
+
+/**
+ * The third form of the union, and the one to watch.
+ *
+ * Every authenticated operation of EPIC-006 is a person acting on themselves — their own session,
+ * their own password, their own list of devices. No key in
+ * `packages/shared/src/permissions/permissions.catalog.ts` fits (the administrator's right over
+ * *another* person's sessions is a different operation), and `public: true` would be a lie that
+ * removes authentication from a route that requires it — and a lie every assertion above would pass
+ * over. `docs/security/permission-model.md` §3.20 already recognises the category for a person's
+ * own key pair; this is the same shape, made structural.
+ *
+ * The fixtures below are the positive control of the classifier: the registry itself declares no
+ * self-service route until the first controller of EPIC-006 lands, so a test that only walked the
+ * registry would assert nothing at all and would keep passing if `isSelfServiceRoute` were wired to
+ * `false`.
+ */
+describe('the self-service form of a route declaration', () => {
+  it('is a form of its own: neither public nor guarded', () => {
+    expect(isSelfServiceRoute(SELF_SERVICE)).toBe(true);
+    expect(isPublicRoute(SELF_SERVICE)).toBe(false);
+    expect(isGuardedRoute(SELF_SERVICE)).toBe(false);
+  });
+
+  it('leaves the other two forms classified as before', () => {
+    expect(isSelfServiceRoute(GUARDED)).toBe(false);
+    expect(isSelfServiceRoute(PUBLIC)).toBe(false);
+    expect(isGuardedRoute(GUARDED)).toBe(true);
+    expect(isPublicRoute(PUBLIC)).toBe(true);
+  });
+
+  it.each([
+    [GUARDED, 'permission'],
+    [PUBLIC, 'public'],
+    [SELF_SERVICE, 'self-service'],
+  ] as const)('names the form the specification has to agree with', (route, form) => {
+    expect(authorizationFormOf(route)).toBe(form);
+  });
+
+  /**
+   * The property the form exists for, and the reason it is not `public: true` with a nicer comment:
+   * the authentication guard stays mounted, only the permission guard is skipped. `EPIC-006` mounts
+   * both by iterating the registry, so these two predicates are what decides it rather than a
+   * reviewer remembering the distinction.
+   */
+  it('keeps the authentication guard and drops only the permission guard', () => {
+    expect(requiresAuthentication(SELF_SERVICE)).toBe(true);
+    expect(requiresPermission(SELF_SERVICE)).toBe(false);
+  });
+
+  it('keeps a guarded route behind both guards, and a public route behind neither', () => {
+    expect([requiresAuthentication(GUARDED), requiresPermission(GUARDED)]).toEqual([true, true]);
+    expect([requiresAuthentication(PUBLIC), requiresPermission(PUBLIC)]).toEqual([false, false]);
+  });
+
+  /**
+   * `ownershipCheckedIn` is required where `aclCheckedIn` is optional, and the difference is
+   * deliberate: this is the form somebody would reach for to get an endpoint past review without a
+   * permission, so it has to name the place that verifies the caller owns the thing. A missing name
+   * is a compile error; an empty one is this test.
+   */
+  it('refuses an empty ownership site or an empty reason in the registry', () => {
+    const thin = registry()
+      .filter(isSelfServiceRoute)
+      .filter(
+        (route) =>
+          route.ownershipCheckedIn.trim() === '' || route.selfServiceReason.trim().length <= 20,
+      )
+      .map(keyOf);
+
+    expect(
+      thin,
+      `self-service without a real ownership check or reason: ${thin.join(', ')}`,
+    ).toEqual([]);
   });
 });

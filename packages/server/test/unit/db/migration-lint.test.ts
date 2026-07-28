@@ -55,6 +55,58 @@ describe('the migration linter', () => {
     expect(lintMigrationSql('20260727_init/migration.sql', sql)).toEqual([]);
   });
 
+  /**
+   * `rules/db-migrations.mdc` (6) is about a **non-empty** table. An index on a table created three
+   * statements earlier scans nothing and blocks nobody, and requiring the concurrent form there
+   * would force the table to arrive in one migration and its partial unique indexes in the next.
+   */
+  it('allows a plain index on a table the same file creates', () => {
+    const sql = [
+      TIMEOUTS,
+      'CREATE TABLE "sessions" ("id" UUID NOT NULL, "organization_id" UUID NOT NULL);',
+      'CREATE INDEX "idx_sessions_org" ON "sessions" ("organization_id");',
+      '',
+    ].join('\n');
+
+    expect(lintMigrationSql('20260728_auth/migration.sql', sql)).toEqual([]);
+  });
+
+  /**
+   * The negative half, and the reason the exemption is worth having rather than a marker: a file
+   * that creates one table does not get to index another one. This is the case the rule is for —
+   * `teams` already holds rows, and the build takes ACCESS EXCLUSIVE for its duration.
+   */
+  it('still refuses a plain index on a table the file does not create', () => {
+    const sql = [
+      TIMEOUTS,
+      'CREATE TABLE "sessions" ("id" UUID NOT NULL);',
+      'CREATE INDEX "idx_teams_org_name" ON "teams" ("organization_id", "name");',
+      '',
+    ].join('\n');
+
+    expect(rulesOf(lintMigrationSql('20260728_auth/migration.sql', sql))).toEqual([
+      'blocking-index',
+    ]);
+  });
+
+  /**
+   * Fail-closed when the shape is not the one the exemption can read: an `ON` clause on another
+   * line leaves the target unknown, and "unknown" must not mean "exempt".
+   */
+  it('refuses a plain index whose target it cannot see on the same line', () => {
+    const sql = [
+      TIMEOUTS,
+      'CREATE TABLE "sessions" ("id" UUID NOT NULL);',
+      'CREATE INDEX "idx_sessions_org"',
+      '  ON "sessions" ("organization_id");',
+      '',
+    ].join('\n');
+
+    expect(rulesOf(lintMigrationSql('20260728_auth/migration.sql', sql))).toContain(
+      'blocking-index',
+    );
+  });
+
   it('still refuses a destructive statement in the initial migration', () => {
     const sql = `${INITIAL_HEADER}${TIMEOUTS}DROP TABLE teams;\n`;
 

@@ -35,8 +35,43 @@ describe('error code catalog', () => {
     // answered before any resource is known, so neither can borrow a `<resource>_…` code.
     ['payload_too_large', 413],
     ['route_not_found', 404],
+    // Authentication, added by EPIC-006. `invalid_credentials` is one code for two situations on
+    // purpose — see the dedicated assertion below.
+    ['invalid_credentials', 401],
+    ['account_suspended', 403],
+    ['registration_disabled', 403],
+    ['password_reset_token_invalid', 400],
+    ['mail_not_configured', 503],
   ] as const)('maps %s to HTTP %i (stack.md, «Формат ошибок»)', (code, status) => {
     expect(errorCodeStatus(code)).toBe(status);
+  });
+
+  /**
+   * The epic-level acceptance criterion of EPIC-006: "the answer to «no such user» and to «wrong
+   * password» is indistinguishable by code, by text and by response time".
+   *
+   * A catalog cannot enforce the timing half, and it cannot enforce that a use-case picks the right
+   * code. What it can enforce is that no *second* code exists for the losing half of that pair: as
+   * long as `user_not_found` is the only other candidate and it is a 404 belonging to the resource
+   * family, an author who wants to distinguish the two cases has to add a code to this file, in a
+   * reviewed diff, next to this comment.
+   */
+  it('offers exactly one code for a refused credential', () => {
+    const refusals = ERROR_CODES.filter(
+      (code) => ERROR_CODE_STATUS[code] === 401 && code !== 'unauthenticated',
+    );
+
+    expect(refusals).toEqual(['invalid_credentials']);
+  });
+
+  /**
+   * `session` joins the resource list so that revoking a session that belongs to somebody else is
+   * `session_not_found` (404) rather than a bare 403 — invariant 2 of CLAUDE.md applied to a
+   * resource whose ids are guessable and whose existence is worth hiding.
+   */
+  it('knows the session resource, so a foreign session is 404 and not 403', () => {
+    expect(ERROR_RESOURCES).toContain('session');
+    expect(errorCodeStatus('session_not_found')).toBe(404);
   });
 
   it('assigns a 4xx or 5xx status to every declared code', () => {
