@@ -30,7 +30,7 @@ estimate: M
 - [x] Реализовать `domain/shared/errors/` — `DomainError`, `NotFoundError`, `ForbiddenError`, `ConflictError` с полем `code` из каталога `packages/shared`.
 - [x] Реализовать `application/platform/ports/health-probe.port.ts` и `clock.port.ts`, `id-generator.port.ts` (базовые порты, нужные всем контекстам).
 - [x] Реализовать `application/platform/use-cases/check-health.use-case.ts` — возвращает статус процесса и версию приложения, без обращений к БД.
-- [x] Реализовать адаптеры `infrastructure/platform/process-health.adapter.ts`, `infrastructure/platform/system-clock.adapter.ts`, `infrastructure/platform/ulid-id-generator.adapter.ts`.
+- [x] Реализовать адаптеры `infrastructure/platform/process-health.adapter.ts`, `infrastructure/platform/system-clock.adapter.ts`, `infrastructure/platform/system-id-generator.adapter.ts` (создан как `ulid-id-generator.adapter.ts`, переименован в EPIC-005: половина его поверхности отдаёт uuid).
 - [x] Реализовать `presentation/http/controllers/health.controller.ts`, `presentation/http/serializers/health.serializer.ts`, регистрацию в `routes.ts`.
 - [x] Задокументировать шаблон нового контекста в `docs/architecture/` (какие каталоги обязательны, куда что кладётся) и сослаться на него из `rules/naming-and-structure.mdc`.
 

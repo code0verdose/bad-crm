@@ -1,7 +1,7 @@
 ---
 id: EPIC-005
 title: Мультиарендность и Row Level Security
-status: backlog
+status: review
 blocked: false
 milestone: M1
 owner: unassigned
@@ -39,14 +39,14 @@ created: 2026-07-26
 
 ## Acceptance (эпик выполнен, когда)
 
-- [ ] Каждая таблица с `organization_id` имеет `ENABLE` + `FORCE ROW LEVEL SECURITY`, политику `tenant_isolation` с `USING` и явным `WITH CHECK`, политику обслуживания для `app_migrator` и явные `GRANT` — без `ALTER DEFAULT PRIVILEGES`.
-- [ ] Структурный CI-тест по каталогу `pg_policy`/`pg_class` падает при появлении таблицы с `organization_id` без политики, без `FORCE` или с неканоническим предикатом.
-- [ ] Для каждой мультиарендной таблицы автоматически генерируются тесты: чтение, обновление, удаление, список и счётчик чужой строки дают пустой результат либо ошибку; вставка с чужим `organization_id` отклоняется; **своя строка при этом видна** (положительный контроль).
-- [ ] Приложение подключается ролью `app_user` без `BYPASSRLS`, не является владельцем таблиц и не может выполнить `SET ROLE app_migrator`; несоответствие валит старт.
-- [ ] Запрос к данным арендатора вне `withTenant` падает на предохранителе, а не возвращает чужие строки.
-- [ ] Прямой вызов `prisma.*` вне `infrastructure/persistence` падает на линте.
-- [ ] Создание организации и её первого владельца выполняется одной транзакцией; при сбое на любом шаге не остаётся ни организации без владельца, ни владельца без организации.
-- [ ] Чек-лист «новая таблица» задокументирован и включён в шаблон миграции и в ревью `db-reviewer`.
+- [x] Каждая таблица с `organization_id` имеет `ENABLE` + `FORCE ROW LEVEL SECURITY`, политику `tenant_isolation` с `USING` и явным `WITH CHECK`, политику обслуживания для `app_migrator` и явные `GRANT` — без `ALTER DEFAULT PRIVILEGES`.
+- [x] Структурный CI-тест по каталогу `pg_policy`/`pg_class` падает при появлении таблицы с `organization_id` без политики, без `FORCE` или с неканоническим предикатом. *В CI это интеграционный тест (`test/integration/db/migrations.test.ts`, job `database isolation`); на живом хосте тот же аудит запускается как `pnpm check:rls` — см. [STORY-005-02](stories/story-005-02-rls-policies-and-set-config.md). Канонический шаблон один на двоих, второе определение падает тестом.*
+- [x] Для каждой мультиарендной таблицы автоматически генерируются тесты: чтение, обновление, удаление, список и счётчик чужой строки дают пустой результат либо ошибку; вставка с чужим `organization_id` отклоняется; **своя строка при этом видна** (положительный контроль).
+- [x] Приложение подключается ролью `app_user` без `BYPASSRLS`, не является владельцем таблиц и не может выполнить `SET ROLE app_migrator`; несоответствие валит старт.
+- [x] Запрос к данным арендатора вне `withTenant` падает на предохранителе, а не возвращает чужие строки.
+- [x] Прямой вызов `prisma.*` вне `infrastructure/persistence` падает на линте.
+- [x] Создание организации и её первого владельца выполняется одной транзакцией; при сбое на любом шаге не остаётся ни организации без владельца, ни владельца без организации. *Владелец создаётся через `UserRepositoryPort`; его Prisma-адаптер приезжает вместе с таблицей `users` в [STORY-006-01](../epic-006-auth-core/stories/story-006-01-organization-and-owner-registration.md).*
+- [x] Чек-лист «новая таблица» задокументирован и включён в шаблон миграции и в ревью `db-reviewer`. *Чек-лист в [`rls-design.md`](../../docs/security/rls-design.md) дополнен пунктами 9a и 10; ревьюер внутри репозитория — проектный агент `tenancy-rls-auditor`. Пункт для общего агента `db-reviewer` не добавлен: он живёт вне репозитория, см. [STORY-005-05](stories/story-005-05-database-roles-separation.md).*
 
 ## Зависимости / риски
 
@@ -61,9 +61,24 @@ created: 2026-07-26
 
 ## Истории
 
-- [ ] [STORY-005-01 — Модель Organization, миграция и tenant-контекст](stories/story-005-01-organization-model-and-tenant-context.md)
-- [ ] [STORY-005-02 — RLS-политики и выставление контекста через set_config](stories/story-005-02-rls-policies-and-set-config.md)
-- [ ] [STORY-005-03 — База tenant-scoped репозитория и запрет прямых prisma.*](stories/story-005-03-tenant-scoped-repository-base.md)
-- [ ] [STORY-005-04 — Набор тестов изоляции с положительным контролем](stories/story-005-04-cross-tenant-isolation-test-suite.md)
-- [ ] [STORY-005-05 — Роли БД app_user / app_migrator / app_auth](stories/story-005-05-database-roles-separation.md)
-- [ ] [STORY-005-06 — Bootstrap организации и первого владельца в одной транзакции](stories/story-005-06-organization-bootstrap-transaction.md)
+- [x] [STORY-005-01 — Модель Organization, миграция и tenant-контекст](stories/story-005-01-organization-model-and-tenant-context.md)
+- [x] [STORY-005-02 — RLS-политики и выставление контекста через set_config](stories/story-005-02-rls-policies-and-set-config.md)
+- [x] [STORY-005-03 — База tenant-scoped репозитория и запрет прямых prisma.*](stories/story-005-03-tenant-scoped-repository-base.md)
+- [x] [STORY-005-04 — Набор тестов изоляции с положительным контролем](stories/story-005-04-cross-tenant-isolation-test-suite.md)
+- [x] [STORY-005-05 — Роли БД app_user / app_migrator / app_auth](stories/story-005-05-database-roles-separation.md)
+- [x] [STORY-005-06 — Bootstrap организации и первого владельца в одной транзакции](stories/story-005-06-organization-bootstrap-transaction.md)
+
+> **Что вынесено из эпика явно.** Каждая история несёт ссылку на перенос; сводно это: middleware
+> tenant-контекста и `source-of-truth`-тест — [EPIC-006](../epic-006-auth-core/epic.md) (нет сессии);
+> обёртка `runJob` — эпик очередей (нет BullMQ); путь `bypassRls` с записью в аудит и событие аудита
+> при bootstrap — [STORY-016-02](../epic-016-audit-log/stories/story-016-02-audit-logger-port.md)
+> (нет журнала); раздельные политики append-only журналов и отзыв прав на них —
+> [STORY-016-01](../epic-016-audit-log/stories/story-016-01-append-only-table.md) (нет таблиц);
+> `DATABASE_AUTH_URL` и клиент `app_auth` —
+> [STORY-006-02](../epic-006-auth-core/stories/story-006-02-login-access-and-refresh-cookie.md)
+> (нет `SECURITY DEFINER`-функций, ради которых роль существует); `Idempotency-Key`, контроллер и
+> Prisma-адаптеры `users`/`roles` —
+> [STORY-006-01](../epic-006-auth-core/stories/story-006-01-organization-and-owner-registration.md);
+> isolation-тест для таблицы с наследуемым `organization_id` — до появления первой такой таблицы.
+> Ни один перенос не про «не успели»: во всех случаях предмет проверки ещё не существует, а
+> заглушка ради галочки — это тест, который проходит на отсутствии кода.

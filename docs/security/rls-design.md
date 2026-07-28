@@ -290,6 +290,16 @@ REVOKE UPDATE, DELETE, TRUNCATE ON secure_link_views  FROM app_user;
 `TRUNCATE` не выдаётся **никогда и никому** кроме владельца: `TRUNCATE` игнорирует RLS полностью —
 политики к нему не применяются, и одна команда стирает данные всех организаций.
 
+**Последовательности следуют за своей таблицей.** `app_user` получает `USAGE, SELECT` на
+последовательность только если её владеющая таблица (`pg_depend` → `pg_class`) сама попала под грант;
+на остальные — `REVOKE ALL`, включая последовательность без владеющей таблицы. Раздача `USAGE` всем
+подряд выглядит безобидно и таковой не является: `USAGE` на чужой последовательности позволяет
+двигать её через `nextval()`, а `SELECT` читает `last_value` — то есть косвенно оценивает объём
+данных в таблице, которую приложение открыть не может. `backup_role` при этом сохраняет `SELECT` на
+**всех** последовательностях: `pg_dump` читает `last_value` из каждой и падает на первой недоступной.
+Реализация — `prisma/sql/01-grants.sql`, проверка обеих сторон правила —
+`test/integration/db/sequence-grants.test.ts` и `test/infra/grants-sql.test.ts`.
+
 ### `DATABASE_URL` для каждой роли
 
 ```dotenv
@@ -429,7 +439,10 @@ GRANT SELECT ON tasks TO backup_role;
 несколько PERMISSIVE-политик объединяются дизъюнкцией. Правило проекта: любая дополнительная
 политика на [T]-таблице либо содержит в себе предикат тенанта, либо объявляется
 `AS RESTRICTIVE` (RESTRICTIVE-политики соединяются по AND). CI-чек ловит появление новой
-PERMISSIVE-политики с неканоническим предикатом и валит сборку.
+PERMISSIVE-политики с неканоническим предикатом и валит сборку — **для любой роли**, а не только
+для `app_user`: OR действует внутри роли, поэтому широкая PERMISSIVE-политика для `app_migrator`
+молча возвращает владельцу все организации, ничего не меняя для приложения. Единственное
+исключение — канонический `maintenance_access`.
 
 Опциональное усиление для параноидального режима — по одной RESTRICTIVE-политике на таблицу:
 
@@ -822,6 +835,78 @@ export async function rawInTenant<T>(
 и что `$queryRawUnsafe`/`$executeRawUnsafe` запрещены ESLint-правилом целиком (см. следующий
 раздел).
 
+### База репозитория: `TenantScopedRepository`
+
+Реализация — `infrastructure/persistence/prisma/tenant-scoped.repository.ts` (STORY-005-03). Каждый
+Prisma-репозиторий наследует её и ходит в БД **только** через `run(operation, work)`. Это снимает с
+автора репозитория два решения, каждое из которых при ошибке не проявляется функционально.
+
+**Какую транзакцию использовать.** Не аргумент конструктора и не параметр метода — та, что открыл
+`withTenant`, взятая из `AsyncLocalStorage` в момент вызова. Репозиторий, принимающий транзакцию,
+может получить её из чужого скоупа; репозиторий, принимающий `organizationId`, заводит **вторую
+точку правды** о тенанте — и при расхождении запрос не отвергается, а *фильтруется*: политика
+сравнивает строки с `app.organization_id`, поэтому наружу выходит пустой список, который читается
+как «данных нет» (см. «Ловушки», 3).
+
+```ts
+export class PrismaOrganizationRepository extends TenantScopedRepository
+  implements OrganizationRepositoryPort {
+  protected readonly resource = 'organization' as const;
+  protected readonly repositoryName = 'OrganizationRepository';
+
+  create(draft: OrganizationDraft): Promise<OrganizationSummary> {
+    return this.run('create', async (tx) => {
+      // id берётся из скоупа: другого значения политика организаций и не пропустит
+      const row = await tx.organization.create({ data: { id: this.organizationId('create'), ...draft } });
+      return toOrganizationSummary(row);
+    });
+  }
+}
+```
+
+**Открыт ли tenant-скоуп вообще.** `guardedClient` ловит вызов модели вне скоупа, но только для тех
+вызовов, что идут через защищённый клиент; репозиторий держит транзакционный хендл и по построению
+проходит мимо. `run` первым делом спрашивает `requireTenant`, поэтому отказ происходит и здесь —
+до отправки запроса и с именем репозитория и операции вместо кода `42704`.
+
+**Трансляция ошибок едет следом**, потому что это не то, что подкласс имеет право забыть:
+
+| Prisma | Наружу | Почему |
+|---|---|---|
+| `P2002` (unique) | `<resource>_already_exists` (409) | для корня тенанта это глобально уникальный `slug`, и уникальный индекс — **единственный** наблюдатель коллизии: `SELECT … WHERE slug = $1` под политикой ещё не существующей организации всегда пуст |
+| `P2025` (record not found) | `denyAccess(resource, 'other_organization')` → 404 | под RLS «нет строки» и «строка чужой организации» неразличимы — и обязаны такими остаться (инвариант 2) |
+| всё остальное, включая нарушение RLS | без изменений → 500 | `new row violates row-level security policy` означает дефект приложения; аккуратный 409 на его месте спрятал бы его от лога |
+
+Транзакцией управляет `UnitOfWorkPort` (`application/platform/ports/unit-of-work.port.ts`) — в этой
+системе «транзакция» и «тенант» это одно и то же, поэтому метода `withTransaction` без тенанта в
+порту не существует. Его реализация `PrismaUnitOfWork` строится на **базовом** клиенте (единственное
+место, которому разрешено открывать транзакцию) и вызывает переданную функцию **без аргументов**,
+чтобы `TxClient` не утёк в `application`.
+
+### Проверка роли при старте: `assertRuntimeDbRole`
+
+Реализация — `infrastructure/persistence/prisma/assert-db-role.util.ts`, вызов —
+`infrastructure/bootstrap/api-process.factory.ts`, **до** `listen` и до старта воркеров
+(STORY-005-05). Отказ — единственный сигнал, который получает оператор раньше, чем утечка:
+подключение суперпользователем, владельцем схемы или любой ролью с `BYPASSRLS` обслуживает все
+запросы корректно и не фильтрует ничего.
+
+Одним запросом к каталогу собираются пять фактов, и любой из них валит старт:
+
+| Факт | Почему это отказ |
+|---|---|
+| `current_user <> app_user` | остальные роли — обслуживание, не рантайм |
+| `rolsuper` | политики к суперпользователю не применяются |
+| `rolbypassrls` | политики не применяются |
+| владелец схемы `public` | таблица, приехавшая без `FORCE`, для него не отфильтрована |
+| `pg_has_role(current_user, 'app_migrator', 'MEMBER')` | изоляция держится ровно до одного `SET ROLE` |
+
+Две детали важны построчно: `MEMBER`, а не `USAGE` (для `NOINHERIT`-роли `USAGE` отвечает `false`
+там, где `SET ROLE` всё ещё возможен), и `to_regrole('app_migrator')` вместо приведения типа — на
+кластере без bootstrap приведение бросило бы `42704`, и процесс умер бы с сообщением «роль не
+существует» вместо ответа на заданный вопрос. Отсутствие строки в ответе — тоже отказ: «фактов нет»
+не должно читаться как «проблем нет».
+
 ### Ловушки
 
 **1. `SET` вместо `SET LOCAL` — худший из возможных багов.**
@@ -1013,9 +1098,25 @@ fi
 
 ### (б) Миграционный чек: каталог БД против списка таблиц
 
-Скрипт `packages/server/scripts/check-rls.ts` поднимает временную БД (или подключается к
-проверяемой), применяет миграции и сверяет три источника: `information_schema`/`pg_catalog`,
-Prisma-схему и реестр `tenant-tables.ts`. Расхождение — ненулевой код возврата.
+Скрипт `packages/server/scripts/check-rls.ts` (`pnpm check:rls`) **подключается к уже существующей
+базе** — он ничего не поднимает и ничего не мигрирует — и сверяет три источника: `pg_catalog`,
+Prisma-схему и реестр `tenant-tables.constant.ts`. Расхождение — ненулевой код возврата (1 —
+нарушения, 2 — проверку не удалось выполнить).
+
+Строка подключения приходит аргументом (`pnpm check:rls -- postgresql://…`) или из `DATABASE_URL`.
+Запросы читают только `pg_catalog`, который доступен любой роли, — проверено под `app_user` в
+`test/integration/db/rls-catalog-check.test.ts`, так что оператору не нужны права владельца.
+
+Тот же аудит на миграции этого чекаута гоняет интеграционный набор
+(`test/integration/db/migrations.test.ts`, `pnpm test:integration`) — он поднимает контейнер сам.
+Роли не пересекаются и одна другую не заменяет: набор судит **миграцию в репозитории**, скрипт —
+**конкретный хост**, где миграция применена давно, поверх неё прошёл `pg_restore --no-privileges`
+и контейнер поднять негде. Канонический шаблон при этом описан **один раз** —
+`src/infrastructure/persistence/prisma/rls-catalog.constant.ts`, откуда его читают и тест, и скрипт;
+`test/unit/persistence/rls-catalog-sources.test.ts` падает, если он появится где-то ещё.
+
+Ниже — запросы, которые скрипт выполняет (1–3 и сверка реестров реализованы; 4–5 остаются
+нормативом для миграций и разбираются агентом `tenancy-rls-auditor` и `test/infra/grants-sql.test.ts`).
 
 **Запрос 1 — включённость RLS.** Любая таблица с колонкой `organization_id`, у которой нет
 `ENABLE` или `FORCE`:
@@ -1085,8 +1186,16 @@ WHERE has_table_privilege('app_user', t.oid, k.priv)
 ORDER BY t.relname, k.cmd;
 ```
 
-**Запрос 3 — расширяющие политики.** PERMISSIVE-политика для `app_user` с неканоническим
-предикатом добавляет доступ через OR:
+**Запрос 3 — расширяющие политики.** PERMISSIVE-политика с неканоническим предикатом добавляет
+доступ через OR. Проверяются **все** роли, а не только `app_user`: PERMISSIVE-политики
+складываются дизъюнкцией **внутри своей роли**, поэтому
+`PERMISSIVE FOR ALL TO app_migrator USING (true)` не меняет ничего для приложения и при этом
+возвращает владельцу все организации разом — миграциям, ручному `psql`, скрипту обслуживания,
+восстановлению. Ровно так выглядит `maintenance_access`, пересозданный при ручном ремонте без
+предиката-переключателя. Допустимых предикатов на `[T]`-таблице два: канонический tenant-предикат
+**по той колонке, которую объявляет реестр** (`organization_id`, либо `id` у корня тенанта), и
+maintenance-переключатель. RESTRICTIVE-политики пропускаются — они соединяются по AND и способны
+только сузить.
 
 ```sql
 WITH tenant_tables AS ( /* … */ ), canon AS ( /* … */ )
@@ -1098,9 +1207,9 @@ FROM       tenant_tables t
 JOIN       pg_policy p ON p.polrelid = t.oid
 CROSS JOIN canon
 WHERE p.polpermissive
-  AND (p.polroles = '{0}'::oid[] OR p.polroles @> ARRAY['app_user'::regrole::oid])
   AND (pg_get_expr(p.polqual, p.polrelid) IS NULL
-       OR pg_get_expr(p.polqual, p.polrelid) !~ canon.re);
+       OR (pg_get_expr(p.polqual, p.polrelid) !~ canon.re
+           AND pg_get_expr(p.polqual, p.polrelid) !~ canon.maintenance_re));
 ```
 
 **Запрос 4 — гранты.** Ни у `PUBLIC`, ни у партиций не должно быть прав; `app_user` не должен
@@ -1217,50 +1326,40 @@ WHERE  m.rolname <> g.rolname
   AND  pg_has_role(m.rolname, g.oid, 'MEMBER');
 ```
 
-Обвязка на TypeScript, которая валит CI:
+Как это устроено в коде (три файла, ни один не дублирует другой):
+
+| Файл | Что в нём |
+|---|---|
+| `src/infrastructure/persistence/prisma/rls-catalog.constant.ts` | канонический предикат и три запроса к каталогу — **единственное** определение шаблона |
+| `src/infrastructure/persistence/prisma/rls-catalog.util.ts` | `readRlsCatalog` (запросы → факты) и `rlsCatalogViolations` (факты → находки) — чистая функция, у неё есть положительный контроль в `pnpm test`, без Docker |
+| `src/infrastructure/persistence/prisma/rls-report.util.ts` | человекочитаемый отчёт: что проверено, что не так, что делать |
+| `scripts/check-rls.ts` | подключение (аргумент или `DATABASE_URL`), печать отчёта, код возврата |
 
 ```ts
-// packages/server/scripts/check-rls.ts
-import { PrismaClient } from '@prisma/client';
-import { TENANT_TABLES } from '../src/infrastructure/persistence/prisma/tenant-tables';
-import { CHECKS } from './rls-checks.sql';   // массив { name, sql }
+// packages/server/scripts/check-rls.ts — по сути весь скрипт
+const pool = new Pool({ connectionString, max: 1 });
 
-interface Violation { table_name: string; problem: string; cmd?: string }
+const facts = await readRlsCatalog(async (sql) => (await pool.query(sql)).rows);
+const findings = rlsCatalogViolations(facts);          // реестр и Prisma-схема — значения по умолчанию
 
-const prisma = new PrismaClient({ datasourceUrl: process.env.DATABASE_MIGRATION_URL });
-const violations: Array<Violation & { check: string }> = [];
-
-for (const check of CHECKS) {
-  const rows = await prisma.$queryRawUnsafe<Violation[]>(check.sql);
-  violations.push(...rows.map((r) => ({ ...r, check: check.name })));
-}
-
-// Третья сверка: каталог БД ↔ реестр в коде. Ловит и «таблица есть, реестра нет»,
-// и «реестр есть, таблицу удалили» — иначе генератор тестов молча перестаёт её покрывать.
-const inDb = new Set(
-  (await prisma.$queryRaw<{ relname: string }[]>`
-     SELECT c.relname FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
-     WHERE n.nspname = 'public' AND c.relkind IN ('r','p') AND NOT c.relispartition
-       AND EXISTS (SELECT 1 FROM pg_attribute a
-                   WHERE a.attrelid = c.oid AND a.attname = 'organization_id'
-                     AND a.attnum > 0 AND NOT a.attisdropped)`).map((r) => r.relname),
-);
-const inRegistry = new Set(TENANT_TABLES.map((t) => t.table));
-
-for (const t of inDb)       if (!inRegistry.has(t)) violations.push({ check: 'registry', table_name: t, problem: 'таблица есть в БД, но не в реестре tenant-таблиц' });
-for (const t of inRegistry) if (!inDb.has(t))       violations.push({ check: 'registry', table_name: t, problem: 'таблица есть в реестре, но не в БД' });
-
-if (violations.length > 0) {
-  console.error('RLS-инварианты нарушены:\n');
-  for (const v of violations) console.error(`  [${v.check}] ${v.table_name}${v.cmd ? `.${v.cmd}` : ''} — ${v.problem}`);
-  process.exit(1);
-}
-console.log(`RLS-инварианты в порядке: ${inDb.size} tenant-таблиц.`);
+process.stdout.write(`${renderRlsReport(findings, { … })}\n`);
+process.exitCode = findings.length === 0 ? 0 : 1;      // 2 — если проверку не удалось выполнить
 ```
 
-Скрипт запускается в CI после `prisma migrate deploy` на чистой БД и **дополнительно** —
-в проде после каждого деплоя миграций (результат идёт в лог и в алерт). Prisma собственным
-drift-detection политики не видит: `migrate diff` сравнивает схему, а не каталог RLS.
+Почему не `PrismaClient` и не `$queryRawUnsafe`, как выглядел первоначальный набросок: `pg` не
+требует сгенерированного клиента для соединения, а `$queryRawUnsafe` запрещён линтером на сервере —
+скрипту это правило формально не адресовано, но заводить в репозитории второй стиль обращения к БД
+ради одного инструмента не за что.
+
+Сверка реестров идёт в обе стороны и включает Prisma-схему: «таблица с `organization_id` есть в БД,
+но не в реестре» (её никто не покрывает isolation-тестом), «реестр есть, таблицы нет» (протухшее
+ожидание держит зелёными тесты удалённой таблицы) и «таблица есть в БД, но ни одна Prisma-модель её
+не несёт» (база разъехалась со схемой — ровно то, что остаётся после ручного ремонта на staging).
+
+Prisma собственным drift-detection политики не видит: `migrate diff` сравнивает схему, а не каталог
+RLS. Поэтому в CI на каждый PR аудит гоняет интеграционный набор (job `database isolation`), а на
+живом хосте — этот скрипт: после деплоя миграций и обязательно после восстановления из бэкапа
+([`../runbooks/backup-restore.md`](../runbooks/backup-restore.md), чек-лист 7.4).
 
 ### (в) Генератор isolation-тестов по списку [T]-таблиц
 
@@ -2038,8 +2137,10 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON "task_checklists" TO app_user;
 ```
 
 Отдельная деталь: `prisma migrate diff` и drift-detection сравнивают **схему**, а не каталог
-политик. Удалённая вручную политика для Prisma невидима — её ловит только наш `check-rls.ts`,
-который поэтому запускается и в CI, и после каждого прод-деплоя.
+политик. Удалённая вручную политика для Prisma невидима — её видит только сверка с каталогом:
+в CI это интеграционный набор (`test/integration/db/migrations.test.ts`), на живом хосте —
+`check-rls.ts`, который поэтому запускается после каждого прод-деплоя миграций и после
+восстановления из бэкапа.
 
 ### Добавление `organization_id` в существующую таблицу
 
@@ -2316,7 +2417,13 @@ CREATE INDEX idx_outbox_pending
 - [ ] 8. Явные `GRANT` для `app_user`; для журнальных таблиц — `REVOKE UPDATE, DELETE, TRUNCATE`
 - [ ] 8a. `GRANT SELECT ON <table> TO backup_role;` — иначе таблица молча выпадет из `pg_dump`
 - [ ] 9. Таблица добавлена в реестр `tenant-tables.ts` и в `ROW_FACTORIES` (иначе не компилируется)
-- [ ] 10. Isolation-тест зелёный именно для этой таблицы (не «вообще»)
+- [ ] 9a. Репозиторий наследует `TenantScopedRepository`; ни один его метод не принимает
+         `organizationId` и не принимает транзакцию — и то и другое берётся из скоупа
+- [ ] 10. Isolation-тест зелёный именно для этой таблицы (не «вообще»), и в нём есть
+         положительный контроль: чтение, список, счётчик, **вставка**, запись и удаление
+         **своей** строки. Контроль на `INSERT` обязателен отдельно: `42501` — это и нарушение
+         политики, и `permission denied`, поэтому одна негативная проверка проходит и на таблице,
+         где `app_user` не получил `INSERT` вовсе
 - [ ] 11. `pnpm check:rls` проходит; политика создана в **той же** миграции, что и таблица
 - [ ] 12. Никаких plaintext-секретов; всё чувствительное — `*Enc`
 ```
@@ -2336,8 +2443,9 @@ CREATE INDEX idx_outbox_pending
 
 **2. Ошибка в самой политике.** `USING (true)`, опечатка в имени GUC, политика, навешенная на
 `PUBLIC` вместо `app_user`, забытый `FORCE` — каждая из этих однострочных ошибок открывает
-таблицу целиком и не проявляется функционально. Единственная защита — машинная: `check-rls.ts`
-(сравнение предиката с каноническим), isolation-тесты с положительным контролем и агент
+таблицу целиком и не проявляется функционально. Единственная защита — машинная: сверка каталога с
+каноническим предикатом (в CI — `test/integration/db/migrations.test.ts`, на живом хосте —
+`check-rls.ts`; шаблон у них общий), isolation-тесты с положительным контролем и агент
 `tenancy-rls-auditor`. Ручное ревью здесь ненадёжно: 95 почти одинаковых блоков SQL читаются
 по диагонали.
 
