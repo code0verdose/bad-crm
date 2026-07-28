@@ -28,7 +28,14 @@
       //
       // `//#lint:repo` rides along for the same reason `test` pulls in `//#test:repo`: the files
       // outside `packages/**` belong to no package, so `pnpm lint` would otherwise skip them.
-      "dependsOn": ["^build", "//#lint:repo"],
+      //
+      // `//#stylelint` rides along too, and for a third reason: it is the only way the stylesheet
+      // linter reaches both a contributor and CI without a new entry anywhere. `rules/ci-before-push`
+      // names the four tasks that must be green before a push and `test/ci/workflow.test.ts` holds
+      // CI to exactly that set, so a fifth top-level task would have to be written into the rule.
+      // Linting CSS *is* linting; hanging it here makes `pnpm turbo run typecheck lint build test`
+      // cover it in both places, which is the property that matters.
+      "dependsOn": ["^build", "//#lint:repo", "//#stylelint"],
       "outputs": []
     },
     "lint:fix": {
@@ -168,6 +175,10 @@
         // hand-written `fetch` in the client is still justified. Cached over an edited contract,
         // the exception would outlive the reason for it — which is the whole point of that test.
         "docs/api/openapi.yaml",
+        // `test/lint/stylelint-rules.test.ts` lints snippets through the real `stylelint.config.js`
+        // and reads the file to assert the token-file exemption is still a list of two paths. A
+        // rule set to `null` behind a cached pass is a linter switched off with a green build.
+        "stylelint.config.js",
         // The task command is `tsc -p tsconfig.scripts.json && vitest run`. The runtime read
         // registry only sees what vitest reads — never what the first half of the command line
         // reads — so a project file named on the command line has to be listed by hand.
@@ -192,6 +203,21 @@
         "package.json",
         "!test/lint/fixtures/**"
       ],
+      "outputs": []
+    },
+
+    // Stylesheets belong to `packages/client`, but the linter that judges them is configured once at
+    // the root — `stylelint.config.js` encodes `rules/design-system.mdc` §3 for the whole
+    // repository, and a per-package copy would be a second source of truth for a single rule.
+    //
+    // `inputs` is an allow-list, and this is the fifth time in this repository that the sentence
+    // has had to be written: a task that does not name a file it reads is served from cache and
+    // reports a PASS over content it never opened. Here that would mean a stylesheet gaining a
+    // hard-coded colour and a green `pnpm lint`. The glob is the same string the `stylelint` script
+    // lints, and `test/lint/stylelint-rules.test.ts` compares the two by identity so they cannot
+    // drift; `package.json` carries the command line itself.
+    "//#stylelint": {
+      "inputs": ["packages/*/src/**/*.css", "stylelint.config.js", "package.json"],
       "outputs": []
     }
   }

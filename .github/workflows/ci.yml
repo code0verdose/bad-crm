@@ -112,6 +112,13 @@ jobs:
         # The one command of `rules/ci-before-push.mdc`. `errors-only` keeps the log to the output
         # of tasks that failed; vitest adds its own GitHub annotations for failing specs, so the
         # names show up in the run without expanding a log.
+        #
+        # `lint` is four linters, not one: each package's ESLint, `//#lint:repo` for the files that
+        # belong to no package, and `//#stylelint` for every stylesheet under `packages/*/src`. They
+        # are attached through `dependsOn` in turbo.json rather than added to this command line on
+        # purpose — `test/ci/workflow.test.ts` holds this step to exactly the task set stated in
+        # `rules/ci-before-push.mdc`, so a linter that arrives as a fifth top-level task also has to
+        # arrive in the rule. Hanging it off `lint` keeps one contract instead of two.
         run: pnpm turbo run typecheck lint build test --output-logs=errors-only
 
       - name: Regenerate the API types and require an empty diff
