@@ -33,6 +33,11 @@ estimate: S
 - [ ] Реализовать явную политику fail-closed при недоступности Redis и её логирование.
 - [ ] Добавить метрику `auth_rate_limited_total{endpoint}` (подключается к [EPIC-009](../../epic-009-observability/epic.md)).
 - [ ] Отразить лимиты в `docs/api/openapi.yaml` (ответ 429) и в `docs/runbooks/`.
+      *(2026-07-28: **половина в спеке сделана** — 429 с обязательным `Retry-After` объявлен на
+      `login`, `refresh`, `register`, `forgot-password`, `reset-password` и `change-password`.
+      Отдельно добавлен ответ 503 `service_unavailable` на `login` и `refresh`: при недоступном
+      Redis лимитер не может считать, а несчитаемый логин — это логин без лимита, поэтому запрос
+      отклоняется (fail closed). Раздел в `docs/runbooks/` — за этой историей.)*
 
 ## Definition of Done
 

@@ -1,7 +1,7 @@
 ---
 id: STORY-006-08
 epic: EPIC-006
-status: backlog
+status: in-progress
 blocked: false
 priority: should
 estimate: M
@@ -27,10 +27,37 @@ estimate: M
 ## Задачи
 
 - [ ] Написать тесты первыми: `application/identity/use-cases/request-password-reset.use-case.test.ts` (неразличимость ответов, отправка письма только для существующего), `confirm-password-reset.use-case.test.ts` (успех, повторное использование, TTL, слабый пароль), `test/integration/auth/password-reset.test.ts` (хеш токена в БД, отзыв всех сессий).
-- [ ] Добавить модель токена сброса (таблица с `token_hash`, `user_id`, `expires_at`, `used_at`) и миграцию с блоком RLS.
+- [x] Добавить модель токена сброса (таблица с `token_hash`, `user_id`, `expires_at`, `used_at`) и миграцию с блоком RLS.
+      *Сделано 2026-07-28:* сущность `PasswordResetToken` сперва дописана в
+      [`data-model.md` §1](../../../docs/architecture/data-model.md) (её там не было — пробел
+      спецификации), затем реализована в миграции `20260728120000_auth_core_identity_and_sessions`:
+      `password_reset_tokens` с полным RLS-блоком, составным FK `(organization_id, user_id)` на
+      `users` и глобально уникальным `uq_password_reset_tokens_hash`. Хранится только SHA-256
+      токена; погашение — `UPDATE … WHERE id = $1 AND used_at IS NULL RETURNING id`, поэтому
+      повторное использование отвергается строкой, а не проверкой в коде. **Остаётся:**
+      `SECURITY DEFINER`-функция резолва токена до организации (владелец `app_auth`) — она идёт
+      вместе с use-case'ом этой истории и с расширением `01-grants.sql` на `pg_proc` из STORY-006-02.
 - [ ] Реализовать `infrastructure/mail/nodemailer.adapter.ts` под портом `MailerPort`; при отсутствии `SMTP_URL` — адаптер, пишущий в лог (dev) и падающий с `mail_not_configured` (prod).
 - [ ] Реализовать шаблоны письма на EN и RU (текст + HTML), без секретов в теме письма и с абсолютной ссылкой на `APP_URL`.
 - [ ] Реализовать endpoints `POST /api/v1/auth/forgot-password` и `POST /api/v1/auth/reset-password`, описать в `openapi.yaml`.
+      *(2026-07-28: **оба описаны**, маркер `x-implemented-by: STORY-006-08`. `forgot-password`
+      отвечает 202 без тела независимо от того, есть ли адрес — телу просто негде отличаться;
+      `organizationSlug` в запросе сознательно нет, адрес в нескольких организациях получает по
+      письму на аккаунт. **Токен сброса — поле тела** `reset-password`, не query: query-строка
+      уезжает в логи прокси и в `Referer`; контрактный тест
+      `route-authorization.test.ts` падает на любом параметре пути/query с именем вида
+      `token`/`password`/`secret`. Неизвестный, использованный и просроченный токен — один ответ
+      `400 password_reset_token_invalid`. Успех отзывает **все** сессии и не выдаёт новых токенов.
+      Добавлен код `mail_not_configured` (503) — граница с `feature_disabled` описана в
+      `docs/api/README.md`.)*
+      *(2026-07-28, ревизия: граница двух кодов перенесена в сам каталог
+      `packages/shared/src/errors/error-code.enums.ts`, где до этого стояли два взаимоисключающих
+      утверждения — SMTP числился в перечне выключаемых подсистем `feature_disabled` и одновременно
+      объявлялся не им. Перечень исправлен; 501 — «сервер такого не умеет, ретрай бессмыслен», 503 —
+      «временно, ретрай осмыслен». **Требование к реализации:** отсутствие SMTP проверяется **до**
+      резолва адреса, иначе 503 отличает существующий адрес от несуществующего и ломает свойство
+      «ответ постоянен», на котором построена вся операция. Записано в описание операции в
+      `openapi.yaml`.)*
 - [ ] Реализовать клиентские экраны `/forgot-password` и `/reset-password/$token` с состояниями «отправлено», «ссылка недействительна», «успех».
 - [ ] Подключить отправку письма через очередь (постановка задачи, ретраи) — либо синхронно с явным TODO-переносом в эпик очередей, зафиксированным в ADR.
 - [ ] Добавить события в аудит: запрошен сброс, пароль сброшен.

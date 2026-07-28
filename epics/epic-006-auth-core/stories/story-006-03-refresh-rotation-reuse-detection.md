@@ -1,7 +1,7 @@
 ---
 id: STORY-006-03
 epic: EPIC-006
-status: backlog
+status: in-progress
 blocked: false
 priority: must
 estimate: M
@@ -31,7 +31,16 @@ estimate: M
 - [ ] Реализовать денилист `sid` в Redis с TTL, равным остатку жизни access-токена, и проверку в middleware аутентификации.
 - [ ] Реализовать проверку заголовка `Origin` на `/auth/refresh`.
 - [ ] Реализовать постановку письма-уведомления о подозрительной активности (через порт почты; при отсутствии SMTP — запись в лог).
-- [ ] Описать операцию `POST /api/v1/auth/refresh` в `openapi.yaml`, включая поведение при отзыве.
+- [x] Описать операцию `POST /api/v1/auth/refresh` в `openapi.yaml`, включая поведение при отзыве.
+      *(2026-07-28: операция опубликована с маркером `x-implemented-by: STORY-006-03`. Refresh-cookie
+      описана схемой безопасности `refreshCookie` (`apiKey`/`cookie`), а не параметром — прочитать
+      или выставить её код не может. Все отказы — истёкший, неизвестный, уже потраченный, чужой
+      `Origin` — один ответ 401 `unauthenticated` с очисткой cookie, различать их наружу нечем.
+      `Idempotency-Key` на этой операции объявлен игнорируемым: воспроизведение сохранённого ответа —
+      ровно то, что ловит reuse detection. Побочный эффект публикации: исключение под raw `fetch` в
+      `packages/client/src/shared/api/session-refresh.api.ts` истекло — вызов переведён на
+      типизированный клиент (отдельный экземпляр, без auth-middleware), `test/repo/refresh-exception.test.ts`
+      удалён.)*
 - [ ] Задокументировать модель семейств сессий в `docs/security/` и добавить сценарий разбора инцидента в `docs/runbooks/`.
 
 ## Definition of Done

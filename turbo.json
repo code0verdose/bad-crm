@@ -178,10 +178,6 @@
         // pass over a reintroduced `paths` line is a scanner that stopped looking at the suites
         // about secret handling.
         ".gitleaks.toml",
-        // `test/repo/refresh-exception.test.ts` reads the contract to decide whether the one
-        // hand-written `fetch` in the client is still justified. Cached over an edited contract,
-        // the exception would outlive the reason for it — which is the whole point of that test.
-        "docs/api/openapi.yaml",
         // `test/lint/stylelint-rules.test.ts` lints snippets through the real `stylelint.config.js`
         // and reads the file to assert the token-file exemption is still a list of two paths. A
         // rule set to `null` behind a cached pass is a linter switched off with a green build.

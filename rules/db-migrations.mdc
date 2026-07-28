@@ -103,7 +103,7 @@ npx prisma db push
 | Механизм | Что ловит |
 |---|---|
 | CI-шаг `check:migration-present` (`git diff schema.prisma` без изменений в `migrations/`) | схему без миграции |
-| Линтер миграций `packages/server/test/support/migration-lint.util.ts`, прогоняется по всем закоммиченным миграциям в `packages/server/test/unit/db/migration-lint.test.ts` (то есть в `pnpm test`, а не отдельной командой) | `DROP COLUMN`/`RENAME`/`SET NOT NULL` напрямую, `CREATE INDEX` без `CONCURRENTLY`, отсутствие `lock_timeout`, `CONCURRENTLY` вместе с другими командами в файле |
+| Линтер миграций `packages/server/test/support/migration-lint.util.ts`, прогоняется по всем закоммиченным миграциям в `packages/server/test/unit/db/migration-lint.test.ts` (то есть в `pnpm test`, а не отдельной командой) | `DROP COLUMN`/`RENAME`/`SET NOT NULL` напрямую, `CREATE INDEX` без `CONCURRENTLY` **на таблице, которую эта миграция не создаёт** (правило 6 — про непустую таблицу; новая таблица приезжает одним файлом вместе с политикой, грантами и индексами по правилам 9 и 13), отсутствие `lock_timeout`, `CONCURRENTLY` вместе с другими командами в файле |
 | `pnpm check:rls -- <url>` (живой хост) | новую таблицу без политики, политику без `WITH CHECK`, политику на `PUBLIC`, расхождение каталога с реестром — там, где контейнер поднять негде: staging после восстановления из бэкапа |
 | `pnpm test:integration` (Testcontainers, `prisma migrate deploy` на чистой БД) | неприменимую миграцию и сломанную RLS-изоляцию после неё |
 | `test/integration/migrations/rollback.spec.ts` | невозможность отката (восстановление дампа + предыдущий образ + smoke) |

@@ -1,7 +1,7 @@
 ---
 id: STORY-006-01
 epic: EPIC-006
-status: backlog
+status: in-progress
 blocked: false
 priority: must
 estimate: M
@@ -26,11 +26,29 @@ estimate: M
 ## Задачи
 
 - [ ] Написать тесты первыми: `application/identity/use-cases/register-organization.use-case.test.ts` (успех, слабый пароль, занятый slug, откат), `test/integration/auth/register.test.ts` (реальная БД, хеш в БД, нормализация email, идемпотентность), `packages/shared/validation/password.schema.test.ts`.
-- [ ] Реализовать `packages/shared/src/validation/password.schema.ts` — единая политика пароля для клиента и сервера.
-- [ ] Добавить модели `User` и `Session` в `schema.prisma` и миграцию с полным блоком RLS и индексами (`uq_users_org_email … WHERE deleted_at IS NULL`, `idx_users_org_status`).
+- [x] Реализовать `packages/shared/src/validation/password.schema.ts` — единая политика пароля для клиента и сервера.
+      *Закрыто ревизией 2026-07-28:* файл существует с EPIC-001
+      (`packages/shared/src/validation/password.schema.ts:20`) — `passwordSchema` с
+      `PASSWORD_MIN_LENGTH = 12` и `PASSWORD_MAX_LENGTH = 128`, без trim и case-folding, одна схема
+      на клиент и сервер; те же границы продублированы в `docs/api/openapi.yaml` (`Password`).
+      Пометка стояла невыполненной при уже существующей реализации. **Остаётся в этой истории:**
+      проверка на компрометацию/слабость из acceptance (zxcvbn score ≥ 3, top-100k blocklist) —
+      сама схема в своём комментарии относит её к use-case'у, который умеет её ещё и rate-limit'ить.
+- [x] Добавить модели `User` и `Session` в `schema.prisma` и миграцию с полным блоком RLS и индексами (`uq_users_org_email … WHERE deleted_at IS NULL`, `idx_users_org_status`).
+      *Сделано 2026-07-28:* миграция `20260728120000_auth_core_identity_and_sessions` (expand-шаг),
+      таблицы `users`/`sessions`/`password_reset_tokens` с `ENABLE`+`FORCE`, политикой
+      `tenant_isolation` (`USING` и `WITH CHECK`), `maintenance_access`, явными `GRANT` и составными
+      FK; реестр `tenant-tables.constant.ts` + `ROW_FACTORIES`; `pnpm check:rls` и матрица изоляции
+      зелёные. **Остаётся в этой истории:** `organizations.owner_id` и `teams.lead_id` (nullable
+      expand + бэкфилл) — их проставляет use-case регистрации, поэтому они идут вместе с ним.
 - [ ] Реализовать `infrastructure/crypto/argon2-password-hasher.adapter.ts` под портом `PasswordHasherPort` (хеш, проверка, признак необходимости перехеша).
 - [ ] Реализовать `application/identity/use-cases/register-organization.use-case.ts` поверх bootstrap-сценария из [STORY-005-06](../../epic-005-multi-tenancy-rls/stories/story-005-06-organization-bootstrap-transaction.md).
 - [ ] Добавить операцию `POST /api/v1/auth/register` в `docs/api/openapi.yaml` и реализовать контроллер с валидатором.
+      *(2026-07-28: **половина сделана** — операция описана в спеке с маркером
+      `x-implemented-by: STORY-006-01`; `Idempotency-Key` обязателен, 403 `registration_disabled`,
+      409 `organization_already_exists`, 422 по полю. Поля владельца — `email`, `password`,
+      `locale?`, `timezone?`: имени у `User` в `data-model.md` §1 нет, и договор его не выдумывает.
+      Контроллер и валидатор — за этой историей.)*
 - [ ] Реализовать клиентский экран регистрации: `pages/register`, `units/auth/ui/register-form.component.tsx`, хук `use-register.hook.ts`, схема формы через встроенный `schemaResolver` из `@mantine/form`
       (`validate: schemaResolver(schema, { sync: true })`).
 - [ ] Добавить настройку инсталляции «открытая регистрация» и её проверку в use-case.
