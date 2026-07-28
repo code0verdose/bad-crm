@@ -145,7 +145,7 @@ import { BoardPage } from '@pages/board';   // ❌
 | ESLint `boundaries/element-types` (слои `app/pages/widgets/units/shared`) | импорт вверх и между юнитами мимо barrel |
 | ESLint `bad-crm/no-foreign-unit-internals` | deep-import в **чужой** юнит (сравнивает импорт с юнитом импортирующего файла; свои сегменты разрешены) |
 | ESLint `bad-crm/no-effect-for-derived-state` | `useEffect` там, где хватает вычисления при рендере |
-| ESLint `import/no-relative-parent-imports` | относительные `../` |
+| ESLint `no-restricted-imports` на группу `../*` / `../**` | относительные `../` |
 | ESLint `no-restricted-imports` на `@tanstack/react-query` в `pages/**`, `widgets/**`, `app/**` | `useQuery`/`useMutation` вне юнитов |
 | ESLint `no-restricted-globals: ['fetch']` вне `shared/api/**` | raw-запросы |
 | ESLint `react-hooks/exhaustive-deps` + кастомное правило `no-effect-for-derived-state` | `useEffect` вместо вычисления при рендере |

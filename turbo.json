@@ -158,7 +158,14 @@
         // either and a workflow edited to drop `test` — or a rule that grew a task CI never
         // learned about — is served from cache as a pass.
         ".github/workflows/ci.yml",
-        "rules/ci-before-push.mdc",
+        // `rules/**`, not the one rule `workflow.test.ts` reads: `test/rules/declared-checks.test.ts`
+        // reads *every* rule and holds the mechanical checks their «Как проверяется» tables promise
+        // to the lint config, the workspace scripts and the tree. A rule is where this repository
+        // states what is enforced, so a rule edited to promise a check nobody wrote is precisely the
+        // edit that must not be served from cache — the suite would report a PASS over the sentence
+        // it exists to read. The lint sources that suite resolves against — `eslint.config.js` and
+        // `eslint/**` — are already hashed through `globalDependencies`.
+        "rules/**",
         // `test/ci/cruft-scan.test.ts` asserts that `.cruftignore` still exempts the scanner's own
         // source — an exemption removed there blocks every pull request that touches the scanner,
         // and the suite must not report that from cache. `coverage-baseline.json` is the committed

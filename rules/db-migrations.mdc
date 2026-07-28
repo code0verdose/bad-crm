@@ -44,7 +44,8 @@ alwaysApply: false
 8. **Бэкфилл — пачками с паузой** (`UPDATE … WHERE id IN (SELECT id … LIMIT 5000)` в цикле).
    Один `UPDATE` на всю таблицу держит снапшот, блокирует autovacuum и раздувает таблицу.
 9. **RLS-политика создаётся в той же миграции, что и таблица.** Таблица без политики — блокирующий
-   дефект и падение `pnpm check:rls`. См. `rules/tenancy-rls.mdc`.
+   дефект: аудит каталога валит `pnpm test:integration` в CI, а на живом хосте — `pnpm check:rls`.
+   См. `rules/tenancy-rls.mdc`.
 10. **Backup-first.** `bad-crm db backup` — обязательный шаг апгрейд-скрипта, а не рекомендация в
     README. Апгрейдер отказывается мигрировать без проверенного бэкапа (`pg_restore --list`), кроме
     явного `--skip-backup` с предупреждением. Миграция, которую невозможно откатить, помечается в
@@ -102,8 +103,8 @@ npx prisma db push
 | Механизм | Что ловит |
 |---|---|
 | CI-шаг `check:migration-present` (`git diff schema.prisma` без изменений в `migrations/`) | схему без миграции |
-| Линтер миграций `scripts/lint-migrations.ts` | `DROP COLUMN`/`RENAME`/`SET NOT NULL` напрямую, `CREATE INDEX` без `CONCURRENTLY`, отсутствие `lock_timeout`, `CONCURRENTLY` вместе с другими командами в файле |
-| `pnpm check:rls` | новую таблицу без политики |
+| Линтер миграций `packages/server/test/support/migration-lint.util.ts`, прогоняется по всем закоммиченным миграциям в `packages/server/test/unit/db/migration-lint.test.ts` (то есть в `pnpm test`, а не отдельной командой) | `DROP COLUMN`/`RENAME`/`SET NOT NULL` напрямую, `CREATE INDEX` без `CONCURRENTLY`, отсутствие `lock_timeout`, `CONCURRENTLY` вместе с другими командами в файле |
+| `pnpm check:rls -- <url>` (живой хост) | новую таблицу без политики, политику без `WITH CHECK`, политику на `PUBLIC`, расхождение каталога с реестром — там, где контейнер поднять негде: staging после восстановления из бэкапа |
 | `pnpm test:integration` (Testcontainers, `prisma migrate deploy` на чистой БД) | неприменимую миграцию и сломанную RLS-изоляцию после неё |
 | `test/integration/migrations/rollback.spec.ts` | невозможность отката (восстановление дампа + предыдущий образ + smoke) |
 | Прогон на `seed --scale large` с отчётом о блокировках, приложенным к PR | миграцию, блокирующую запись дольше `lock_timeout` |

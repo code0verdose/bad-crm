@@ -132,9 +132,9 @@ export interface TaskAccessReaderPort {
 | Механизм | Что ловит |
 |---|---|
 | ESLint `no-restricted-imports` (`@prisma/client`, `express`, `ioredis` вне разрешённых слоёв) | нарушение направления зависимостей |
-| ESLint `import/no-relative-parent-imports` + алиас `@/*` | относительные `../` |
+| ESLint `no-restricted-imports` на группу `../*` / `../**` + алиас `@/*` | относительные `../` |
 | `eslint-plugin-boundaries` (слои `domain/application/infrastructure/presentation`) | импорт наружу и циклы |
-| `test/architecture/layers.spec.ts` | импорт `infrastructure` из `application`/`domain`; адаптер, собранный не в composition root |
+| `packages/server/test/unit/architecture/layers.test.ts` (обход графа импортов дерева `src`) | импорт `infrastructure` из `application`/`domain`; адаптер, собранный не в composition root |
 | Vitest без окружения для `domain/**` (порог 95 % lines / 90 % branches, policy — 100 %) | I/O, просочившееся в домен: тест просто не запустится |
 | Контрактный тест OpenAPI ↔ роутер | контроллер без объявленной операции |
 | Агент `architect-review` при изменении структуры слоёв | размывание границ, «сервис на контекст» вместо use-case'ов |

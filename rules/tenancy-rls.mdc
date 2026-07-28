@@ -34,7 +34,11 @@ alwaysApply: true
    `DATABASE_URL`, ручной `psql`, скрипт обслуживания) видит все организации, а политики молча
    не применяются.
 6. **Любая дополнительная политика на `[T]`-таблице — только `AS RESTRICTIVE`**, либо содержит
-   предикат тенанта внутри себя. PERMISSIVE-политики объединяются по **OR** и расширяют доступ.
+   предикат тенанта внутри себя. PERMISSIVE-политики объединяются по **OR** и расширяют доступ —
+   причём **внутри своей роли**: `PERMISSIVE ... TO app_migrator USING (true)` не трогает `app_user`
+   вовсе и при этом возвращает владельцу все организации разом. Единственное исключение —
+   канонический maintenance-переключатель из пункта 3
+   (`current_setting('app.maintenance', true) = 'on'`); всё остальное — находка `check:rls`.
 7. **Составной FK на родителя — `(organization_id, parent_id)`**, а не `(parent_id)`. Одиночный FK
    позволяет привязать дочернюю строку к родителю из чужой организации; RLS этого не поймает,
    потому что обе строки видны в своих контекстах.
@@ -55,13 +59,25 @@ alwaysApply: true
     вызова handler'а. Handler, обратившийся к БД мимо обёртки, падает на `guardedClient`.
 14. **Новая таблица регистрируется в `tenant-tables.ts` и в `ROW_FACTORIES`** — иначе не
     компилируется и не попадает в isolation-тесты.
-15. **Isolation-тест обязателен на каждую таблицу и обязан содержать положительный контроль**
-    («своя строка видна»). Без контроля весь файл проходит вхолостую: если соединение окажется без
-    политик, все негативные проверки станут истинными просто потому, что не видно ничего.
+15. **Isolation-тест обязателен на каждую таблицу и обязан содержать положительный контроль** на
+    каждую проверяемую команду — «своя строка видна», «своя строка пишется», «свой `INSERT`
+    проходит». Без контроля весь файл проходит вхолостую: если соединение окажется без политик, все
+    негативные проверки станут истинными просто потому, что не видно ничего. Отдельно про
+    `INSERT`: код `42501` — это и нарушение политики, и `permission denied`, поэтому негативная
+    проверка одна проходит и на таблице, где `app_user` вообще не получил `INSERT` (забытый `GRANT`,
+    лишний `REVOKE`, промах классификатора в `01-grants.sql`) — отказ приходит от привилегии, а тест
+    читает его как «политика сработала».
 16. **Isolation-тесты ходят в Postgres напрямую через `pg`, не через Prisma.** Проверяется база, а
     не обёртка: корректный `withTenant` замаскировал бы отсутствующую политику.
-17. **Идентификатор новой организации генерирует приложение** (`uuidv7()`), создание идёт внутри
-    `withTenant` с этим же id. Иначе `INSERT` в `organizations` упадёт на `WITH CHECK`.
+17. **Идентификатор новой организации генерирует приложение** — через `IdGeneratorPort.uuid()`
+    (адаптер `system-id-generator.adapter.ts`, `randomUUID()` из CSPRNG), создание идёт внутри
+    `withTenant` с этим же id. Иначе `INSERT` в `organizations` упадёт на `WITH CHECK`. Здесь важна
+    **неугадываемость** значения, а не его сортируемость: id называет tenant-скоуп до того, как
+    строка существует. Формат ключей схемы (предпочтение UUIDv7 ради локальности вставки в B-tree и
+    текущий компромисс `gen_random_uuid()`) — решение уровня
+    [`docs/architecture/data-model.md`](../docs/architecture/data-model.md), «Первичные и внешние
+    ключи», а не этого правила: переводить один адаптер на v7 в отрыве от колоночных дефолтов
+    значит завести два формата ключа в одном семействе колонок.
 18. **Чек-лист «новая таблица» из `docs/security/rls-design.md` заполняется в описании PR**
     целиком, все 13 пунктов.
 
@@ -139,12 +155,16 @@ await tx.$executeRawUnsafe(`SET app.organization_id = '${orgId}'`);   // ❌ в�
 |---|---|
 | ESLint `no-restricted-imports` на `@prisma/client` вне `infrastructure/persistence/**` | утечку Prisma в domain/application/presentation |
 | ESLint `no-restricted-syntax` на `MemberExpression[object.name='prisma'\|'tx']` | прямые вызовы вне слоя |
-| ESLint `no-restricted-syntax` на `$queryRawUnsafe` / `$executeRawUnsafe` / `$transaction([...])` | небезопасный SQL и транзакцию без контекста |
+| ESLint `no-restricted-syntax` на `$queryRawUnsafe` / `$executeRawUnsafe` | небезопасный SQL |
+| ESLint `no-restricted-syntax` на `$transaction([...])` (первый аргумент — массив) | батч вместо интерактивной транзакции: `withTenant` негде выставить `app.organization_id` |
+| ESLint `no-restricted-syntax` в `**/*.repository.ts` на параметр/поле `organizationId` | второй источник истины о тенанте: расхождение со скоупом не отказ, а молча пустая выборка |
+| ESLint `no-restricted-imports` на `prisma.client.js` / `database.factory.js` вне `infrastructure/bootstrap/**` | клиент БД, созданный мимо композиционного корня, живёт вне tenant-скоупа |
 | grep-чек CI: `SET\s+app\.(organization_id\|user_id)` | `SET` без `LOCAL` |
 | grep-чек CI: `set_config\([^)]*,\s*false\s*\)` | `is_local = false` |
-| `pnpm check:rls` (`packages/server/scripts/check-rls.ts`) | таблицу без `ENABLE`/`FORCE`/политики; расхождение `pg_catalog` ↔ Prisma-схема ↔ `tenant-tables.ts`; неканоническую PERMISSIVE-политику |
-| `pnpm test:integration` → `test/integration/rls/rls-isolation.test.ts` | изоляцию по каждой таблице из `TENANT_TABLES`, включая контрольный тест |
-| Типы: `tenant-tables.ts` + `ROW_FACTORIES` как `satisfies` | таблицу, забытую в реестре — не компилируется |
+| `pnpm check:rls` (`packages/server/scripts/check-rls.ts`) на **живом** хосте | таблицу без `ENABLE`/`FORCE`; политику без `USING` или без `WITH CHECK`; политику на `PUBLIC` вместо `app_user`; предикат не по той tenant-колонке, которую объявляет реестр (`id` вместо `organization_id` — fail-closed, диагностируется как «данных нет»); **любую** PERMISSIVE-политику на tenant-таблице, чей предикат не является ни каноническим tenant-предикатом, ни maintenance-переключателем — независимо от роли, которой она адресована; расхождение `pg_catalog` ↔ Prisma-схема ↔ `tenant-tables.constant.ts` в обе стороны. Строка подключения — аргументом (`pnpm check:rls -- postgresql://…`) или в `DATABASE_URL`; читает только `pg_catalog`, хватает роли `app_user` |
+| `pnpm test:integration` → `test/integration/db/migrations.test.ts` | тот же аудит, но на миграции этого чекаута: набор поднимает контейнер сам, поэтому идёт в CI на каждый PR. Шаблон политики у него и у скрипта общий — `src/infrastructure/persistence/prisma/rls-catalog.constant.ts`, второе определение падает в `test/unit/persistence/rls-catalog-sources.test.ts` |
+| `pnpm test:integration` → `test/integration/db/rls-isolation.test.ts` | изоляцию по каждой таблице из `TENANT_TABLES`, включая положительный контроль |
+| Типы: `tenant-tables.constant.ts` + `ROW_FACTORIES` как `satisfies` | таблицу, забытую в реестре — не компилируется |
 | Агент `db-reviewer` в commit-гейте | миграции, индексы, риск потери данных |
 | Агент `tenancy-rls-auditor` | семантику политик и обходы контекста, которых не видит регулярка |
 

@@ -110,10 +110,10 @@ notify.error({ message: error.detail });   // "PrismaClientKnownRequestError P20
 |---|---|
 | ESLint `no-restricted-imports` на `@mantine/notifications` вне `shared/ui/toaster/**` | вызовы вендора мимо обёртки |
 | Кастомное правило `bad-crm/no-toast-in-onerror-query` | тост на `onError` у `useQuery` |
-| `test/ui/toaster/dedupe.spec.ts`: три одинаковых сбоя подряд | стек одинаковых тостов (ожидается один, обновляемый) |
-| `test/ui/mutation-error.spec.ts`: мутация падает при наличии локального `onError` | двойной тост |
+| `packages/client/test/ui/toaster.test.tsx`: тот же сбой повторяется | стек одинаковых тостов (ожидается один, обновляемый) |
+| `packages/client/test/api/query-client.test.ts`: мутация падает при наличии локального `onError` | двойной тост |
 | Компонентные тесты форм (Testing Library): submit с невалидным полем | тост вместо inline-ошибки |
-| `test/ui/data-state.spec.ts` | отсутствие retry в error-состоянии списка |
+| `packages/client/test/ui/data-state.test.tsx` | отсутствие retry в error-состоянии списка |
 | e2e Playwright: обрыв сети на сохранении | залипший loading, отсутствие отката |
 | `axe` в CI | `role="alert"`/`aria-live` у тостов, см. `rules/a11y.mdc` |
 

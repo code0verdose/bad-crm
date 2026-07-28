@@ -27,7 +27,7 @@ alwaysApply: true
    |---|---|
    | `docs/api/openapi.yaml` | `pnpm api:lint && pnpm api:gen && git diff --exit-code` |
    | `schema.prisma`, миграции, репозитории | `pnpm test:integration` (Testcontainers) |
-   | RLS-политики, новую таблицу | `pnpm check:rls` |
+   | RLS-политики, новую таблицу | `pnpm test:integration` (аудит каталога входит в него) — и `pnpm check:rls -- <url>` на живом хосте, если он есть |
    | клиентские экраны и потоки | `pnpm test:e2e` (или явное обоснование, почему не гонялся) |
    | ключи i18n | `pnpm i18n:check` |
    | `package.json`, lockfile | `pnpm install --frozen-lockfile && pnpm audit` |
@@ -51,8 +51,9 @@ alwaysApply: true
 ```bash
 # полный набор + профильные проверки под конкретную дельту
 pnpm turbo run typecheck lint build test
-pnpm check:rls
 pnpm test:integration
+# на живом хосте (staging после восстановления из бэкапа) — сверка каталога RLS:
+pnpm check:rls -- "$STAGING_DATABASE_URL"
 git push origin feat/task-fractional-index
 ```
 
