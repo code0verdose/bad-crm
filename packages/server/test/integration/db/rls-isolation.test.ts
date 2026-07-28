@@ -123,6 +123,79 @@ describe.each(entries)('RLS · $table', ({ table, spec }) => {
     expect(rows).toHaveLength(2);
   });
 
+  /**
+   * The positive control of the *list*, as opposed to the one of the single read above.
+   *
+   * A bare `SELECT` with no `WHERE` is the shape almost every list endpoint ends up as, and it is
+   * the shape where a missing policy shows up as data rather than as an error. The control and the
+   * negative below are one pair on purpose: "the list contains my row" and "the list contains
+   * nothing else" are different failures — the first is a broken fixture, the second is a leak.
+   */
+  it('CONTROL: an unfiltered list returns the tenant’s own row', async () => {
+    const ids = await asTenant(pools.app, ORG_A, async (client) =>
+      (await client.query<{ id: string }>(`SELECT id FROM ${table}`)).rows.map((row) => row.id),
+    );
+
+    expect(ids).toContain(idA);
+  });
+
+  /**
+   * The positive control of the INSERT pair below, and the one this file went without.
+   *
+   * `RLS_VIOLATION` is `42501`, which PostgreSQL raises both for `new row violates row-level
+   * security policy` and for `permission denied for table`. So the negative alone is satisfied by a
+   * table on which `app_user` holds no `INSERT` at all — a forgotten `GRANT`, a stray `REVOKE`, or
+   * a classifier in `01-grants.sql` that does not recognise the table (which has happened here
+   * once already, to `organizations`). The refusal then comes from the privilege and the spec reads
+   * it as "the policy worked", while the application cannot write the table at all.
+   *
+   * This control fails in exactly that case and passes only when the write really reached the
+   * policy.
+   */
+  it.runIf(spec.appUserPrivileges.includes('INSERT'))(
+    'CONTROL: the tenant may insert its own row',
+    async () => {
+      // The tenant root is its own tenant: `WITH CHECK (id = current_setting(...))` admits one id
+      // per scope and `idA` already exists, so the control writes a *new* organization through the
+      // scope of that organization — the bootstrap path of `docs/security/rls-design.md`.
+      const organizationId = table === 'organizations' ? randomUUID() : ORG_A;
+
+      const written = await asTenant(pools.app, organizationId, (client) =>
+        ROW_FACTORIES[table](client, organizationId),
+      );
+
+      const stored = await asMaintenance(
+        pools.owner,
+        async (client) =>
+          (await client.query(`SELECT id FROM ${table} WHERE id = $1`, [written.id])).rowCount,
+      );
+
+      expect(stored).toBe(1);
+    },
+  );
+
+  it.runIf(spec.appUserPrivileges.includes('DELETE'))(
+    'CONTROL: the tenant may delete its own row',
+    async () => {
+      const deleted = await asTenant(
+        pools.app,
+        ORG_A,
+        async (client) =>
+          (await client.query(`DELETE FROM ${table} WHERE id = $1`, [idA])).rowCount,
+      );
+
+      expect(deleted).toBe(1);
+
+      const gone = await asMaintenance(
+        pools.owner,
+        async (client) =>
+          (await client.query(`SELECT id FROM ${table} WHERE id = $1`, [idA])).rowCount,
+      );
+
+      expect(gone).toBe(0);
+    },
+  );
+
   // ── isolation ───────────────────────────────────────────────────────────────────────────────
 
   it('SELECT: the other tenant’s row is invisible', async () => {
@@ -133,6 +206,20 @@ describe.each(entries)('RLS · $table', ({ table, spec }) => {
     );
 
     expect(rows).toEqual([]);
+  });
+
+  /**
+   * The negative half of the list. `COUNT` next door proves the aggregate is filtered; this proves
+   * the *rows* are — an important distinction, because a policy that filtered only the aggregate
+   * would be invisible to a count-based assertion and would still hand a list endpoint the other
+   * tenant's records.
+   */
+  it('LIST: an unfiltered select returns no row of the other tenant', async () => {
+    const ids = await asTenant(pools.app, ORG_A, async (client) =>
+      (await client.query<{ id: string }>(`SELECT id FROM ${table}`)).rows.map((row) => row.id),
+    );
+
+    expect(ids).toEqual([idA]);
   });
 
   it('COUNT: an aggregate counts the tenant’s rows and no others', async () => {

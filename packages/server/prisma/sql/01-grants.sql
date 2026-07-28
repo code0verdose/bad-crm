@@ -145,20 +145,50 @@ BEGIN
     -- application.
   END LOOP;
 
-  -- 5. Sequences. pg_dump reads `last_value` out of every sequence and stops on the first one it
-  --    may not read (`permission denied for sequence audit_logs_id_seq`), so the backup needs
-  --    SELECT here just as much as on the tables. app_user needs USAGE to make `nextval()` work for
-  --    any identity/serial column; SELECT alone is not enough and the failure only shows up on the
-  --    first INSERT into such a table.
+  -- 6. Sequences, and they follow the table they belong to.
+  --
+  --    backup_role reads all of them: pg_dump reads `last_value` out of every sequence and stops on
+  --    the first one it may not read (`permission denied for sequence audit_logs_id_seq`), so one
+  --    missing GRANT fails the whole dump.
+  --
+  --    app_user is a different question, and this loop used to get it wrong. It granted
+  --    `USAGE, SELECT` to every sequence in the schema — including the sequences of tables the
+  --    branches above had just decided the application must not see. `USAGE` on a foreign sequence
+  --    lets `nextval()` move it; `SELECT` reads `last_value`, which estimates how much data lives
+  --    in a table app_user cannot open. Nothing breaks, so the rule simply stopped being a rule
+  --    (technical debt of EPIC-001, closed in STORY-005-05).
+  --
+  --    The test is the owning table, not the sequence name: `has_table_privilege(..., 'SELECT')` is
+  --    asked *after* the table loop above, so it answers with the decision this very file has just
+  --    made rather than with a second copy of the classification. A sequence with no owning table —
+  --    a bare `CREATE SEQUENCE` — reaches the ELSE branch and app_user gets nothing, which fails
+  --    loudly on first use instead of quietly widening access.
+  --
+  --    REVOKE rather than "do not grant", for the same reason as the partition leaves: this file is
+  --    also the repair path after a restore and after a privilege somebody added by hand.
   FOR rel IN
-    SELECT c.relname
+    SELECT DISTINCT
+           c.relname,
+           dep.refobjid AS owning_table
     FROM   pg_class c
     JOIN   pg_namespace n ON n.oid = c.relnamespace
+    LEFT JOIN pg_depend dep
+           ON dep.classid    = 'pg_class'::regclass
+          AND dep.objid      = c.oid
+          AND dep.refclassid = 'pg_class'::regclass
+          AND dep.deptype IN ('a', 'i')
     WHERE  n.nspname = 'public' AND c.relkind = 'S'
     ORDER  BY c.relname
   LOOP
     EXECUTE format('GRANT SELECT ON SEQUENCE public.%I TO backup_role', rel.relname);
-    EXECUTE format('GRANT USAGE, SELECT ON SEQUENCE public.%I TO app_user', rel.relname);
+
+    IF rel.owning_table IS NOT NULL
+       AND has_table_privilege('app_user', rel.owning_table, 'SELECT') THEN
+      EXECUTE format('GRANT USAGE, SELECT ON SEQUENCE public.%I TO app_user', rel.relname);
+    ELSE
+      EXECUTE format('REVOKE ALL ON SEQUENCE public.%I FROM app_user', rel.relname);
+    END IF;
+
     granted_sequences := granted_sequences + 1;
   END LOOP;
 

@@ -45,7 +45,8 @@ model: sonnet
    не `PASS`.
 2. Полный текст изменений: `git diff --staged -- packages/server/prisma packages/server/src/infrastructure/persistence`.
 3. Контекст вокруг дельты читай целиком: миграция без соседних файлов схемы не интерпретируется.
-4. Если доступна тестовая БД с применёнными миграциями — прогони `pnpm check:rls` и приложи вывод.
+4. Если доступна тестовая БД с применёнными миграциями — прогони
+   `pnpm check:rls -- <строка подключения>` и приложи вывод (скрипт только читает `pg_catalog`).
    Боевую БД **не трогаешь никогда**.
 
 ## Чек-лист
@@ -169,10 +170,12 @@ git diff --staged -- packages/server/prisma/migrations | grep -nE "CREATE (UNIQU
 
 ### 11. Каталог БД против кода (если доступна тестовая БД)
 ```bash
-pnpm check:rls
+pnpm check:rls -- "$DATABASE_URL"     # либо DATABASE_URL в окружении
 ```
-Приложи вывод дословно. Prisma drift-detection политики не видит — `migrate diff` сравнивает схему,
-а не каталог RLS.
+Приложи вывод дословно. Код возврата: 0 — чисто, 1 — нарушения, 2 — проверку не удалось выполнить
+(«не удалось выполнить» ≠ «всё в порядке»). Если живой БД нет — тот же аудит гоняется на контейнере:
+`pnpm test:integration` (`test/integration/db/migrations.test.ts`). Prisma drift-detection политики
+не видит — `migrate diff` сравнивает схему, а не каталог RLS.
 
 ## Формат вердикта
 

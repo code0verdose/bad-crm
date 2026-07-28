@@ -5,6 +5,8 @@ import type { Logger } from 'pino';
 import { startApiProcess } from '../../../src/infrastructure/bootstrap/api-process.factory.js';
 import { createRootLogger } from '../../../src/infrastructure/logging/pino-logger.adapter.js';
 import { EnvValidationError } from '../../../src/infrastructure/bootstrap/env.errors.js';
+import { UnsafeDatabaseRoleError } from '../../../src/infrastructure/persistence/prisma/assert-db-role.util.js';
+import type { DatabaseConnection } from '../../../src/infrastructure/persistence/prisma/database.factory.js';
 import type { ServerEnv } from '../../../src/infrastructure/bootstrap/env.schema.js';
 
 const VALID_ENCRYPTION_KEY = `${'A'.repeat(43)}=`;
@@ -47,16 +49,40 @@ interface Harness {
   readonly signals: Map<string, () => void>;
   readonly exitCodes: number[];
   readonly fatals: string[];
+  readonly closed: string[];
   readonly closeListener: () => void;
 }
 
-const harness = (overrides: { loadEnvironment?: () => ServerEnv } = {}) => {
+/**
+ * A stand-in for the database connection, shaped only where the startup sequence touches it.
+ *
+ * The real one opens a pool; here what matters is that it is created before the role is verified,
+ * that the port is opened after both, and that it is closed on shutdown.
+ */
+const fakeDatabase = (closed: string[]): DatabaseConnection =>
+  ({
+    base: {},
+    guarded: {},
+    close: () => {
+      closed.push('database');
+
+      return Promise.resolve();
+    },
+  }) as unknown as DatabaseConnection;
+
+const harness = (
+  overrides: {
+    loadEnvironment?: () => ServerEnv;
+    verifyDatabaseRole?: () => Promise<void>;
+  } = {},
+) => {
   const order: string[] = [];
   const lines: string[] = [];
   const listened: number[] = [];
   const signals = new Map<string, () => void>();
   const exitCodes: number[] = [];
   const fatals: string[] = [];
+  const closed: string[] = [];
   let listenerCallback: (() => void) | undefined;
 
   const start = startApiProcess({
@@ -72,6 +98,16 @@ const harness = (overrides: { loadEnvironment?: () => ServerEnv } = {}) => {
         { level: 'debug', version: '0.0.0' },
         { write: (line: string) => lines.push(line) },
       );
+    },
+    connectDatabase: () => {
+      order.push('database');
+
+      return fakeDatabase(closed);
+    },
+    verifyDatabaseRole: () => {
+      order.push('db-role');
+
+      return overrides.verifyDatabaseRole?.() ?? Promise.resolve();
     },
     listen: (_app: Express, port: number) => {
       order.push('listen');
@@ -95,6 +131,7 @@ const harness = (overrides: { loadEnvironment?: () => ServerEnv } = {}) => {
     signals,
     exitCodes,
     fatals,
+    closed,
     closeListener: () => listenerCallback?.(),
   };
 
@@ -112,9 +149,46 @@ describe('startApiProcess', () => {
 
     await start;
 
-    expect(state.order).toEqual(['env', 'logger', 'listen']);
+    expect(state.order).toEqual(['env', 'logger', 'database', 'db-role', 'listen']);
     expect(state.listened).toEqual([4321]);
     expect(state.exitCodes).toEqual([]);
+  });
+
+  /**
+   * Invariant 1 of CLAUDE.md, at the one moment it can still be checked cheaply.
+   *
+   * A connection made as the schema owner, as a superuser or as any `BYPASSRLS` role serves every
+   * request correctly and filters nothing — the failure has no symptom until a tenant reads another
+   * tenant's data. The process therefore refuses to open the port, which is the only signal that
+   * reaches an operator before the leak does.
+   */
+  it('refuses to open the port when the database role can escape row level security', async () => {
+    const { start, state } = harness({
+      verifyDatabaseRole: () =>
+        Promise.reject(
+          new UnsafeDatabaseRoleError([
+            'the role has BYPASSRLS — the tenant policies are not applied',
+          ]),
+        ),
+    });
+
+    await start;
+
+    expect(state.order).toEqual(['env', 'logger', 'database', 'db-role']);
+    expect(state.listened).toEqual([]);
+    expect(state.exitCodes).toEqual([1]);
+    expect(state.fatals.join('\n')).toContain('BYPASSRLS');
+  });
+
+  it('closes the database pool it opened when the process shuts down', async () => {
+    const { start, state } = harness();
+
+    await start;
+    state.signals.get('SIGTERM')?.();
+    state.closeListener();
+    await new Promise((resolve) => setImmediate(resolve));
+
+    expect(state.closed).toEqual(['database']);
   });
 
   it('announces the port and the degraded optional services, so the log says what is off', async () => {
@@ -213,6 +287,8 @@ describe('startApiProcess', () => {
       loadEnvironment: () => testEnv(),
       createLogger: () =>
         createRootLogger({ level: 'silent', version: '0.0.0' }, { write: () => undefined }),
+      connectDatabase: () => fakeDatabase([]),
+      verifyDatabaseRole: () => Promise.resolve(),
       listen: () => Promise.reject(new Error('listen EADDRINUSE: address already in use :::4321')),
       onSignal: () => undefined,
       exit: (code) => exitCodes.push(code),

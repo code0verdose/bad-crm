@@ -3,7 +3,10 @@ import { type Logger } from 'pino';
 
 import { APP_INFO } from '@/app-info.constant.js';
 import { AsyncRequestContextAdapter } from '@/infrastructure/logging/async-request-context.adapter.js';
-import { createRootLogger } from '@/infrastructure/logging/pino-logger.adapter.js';
+import {
+  PinoLoggerAdapter,
+  createRootLogger,
+} from '@/infrastructure/logging/pino-logger.adapter.js';
 import { buildContainer } from '@/infrastructure/bootstrap/container.factory.js';
 import {
   describeDegradations,
@@ -14,7 +17,13 @@ import {
   createShutdownHandler,
   type ClosableServer,
 } from '@/infrastructure/bootstrap/shutdown.factory.js';
+import { assertRuntimeDbRole } from '@/infrastructure/persistence/prisma/assert-db-role.util.js';
+import {
+  connectDatabase,
+  type DatabaseConnection,
+} from '@/infrastructure/persistence/prisma/database.factory.js';
 import { createHttpServer } from '@/presentation/http/http-server.factory.js';
+import { type LoggerPort } from '@/application/platform/ports/logger.port.js';
 import { type ServerEnv } from '@/infrastructure/bootstrap/env.schema.js';
 
 /** Hard deadline for graceful shutdown (stack.md): a stuck handler must not block a deploy. */
@@ -44,6 +53,13 @@ export interface ListeningServer extends ClosableServer {
 export interface ApiProcessSeams {
   readonly loadEnvironment: () => ServerEnv;
   readonly createLogger: (env: ServerEnv, requestContext: AsyncRequestContextAdapter) => Logger;
+  readonly connectDatabase: (env: ServerEnv, logger: LoggerPort) => DatabaseConnection;
+  /**
+   * Refuses the connection when the role it was made as can escape row level security. Separate
+   * from `connectDatabase` so the order — pool, then check, then port — is asserted in the test
+   * rather than assumed (STORY-005-05).
+   */
+  readonly verifyDatabaseRole: (database: DatabaseConnection) => Promise<unknown>;
   readonly listen: (app: Express, port: number) => Promise<ListeningServer>;
   readonly onSignal: (signal: string, handler: () => void) => void;
   readonly exit: (code: number) => void;
@@ -55,6 +71,8 @@ const defaultSeams: ApiProcessSeams = {
   loadEnvironment: () => loadEnv(),
   createLogger: (env, requestContext) =>
     createRootLogger({ level: env.LOG_LEVEL, version: APP_INFO.version, requestContext }),
+  connectDatabase: (env, logger) => connectDatabase({ url: env.DATABASE_URL, logger }),
+  verifyDatabaseRole: (database) => assertRuntimeDbRole(database.base),
   listen: (app, port) =>
     new Promise((resolve, reject) => {
       const server = app.listen(port, () => resolve(server));
@@ -82,9 +100,11 @@ const defaultSeams: ApiProcessSeams = {
  * healthy. Failure at any step produces one readable sentence and exit code 1 — never a stack trace
  * and never a half-started process.
  *
- * The "infrastructure clients" step is empty today: Prisma arrives in STORY-003-06 and Redis with
- * the queues. It is named here because that is where they are created — before the container, which
- * receives them, and after the logger, which reports their failure.
+ * The database is part of that order and not an afterthought. The pool is opened after the logger —
+ * which is what reports its failure — and the role it connected as is verified **before** the port,
+ * because a role that can escape row level security produces no error at all: every request is
+ * served, nothing is filtered, and the first symptom is one tenant reading another's data
+ * (STORY-005-05). Redis and the queues join the same step when they land.
  */
 export const startApiProcess = async (overrides: Partial<ApiProcessSeams> = {}): Promise<void> => {
   const seams: ApiProcessSeams = { ...defaultSeams, ...overrides };
@@ -96,9 +116,16 @@ export const startApiProcess = async (overrides: Partial<ApiProcessSeams> = {}):
     const requestContext = new AsyncRequestContextAdapter();
     logger = seams.createLogger(env, requestContext);
 
-    // ── infrastructure clients (Prisma: STORY-003-06, Redis: EPIC-025) go here ──
+    // ── infrastructure clients (Redis: EPIC-025 joins here) ──
+    const database = seams.connectDatabase(env, new PinoLoggerAdapter(logger));
 
-    const container = buildContainer({ env, logger, requestContext });
+    // Before the port, and before any worker: a connection made as the schema owner, as a
+    // superuser or as any BYPASSRLS role serves every request correctly and filters nothing. The
+    // refusal below is the only signal an operator gets before a tenant reads another tenant's
+    // data (invariant 1 of CLAUDE.md, docs/security/rls-design.md).
+    await seams.verifyDatabaseRole(database);
+
+    const container = buildContainer({ env, logger, requestContext, database });
     const app = createHttpServer(container.http);
 
     for (const warning of insecureDefaultWarnings(env)) {

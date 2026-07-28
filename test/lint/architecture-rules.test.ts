@@ -63,6 +63,43 @@ const HEXAGONAL_LAYERS: ForbiddenCase[] = [
     rule: 'no-restricted-syntax',
     hint: 'infrastructure/persistence',
   },
+  {
+    // The one ban that is *not* lifted inside the persistence layer. `$queryRawUnsafe` takes a
+    // string, so the tenant predicate is whatever the caller concatenated — and the layer where
+    // every other Prisma rule is relaxed is the layer where this fixture has to live.
+    fixture: 'packages/server/src/infrastructure/persistence/raw-unsafe.repository.ts',
+    rule: 'no-restricted-syntax',
+    hint: 'bypass RLS review',
+  },
+  {
+    // `rules/tenancy-rls.mdc` → «Как проверяется» promised this ban and `eslint.config.js` did not
+    // have it. The array form opens no interactive transaction, so `withTenant` never wraps it and
+    // `app.organization_id` is never set — inside `persistence/**`, where the other Prisma bans are
+    // lifted, such a call passed the linter outright.
+    fixture: 'packages/server/src/infrastructure/persistence/array-transaction.repository.ts',
+    rule: 'no-restricted-syntax',
+    hint: 'interactive transaction',
+  },
+];
+
+/**
+ * "A repository takes no `organizationId` and holds no client" used to rest on discipline alone.
+ *
+ * Both mistakes fail the same silent way: the policy filters against `app.organization_id`, so a
+ * repository told a *different* organization is not refused — it is handed an empty result, which
+ * reads like "there is no data" rather than like a defect (`tenant-scoped.repository.ts`).
+ */
+const REPOSITORY_TAKES_NO_TENANT: ForbiddenCase[] = [
+  {
+    fixture: 'packages/server/src/infrastructure/persistence/tenant-arg.repository.ts',
+    rule: 'no-restricted-syntax',
+    hint: 'second source of truth',
+  },
+  {
+    fixture: 'packages/server/src/infrastructure/persistence/own-client.repository.ts',
+    rule: 'no-restricted-imports',
+    hint: 'composition root',
+  },
 ];
 
 const CLIENT_FSD: ForbiddenCase[] = [
@@ -224,6 +261,11 @@ const CLEAN_FIXTURES = [
   'packages/shared/src/error-code.enums.ts',
   'packages/server/src/domain/task/task.entity.ts',
   'packages/server/src/infrastructure/persistence/task.repository.ts',
+  // The counterpart of `tenant-arg.repository.ts` and `array-transaction.repository.ts`: a
+  // repository that derives its tenant, writes the column into the row and uses the interactive
+  // form of `$transaction`. Without it the two bans above would read as correct while forbidding
+  // the only shape a repository is allowed to have.
+  'packages/server/src/infrastructure/persistence/scoped.repository.ts',
   'packages/client/src/units/task/service/hooks/use-task-list.hook.ts',
   'packages/client/src/shared/api/http.client.ts',
   // A unit reaching into its *own* segments: the counterpart of `foreign-unit.component.tsx`, and
@@ -263,6 +305,7 @@ const describeForbidden = (title: string, cases: ForbiddenCase[]): void => {
 
 describeForbidden('monorepo package boundaries', PACKAGE_BOUNDARIES);
 describeForbidden('server hexagonal layers', HEXAGONAL_LAYERS);
+describeForbidden('a repository derives its tenant, never receives it', REPOSITORY_TAKES_NO_TENANT);
 describeForbidden('client FSD layers', CLIENT_FSD);
 describeForbidden('effect discipline', EFFECT_DISCIPLINE);
 describeForbidden('naming and file structure', NAMING);

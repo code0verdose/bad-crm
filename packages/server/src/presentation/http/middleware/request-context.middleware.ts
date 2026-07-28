@@ -15,7 +15,12 @@ const SAFE_REQUEST_ID = /^[\w-]{1,64}$/;
 
 export interface RequestContextMiddlewareDependencies {
   readonly requestContext: RequestContextPort;
-  readonly idGenerator: IdGeneratorPort;
+  /**
+   * `next()` only. A request id is a correlation identifier, not an entity key, so this middleware
+   * has no business with `uuid()` — and asking for the whole port would make every stub of it
+   * implement a method this file never calls (rules/hexagonal-backend.mdc, rule 6).
+   */
+  readonly idGenerator: Pick<IdGeneratorPort, 'next'>;
 }
 
 /**

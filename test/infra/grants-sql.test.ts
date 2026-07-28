@@ -57,6 +57,29 @@ describe('01-grants.sql — the single source of truth for grants', () => {
     expect(executable).toMatch(/relkind\s*=\s*'S'/);
   });
 
+  /**
+   * A sequence is reachable only through the table that owns it.
+   *
+   * The unconditional form of the loop above — `GRANT USAGE, SELECT` on every sequence in the
+   * schema — handed app_user the sequences of tables the branches above had just decided it must
+   * not see. `USAGE` there lets `nextval()` move a foreign sequence and `SELECT` reads its
+   * `last_value`, which estimates the size of a table app_user cannot open. Nothing breaks, which
+   * is why only a test keeps it from coming back. `test/integration/db/sequence-grants.test.ts`
+   * asserts the same rule against a live catalog, in both directions.
+   */
+  it('narrows app_user’s sequence grant to sequences whose owning table it may read', () => {
+    expect(executable).toMatch(/pg_depend/);
+    expect(executable).toMatch(
+      /has_table_privilege\('app_user',\s*rel\.owning_table,\s*'SELECT'\)/,
+    );
+    expect(executable).toMatch(/REVOKE ALL ON SEQUENCE[^;']*FROM app_user/);
+  });
+
+  it('keeps backup_role on every sequence, which is what pg_dump needs', () => {
+    // The narrowing above must not reach backup_role: one unreadable sequence fails the whole dump.
+    expect(executable).not.toMatch(/has_table_privilege[\s\S]{0,200}TO backup_role/);
+  });
+
   it('fails with the real reason when the bootstrap has not been run', () => {
     // Without this, a missing role turns every GRANT into an error that names an object instead of
     // the cause, and the operator debugs the wrong thing.

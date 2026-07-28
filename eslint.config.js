@@ -12,6 +12,8 @@
 //
 // Type-aware rules below run on the same TypeScript the packages compile with: the workspace is on
 // a single version (ADR-0022), so the linter and `tsc` can never disagree about a type.
+import { join } from 'node:path';
+
 import js from '@eslint/js';
 import vitest from '@vitest/eslint-plugin';
 import prettier from 'eslint-config-prettier';
@@ -32,6 +34,19 @@ const SERVER_DOMAIN = 'packages/server/src/domain/**/*.ts';
 const SERVER_APPLICATION = 'packages/server/src/application/**/*.ts';
 const SERVER_PRESENTATION = 'packages/server/src/presentation/**/*.ts';
 const SERVER_PERSISTENCE = 'packages/server/src/infrastructure/persistence/**/*.ts';
+/**
+ * The composition root of the server: the only place a database client is constructed.
+ *
+ * `main.ts` is three lines; the wiring itself lives here, which is why the exemption is written
+ * against this directory rather than against a single file (`container.factory.ts` documents the
+ * same split).
+ */
+const SERVER_COMPOSITION_ROOT = 'packages/server/src/infrastructure/bootstrap/**/*.ts';
+/** The module that owns `connectDatabase`, and therefore the one that may open the pool. */
+const SERVER_DB_CLIENT_OWNER =
+  'packages/server/src/infrastructure/persistence/prisma/database.factory.ts';
+/** Repositories, wherever they live: the bans below are about the shape of the class, not the layer. */
+const SERVER_REPOSITORIES = 'packages/server/src/**/*.repository.ts';
 const SERVER_LOGGING = 'packages/server/src/infrastructure/logging/**/*.ts';
 const CLIENT = 'packages/client/src/**/*.{ts,tsx}';
 /**
@@ -74,7 +89,18 @@ const TESTS = [
   'packages/**/*.{test,spec}.{ts,tsx}',
   'test/**/*.test.ts',
 ];
-const REPO_TOOLING = ['*.js', '*.ts', 'test/**/*.ts', 'scripts/**/*.ts', 'eslint/**/*.js'];
+// `packages/*/scripts/**` is tooling that happens to live inside a package: `pnpm check:rls` is an
+// operator command run against a host, not code that ships in `dist`. Without this entry it matched
+// no configuration at all — `eslint .` in the package would report it as ignored, and
+// `--max-warnings 0` would fail the lint of the package that owns it.
+const REPO_TOOLING = [
+  '*.js',
+  '*.ts',
+  'test/**/*.ts',
+  'scripts/**/*.ts',
+  'packages/*/scripts/**/*.ts',
+  'eslint/**/*.js',
+];
 /** The repository-contract suite, both its specs and the fixtures they share. */
 const REPO_SUITE = ['test/**/*.ts'];
 /** The one module in the suite allowed to touch the filesystem — it is the recording door. */
@@ -178,6 +204,61 @@ const UNSAFE_RAW_SQL = {
     'CallExpression[callee.property.name=/^\\$(queryRawUnsafe|executeRawUnsafe)$/], MemberExpression[property.name=/^\\$(queryRawUnsafe|executeRawUnsafe)$/]',
   message:
     '`$queryRawUnsafe` / `$executeRawUnsafe` interpolate strings into SQL and bypass RLS review. Use the tagged-template variants inside `infrastructure/persistence/**` (rules/tenancy-rls.mdc).',
+};
+/**
+ * The array form of `$transaction`, which `rules/tenancy-rls.mdc` rule 10 has always banned and
+ * which nothing enforced until now.
+ *
+ * It is not an interactive transaction: Prisma sends the batch itself, so there is no callback for
+ * `withTenant` to run `set_config('app.organization_id', …)` in. Every statement of the batch is
+ * then judged by the tenant policy against a context that was never set — and inside
+ * `infrastructure/persistence/**`, where the other Prisma bans are lifted, such a call used to pass
+ * the linter outright.
+ */
+const ARRAY_TRANSACTION = {
+  selector:
+    "CallExpression[callee.property.name='$transaction'][arguments.0.type='ArrayExpression']",
+  message:
+    'The array form of `$transaction([...])` opens no interactive transaction, so `withTenant` cannot set `app.organization_id` around it and the tenant policies are evaluated with no context. Use the interactive form through `withTenant` (invariant 1 in CLAUDE.md, rules/tenancy-rls.mdc rule 10).',
+};
+
+/**
+ * A repository derives its tenant; it never receives one, and it never holds a client.
+ *
+ * Both mistakes are invisible at runtime. The policy filters rows against `app.organization_id`, so
+ * a repository handed a *different* organization is not refused — it gets an empty result, which
+ * reads like "there is no data" (`tenant-scoped.repository.ts`, header). A repository holding its
+ * own client is worse: the handle was never inside a tenant scope, so `guardedClient` never sees
+ * the call.
+ *
+ * The selectors name parameters and class fields only. `this.organizationId()` is a call, the
+ * `organizationId` of a Prisma `data` payload is the column being written, and a ban keyed on the
+ * identifier alone would forbid the one shape a repository is allowed to have —
+ * `scoped.repository.ts` in the fixture tree is the control that holds that distinction.
+ */
+const REPOSITORY_TAKES_NO_TENANT = {
+  selector: [
+    ":matches(FunctionDeclaration, FunctionExpression, ArrowFunctionExpression) > Identifier[name='organizationId']",
+    ":matches(FunctionDeclaration, FunctionExpression, ArrowFunctionExpression) > AssignmentPattern > Identifier[name='organizationId']",
+    ":matches(FunctionDeclaration, FunctionExpression, ArrowFunctionExpression) > TSParameterProperty > Identifier[name='organizationId']",
+    ":matches(FunctionDeclaration, FunctionExpression, ArrowFunctionExpression) > ObjectPattern > Property > Identifier[name='organizationId']",
+    "PropertyDefinition > Identifier.key[name='organizationId']",
+  ].join(', '),
+  message:
+    'A repository must not take or store an `organizationId`: that is a second source of truth for the tenant, and when it disagrees with the scope the query is not rejected but silently filtered to nothing. Read it from the scope `withTenant` opened, through `TenantScopedRepository` (invariant 1 in CLAUDE.md, rules/tenancy-rls.mdc rule 9).',
+};
+
+const DB_CLIENT_OUTSIDE_COMPOSITION_ROOT = {
+  group: [
+    '@/infrastructure/persistence/prisma/prisma.client.js',
+    '@/infrastructure/persistence/prisma/database.factory.js',
+    './prisma.client.js',
+    './database.factory.js',
+    '**/prisma.client.js',
+    '**/database.factory.js',
+  ],
+  message:
+    'A database client is constructed once, in the composition root (`infrastructure/bootstrap/**`), and reaches a repository as the transaction of the scope `withTenant` opened. A client created anywhere else runs outside that scope, so `app.organization_id` is never set and `guardedClient` never sees the call (invariant 1 in CLAUDE.md, rules/tenancy-rls.mdc rules 9 and 11).',
 };
 
 // ─── client: FSD layers (rules/frontend-fsd.mdc, rules/tanstack-query.mdc) ────────────────────
@@ -400,9 +481,21 @@ export default tseslint.config(
       ...TYPE_SAFETY_RULES,
       'no-restricted-imports': [
         'error',
-        { patterns: [SERVER_STAYS_SERVER, NO_PARENT_RELATIVE, PRISMA_OUTSIDE_PERSISTENCE] },
+        {
+          patterns: [
+            SERVER_STAYS_SERVER,
+            NO_PARENT_RELATIVE,
+            PRISMA_OUTSIDE_PERSISTENCE,
+            DB_CLIENT_OUTSIDE_COMPOSITION_ROOT,
+          ],
+        },
       ],
-      'no-restricted-syntax': ['error', ...PRISMA_CALL_OUTSIDE_PERSISTENCE, UNSAFE_RAW_SQL],
+      'no-restricted-syntax': [
+        'error',
+        ...PRISMA_CALL_OUTSIDE_PERSISTENCE,
+        UNSAFE_RAW_SQL,
+        ARRAY_TRANSACTION,
+      ],
       // Not switched off for `bootstrap/**`: the one legitimate read carries an inline disable with
       // a reason, so the exception is visible in the file that takes it rather than in this config.
       'no-restricted-properties': PROCESS_ENV_OUTSIDE_BOOTSTRAP,
@@ -461,8 +554,59 @@ export default tseslint.config(
     // The one place Prisma exists: repositories run inside `withTenant(...)`.
     files: [SERVER_PERSISTENCE],
     rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [SERVER_STAYS_SERVER, NO_PARENT_RELATIVE, DB_CLIENT_OUTSIDE_COMPOSITION_ROOT],
+        },
+      ],
+      'no-restricted-syntax': ['error', UNSAFE_RAW_SQL, ARRAY_TRANSACTION],
+    },
+  },
+  {
+    /**
+     * `database.factory.ts` *is* the module that opens the pool, so it is the one file that may
+     * import `prisma.client.js`. Re-declared rather than switched off: `'off'` here would also lift
+     * the package-boundary and parent-relative bans in the file that owns the connection.
+     */
+    files: [SERVER_DB_CLIENT_OWNER],
+    rules: {
       'no-restricted-imports': ['error', { patterns: [SERVER_STAYS_SERVER, NO_PARENT_RELATIVE] }],
-      'no-restricted-syntax': ['error', UNSAFE_RAW_SQL],
+    },
+  },
+  {
+    /**
+     * The composition root, which calls `connectDatabase` — that is what a composition root is for.
+     * `@prisma/client` itself stays banned here: the wiring passes a `DatabaseConnection` around
+     * and never touches a Prisma type of its own.
+     */
+    files: [SERVER_COMPOSITION_ROOT],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        { patterns: [SERVER_STAYS_SERVER, NO_PARENT_RELATIVE, PRISMA_OUTSIDE_PERSISTENCE] },
+      ],
+    },
+  },
+  {
+    /**
+     * Declared after the persistence block so it wins, and it adds rather than replaces: a
+     * repository keeps every ban of the layer it lives in and takes two more.
+     */
+    files: [SERVER_REPOSITORIES],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [SERVER_STAYS_SERVER, NO_PARENT_RELATIVE, DB_CLIENT_OUTSIDE_COMPOSITION_ROOT],
+        },
+      ],
+      'no-restricted-syntax': [
+        'error',
+        UNSAFE_RAW_SQL,
+        ARRAY_TRANSACTION,
+        REPOSITORY_TAKES_NO_TENANT,
+      ],
     },
   },
   {
@@ -485,6 +629,18 @@ export default tseslint.config(
     rules: {
       ...TYPE_SAFETY_RULES,
       'import/order': CLIENT_IMPORT_ORDER,
+      // Promised by `rules/frontend-fsd.mdc` and, until now, promised only there. Layer direction
+      // (`app → pages → widgets → units → shared`) forbids a cycle *between* layers, and the
+      // architecture tests check that; a cycle inside one layer — two barrels re-exporting through
+      // each other — passes every one of those checks and surfaces at runtime as an import that is
+      // `undefined` for no visible reason. `maxDepth` is left at the default: the shallow-only form
+      // misses exactly the barrel-to-barrel chains this exists for.
+      //
+      // Requires the resolver configured in `settings` below. Enabled without it, the rule reports
+      // nothing at all — every specifier in this package is either `@`-aliased or carries the `.js`
+      // suffix of TypeScript ESM, and the node resolver can follow neither. Measured: a deliberate
+      // two-file cycle passed a clean lint until the resolver was installed.
+      'import/no-cycle': ['error', { ignoreExternal: true }],
       'no-restricted-imports': [
         'error',
         {
@@ -504,6 +660,25 @@ export default tseslint.config(
       // `service/hooks` is exactly where an effect that should have been a query gets written.
       'bad-crm/no-effect-for-derived-state': 'error',
       'bad-crm/no-foreign-unit-internals': 'error',
+    },
+    // What lets `import/no-cycle` above resolve anything at all. The client writes every internal
+    // specifier as an `@`-alias (`@units/auth`) or with the `.js` suffix TypeScript ESM requires
+    // (`./x.util.js` for `x.util.ts`); the default node resolver follows neither, so the import
+    // plugin sees an unresolvable specifier and stays quiet — a rule that is on and never fires.
+    // The resolver reads the package's own `tsconfig.json`, which is where the aliases are declared
+    // once (`shared/config/fsd-aliases.constant.ts` feeds it and `vite.config.ts` alike).
+    // Absolute, not repository-relative: `pnpm lint` runs ESLint twice with two different working
+    // directories — once from the repository root (`//#lint:repo`) and once from inside the package
+    // (`@bad-crm/client#lint`). A relative path resolves in one of them and silently fails in the
+    // other, and a resolver that cannot find its project reports no cycles rather than an error.
+    settings: {
+      'import/resolver': {
+        typescript: { project: join(import.meta.dirname, 'packages/client/tsconfig.json') },
+      },
+      // Resolving is not enough. `no-cycle` has to *parse* each module it follows to find the edge
+      // back, and the import plugin picks the parser by extension from this map; without it every
+      // `.ts` dependency is unparseable, the graph stops at depth one, and the rule reports nothing.
+      'import/parsers': { '@typescript-eslint/parser': ['.ts', '.tsx'] },
     },
   },
   {

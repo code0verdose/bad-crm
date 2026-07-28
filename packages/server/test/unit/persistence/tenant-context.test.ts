@@ -210,6 +210,37 @@ describe('withTenant', () => {
     expect(currentTenant()).toBeUndefined();
   });
 
+  /**
+   * Two requests of two organizations, interleaved on purpose.
+   *
+   * This is the property `AsyncLocalStorage` is used *for*, and the one a module-level variable
+   * would get wrong — silently, only under concurrency, never on a laptop. The delay is what makes
+   * the test an observation rather than a restatement: without it the first scope closes before the
+   * second opens and any implementation passes, including a single shared variable. Here A yields
+   * in the middle of its scope, B runs a whole scope inside that gap, and A has to come back to its
+   * own organization.
+   */
+  it('keeps the contexts of two concurrent scopes apart', async () => {
+    const fake = fakeClient();
+    const seen: string[] = [];
+
+    const slowA = withTenant(fake.client, { organizationId: ORG_A, userId: null }, async () => {
+      seen.push(`A:${currentTenant()?.ctx.organizationId ?? 'none'}`);
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      seen.push(`A:${currentTenant()?.ctx.organizationId ?? 'none'}`);
+    });
+
+    const fastB = withTenant(fake.client, { organizationId: ORG_B, userId: null }, () => {
+      seen.push(`B:${currentTenant()?.ctx.organizationId ?? 'none'}`);
+
+      return Promise.resolve();
+    });
+
+    await Promise.all([slowA, fastB]);
+
+    expect(seen).toEqual([`A:${ORG_A}`, `B:${ORG_B}`, `A:${ORG_A}`]);
+  });
+
   it('leaves no context behind when the callback throws', async () => {
     const fake = fakeClient();
 

@@ -2,16 +2,16 @@
   "tolerance": 0.5,
   "projects": {
     ".": {
-      "lines": 81.93,
-      "branches": 75.21
+      "lines": 83.9,
+      "branches": 77.29
     },
     "packages/shared": {
       "lines": 100,
       "branches": 100
     },
     "packages/server": {
-      "lines": 98.39,
-      "branches": 95.95
+      "lines": 98.54,
+      "branches": 96.56
     },
     "packages/client": {
       "lines": 100,

@@ -3,7 +3,7 @@ import { fileURLToPath } from 'node:url';
 
 import { describe, expect, it } from 'vitest';
 
-import { readSource, sourceFiles } from './source-tree.util.js';
+import { importsOf, readSource, sourceFiles } from './source-tree.util.js';
 
 const packageJson = (): { dependencies?: Record<string, string> } =>
   JSON.parse(
@@ -46,9 +46,21 @@ describe('Express 5 conventions', () => {
    * Express 5 dropped the anonymous wildcard: `app.get('/files/*', …)` throws at registration
    * instead of matching, so the defect surfaces as a process that will not boot — but only for the
    * route that has it, which is easy to miss in a large router.
+   *
+   * Scoped to the files that can register one: `presentation/http/**`, plus anything importing
+   * `express` — a path is passed to an `app`/`Router`, and a file that receives one still imports
+   * the type. Over the whole of `src` the pattern matches any string containing an asterisk, and
+   * `polcmd` is literally `'*'` for a `FOR ALL` policy, which `rls-catalog.util.ts` has to name: a
+   * check that cannot tell a route path from a catalog letter has stopped being about Express.
    */
   it('uses only named wildcards in route paths', () => {
-    const offenders = sourceFiles().filter((file) => /['"][^'"]*\*['"]/.test(readSource(file)));
+    const offenders = sourceFiles()
+      .filter(
+        (file) =>
+          file.startsWith('presentation/http/') ||
+          importsOf(file).some((specifier) => specifier.startsWith('express')),
+      )
+      .filter((file) => /['"][^'"]*\*['"]/.test(readSource(file)));
 
     expect(offenders).toEqual([]);
   });

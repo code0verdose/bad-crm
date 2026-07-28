@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { startApiProcess } from '../../../src/infrastructure/bootstrap/api-process.factory.js';
 import { createRootLogger } from '../../../src/infrastructure/logging/pino-logger.adapter.js';
+import type { DatabaseConnection } from '../../../src/infrastructure/persistence/prisma/database.factory.js';
 import { testEnv } from '../../support/test-app.util.js';
 
 /**
@@ -11,6 +12,12 @@ import { testEnv } from '../../support/test-app.util.js';
  * a port — so the default `listen` seam, the piece that actually makes the process reachable, would
  * be exercised for the first time in production. Port 0 lets the kernel pick a free one, so the
  * test cannot collide with a running dev server.
+ *
+ * The database is stubbed, and only the database: this file belongs to the fast suite, which by
+ * definition has no PostgreSQL. What the *real* `connectDatabase` and the role check do is asserted
+ * where a container exists — `test/integration/db/assert-db-role.test.ts` — and their position in
+ * the startup order is asserted in `test/unit/bootstrap/api-process.test.ts`. Here they are two
+ * steps that must not stand between the configuration and the socket.
  */
 describe('the process really binds a port', () => {
   it('listens, answers /health over TCP and gives the port back on shutdown', async () => {
@@ -27,6 +34,13 @@ describe('the process really binds a port', () => {
             write: (line: string) => lines.push(line),
           },
         ),
+      connectDatabase: () =>
+        ({
+          base: {},
+          guarded: {},
+          close: () => Promise.resolve(),
+        }) as unknown as DatabaseConnection,
+      verifyDatabaseRole: () => Promise.resolve(),
       onSignal: (signal, handler) => signals.set(signal, handler),
       exit: (code) => exitCodes.push(code),
     });

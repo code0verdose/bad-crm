@@ -5,6 +5,16 @@ import { promisify } from 'node:util';
 
 import { afterAll, beforeAll, beforeEach, describe, expect, inject, it } from 'vitest';
 
+import {
+  CANONICAL_MAINTENANCE_PREDICATE,
+  CANONICAL_TENANT_PREDICATE,
+} from '@/infrastructure/persistence/prisma/rls-catalog.constant.js';
+import {
+  readRlsCatalog,
+  rlsCatalogViolations,
+  type RlsCatalogFacts,
+  type RlsPolicyFacts,
+} from '@/infrastructure/persistence/prisma/rls-catalog.util.js';
 import { TENANT_TABLES } from '@/infrastructure/persistence/prisma/tenant-tables.constant.js';
 
 import {
@@ -34,24 +44,23 @@ const PRISMA_BIN = fileURLToPath(new URL('../../../node_modules/.bin/prisma', im
 
 const REQUIRED_EXTENSIONS = ['citext', 'pg_trgm', 'pgcrypto', 'vector'];
 
-/** The two predicate forms `docs/security/rls-design.md` accepts, and nothing else. */
-const CANONICAL_PREDICATE =
-  /^\(?(organization_id|id) = \(?(current_setting\('app\.organization_id'(::text)?\)\)?::uuid|app_current_org\(\))\)?$/;
-
-interface PolicyRow {
-  readonly table_name: string;
-  readonly policy_name: string;
-  readonly permissive: string;
-  readonly roles: string[];
-  readonly command: string;
-  readonly using_expression: string | null;
-  readonly check_expression: string | null;
-}
-
 let pools: HarnessPools;
 
-beforeAll(() => {
+/**
+ * The catalog as `pnpm check:rls` reads it.
+ *
+ * The queries and the canonical predicate come from
+ * `src/infrastructure/persistence/prisma/rls-catalog.constant.ts` — the same module the script
+ * imports — because a policy template written out in two places drifts the first time it changes.
+ * The assertions below stay per table on purpose: the script answers "is this database correct",
+ * this suite answers "which table of the migration is wrong", and the second question is the one
+ * being debugged at the moment a migration is written.
+ */
+let catalog: RlsCatalogFacts;
+
+beforeAll(async () => {
   pools = createPools();
+  catalog = await readRlsCatalog(async (sql) => (await pools.owner.query(sql)).rows);
 });
 
 afterAll(async () => {
@@ -132,68 +141,42 @@ describe('prisma migrate deploy', () => {
 });
 
 describe('row level security in the catalog', () => {
-  it('has both ENABLE and FORCE on every tenant table', async () => {
-    const { rows } = await pools.owner.query<{
-      relname: string;
-      relrowsecurity: boolean;
-      relforcerowsecurity: boolean;
-    }>(
-      `SELECT c.relname, c.relrowsecurity, c.relforcerowsecurity
-         FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
-        WHERE n.nspname = 'public' AND c.relkind IN ('r', 'p') AND NOT c.relispartition`,
-    );
+  const policiesOf = (table: string): RlsPolicyFacts[] =>
+    catalog.policies.filter((policy) => policy.table === table);
 
+  it('has both ENABLE and FORCE on every tenant table', () => {
     for (const table of Object.keys(TENANT_TABLES)) {
-      const entry = rows.find((row) => row.relname === table);
+      const entry = catalog.tables.find((row) => row.table === table);
 
-      expect(entry?.relrowsecurity, `${table}: ENABLE ROW LEVEL SECURITY`).toBe(true);
-      expect(entry?.relforcerowsecurity, `${table}: FORCE ROW LEVEL SECURITY`).toBe(true);
+      expect(entry?.rlsEnabled, `${table}: ENABLE ROW LEVEL SECURITY`).toBe(true);
+      expect(entry?.rlsForced, `${table}: FORCE ROW LEVEL SECURITY`).toBe(true);
     }
   });
 
-  const policiesOf = async (table: string): Promise<PolicyRow[]> => {
-    const { rows } = await pools.owner.query<PolicyRow>(
-      `SELECT c.relname                          AS table_name,
-              p.polname                          AS policy_name,
-              CASE WHEN p.polpermissive THEN 'PERMISSIVE' ELSE 'RESTRICTIVE' END AS permissive,
-              ARRAY(SELECT rolname FROM pg_roles WHERE oid = ANY (p.polroles)) AS roles,
-              p.polcmd::text                     AS command,
-              pg_get_expr(p.polqual, p.polrelid)      AS using_expression,
-              pg_get_expr(p.polwithcheck, p.polrelid) AS check_expression
-         FROM pg_policy p
-         JOIN pg_class c ON c.oid = p.polrelid
-        WHERE c.relname = $1`,
-      [table],
-    );
-
-    return rows;
-  };
-
-  it.each(Object.keys(TENANT_TABLES))(
+  it.each(Object.entries(TENANT_TABLES))(
     '%s carries a tenant policy for app_user with USING and WITH CHECK, both canonical',
-    async (table) => {
-      const tenantPolicy = (await policiesOf(table)).find((policy) =>
-        policy.roles.includes('app_user'),
-      );
+    (table, spec) => {
+      // The column the registry declares, not "either of the two": on an ordinary tenant table a
+      // predicate over `id` compares a primary key with an organization id and matches nothing.
+      const canonical = CANONICAL_TENANT_PREDICATE[spec.tenantColumn];
+      const tenantPolicy = policiesOf(table).find((policy) => policy.roles.includes('app_user'));
 
       expect(tenantPolicy, `${table}: no policy addressed to app_user`).toBeDefined();
       expect(tenantPolicy?.command, `${table}: policy must cover every command`).toBe('*');
-      expect(tenantPolicy?.using_expression ?? '', `${table}: USING`).toMatch(CANONICAL_PREDICATE);
+      expect(tenantPolicy?.using ?? '', `${table}: USING`).toMatch(canonical);
       // Written out even where PostgreSQL would substitute USING: the substitution disappears the
-      // moment the policy is split per command, and `polwithcheck` reads as NULL in the catalog,
-      // so no automated check could tell "relied on the default" from "forgot it".
-      expect(tenantPolicy?.check_expression ?? '', `${table}: WITH CHECK`).toMatch(
-        CANONICAL_PREDICATE,
-      );
+      // moment the policy is split per command, and the catalog reads NULL either way, so no
+      // automated check could tell "relied on the default" from "forgot it".
+      expect(tenantPolicy?.check ?? '', `${table}: WITH CHECK`).toMatch(canonical);
     },
   );
 
   it.each(Object.keys(TENANT_TABLES))(
     '%s addresses its policy to a role, never to PUBLIC',
-    async (table) => {
-      for (const policy of await policiesOf(table)) {
-        expect(policy.roles, `${table}.${policy.policy_name}`).not.toEqual([]);
-        expect(policy.roles, `${table}.${policy.policy_name}`).not.toContain('public');
+    (table) => {
+      for (const policy of policiesOf(table)) {
+        expect(policy.roles, `${table}.${policy.policy}`).not.toEqual([]);
+        expect(policy.roles, `${table}.${policy.policy}`).not.toContain('public');
       }
     },
   );
@@ -203,34 +186,44 @@ describe('row level security in the catalog', () => {
    * rather than narrowing it. Anything beyond the canonical tenant policy has to be RESTRICTIVE or
    * carry the tenant predicate inside it (docs/security/rls-design.md, «Ловушка»).
    */
-  it.each(Object.keys(TENANT_TABLES))(
-    '%s has no permissive policy that widens app_user',
-    async (table) => {
-      const widening = (await policiesOf(table)).filter(
+  /**
+   * Every role, not `app_user` alone. A permissive policy combines with OR within the role it is
+   * addressed to, so `TO app_migrator USING (true)` widens nothing for the application and hands
+   * every migration, psql session and restore the rows of every organization.
+   */
+  it.each(Object.entries(TENANT_TABLES))(
+    '%s has no permissive policy that widens any role',
+    (table, spec) => {
+      const canonical = CANONICAL_TENANT_PREDICATE[spec.tenantColumn];
+      const widening = policiesOf(table).filter(
         (policy) =>
-          policy.permissive === 'PERMISSIVE' &&
-          policy.roles.includes('app_user') &&
-          !CANONICAL_PREDICATE.test(policy.using_expression ?? ''),
+          policy.permissive &&
+          !canonical.test(policy.using ?? '') &&
+          !CANONICAL_MAINTENANCE_PREDICATE.test(policy.using ?? ''),
       );
 
-      expect(widening.map((policy) => policy.policy_name)).toEqual([]);
+      expect(widening.map((policy) => policy.policy)).toEqual([]);
     },
   );
 
   it.each(Object.keys(TENANT_TABLES))(
     '%s keeps the owner behind an explicit maintenance switch',
-    async (table) => {
-      const maintenance = (await policiesOf(table)).find((policy) =>
-        policy.roles.includes('app_migrator'),
-      );
+    (table) => {
+      const maintenance = policiesOf(table).find((policy) => policy.roles.includes('app_migrator'));
 
-      // The catalog prints the expression with its casts (`'app.maintenance'::text`), so the shape is
-      // matched rather than the source text.
-      expect(maintenance?.using_expression ?? '').toMatch(
-        /current_setting\('app\.maintenance'(::text)?, true\) = 'on'(::text)?/,
-      );
+      expect(maintenance?.using ?? '').toMatch(CANONICAL_MAINTENANCE_PREDICATE);
     },
   );
+
+  /**
+   * The same catalog, judged by the same module `pnpm check:rls` runs. The per-table assertions
+   * above say which table is wrong; this one says whether the migration as a whole would pass the
+   * check an operator runs on staging — including the cross-check between the catalog, the Prisma
+   * schema and the tenant registry, which no per-table assertion covers.
+   */
+  it('passes the audit that pnpm check:rls performs', () => {
+    expect(rlsCatalogViolations(catalog)).toEqual([]);
+  });
 });
 
 describe('grants', () => {

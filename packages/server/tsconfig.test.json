@@ -14,5 +14,9 @@
     // to be part of the program at all.
     "rootDir": "."
   },
-  "include": ["test/**/*.ts", "vitest.config.ts", "vitest.integration.config.ts"]
+  // `scripts/**` rides along for the same reason. `pnpm check:rls` is run by `tsx`, which strips
+  // types and runs whatever it is given, so without a project that includes it a broken
+  // `check-rls.ts` would only fail on the machine that ran it — and it is run on the day a backup
+  // is restored, which is the worst day to discover a typo.
+  "include": ["test/**/*.ts", "scripts/**/*.ts", "vitest.config.ts", "vitest.integration.config.ts"]
 }

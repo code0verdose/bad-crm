@@ -11,8 +11,12 @@ import { optionalServiceProbes } from '@/infrastructure/platform/optional-servic
 import { ProcessHealthAdapter } from '@/infrastructure/platform/process-health.adapter.js';
 import { ProcessLifecycleAdapter } from '@/infrastructure/platform/process-lifecycle.adapter.js';
 import { SystemClockAdapter } from '@/infrastructure/platform/system-clock.adapter.js';
-import { UlidIdGeneratorAdapter } from '@/infrastructure/platform/ulid-id-generator.adapter.js';
-import { type AppContainer } from '@/infrastructure/bootstrap/container.types.js';
+import { SystemIdGeneratorAdapter } from '@/infrastructure/platform/system-id-generator.adapter.js';
+import { type DatabaseConnection } from '@/infrastructure/persistence/prisma/database.factory.js';
+import {
+  type AppContainer,
+  type ShutdownStep,
+} from '@/infrastructure/bootstrap/container.types.js';
 import { type ServerEnv } from '@/infrastructure/bootstrap/env.schema.js';
 import { API_VERSION } from '@/presentation/http/api-version.constant.js';
 
@@ -26,6 +30,15 @@ export interface ContainerInput {
    * site instead of hidden in this function.
    */
   readonly requestContext?: AsyncRequestContextAdapter;
+  /**
+   * The open pool, when there is one.
+   *
+   * Optional because the HTTP suite builds the container to drive `/health` and `/ready` through
+   * supertest and has no database to give it; a container without one simply registers no database
+   * shutdown step. It is *not* optional for the process: `startApiProcess` always passes it, and
+   * the adapters that need it are constructed here.
+   */
+  readonly database?: DatabaseConnection;
 }
 
 /**
@@ -45,7 +58,7 @@ export const buildContainer = (input: ContainerInput): AppContainer => {
   const requestContext = input.requestContext ?? new AsyncRequestContextAdapter();
   const logger = new PinoLoggerAdapter(input.logger);
   const clock = new SystemClockAdapter();
-  const idGenerator = new UlidIdGeneratorAdapter();
+  const idGenerator = new SystemIdGeneratorAdapter();
   const lifecycle = new ProcessLifecycleAdapter();
 
   const checkHealth = new CheckHealthUseCase(new ProcessHealthAdapter(APP_INFO.version), clock);
@@ -59,13 +72,21 @@ export const buildContainer = (input: ContainerInput): AppContainer => {
     logger,
   );
 
+  // Closed after the listener, never before: the shutdown handler drains in-flight requests first,
+  // and a pool closed early turns a deploy into a burst of "connection closed" in the very requests
+  // graceful shutdown exists to protect (rules/hexagonal-backend.mdc, rule 13).
+  const database = input.database;
+  const shutdownSteps: ShutdownStep[] =
+    database === undefined
+      ? []
+      : [{ name: 'database', close: (): Promise<void> => database.close() }];
+
   return {
     env: input.env,
     logger,
     lifecycle,
-    // Prisma and Redis register themselves here the moment they exist; the shutdown handler needs
-    // no change for that (rules/hexagonal-backend.mdc, rule 13).
-    shutdownSteps: [],
+    // Redis registers itself here the moment it exists; the shutdown handler needs no change.
+    shutdownSteps,
     http: {
       config: {
         appUrl: input.env.APP_URL,

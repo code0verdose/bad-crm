@@ -16,6 +16,7 @@
     "format:check": "prettier --check --ignore-path ../../.prettierignore .",
     "test": "prisma generate && vitest run",
     "test:integration": "prisma generate && vitest run --config vitest.integration.config.ts",
+    "check:rls": "prisma generate && tsx scripts/check-rls.ts",
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate deploy"
   },
