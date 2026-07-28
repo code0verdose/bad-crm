@@ -25,9 +25,26 @@ export default mergeConfig(
         // Explicit, so that a source file no test imports lowers the percentage instead of being
         // absent from the report altogether.
         include: ['src/**'],
-        // Declarations carry no statements to cover, and the OpenAPI schema is generated, not
-        // written (`pnpm api:gen`).
-        exclude: ['src/**/*.d.ts', 'src/shared/api/schemas/**'],
+        /**
+         * Declarations carry no statements to cover, and the OpenAPI schema is generated, not
+         * written (`pnpm api:gen`). Two more entries arrived with the router (STORY-004-05):
+         *
+         * - `route-tree.gen.ts` is rewritten by `@tanstack/router-plugin` on every build;
+         * - `routes/**` is measured as 50 % whatever the suite does. Measured, not assumed: the
+         *   uncovered line is the closing `});` of the `createFileRoute(...)({ … })` call in every
+         *   one of them, with and without `autoCodeSplitting`, while the object it builds is
+         *   demonstrably live — the guards run, the schemas validate and the components render in
+         *   `test/routes/navigation.test.tsx`. Keeping them in would mean a permanent 1.4 % deficit
+         *   that no test can close, which is how a coverage gate stops being believed. What makes
+         *   the exclusion safe is the rule that route files hold wiring only
+         *   (`rules/frontend-fsd.mdc` rule 10) — the wiring itself is asserted through navigation.
+         */
+        exclude: [
+          'src/**/*.d.ts',
+          'src/shared/api/schemas/**',
+          'src/app/route-tree.gen.ts',
+          'src/app/routes/**',
+        ],
         reporter: ['text-summary', 'json-summary', 'lcovonly'],
         /** `rules/testing.mdc` §7, last row: hooks, schemas and `shared/ui` at 70 / 60. */
         thresholds: {

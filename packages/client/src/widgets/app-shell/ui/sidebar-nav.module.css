@@ -1,0 +1,12 @@
+.root {
+  padding: var(--mantine-spacing-sm);
+}
+
+.sectionTitle {
+  font-size: var(--mantine-font-size-xs);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  /* Logical properties: the sidebar mirrors itself in a right-to-left locale for free. */
+  padding-inline: var(--mantine-spacing-xs);
+  text-transform: uppercase;
+}

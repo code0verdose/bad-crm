@@ -1,0 +1,88 @@
+/*
+ * Semantic design tokens: the vocabulary every stylesheet in the client is allowed to speak
+ * (`rules/design-system.mdc` §3). A component names a *role* — surface, border, muted text — and
+ * this file is the only place that decides which Mantine colour plays it in which scheme.
+ *
+ * Together with `global.css` these are the two files where a literal value is legal, because this
+ * is where the tokens are declared rather than consumed.
+ *
+ * The two schemes are `@mixin light-root` / `@mixin dark-root`, not `light-dark()`:
+ * postcss-preset-mantine compiles `light-dark()` to a descendant selector, so on `:root` the dark
+ * half would become `[data-mantine-color-scheme='dark'] :root` and match nothing — a dark theme
+ * that silently never applies. Inside a component's own `.module.css`, `light-dark()` is the
+ * documented way and stays the rule.
+ *
+ * Both mixins are nested **inside `:root`**, which is the form the plugin documents. A mixin
+ * appends to its enclosing rule, so at the top level of the file it would expand to a bare
+ * `&[data-mantine-color-scheme='light']` instead of `:root[data-mantine-color-scheme='light']`. A
+ * stylesheet-root `&` resolves as `:scope`, which does match the root element, so that form happens
+ * to render correctly today — and rests on one spec subtlety plus whatever the build target lowers
+ * `&` into, for a theme whose failure mode is silence. `test/styles/scheme-selectors.test.ts`
+ * asserts the compiled selector, because every other check here reads this file as source.
+ *
+ * Every colour below is measured against WCAG 2.1 AA by `test/theme/tokens.test.ts`, in both
+ * schemes, from this file — not from a copy of it.
+ */
+
+:root {
+  @mixin light-root {
+    --bc-surface: var(--mantine-color-white);
+    --bc-surface-raised: var(--mantine-color-gray-0);
+    --bc-border: var(--mantine-color-gray-3);
+    /* Control borders and focus rings owe 3:1 (WCAG 1.4.11); `gray-5` gives 2.07:1 and is only a
+       separator. */
+    --bc-border-strong: var(--mantine-color-gray-6);
+    --bc-text: var(--mantine-color-gray-9);
+    /* `ux-architecture.md` names `gray-6` here. Measured against white it is 3.32:1 — below the
+       4.5:1 that secondary body text owes — so the token is one step darker and the document is
+       the thing that has to change. */
+    --bc-text-muted: var(--mantine-color-gray-7);
+    --bc-danger-surface: var(--mantine-color-red-0);
+    --bc-danger-text: var(--mantine-color-red-9);
+    --bc-focus-ring: var(--mantine-color-brand-6);
+  }
+
+  @mixin dark-root {
+    --bc-surface: var(--mantine-color-dark-7);
+    --bc-surface-raised: var(--mantine-color-dark-6);
+    --bc-border: var(--mantine-color-dark-4);
+    --bc-border-strong: var(--mantine-color-dark-2);
+    --bc-text: var(--mantine-color-dark-0);
+    /* `dark-2` is 4.04:1 on `dark-7` — close, and still a fail. */
+    --bc-text-muted: var(--mantine-color-dark-1);
+    --bc-danger-surface: var(--mantine-color-red-9);
+    --bc-danger-text: var(--mantine-color-red-0);
+    --bc-focus-ring: var(--mantine-color-brand-4);
+  }
+
+  /* Motion vocabulary: `fast` for state changes on a control, `base` for anything that moves a
+     layout. Nothing in the product may hard-code a duration. */
+  --bc-motion-fast: 120ms;
+  --bc-motion-base: 200ms;
+
+  /* Density (`ux-architecture.md` → «Плотность»): the height of one row in a dense surface.
+     `comfortable` is the default and needs no attribute. */
+  --bc-row-height: 2.5rem;
+
+  /* Focus ring geometry. Declared next to its colour so that «visible focus» is one decision:
+     WCAG 2.4.11 asks for a ring at least 2 CSS pixels thick, and a component that picks its own
+     number is a ring that disappears on one control and not the others. */
+  --bc-focus-ring-width: 2px;
+  --bc-focus-ring-offset: 2px;
+}
+
+[data-bc-density='compact'] {
+  --bc-row-height: 2rem;
+}
+
+/*
+ * Reduced motion is honoured at the source, so a component that animates with a token cannot
+ * forget it (`rules/a11y.mdc` §24). `global.css` neutralises animations declared without a token;
+ * this neutralises the tokens themselves, which is what keeps the two consistent.
+ */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --bc-motion-fast: 0ms;
+    --bc-motion-base: 0ms;
+  }
+}

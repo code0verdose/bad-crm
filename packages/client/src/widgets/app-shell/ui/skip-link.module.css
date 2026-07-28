@@ -1,0 +1,24 @@
+/*
+ * Off-screen until focused, on-screen the moment it is — the one behaviour that makes a skip link
+ * real. Hiding it with `display: none` or `visibility: hidden` would take it out of the tab order,
+ * which is the failure this file exists to avoid.
+ */
+.link {
+  background-color: var(--bc-surface-raised);
+  border: 1px solid var(--bc-border-strong);
+  border-radius: var(--mantine-radius-sm);
+  color: var(--bc-text);
+  inset-block-start: var(--mantine-spacing-xs);
+  inset-inline-start: var(--mantine-spacing-xs);
+  padding: var(--mantine-spacing-xs) var(--mantine-spacing-sm);
+  position: absolute;
+  transform: translateY(-200%);
+  transition: transform var(--bc-motion-fast) ease;
+  z-index: 1000;
+}
+
+.link:focus-visible {
+  outline: var(--bc-focus-ring-width) solid var(--bc-focus-ring);
+  outline-offset: var(--bc-focus-ring-offset);
+  transform: translateY(0);
+}

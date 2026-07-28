@@ -1,6 +1,7 @@
 /**
  * Pages are components, not segmented slices, so this barrel re-exports them by name rather than
- * as namespaces: `import { HomePage } from '@pages'`. The routes that mount them land with
- * TanStack Router (STORY-004-05).
+ * as namespaces: `import { DashboardPage } from '@pages'`. Which URL mounts which page is decided
+ * by the route files in `app/routes/**`, never here.
  */
-export * from './home/index.js';
+export * from './dashboard/index.js';
+export * from './login/index.js';

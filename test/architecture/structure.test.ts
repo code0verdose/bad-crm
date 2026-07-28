@@ -108,17 +108,49 @@ describe('file names', () => {
   const ROLE =
     /\.(component|widget|hook|query|mutation|store|api|types|schema|enums|constant|util|errors|config|client|context|provider|guard|test)\.tsx?$/;
 
+  /**
+   * The two kinds of file whose name is not ours to choose (`rules/naming-and-structure.mdc` →
+   * «Исключения»), matched here exactly as `eslint.config.js` exempts them:
+   *
+   * - generated artefacts — `route-tree.gen.ts` is rewritten by `@tanstack/router-plugin` on every
+   *   build, and a convention it would have to satisfy is a convention the generator would undo;
+   * - file-based routes — the file *name* is the URL. `__root.tsx` and `_authenticated.tsx` are the
+   *   router's vocabulary for «root» and «pathless layout», and renaming them to satisfy the suffix
+   *   dictionary would change the routing table.
+   */
+  const GENERATED = /\.gen\.tsx?$/;
+  const ROUTE_FILE = /^packages\/client\/src\/app\/routes\//;
+
   it('names every source file kebab-case with a role suffix, or a framework-fixed name', () => {
-    const offenders = clientSources().filter((path) => {
-      const name = path.split('/').pop() ?? '';
-      const stem = name.split('.')[0] ?? '';
+    const offenders = clientSources()
+      .filter((path) => !GENERATED.test(path) && !ROUTE_FILE.test(path))
+      .filter((path) => {
+        const name = path.split('/').pop() ?? '';
+        const stem = name.split('.')[0] ?? '';
 
-      if (/[A-Z_]/.test(stem)) return true;
+        if (/[A-Z_]/.test(stem)) return true;
 
-      return !FIXED.has(stem) && !stem.endsWith('-page') && !ROLE.test(name);
-    });
+        return !FIXED.has(stem) && !stem.endsWith('-page') && !ROLE.test(name);
+      });
 
     expect(offenders).toEqual([]);
+  });
+
+  /**
+   * The exemption above is a door, so it is measured too: it may only be opened by the router's own
+   * directory and by generated files, and every route file has to be one the plugin recognises.
+   */
+  it('exempts only the routes directory and generated files', () => {
+    const exempt = clientSources().filter((path) => GENERATED.test(path) || ROUTE_FILE.test(path));
+
+    expect(exempt.length).toBeGreaterThan(0);
+    expect(
+      exempt.filter(
+        (path) =>
+          !path.startsWith('packages/client/src/app/routes/') &&
+          !path.endsWith('packages/client/src/app/route-tree.gen.ts'),
+      ),
+    ).toEqual([]);
   });
 
   it('keeps stylesheets next to the component they belong to', () => {

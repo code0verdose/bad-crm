@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { App } from '@app';
-import { HomePage } from '@pages';
+import { DashboardPage } from '@pages';
 import { FSD_ALIASES } from '@shared/config';
 import { SessionService } from '@units/session';
 import { AppStatus } from '@widgets/app-status';
@@ -20,7 +20,7 @@ import { AppStatus } from '@widgets/app-status';
 describe('FSD aliases resolve at runtime', () => {
   it.each([
     ['@app', App],
-    ['@pages', HomePage],
+    ['@pages', DashboardPage],
     ['@widgets/*', AppStatus],
     ['@units/*', SessionService.useSessionStatus],
     ['@shared/*', FSD_ALIASES],

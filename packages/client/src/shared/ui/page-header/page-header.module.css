@@ -1,0 +1,12 @@
+.root {
+  /* Logical properties, so a right-to-left locale needs no second stylesheet. */
+  border-block-end: 1px solid var(--bc-border);
+  padding-block-end: var(--mantine-spacing-sm);
+  margin-block-end: var(--mantine-spacing-md);
+}
+
+/* The heading takes focus after a route change; without this the ring would never be seen. */
+.root h1:focus-visible {
+  outline: var(--bc-focus-ring-width) solid var(--bc-focus-ring);
+  outline-offset: var(--bc-focus-ring-offset);
+}

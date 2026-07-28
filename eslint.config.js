@@ -34,11 +34,24 @@ const SERVER_PRESENTATION = 'packages/server/src/presentation/**/*.ts';
 const SERVER_PERSISTENCE = 'packages/server/src/infrastructure/persistence/**/*.ts';
 const SERVER_LOGGING = 'packages/server/src/infrastructure/logging/**/*.ts';
 const CLIENT = 'packages/client/src/**/*.{ts,tsx}';
+/**
+ * Layers that consume the data layer without owning it. `app/**` used to be listed here and is not
+ * any more: `rules/frontend-fsd.mdc` → «Исключения» grants the composition root the right to import
+ * anything, because that is where the provider tree is assembled — and `app/providers.tsx` cannot
+ * mount `QueryClientProvider` without importing it. What stays banned there is *calling* a query
+ * hook (`CLIENT_COMPOSITION_ROOT` below), which is the part of the rule that is about fetching.
+ */
 const CLIENT_CONSUMERS = [
-  'packages/client/src/app/**/*.{ts,tsx}',
   'packages/client/src/pages/**/*.{ts,tsx}',
   'packages/client/src/widgets/**/*.{ts,tsx}',
 ];
+const CLIENT_COMPOSITION_ROOT = 'packages/client/src/app/**/*.{ts,tsx}';
+/**
+ * File-based routes: the file *name* is the URL, so the naming conventions cannot apply to them.
+ * `__root.tsx`, `_authenticated.tsx` and `dashboard.tsx` are dictated by
+ * `@tanstack/router-plugin`, which reads this directory to generate the route tree.
+ */
+const CLIENT_ROUTE_FILES = 'packages/client/src/app/routes/**/*.tsx';
 const CLIENT_UNITS = 'packages/client/src/units/**/*.{ts,tsx}';
 const CLIENT_UNIT_API = 'packages/client/src/units/*/api/**/*.ts';
 const CLIENT_SHARED = 'packages/client/src/shared/**/*.{ts,tsx}';
@@ -47,9 +60,13 @@ const CLIENT_SHARED_API = 'packages/client/src/shared/api/**/*.ts';
 const CLIENT_ENV_READERS = 'packages/client/src/shared/config/**/*.ts';
 const CLIENT_AUTH_UNIT = 'packages/client/src/units/auth/**/*.{ts,tsx}';
 const CLIENT_UI = [
+  'packages/client/src/app/**/*.tsx',
   'packages/client/src/pages/**/*.tsx',
   'packages/client/src/widgets/**/*.tsx',
   'packages/client/src/units/*/ui/**/*.tsx',
+  // Added with the design system (STORY-004-03): `shared/ui` is where the accessible primitives
+  // live, and it was the one directory full of components that no a11y rule was looking at.
+  'packages/client/src/shared/ui/**/*.tsx',
 ];
 const E2E = 'packages/e2e/{src,tests}/**/*.ts';
 const TESTS = [
@@ -197,6 +214,17 @@ const SHARED_IS_DOMAIN_FREE = {
   group: ['@app', '@app/*', '@pages', '@pages/*', '@widgets', '@widgets/*', '@units/*'],
   message:
     '`shared` is the bottom FSD layer and carries no domain knowledge: it must not import units, widgets, pages or app (rules/frontend-fsd.mdc, rules 1 and 8).',
+};
+/**
+ * The toaster is the single notification surface (`rules/errors-and-toasts.mdc` §1): one wrapper,
+ * one `<Notifications />`, one dedupe policy. A component calling the vendor directly bypasses the
+ * stable-id rule and produces the stack of identical toasts the wrapper exists to prevent.
+ * `app/providers.tsx` mounts the container itself, which is why it is allowed too.
+ */
+const NOTIFICATIONS_VIA_TOASTER = {
+  group: ['@mantine/notifications', '@mantine/notifications/*'],
+  message:
+    'Notifications go through `SharedUi.notify` (`shared/ui/toaster`), never through the vendor: the wrapper owns the stable id, the dedupe and the ARIA role (rules/errors-and-toasts.mdc §1, §6).',
 };
 const AXIOS_OUTSIDE_SHARED_API = {
   group: ['axios', 'axios/*'],
@@ -465,6 +493,7 @@ export default tseslint.config(
             NO_PARENT_RELATIVE,
             UNIT_DEEP_IMPORT,
             AXIOS_OUTSIDE_SHARED_API,
+            NOTIFICATIONS_VIA_TOASTER,
           ],
         },
       ],
@@ -488,10 +517,69 @@ export default tseslint.config(
             NO_PARENT_RELATIVE,
             UNIT_DEEP_IMPORT,
             NO_DATA_LAYER_IN_CONSUMERS,
+            NOTIFICATIONS_VIA_TOASTER,
           ],
         },
       ],
       'no-restricted-syntax': ['error', ...QUERY_HOOK_CALLS, IMPORT_META_ENV_OUTSIDE_CONFIG],
+    },
+  },
+  {
+    /**
+     * The composition root. It may *import* the data layer — that is what assembling a provider
+     * tree means — but it may not *fetch*: a `useQuery` here is a screen's data being loaded one
+     * layer above the screen (`rules/frontend-fsd.mdc` rule 5, and its «Исключения» for `app/`).
+     *
+     * `only-throw-error` is narrowed rather than switched off. A route guard signals a redirect by
+     * throwing the object `redirect()` returns — that is the router's control flow, not an error —
+     * and it is a `Redirect`, not an `Error`. Everything else thrown here still has to be one.
+     */
+    files: [CLIENT_COMPOSITION_ROOT],
+    rules: {
+      'no-restricted-syntax': ['error', ...QUERY_HOOK_CALLS, IMPORT_META_ENV_OUTSIDE_CONFIG],
+      '@typescript-eslint/only-throw-error': [
+        'error',
+        {
+          allow: [
+            { from: 'package', package: '@tanstack/router-core', name: 'Redirect' },
+            { from: 'package', package: '@tanstack/react-router', name: 'Redirect' },
+          ],
+        },
+      ],
+    },
+  },
+  {
+    /**
+     * The two files that mount the notification container and load its stylesheet. Everything else
+     * — including the rest of `app/**` — talks to `SharedUi.notify`.
+     */
+    files: ['packages/client/src/app/providers.tsx', 'packages/client/src/app/main.tsx'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            CLIENT_STAYS_CLIENT,
+            NO_PARENT_RELATIVE,
+            UNIT_DEEP_IMPORT,
+            AXIOS_OUTSIDE_SHARED_API,
+          ],
+        },
+      ],
+    },
+  },
+  {
+    /**
+     * Route files are named by the router, not by us: `__root.tsx`, `_authenticated.tsx`,
+     * `dashboard.tsx`. The generator reads the directory and the file name *is* the URL, so the
+     * kebab-plus-role-suffix convention cannot apply — the same exemption
+     * `rules/naming-and-structure.mdc` → «Исключения» already grants generated files. Everything
+     * else about these files stays linted, including the a11y and React rules.
+     */
+    files: [CLIENT_ROUTE_FILES],
+    rules: {
+      'bad-crm/require-role-suffix': 'off',
+      'unicorn/filename-case': 'off',
     },
   },
   {
@@ -530,11 +618,36 @@ export default tseslint.config(
             UNIT_DEEP_IMPORT,
             AXIOS_OUTSIDE_SHARED_API,
             SHARED_IS_DOMAIN_FREE,
+            NOTIFICATIONS_VIA_TOASTER,
           ],
         },
       ],
     },
   },
+  {
+    /**
+     * The one module allowed to speak to the notification vendor — it *is* the wrapper.
+     *
+     * Declared after the `shared` block so that it wins, and re-declared rather than switched off:
+     * `'off'` here would lift every other import ban in the directory that owns the toaster.
+     */
+    files: ['packages/client/src/shared/ui/toaster/**/*.ts'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            CLIENT_STAYS_CLIENT,
+            NO_PARENT_RELATIVE,
+            UNIT_DEEP_IMPORT,
+            AXIOS_OUTSIDE_SHARED_API,
+            SHARED_IS_DOMAIN_FREE,
+          ],
+        },
+      ],
+    },
+  },
+
   {
     // The single place where the network physically lives (rules/frontend-fsd.mdc, "Исключения").
     //

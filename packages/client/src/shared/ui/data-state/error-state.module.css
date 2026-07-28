@@ -1,0 +1,7 @@
+/* Tokens only — no literal colour, no literal spacing (`rules/design-system.mdc` §3). */
+.root {
+  background-color: var(--bc-danger-surface);
+  border: 1px solid var(--bc-border-strong);
+  border-radius: var(--mantine-radius-md);
+  color: var(--bc-danger-text);
+}

@@ -1,5 +1,6 @@
 import { fileURLToPath } from 'node:url';
 
+import { tanstackRouter } from '@tanstack/router-plugin/vite';
 import react from '@vitejs/plugin-react';
 import { defineConfig } from 'vite';
 
@@ -35,7 +36,30 @@ const alias = Object.entries(FSD_ALIASES)
   .sort((left, right) => right.find.length - left.find.length);
 
 export default defineConfig({
-  plugins: [react()],
+  plugins: [
+    /**
+     * Generates `src/app/route-tree.gen.ts` from the files in `src/app/routes/**`, and splits every
+     * route into its own chunk.
+     *
+     * It runs **before** the React plugin, as its documentation requires: the generator rewrites
+     * route modules, and a transform that has already turned JSX into `jsx()` calls is one it can
+     * no longer read.
+     *
+     * `autoCodeSplitting` is what keeps the initial bundle inside the budget of
+     * `ux-architecture.md` → «Бюджет бандла» without a single manual `lazy()`: the component and
+     * loader of a route leave the first chunk, while its path, guard and search schema stay — they
+     * are what the router needs to decide where to go before anything is downloaded.
+     */
+    tanstackRouter({
+      target: 'react',
+      routesDirectory: './src/app/routes',
+      generatedRouteTree: './src/app/route-tree.gen.ts',
+      autoCodeSplitting: true,
+      quoteStyle: 'single',
+      semicolons: true,
+    }),
+    react(),
+  ],
   resolve: { alias },
   server: {
     port: DEV_PORT,

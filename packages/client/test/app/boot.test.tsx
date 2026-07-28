@@ -2,27 +2,33 @@ import { render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { App } from '@app';
-import { SESSION_STATUS_LABEL_KEY } from '@units/session/model';
 
 /**
  * The shell, from the entry point down.
  *
  * Two things are under test and neither is a component: that the layers are wired to each other
- * (`app → pages → widgets → units`), and that `main.tsx` really mounts — the file every other test
- * would otherwise leave uncovered while the page stays blank in a browser.
+ * (`app → pages → widgets → units`, now through the router), and that `main.tsx` really mounts —
+ * the file every other test would otherwise leave uncovered while the page stays blank in a
+ * browser.
+ *
+ * The history starts at `/`, so a passing assertion proves the whole first navigation: the guard on
+ * `_authenticated` let an unknown session through, the index route redirected to `/dashboard`, the
+ * shell mounted, and the page rendered inside it.
  */
 describe('application shell', () => {
   beforeEach(() => {
     // The entry module runs its work at import time, so each case needs a fresh evaluation.
     vi.resetModules();
     document.body.innerHTML = '';
+    window.history.pushState({}, '', '/');
   });
 
-  it('renders the page heading and the session state the unit reports', () => {
+  it('lands on the dashboard and renders it inside the shell', async () => {
     render(<App />);
 
-    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Bad CRM');
-    expect(screen.getByText(SESSION_STATUS_LABEL_KEY.unknown)).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { level: 1 })).toHaveTextContent('nav.dashboard');
+    expect(screen.getByRole('main')).toBeInTheDocument();
+    expect(screen.getByRole('banner')).toBeInTheDocument();
   });
 
   it('mounts into #root when the entry module is loaded', async () => {

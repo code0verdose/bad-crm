@@ -1,0 +1,6 @@
+.root {
+  border: 1px dashed var(--bc-border);
+  border-radius: var(--mantine-radius-md);
+  /* No fixed height: text at 200 % zoom has to be able to grow (`rules/a11y.mdc` §4). */
+  padding: var(--mantine-spacing-xl) var(--mantine-spacing-lg);
+}

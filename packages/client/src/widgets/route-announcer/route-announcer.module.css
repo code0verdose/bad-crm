@@ -1,0 +1,13 @@
+/*
+ * Visible to assistive technology, invisible on screen. Not `display: none` and not
+ * `visibility: hidden` — both remove the element from the accessibility tree, which would make this
+ * a live region that announces nothing.
+ */
+.announcer {
+  block-size: 1px;
+  clip-path: inset(50%);
+  inline-size: 1px;
+  overflow: hidden;
+  position: absolute;
+  white-space: nowrap;
+}

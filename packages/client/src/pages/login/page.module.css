@@ -1,0 +1,6 @@
+.root {
+  /* `dvh` rather than `vh`: on mobile the browser chrome moves, and `vh` measures the moment the
+     page loaded rather than the space the form actually has. */
+  min-block-size: 100dvh;
+  padding: var(--mantine-spacing-lg);
+}
