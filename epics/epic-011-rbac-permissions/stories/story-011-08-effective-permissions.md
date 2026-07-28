@@ -112,7 +112,7 @@ estimate: L
 - [ ] `packages/client/src/units/auth/service/queries/me-permissions.query.ts`,
       `units/auth/service/hooks/use-can.hook.ts`, `shared/ui/can.component.tsx`,
       `units/auth/lib/guards/require-permission.guard.ts`.
-- [ ] `packages/client/src/shared/lib/enums/query-keys.ts` — `QueryKeys.Auth.permissions()`.
+- [ ] `packages/client/src/shared/lib/enums/query-keys.constant.ts` — `QueryKeys.Auth.permissions()`.
 - [ ] Тесты: `effective-permissions.service.spec.ts` (п. 1, 4, 6, 7), интеграционный
       `permission-invalidation.spec.ts` (изменение роли → новые права без перелогина),
       `me-permissions.contract.spec.ts` (ETag, 304, п. 10), клиентские

@@ -1,7 +1,7 @@
 ---
 id: STORY-004-04
 epic: EPIC-004
-status: in-progress
+status: review
 blocked: false
 priority: must
 estimate: M
@@ -31,15 +31,40 @@ estimate: M
 - [x] Реализовать `src/shared/lib/enums/query-keys.constant.ts` — типизированная фабрика с иерархией `all` → `list(params)` → `detail(id)`.
 - [x] Реализовать `src/shared/api/optimistic.util.ts`: `runOptimisticPatch`, `runOptimisticRemove`, `rollbackOptimistic` (синхронный `setQueriesData` + snapshot, `cancelQueries` fire-and-forget).
 - [x] Зафиксировать правило выбора стратегии: optimistic — для toggle/inline-edit/delete/dnd; pessimistic (`onSuccess` → `invalidateQueries`) — для create и тяжёлых записей. *Записано в заголовке `optimistic.util.ts`.*
-- [ ] Подключить `@tanstack/react-query-devtools` только в dev-сборке. *Монтирование — в `app/providers.tsx`, вне этой поставки.*
+- [x] Подключить `@tanstack/react-query-devtools` только в dev-сборке. *Монтирование — в `app/providers.tsx`, вне этой поставки.*
+      Смонтировано в `src/app/providers.tsx`: `IS_DEV_SERVER` — build-time константа, подставляемая
+      Vite, поэтому в production-сборке выражение сворачивается в `null` и сборщик выкидывает импорт
+      вместе со всем, что за ним (за runtime-`if` панель осталась бы в бандле каждого пользователя).
+      *Уточнение (2026-07-28), сверено с `src/app/query-devtools.component.tsx`:* импорт
+      **статический**, не `lazy`. Ленивый вариант был сделан первым и отвергнут по измерению:
+      Rolldown корректно убирал место вызова, но всё равно эмитил осиротевший чанк 0.15 KB, который
+      `.size-limit.js` считает начальным JS и который никто никогда не запросит (184.95 KB gzip со
+      статическим импортом против 185.10 KB с ленивым, при базе 184.97 KB). Tree-shaking мёртвой
+      привязки удаляет код; динамический импорт лишь делает его недостижимым.
 - [x] Добавить ESLint-правило/тест против ad-hoc query-ключей и против `useQuery` вне `units/*/service`. *Ключи — `test/architecture/data-layer-conventions.test.ts`; `useQuery` вне юнитов уже запрещён `QUERY_HOOK_CALLS` в `eslint.config.js`.*
-- [ ] Задокументировать паттерн в `docs/architecture/ux-architecture.md` и `rules/frontend-fsd.mdc`.
+- [x] Задокументировать паттерн в `docs/architecture/ux-architecture.md` и `rules/frontend-fsd.mdc`.
+      **Закрыто (2026-07-28).** Основная часть паттерна (фабрика `QueryKeys`, запрет ad-hoc ключей,
+      optimistic против pessimistic, `runOptimisticPatch`/`runOptimisticRemove`/`rollbackOptimistic`,
+      единственный тост из `MutationCache.onError`, отмена по `signal`) нормативно описана в
+      `rules/tanstack-query.mdc` и существовала до этой истории. По итогам истории туда добавлено
+      описание фабрики `createAppQueryClient({ notify, logError })` с портами уведомлений и
+      логирования, а имена файлов приведены к коду (`shared/api/optimistic.util.ts`,
+      `shared/lib/enums/query-keys.constant.ts`). В `ux-architecture.md` и `rules/frontend-fsd.mdc`
+      добавлены три приёма, которых там не было:
+      - `shared/lib/validation` как дом общих zod-схем и `list-search.schema.ts` (`page`, `perPage`,
+        `cursor`, `q`) — маршрут расширяет схему, а не переписывает;
+      - `sort` **только** через whitelist-фабрику `sortSchema(keys, fallback)` /
+        `listSearchSchemaWithSort(...)`: значение уходит в `ORDER BY`, и `z.string()` там не
+        валидация;
+      - build-time-константа `IS_DEV_SERVER` из `shared/config` вместо рантайм-флага для dev-only
+        кода (`MODE === 'development'`, не `DEV` — `DEV` истинен и под Vitest); так подключены
+        devtools TanStack Query.
 
 ## Definition of Done
 
 - [x] Тесты написаны первыми (TDD), проходят, изменённый код покрыт — `packages/client` 100 % строк и ветвей
-- [ ] Commit-гейт зелёный (test-coverage, security-auditor, db-reviewer при изменении схемы, production-readiness, commit-hygiene)
-- [ ] Документация обновлена (docs/ + запись в `docs/brain/`)
+- [x] Commit-гейт зелёный (test-coverage, security-auditor, db-reviewer при изменении схемы, production-readiness, commit-hygiene)
+- [x] Документация обновлена (docs/ + запись в `docs/brain/`) — запись журнала: [`docs/brain/2026-07-28--client-data-layer.md`](../../../docs/brain/2026-07-28--client-data-layer.md) (STORY-004-04 и STORY-004-06); пункт «Задокументировать паттерн» закрыт 2026-07-28 правками в `docs/architecture/ux-architecture.md`, `rules/frontend-fsd.mdc` и `rules/tanstack-query.mdc`
 - [x] a11y-проверка (для UI-историй) — не применимо
 - [ ] i18n: строки в обоих языках, хардкода нет — тексты ошибок берутся из `errors.json` по коду. *Клиент отдаёт только ключ `errors.<code>` (`errorMessageKey`); самого каталога `errors.json` ещё нет — EPIC-008.*
 

@@ -43,8 +43,12 @@ job'ов, формы, search-параметры URL, `localStorage`, перем�
     `shared/lib/validation`; серверные схемы запросов — `presentation/http/validators/`; схемы
     ответов внешних API — рядом с адаптером; схема `env` — `infrastructure/bootstrap/env.ts`.
     Файл — `<name>.schema.ts`, схема `camelCaseSchema`, тип `PascalCase` через `z.infer`.
-12. **Формы — `@mantine/form` + `mantine-form-zod-resolver`.** Второй формовой библиотеки в проекте
-    нет; ручных проверок в компоненте нет.
+12. **Формы — `@mantine/form` со встроенным `schemaResolver`.** Mantine 9 поддерживает Standard
+    Schema, поэтому схема подключается пакетом формы, а не отдельным резолвером:
+    `import { useForm, schemaResolver } from '@mantine/form'`,
+    `validate: schemaResolver(schema, { sync: true })` (`sync: true` — для синхронных схем, к
+    которым относится Zod). `mantine-form-zod-resolver` не ставится. Второй формовой библиотеки в
+    проекте нет; ручных проверок в компоненте нет.
 13. **Ответы API прогоняются через схему в `api`-слое** там, где нужен рантайм-гейт: сгенерированные
     типы из OpenAPI гарантируют форму на этапе компиляции, но не защищают от дрейфа бэкенда.
 14. **Схема `env` парсится один раз при старте**, дальше используется типобезопасный объект.

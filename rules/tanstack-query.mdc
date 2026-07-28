@@ -17,7 +17,34 @@ alwaysApply: false
 
 1. **Единственный `QueryClient` с дефолтами `{ queries: { retry: 1, staleTime: 30_000 } }`.**
    Отклонение от дефолта — только на конкретный запрос и с комментарием почему.
-2. **Query-keys — только из центральной типизированной фабрики** `shared/lib/enums/query-keys.ts`:
+
+   **Собирается он только фабрикой `createAppQueryClient({ notify, logError })`**
+   (`shared/api/query-client.config.ts`); `new QueryClient(...)` по месту — нарушение. Фабрика, а не
+   модульный синглтон, потому что обе зависимости живут в слоях выше `shared/api`: тостер — это
+   компонент, а сток логов выбирает оболочка; синглтон тянулся бы за ними вверх (инверсия
+   направления FSD) и заставлял бы все тесты делить один кеш. Что она централизует — ровно две вещи,
+   которые хук не решает за себя: сколько данные считаются свежими и кто сообщает о сбое.
+
+   | Зависимость | Тип | Кто передаёт | Что делает |
+   |---|---|---|---|
+   | `notify` | `NotificationPort` (`shared/lib/notifications`) | `app/app-query-client.constant.ts` — `SharedUi.notify`; тесты и хосты без экрана — `SharedLib.silentNotifications` | принимает `{ id, messageKey }` — **ключ i18n, никогда текст** |
+   | `logError` | `(error: unknown) => void` | `app/report-client-error.util.ts` | получает **каждый** сбой, включая те, что пользователю не показаны |
+
+   Единственный экземпляр приложения — `appQueryClient` в `app/app-query-client.constant.ts`; второй
+   клиент означал бы вторую копию каждой сущности и инвалидацию, которая до неё не доходит.
+   `app/providers.tsx` принимает его пропом, чтобы тест мог подставить свой кеш.
+
+   Внутри фабрики зафиксировано ещё три вещи:
+   - `retry` — не число, а предикат: `AbortError` и 401 не повторяются. 401 сюда доходит уже после
+     `auth-middleware.util.ts` (refresh был и не помог), и повтор удваивает каждый запрос
+     разлогиненной вкладки;
+   - `QueryCache.onError` — только `logError`, **без тоста**: упавший запрос рисует inline-состояние
+     с «Повторить», иначе фоновый рефетч кричит на пользователя, который ничего не делал
+     (`rules/errors-and-toasts.mdc` §5);
+   - `MutationCache.onError` — `logError` всегда, тост — **только если у мутации нет своего
+     `onError`** (см. п. 10).
+2. **Query-keys — только из центральной типизированной фабрики**
+   `shared/lib/enums/query-keys.constant.ts`:
    `QueryKeys.Tasks.list(params)`, `QueryKeys.Tasks.detail(id)`, `QueryKeys.Tasks.all`. Ad-hoc
    массивы (`['tasks', id]`) запрещены — иначе инвалидация промахивается и это никак не ловится.
 3. **Ключ включает все параметры, влияющие на ответ**, включая фильтры из URL и `organizationId`
@@ -35,9 +62,12 @@ alwaysApply: false
    у него нет настоящего id.
 8. **Снапшот в `onMutate` берётся синхронно.** `await cancelQueries()` перед снятием снапшота —
    классическая гонка: за время `await` успевает прилететь ответ и снапшот окажется уже испорченным.
-9. **Хелперы `shared/api/optimistic.ts` переиспользуются**, каждая мутация не пишет свой откат.
+9. **Хелперы `shared/api/optimistic.util.ts` переиспользуются**, каждая мутация не пишет свой откат.
 10. **Локальный `onError` переопределяет глобальный, а не добавляется к нему** — см.
-    `rules/errors-and-toasts.mdc`, иначе на один сбой прилетают два тоста.
+    `rules/errors-and-toasts.mdc`, иначе на один сбой прилетают два тоста. Это не соглашение ревью,
+    а поведение фабрики: `MutationCache.onError` проверяет `mutation.options.onError !== undefined`
+    и молча уходит, если мутация обрабатывает свой сбой сама. `logError` при этом вызывается в любом
+    случае — переопределяется уведомление, не журнал.
 11. **Мутации не вызываются из `pages`/`widgets`/`app`** — только через хук юнита; см.
     `rules/frontend-fsd.mdc`.
 12. **Loader маршрута использует `queryClient.ensureQueryData(entityQueryOptions(...))`**, компонент
@@ -53,7 +83,15 @@ alwaysApply: false
 ### ✅ Правильно
 
 ```ts
-// shared/lib/enums/query-keys.ts
+// app/app-query-client.constant.ts — единственная сборка клиента
+export const appQueryClient = SharedApi.createAppQueryClient({
+  notify: SharedUi.notify,
+  logError: reportClientError,
+});
+```
+
+```ts
+// shared/lib/enums/query-keys.constant.ts
 export const QueryKeys = {
   Tasks: {
     all: ['tasks'] as const,
@@ -122,7 +160,8 @@ onMutate: (draft) => runOptimisticPatch(QueryKeys.Tasks.all, 'tmp', draft);
 | Кастомное ESLint-правило `bad-crm/require-signal-in-queryfn` | `queryFn` без проброса `signal` |
 | ESLint `no-restricted-imports` на `@tanstack/react-query` вне `units/*/service/**` и `shared/api/**` | запросы в pages/widgets |
 | `use-*.hook.test.ts` (Vitest + MSW): success + error на каждый хук | необработанные состояния |
-| `test/optimistic/rollback.spec.ts` — сервер отвечает 500 | отсутствие отката и «залипший» оптимистичный UI |
+| `packages/client/test/api/optimistic.test.ts` — сервер отвечает ошибкой | отсутствие отката и «залипший» оптимистичный UI; возврат удалённого элемента на прежнюю позицию, а не в конец |
+| `packages/client/test/api/query-client.test.ts` | второй тост на один сбой, тост на `AbortError`, отсутствие `logError` |
 | `test/optimistic/no-optimistic-in-vault.spec.ts` | `onMutate` в `units/vault/**` |
 | e2e: смена фильтра дважды подряд | гонку запросов при отсутствии `signal` |
 | Агент `frontend-developer` при ревью новых хуков | смешение оптимистичного и пессимистичного паттернов |

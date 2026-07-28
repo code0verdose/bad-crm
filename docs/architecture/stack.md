@@ -44,10 +44,10 @@ updated: 2026-07-26
 | Почта | nodemailer | 6.x | SMTP без вендор-лока; Mailpit в dev (MailHog заброшен с 2020) | — |
 | AI | `@anthropic-ai/sdk`, `openai` (в т.ч. `openai_compat` и `openrouter` через OpenAI-совместимый клиент) | latest | Четыре вида провайдера за одним портом; **опционально**, ключи вводит администратор организации в UI и они хранятся зашифрованными в `AIProvider` | [ADR-0014](./adr/0014-ai-provider-abstraction.md) |
 | Тесты | Vitest, supertest, Testcontainers, Playwright, RTL | latest | Один раннер на монорепо; реальный Postgres — единственный способ проверить RLS | — |
-| Клиент | React 19, Vite, Mantine 7, TanStack Query v5 / Router, i18next | latest | Детали — в [`ux-architecture.md`](./ux-architecture.md) | [ADR-0005](./adr/0005-fsd-units-frontend-architecture.md), [ADR-0006](./adr/0006-mantine-css-modules-no-tailwind.md), [ADR-0007](./adr/0007-tanstack-router-and-query.md) |
+| Клиент | React 19, Vite, Mantine 9, TanStack Query v5 / Router, i18next | latest | Детали — в [`ux-architecture.md`](./ux-architecture.md) | [ADR-0005](./adr/0005-fsd-units-frontend-architecture.md), [ADR-0006](./adr/0006-mantine-css-modules-no-tailwind.md), [ADR-0007](./adr/0007-tanstack-router-and-query.md) |
 | Лицензии | Только AGPL-совместимые | — | Никаких BSL/SSPL/Commons Clause/«free for non-commercial» | [ADR-0018](./adr/0018-license-agpl-3.md) |
 
-Нумерация ADR — единая на весь проект (22 записи, полный список — в
+Нумерация ADR — единая на весь проект (23 записи, полный список — в
 [`overview.md`](./overview.md#ключевые-архитектурные-решения) и каталоге [`adr/`](./adr/)).
 Прочерк означает, что решение зафиксировано этим документом и отдельного ADR не имеет; заводить
 новые номера в обход общего списка нельзя.

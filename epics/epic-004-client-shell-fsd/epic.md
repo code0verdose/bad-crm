@@ -1,7 +1,7 @@
 ---
 id: EPIC-004
 title: Каркас клиента на FSD
-status: in-progress
+status: review
 blocked: false
 milestone: M1
 owner: unassigned
@@ -27,7 +27,7 @@ created: 2026-07-26
 - Vite + React 19 + TypeScript strict, алиасы `@app`, `@pages`, `@widgets`, `@units`, `@shared` в tsconfig и vite.
 - Скелет слоёв FSD, namespace-барели, ESLint-правило направления зависимостей.
 - `MantineProvider`, тема, CSS Modules, `postcss-preset-mantine`, светлая и тёмная темы.
-- `QueryClient` с дефолтами (`retry: 1`, `staleTime: 30s`), глобальный `MutationCache.onError`, `shared/api/optimistic.ts`, типизированная фабрика query-ключей.
+- `QueryClient` с дефолтами (`retry: 1`, `staleTime: 30s`), глобальный `MutationCache.onError`, `shared/api/optimistic.util.ts`, типизированная фабрика query-ключей.
 - TanStack Router file-based, глобальная регистрация типов, `_authenticated.tsx`, `pendingComponent` / `errorComponent` / `notFoundComponent`.
 - `openapi-fetch` + `openapi-react-query`, auth-middleware, обработка 401 → refresh с дедупликацией.
 - Оболочка: сайдбар, шапка, переключатель организации, хлебные крошки.

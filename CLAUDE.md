@@ -12,28 +12,44 @@ Notion-подобные документы, Obsidian-подобная база �
 **Лицензия:** AGPL-3.0-or-later. **Языки интерфейса:** EN и RU (равноправные).
 **Модель поставки:** `docker compose up` на одном хосте; SaaS-версии нет.
 
-### Текущее состояние — M1, EPIC-001
+### Текущее состояние — M1, EPIC-004 закрыт
 
-Спецификация завершена (фаза 0), реализация начата.
+Спецификация завершена (фаза 0). EPIC-001…EPIC-004 — в статусе `review`. Следующий по
+[roadmap](docs/product/roadmap.md) — EPIC-005. Актуальный борд — [`epics/README.md`](epics/README.md)
+(генерируется из frontmatter).
 
 | Артефакт | Сколько | Где |
 |---|---|---|
-| Продуктовые и архитектурные документы | 40 файлов (включая 22 ADR) | `docs/` |
+| Продуктовые и архитектурные документы | 45 файлов (включая 23 ADR) | `docs/` |
 | Правила разработки | 34 файла `.mdc` | `rules/` |
 | Проектные агенты-ревьюеры | 9 | `.claude/agents/` |
 | Эпики | 46 (`epic.md`) | `epics/` |
 | Пользовательские истории | 113 (написаны для M1–M2) | `epics/*/stories/` |
 
-**Что уже работает** (EPIC-001): монорепо pnpm + turborepo с четырьмя пакетами, `tsconfig.base.json`
-strict и project references, ESLint 9 flat config с архитектурными запретами, Prettier, husky +
-lint-staged + commitlint, `docker-compose.yml` (postgres+pgvector, redis, minio, meilisearch,
-mailpit), `.env.example` + zod-схемы окружения (сервер и клиент раздельно), наполненный
-`packages/shared` (zod-примитивы, branded id, заготовка каталога permissions, коды ошибок).
-`pnpm turbo run typecheck lint build test` — зелёный.
+**Что уже работает:**
 
-**Чего ещё нет:** HTTP-сервер и `/health` (EPIC-003), Vite dev-server и клиентский шелл (EPIC-004),
-`docs/api/openapi.yaml` (STORY-003-05), Prisma-схема и миграции (EPIC-003/005), CI-воркфлоу
-(EPIC-002 — в `.github/` пока только `dco.yml`).
+- **EPIC-001** — монорепо pnpm + turborepo с четырьмя пакетами, `tsconfig.base.json` strict и project
+  references, ESLint 9 flat config с архитектурными запретами, Prettier, husky + lint-staged +
+  commitlint, `docker-compose.yml` (postgres+pgvector, redis, minio, meilisearch, mailpit),
+  `.env.example` + zod-схемы окружения (сервер и клиент раздельно), наполненный `packages/shared`
+  (zod-примитивы, branded id, каталог permissions, коды ошибок), preflight в `pnpm dev`.
+- **EPIC-002** — CI в `.github/workflows/`: `ci.yml` (checks, scan, integration, compat), `codeql.yml`,
+  `dependency-review.yml`, `license-check.yml`, `pr-conventions.yml`; dependabot, шаблоны PR и issue.
+- **EPIC-003** — Express 5 по гексагональным слоям, `/health` и `/ready`, `/api/v1/meta`,
+  error-handler с `problem+json`, CSP и HTTP-hardening, `prisma/schema.prisma` и первая миграция
+  (`20260727120000_init_tenancy_and_rls`) с RLS-политиками, `docs/api/openapi.yaml` и генерация
+  типов клиента.
+- **EPIC-004** — Vite + React 19, слои FSD с линтом направления
+  зависимостей, Mantine 9 + тема + семантические токены `--bc-*`, TanStack Query с фабрикой ключей и
+  optimistic-хелперами, типизированный клиент `openapi-fetch` с auth- и idempotency-middleware,
+  TanStack Router с файловыми маршрутами, гардами и границами состояний, оболочка приложения
+  (сайдбар, шапка, хлебные крошки, skip-link, объявление смены маршрута).
+
+**Чего ещё нет:** сессий и аутентификации (EPIC-006) — контекст роутера несёт только `auth.status`,
+а bootstrap сессии нет; переключателя организации и юнита `units/organization` (заблокирован тем же);
+каталогов локалей EN/RU — в UI проставлены ключи, но переводить их нечем (EPIC-008); полной
+дизайн-системы и Storybook (EPIC-007); доменных юнитов (задачи, документы, время — M3+);
+Playwright-харнесса (`packages/e2e` — пустая заготовка, EPIC-010).
 
 **Следствие для любой работы в этом репозитории:** проверяй по факту, а не по этому списку — он
 устаревает быстрее кода. Не утверждай «работает», не запустив.
@@ -141,7 +157,7 @@ pnpm turbo run typecheck lint build test
 `build` ≠ `typecheck`: они расходятся (проектные ссылки и emit), прогоняй оба явно.
 Норматив — [`rules/ci-before-push.mdc`](rules/ci-before-push.mdc).
 
-До появления `package.json` (EPIC-001) команда не существует — это ожидаемо в фазе 0.
+Команда существует начиная с EPIC-001.
 
 ---
 
@@ -159,7 +175,7 @@ pnpm turbo run typecheck lint build test
 | [`docs/architecture/stack.md`](docs/architecture/stack.md) | Стек и версии, гексагональные слои, контракт API, БД, outbox, env, команды | любой серверной работе |
 | [`docs/architecture/data-model.md`](docs/architecture/data-model.md) | Сущности, таблицы, индексы, RLS-политики — **источник истины по именам** | любом изменении схемы или Prisma-модели |
 | [`docs/architecture/ux-architecture.md`](docs/architecture/ux-architecture.md) | Принципы UI, маршруты, экраны, дизайн-система, a11y, i18n, FSD клиента | любой клиентской работе |
-| [`docs/architecture/adr/`](docs/architecture/adr/) | 21 ADR: по одному решению на файл, с отвергнутыми альтернативами | попытке изменить принятое решение — сперва прочти ADR |
+| [`docs/architecture/adr/`](docs/architecture/adr/) | 23 ADR: по одному решению на файл, с отвергнутыми альтернативами | попытке изменить принятое решение — сперва прочти ADR |
 | [`docs/security/threat-model.md`](docs/security/threat-model.md) | STRIDE по контекстам, нарушители N1–N8, топ-15 угроз, остаточные риски | работе с любым чувствительным потоком данных |
 | [`docs/security/permission-model.md`](docs/security/permission-model.md) | Пять слоёв прав, `effectivePermission`, матрица роль × endpoint | добавлении endpoint'а, права или роли |
 | [`docs/security/rls-design.md`](docs/security/rls-design.md) | Роли БД, канонический шаблон политики, `withTenant`, isolation-тесты | добавлении таблицы, миграции, репозитория, job'а |
@@ -196,7 +212,7 @@ pnpm turbo run typecheck lint build test
 | [`rules/zod-validation.mdc`](rules/zod-validation.mdc) | Schema-first, парсинг на границах, тип из схемы | написании любой валидации |
 | [`rules/tanstack-query.mdc`](rules/tanstack-query.mdc) | Query keys, кеш, optimistic vs pessimistic, отмена | любом фетче или мутации на клиенте |
 | [`rules/lists-and-filters.mdc`](rules/lists-and-filters.mdc) | URL — единственный источник правды фильтров | любом фильтруемом/пагинируемом экране |
-| [`rules/design-system.mdc`](rules/design-system.mdc) | Mantine 7, токены, CSS Modules, когда заводить свой компонент | вёрстке любого UI |
+| [`rules/design-system.mdc`](rules/design-system.mdc) | Mantine 9, токены, CSS Modules, когда заводить свой компонент | вёрстке любого UI |
 | [`rules/errors-and-toasts.mdc`](rules/errors-and-toasts.mdc) | Один сигнал на действие, без дублей тостов | показе ошибок, успеха, loading |
 | [`rules/realtime.mdc`](rules/realtime.mdc) | Комнаты строит сервер, проверка прав перед каждым emit | работе с Socket.IO, presence, typing |
 | [`rules/outbox.mdc`](rules/outbox.mdc) | Событие в той же транзакции, идемпотентные обработчики | любом побочном эффекте вне транзакции |
@@ -227,7 +243,7 @@ pnpm turbo run typecheck lint build test
 | Контракт API | OpenAPI 3.1 + `openapi-typescript` | 3.1 / 7.x | [ADR-0003](docs/architecture/adr/0003-openapi-as-source-of-truth.md) |
 | Валидация | zod | 4.x | — |
 | Клиент | React + Vite + FSD «units» | 19 | [ADR-0005](docs/architecture/adr/0005-fsd-units-frontend-architecture.md) |
-| UI-kit и стили | Mantine + CSS Modules (без Tailwind) | 7.x | [ADR-0006](docs/architecture/adr/0006-mantine-css-modules-no-tailwind.md) |
+| UI-kit и стили | Mantine + CSS Modules (без Tailwind) | 9.x | [ADR-0006](docs/architecture/adr/0006-mantine-css-modules-no-tailwind.md) |
 | Роутинг и дата-слой | TanStack Router + TanStack Query | v5 | [ADR-0007](docs/architecture/adr/0007-tanstack-router-and-query.md) |
 | Права | RBAC + per-user overrides + resource ACL | — | [ADR-0008](docs/architecture/adr/0008-permission-model-rbac-plus-acl.md) |
 | Крипто клиента | `libsodium-wrappers-sumo` (Argon2id, XChaCha20-Poly1305, Ed25519) | — | [ADR-0009](docs/architecture/adr/0009-e2ee-vault-key-hierarchy.md) |

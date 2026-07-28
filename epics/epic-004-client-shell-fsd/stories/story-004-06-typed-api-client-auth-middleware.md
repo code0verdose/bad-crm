@@ -1,7 +1,7 @@
 ---
 id: STORY-004-06
 epic: EPIC-004
-status: in-progress
+status: review
 blocked: false
 priority: must
 estimate: M
@@ -38,8 +38,8 @@ access-токен не приводил к каскаду параллельны
 ## Definition of Done
 
 - [x] Тесты написаны первыми (TDD), проходят, изменённый код покрыт — `packages/client` 100 % строк и ветвей
-- [ ] Commit-гейт зелёный (test-coverage, security-auditor, db-reviewer при изменении схемы, production-readiness, commit-hygiene)
-- [ ] Документация обновлена (docs/ + запись в `docs/brain/`)
+- [x] Commit-гейт зелёный (test-coverage, security-auditor, db-reviewer при изменении схемы, production-readiness, commit-hygiene)
+- [x] Документация обновлена (docs/ + запись в `docs/brain/`) — [`docs/brain/2026-07-28--client-data-layer.md`](../../../docs/brain/2026-07-28--client-data-layer.md) (STORY-004-04 и STORY-004-06); правок в `docs/` история не вносила — расхождений с `stack.md` по ходу не выявлено
 - [x] a11y-проверка (для UI-историй) — не применимо
 - [ ] i18n: строки в обоих языках, хардкода нет — сообщения ошибок выбираются по `code` из `errors.json`. *Клиент отдаёт только ключ `errors.<code>`; каталога ещё нет — EPIC-008.*
 

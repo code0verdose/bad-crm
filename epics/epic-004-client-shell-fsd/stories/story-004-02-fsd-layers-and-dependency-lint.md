@@ -1,7 +1,7 @@
 ---
 id: STORY-004-02
 epic: EPIC-004
-status: in-progress
+status: review
 blocked: false
 priority: must
 estimate: M
@@ -53,18 +53,20 @@ estimate: M
       состоящий только из сеттеров, — ошибка «считай при рендере»; любой другой эффект без
       комментария-обоснования — ошибка «объясни, почему это настоящий сайд-эффект». Фикстуры
       включают положительный контроль (подписка с cleanup и обоснованием проходит).
-- [ ] Задокументировать структуру в `docs/architecture/ux-architecture.md` (при необходимости уточнить) и в `rules/frontend-fsd.mdc`.
-      Не сделано: оба файла вне области правок этой сессии. Требуется дописать в
-      `rules/frontend-fsd.mdc` (а) разрешение юниту импортировать свои сегменты по алиасу
-      `@units/<свой-юнит>/<сегмент>` — сейчас правило 2/3 читается как полный запрет,
-      (б) строки про `bad-crm/no-foreign-unit-internals` и `bad-crm/no-effect-for-derived-state`
-      в таблицу «Как проверяется».
+- [x] Задокументировать структуру в `docs/architecture/ux-architecture.md` (при необходимости уточнить) и в `rules/frontend-fsd.mdc`.
+      Обе названные правки в `rules/frontend-fsd.mdc` на месте: (а) правило 3 содержит
+      «Уточнение (2026-07-28, найдено на первом настоящем дереве)» — запрет deep-import относится к
+      **чужому** юниту, свои сегменты импортируются напрямую; (б) в таблицу «Как проверяется»
+      добавлены строки `bad-crm/no-foreign-unit-internals` и `bad-crm/no-effect-for-derived-state`.
+      `ux-architecture.md` правки не потребовал («при необходимости»): раскладка слоёв FSD там не
+      описана — она живёт в [ADR-0005](../../../docs/architecture/adr/0005-fsd-units-frontend-architecture.md)
+      и в `rules/frontend-fsd.mdc`, а `ux-architecture.md` описывает экраны и дизайн-систему.
 
 ## Definition of Done
 
 - [x] Тесты написаны первыми (TDD), проходят, изменённый код покрыт
-- [ ] Commit-гейт зелёный (test-coverage, security-auditor, db-reviewer при изменении схемы, production-readiness, commit-hygiene)
-- [ ] Документация обновлена (docs/ + запись в `docs/brain/`) — см. незакрытую задачу выше
+- [x] Commit-гейт зелёный (test-coverage, security-auditor, db-reviewer при изменении схемы, production-readiness, commit-hygiene)
+- [x] Документация обновлена (docs/ + запись в `docs/brain/`) — `rules/frontend-fsd.mdc` (см. задачу выше) и запись [`docs/brain/2026-07-28--client-foundation-and-csp-in-a-browser.md`](../../../docs/brain/2026-07-28--client-foundation-and-csp-in-a-browser.md) (STORY-004-01 и STORY-004-02)
 - [x] a11y-проверка (для UI-историй) — не применимо
 - [x] i18n: строки в обоих языках, хардкода нет (для UI-историй) — не применимо
 

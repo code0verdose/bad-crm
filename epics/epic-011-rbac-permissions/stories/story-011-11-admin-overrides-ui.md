@@ -102,9 +102,9 @@ estimate: L
       `service/queries/user-permissions.query.ts`, `permission-explain.query.ts`,
       `service/mutations/upsert-permission-override.mutation.ts`,
       `delete-permission-override.mutation.ts` (оптимистичный патч + rollback из
-      `shared/api/optimistic.ts`).
+      `shared/api/optimistic.util.ts`).
 - [ ] `packages/client/src/units/iam/model/validation/permission-override.schema.ts` (Zod, `reason`
-      ≥ 10, `expiresAt`), резолвер `mantine-form-zod-resolver`.
+      ≥ 10, `expiresAt`), подключение — встроенный `schemaResolver` из `@mantine/form`.
 - [ ] `packages/server/src/application/access/queries/explain-permission.query.ts` +
       маршрут `GET /permissions/explain` с `permission:explain` в `ROUTE_REGISTRY`.
 - [ ] i18n: `packages/client/src/app/i18n/{en,ru}/admin-permissions.json`.

@@ -132,6 +132,22 @@ production-сборка React 19 + Mantine 7, отданная под этим �
 - **`react-remove-scroll`** (используется `Modal`/`Drawer` Mantine) внедряет собственный `<style>`;
   его nonce задаётся отдельно. Проверить при первой модалке.
 
+### Уточнение 2026-07-28 — на какой версии Mantine это измерено
+
+Таблица измерений выше сделана на **отдельной эталонной сборке**: на тот момент клиент этого проекта
+Mantine ещё не содержал (последняя строка таблицы — «сборка клиента этого проекта (без Mantine)»), и
+версия Mantine в эталонной сборке названа в тексте как есть. Проект работает на **Mantine 9**
+(`@mantine/core@^9.5.0`), см. [поправку в ADR-0006](0006-mantine-css-modules-no-tailwind.md#поправка-2026-07-28--мажорная-версия-mantine).
+Версия эталонной сборки задним числом не проверялась и потому не переписана.
+
+Выводы измерения на Mantine 9 подтвердились на настоящем клиенте в STORY-004-03 / 004-07:
+`MantineProvider` принимает nonce через `getStyleNonce` (`packages/client/src/app/providers.tsx`),
+Trusted-Types-политика ставится до первого рендера (`src/app/trusted-types.util.ts`, вызов в
+`src/app/main.tsx`), а отложенный пункт про `react-remove-scroll` закрыт: `Drawer` действительно
+пишет свой `<style>` мимо `getStyleNonce`, поэтому добавлен `installStyleNonce()`, публикующий nonce
+в `globalThis.__webpack_nonce__` (`src/app/style-nonce.util.ts`). Подробности —
+[`docs/brain/2026-07-28--client-shell-mantine-router-appshell.md`](../../brain/2026-07-28--client-shell-mantine-router-appshell.md).
+
 ## Проверяемость
 
 - e2e-сценарий в `packages/e2e`: разблокировать vault, расшифровать элемент, отобразить

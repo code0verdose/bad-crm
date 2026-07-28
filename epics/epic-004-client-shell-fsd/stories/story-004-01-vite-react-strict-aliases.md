@@ -1,7 +1,7 @@
 ---
 id: STORY-004-01
 epic: EPIC-004
-status: in-progress
+status: review
 blocked: false
 priority: must
 estimate: M
@@ -44,6 +44,10 @@ estimate: M
       установить единственную политику. `media-src`/`frame-src` добавлены. Подробности и таблица
       измерений — в ADR-0023 и §12. Генерация nonce на запрос — за историей, где сервер начинает
       отдавать `index.html`.
+      *Уточнение (2026-07-28): «Mantine 7» здесь — версия отдельной эталонной сборки, на которой
+      делалось измерение; клиент этого проекта тогда Mantine не содержал вовсе. Сам проект работает
+      на Mantine 9 (см. [поправку в ADR-0006](../../../docs/architecture/adr/0006-mantine-css-modules-no-tailwind.md)),
+      и на нём те же выводы подтверждены в STORY-004-03 / 004-07.*
 
 - [x] Написать тесты первыми: `test/config/aliases.test.ts` (совпадение алиасов в трёх конфигах), `test/config/naming.test.ts` (kebab-case + role-суффиксы по всему `src/**`), `test/config/env-prefix.test.ts` (нет обращений к не-`VITE_` переменным).
       Разложились иначе: алиасы — `test/repo/client-aliases.test.ts` (три конфига как данные) плюс
@@ -71,8 +75,8 @@ estimate: M
 
 - [x] Тесты написаны первыми (TDD), проходят, изменённый код покрыт — `packages/client` 100 % строк
       и ветвей, `coverage-baseline.json` подтянут вверх
-- [ ] Commit-гейт зелёный (test-coverage, security-auditor, db-reviewer при изменении схемы, production-readiness, commit-hygiene)
-- [ ] Документация обновлена (docs/ + запись в `docs/brain/`) — ADR-0023 и `e2ee-design.md` §12
+- [x] Commit-гейт зелёный (test-coverage, security-auditor, db-reviewer при изменении схемы, production-readiness, commit-hygiene)
+- [x] Документация обновлена (docs/ + запись в `docs/brain/`) — ADR-0023 (раздел «Пробел этого ADR — закрыт в STORY-004-01» с таблицей измерений), `docs/security/e2ee-design.md` §12 (директивы, `style-src-elem` с nonce, `style-src-attr 'none'`, `trusted-types default`, п. 13 про единственную политику) и запись [`docs/brain/2026-07-28--client-foundation-and-csp-in-a-browser.md`](../../../docs/brain/2026-07-28--client-foundation-and-csp-in-a-browser.md)
       обновлены; запись журнала `docs/brain/` не создавалась
 - [x] a11y-проверка (для UI-историй) — базовая разметка `index.html` (`lang`, `title`) проверена
 - [x] i18n: строки в обоих языках, хардкода нет (для UI-историй) — на этом этапе UI-строк нет

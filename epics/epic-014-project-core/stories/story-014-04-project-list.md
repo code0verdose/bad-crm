@@ -92,7 +92,7 @@ estimate: M
 - [ ] `packages/client/src/units/project/service/hooks/use-project-filters.hook.ts` (URL, debounce,
       whitelist, сброс страницы) и `use-project-list.hook.ts` (query + `signal` + keepPreviousData).
 - [ ] `packages/client/src/units/project/service/queries/project-list.query.ts`;
-      `shared/lib/enums/query-keys.ts` — `QueryKeys.Projects.list(params)`.
+      `shared/lib/enums/query-keys.constant.ts` — `QueryKeys.Projects.list(params)`.
 - [ ] `packages/client/src/widgets/project-list/project-list.widget.tsx` +
       `ui/project-filters-bar.component.tsx`, `ui/project-card.component.tsx`,
       `ui/project-table.component.tsx`, `ui/project-empty-state.component.tsx`,

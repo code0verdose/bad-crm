@@ -1,11 +1,19 @@
 ---
 adr: 0006
-title: UI на Mantine 7 со стилизацией через CSS Modules, без Tailwind
+title: UI на Mantine со стилизацией через CSS Modules, без Tailwind
 status: accepted
 date: 2026-07-26
+amended: 2026-07-28
 ---
 
-# ADR-0006 — UI на Mantine 7 со стилизацией через CSS Modules, без Tailwind
+# ADR-0006 — UI на Mantine со стилизацией через CSS Modules, без Tailwind
+
+> **Поправка от 2026-07-28.** Мажорная версия в исходном заголовке была «Mantine 7»; проект работает
+> на **Mantine 9**. Само решение — Mantine как единственный UI-kit, CSS Modules, без Tailwind — в
+> силе и не пересматривалось. Что именно изменилось и на что это повлияло — в разделе
+> [«Поправка: мажорная версия Mantine»](#поправка-2026-07-28--мажорная-версия-mantine) в конце ADR.
+> Заголовок больше не называет мажор: версия — деталь реализации, зафиксированная в
+> [`../stack.md`](../stack.md) и в `packages/client/package.json`, а не предмет этого решения.
 
 ## Контекст
 
@@ -37,6 +45,10 @@ CSS-в-JS — оба требуют обучения; обычный CSS — н�
 **Mantine 7 — единственный UI-kit проекта. Стилизация — CSS Modules (`*.module.css`) поверх
 переменных темы Mantine. Tailwind не используется.**
 
+<!-- Текст решения оставлен в исходном виде намеренно: ADR не переписывается задним числом. -->
+> Читать как **Mantine 9** — см. [поправку 2026-07-28](#поправка-2026-07-28--мажорная-версия-mantine).
+> Предмет решения — «единственный UI-kit + CSS Modules + без Tailwind» — не изменился.
+
 **Работа с Mantine.**
 
 1. **Сначала MCP, потом код.** Перед использованием компонента или хука спрашиваем официальный MCP
@@ -49,8 +61,18 @@ CSS-в-JS — оба требуют обучения; обычный CSS — н�
    `Drawer`, `Tooltip` используются напрямую. Обёртка в `shared/ui` заводится, только когда есть что
    зафиксировать: поведение (авто-очистка буфера после копирования секрета), политику
    (подтверждение разрушающего действия), состояние (`DataState`: loading/error/empty/content).
-4. **Формы — только `@mantine/form` + `mantine-form-zod-resolver`.** Второй формовой библиотеки в
-   проекте нет.
+4. **Формы — только `@mantine/form`.** Второй формовой библиотеки в проекте нет.
+
+   <!-- Исходный текст пункта называл `mantine-form-zod-resolver`; оставлять его нельзя — это
+        предписание, по которому написали бы первую форму. Предмет решения («одна формовая
+        библиотека, валидация схемой Zod») не изменился, изменился только способ подключения. -->
+   > **Поправка 2026-07-28.** До этой правки пункт предписывал `@mantine/form` +
+   > `mantine-form-zod-resolver`. В Mantine 9 у `@mantine/form` встроенная поддержка Standard
+   > Schema, и отдельный пакет-резолвер каноническим путём больше не является:
+   > `import { useForm, schemaResolver } from '@mantine/form'`, подключение —
+   > `validate: schemaResolver(schema, { sync: true })` (`sync: true` — для синхронных схем, к
+   > которым относится Zod). Подробности — в
+   > [поправке «мажорная версия Mantine»](#поправка-2026-07-28--мажорная-версия-mantine).
 5. **Таблицы** — разделение ответственности: `TanStack Table v8` отвечает за модель (колонки,
    сортировка, выделение, виртуализация), Mantine `Table` — за разметку и стили. Не наоборот.
 6. **Иконки** — один набор `@tabler/icons-react`, размеры только `16 | 20 | 24`, `stroke={1.5}`.
@@ -61,20 +83,38 @@ CSS-в-JS — оба требуют обучения; обычный CSS — н�
   через `style` и не через `sx`-подобные инлайны. `style={{ marginTop: 12 }}` — ошибка ревью;
   вместо этого `Stack`/`Group` с токеном отступа.
 - **Только CSS-переменные темы**, никаких литеральных цветов и пикселей. Семантические алиасы
-  объявляются один раз в `app/styles/tokens.css`:
+  объявляются один раз в `app/styles/tokens.css` — **на `:root` через миксины
+  `light-root`/`dark-root`, а не через `light-dark()`**:
 
   ```css
   :root {
-    --bc-surface:        light-dark(var(--mantine-color-white), var(--mantine-color-dark-7));
-    --bc-surface-raised: light-dark(var(--mantine-color-gray-0), var(--mantine-color-dark-6));
-    --bc-border:         light-dark(var(--mantine-color-gray-3), var(--mantine-color-dark-4));
-    --bc-text:           light-dark(var(--mantine-color-gray-9), var(--mantine-color-dark-0));
-    --bc-text-muted:     light-dark(var(--mantine-color-gray-6), var(--mantine-color-dark-2));
+    @mixin light-root {
+      --bc-surface:        var(--mantine-color-white);
+      --bc-surface-raised: var(--mantine-color-gray-0);
+      --bc-border:         var(--mantine-color-gray-3);
+      --bc-text:           var(--mantine-color-gray-9);
+      --bc-text-muted:     var(--mantine-color-gray-6);
+    }
+
+    @mixin dark-root {
+      --bc-surface:        var(--mantine-color-dark-7);
+      --bc-surface-raised: var(--mantine-color-dark-6);
+      --bc-border:         var(--mantine-color-dark-4);
+      --bc-text:           var(--mantine-color-dark-0);
+      --bc-text-muted:     var(--mantine-color-dark-2);
+    }
   }
   ```
 
-- **Тёмная тема — не отдельный набор классов**, а `light-dark()` в объявлениях. Переключатель
-  `system | light | dark`, по умолчанию `system`.
+- **Тёмная тема — не отдельный набор классов**, а одно и то же объявление в двух схемах.
+  **Механизм зависит от того, где объявление стоит, и это различие обязательное:**
+
+  | Где | Чем | Почему |
+  |---|---|---|
+  | `:root` / `html` (`app/styles/tokens.css`) | миксины `@mixin light-root` / `@mixin dark-root` | `postcss-preset-mantine` документирует: «`light-dark` function does not work on `:root`/`html` element». Он компилируется в **потомковый** селектор, поэтому на `:root` тёмная половина становится `[data-mantine-color-scheme='dark'] :root` — селектор, который не совпадает ни с чем, и тёмная тема молча исчезает |
+  | `*.module.css` компонента | `light-dark()` в объявлении | Штатный, документированный способ: `light-dark(red, blue)` в `.demo` даёт `.demo { color: red }` + `[data-mantine-color-scheme='dark'] .demo { color: blue }` — ровно то, что нужно |
+
+  Переключатель — `system | light | dark`, по умолчанию `system`.
 - `postcss-preset-mantine` даёт миксины и брейкпоинты; шкалы `spacing` и `radius` — только из темы.
 - Глобальный CSS — только для действительно глобального (reset, токены) в `app/`.
 - Логические свойства (`margin-inline-start`, `inset-inline-end`) вместо `left/right` — чтобы
@@ -140,8 +180,8 @@ CSS-в-JS — оба требуют обучения; обычный CSS — н�
 - **Отказ от Tailwind фиксирует стилевой язык проекта.** Ввести Tailwind позже можно только с
   `@layer` и полной ревизией каскада; практически это означает два стилевых подхода в одном
   репозитории на неопределённый срок.
-- **`@mantine/form` как единственная формовая библиотека** проникает во все формы продукта вместе с
-  `mantine-form-zod-resolver`. Переход на react-hook-form — правка каждой формы.
+- **`@mantine/form` как единственная формовая библиотека** проникает во все формы продукта вместе со
+  своим `schemaResolver`. Переход на react-hook-form — правка каждой формы.
 - **Решение «TanStack Table для модели, Mantine для разметки»** определяет структуру всех таблиц
   продукта; смена любой из половин затрагивает все табличные экраны.
 
@@ -164,6 +204,81 @@ CSS-в-JS — оба требуют обучения; обычный CSS — н�
 - **`size-limit` на бандл** — рост от неаккуратных импортов Mantine ловится порогом.
 - Гейт-агент `accessibility-expert` (правила проекта) — для историй, добавляющих новые интерактивные
   компоненты.
+
+## Поправка 2026-07-28 — мажорная версия Mantine
+
+Раздел добавлен при реализации [EPIC-004](../../../epics/epic-004-client-shell-fsd/epic.md)
+(STORY-004-03). Он не отменяет решение выше и не переписывает его: он фиксирует, что мажорная
+версия, названная в исходном тексте, устарела между принятием ADR и первой строкой кода.
+
+### Что изменилось
+
+Исходный текст (заголовок и первая строка раздела «Решение») называет **Mantine 7**. Проект
+использует **Mantine 9** — `@mantine/core`, `@mantine/hooks`, `@mantine/notifications` версии
+`^9.5.0` в `packages/client/package.json`.
+
+### Почему
+
+1. **7 переведена в статус `legacy`.** В реестре npm у `@mantine/core` дист-теги
+   `latest: 9.5.0`, `legacy: 7.17.8`. Ставить `legacy`-ветку в проект, который только начинает
+   писать интерфейс, значит начать с запланированной миграции.
+2. **Официальный MCP `mantine` документирует текущий мажор.** Правило «сначала MCP, потом код»
+   (пункт 1 раздела «Решение») — обязательное; при Mantine 7 в `package.json` оно превратилось бы в
+   свою противоположность: MCP отвечал бы про API, которого в установленной версии нет, и
+   единственным способом писать код осталась бы память — ровно то, что правило запрещает.
+3. **Кода на Mantine 7 не существовало.** Цифра «7» попала в документы в фазе 0, когда 7 была
+   актуальной; между фазой 0 и EPIC-004 вышли мажоры 8 и 9. Это не смена решения по ходу
+   реализации, а устаревшая деталь спецификации, не дошедшая до кода.
+
+### Что в решении осталось неизменным
+
+Всё, ради чего этот ADR писался:
+
+- Mantine — **единственный** UI-kit проекта; второй не подключается.
+- Стилизация — CSS Modules (`*.module.css`) поверх CSS-переменных темы; Tailwind не используется.
+- «Сначала MCP, потом код»; берём и компоненты, и хуки/утилиты; не оборачиваем ради обёртки.
+- Разделение «TanStack Table — модель, Mantine `Table` — разметка»; один набор иконок
+  `@tabler/icons-react`.
+- Все альтернативы (Tailwind + headless, MUI, Chakra, CSS-in-JS, своя дизайн-система) отвергнуты по
+  причинам, не зависящим от мажорной версии, и не пересматривались.
+
+### На что это повлияло в коде
+
+| Опора | Состояние в Mantine 9 | Где проверено |
+|---|---|---|
+| `MantineProvider` + `getStyleNonce` ([ADR-0023](0023-csp-for-wasm-crypto.md)) | **Без изменений.** Проп на месте с той же сигнатурой `() => string` | `@mantine/core@9.5.0` d.ts; используется в `packages/client/src/app/providers.tsx` |
+| `@mantine/notifications` | **Есть**, тот же пакет и API (`show`/`update`, `limit`, `position`) | пакет установлен, `src/shared/ui/toaster/notify.util.ts` |
+| `@mantine/charts` ([ADR-0017](0017-charts-mantine-charts.md)) | **Есть**, набор графиков шире исходного (добавлены `Heatmap`, `BulletChart`, `SankeyChart`, `Treemap`, `SunburstChart`, `FunnelChart`). **Новое требование: Recharts 3+** | официальный MCP `mantine`, `list_items --package @mantine/charts`; changelog 9.0.0 |
+| `@mantine/dates` | **Есть**, набор компонентов расширен (`MiniCalendar`, `TimeGrid`, `TimePicker`, `InlineDateTimePicker`) | официальный MCP `mantine` |
+| Шкалы `spacing` `xs 10 / sm 12 / md 16 / lg 20 / xl 32` и `radius` `xs 2 / sm 4 / md 8 / lg 16 / xl 32` | **Без изменений** — значения дефолтной темы совпадают с зафиксированными в [`../ux-architecture.md`](../ux-architecture.md) | `DEFAULT_THEME` в `@mantine/core@9.5.0` |
+| `postcss-preset-mantine` | **Без изменений** по составу миксинов; `1.18.0` | установлен, `packages/client/postcss.config.cjs` |
+| React | **Изменилось: минимум React 19.2+** для всех `@mantine/*` | changelog 9.0.0; проект на `react@19.2.8` — совместим |
+| `theme.defaultRadius` | **Изменилось: дефолт `sm` (4px) → `md` (8px)** | changelog 9.0.0. Правило «контролы — `sm`, карточки и панели — `md`» из `ux-architecture.md` от этого не зависит, но требует явного `defaultRadius` в теме, а не опоры на дефолт. **Закрыто (2026-07-28):** `defaultRadius: 'sm'` задан явно в `packages/client/src/app/theme/app-theme.config.ts`, и `ux-architecture.md` → «Дизайн-система → Токены → Radius» теперь это фиксирует |
+| `@mantine/form` + `mantine-form-zod-resolver` (пункт 4 раздела «Решение») | **Изменилось.** В Mantine 9 у `@mantine/form` встроенная поддержка Standard Schema: официальная документация показывает `schemaResolver` из самого `@mantine/form`, отдельный пакет-резолвер в примерах не используется. `mantine-form-zod-resolver@1.3.0` формально совместим (peer `@mantine/form >=7.0.0`), но каноническим путём больше не является | mantine.dev → Form → Schema validation |
+
+**Форм в проекте пока нет** (`@mantine/form` не установлен), поэтому последняя строка таблицы — не
+расхождение с кодом, а устаревшая рекомендация. Решение «одна формовая библиотека, валидация схемой
+Zod» не меняется; меняется только то, чем схема подключается.
+
+**Закрыто (2026-07-28).** Сквозная замена сделана одним проходом до первой формы, как и требовалось:
+пункт 4 раздела «Решение» и раздел «Что становится трудно изменить позже» выше, `../ux-architecture.md`
+(«Правила использования Mantine» и «Паттерны взаимодействия → Формы»), `rules/design-system.mdc` §11,
+`rules/zod-validation.mdc` §12, истории
+[STORY-006-01](../../../epics/epic-006-auth-core/stories/story-006-01-organization-and-owner-registration.md),
+[STORY-008-01](../../../epics/epic-008-i18n-en-ru/stories/story-008-01-i18next-setup-and-namespaces.md),
+[STORY-011-11](../../../epics/epic-011-rbac-permissions/stories/story-011-11-admin-overrides-ui.md).
+Канон подтверждён по официальной документации (mantine.dev → Form → Schema validation):
+`import { useForm, schemaResolver } from '@mantine/form'`,
+`validate: schemaResolver(schema, { sync: true })`; отдельный пакет-резолвер в примерах не
+фигурирует. Проверить по `node_modules` было нечем — `@mantine/form` в проекте не установлен, что и
+делает эту правку дешёвой: цена ошибки здесь — неверное предписание, а не сломанный код.
+
+### Чего эта поправка не касается
+
+Раздел «Проверяемость» выше требует stylelint-правила на литеральные значения, теста «нет второго
+UI-kit», автотеста контраста, Storybook с псевдолокалью и визуальной регрессии. Ни одно из этих
+требований не зависит от мажорной версии; их состояние отслеживается историями EPIC-004 и
+[EPIC-007](../../../epics/epic-007-design-system/epic.md), а не этим ADR.
 
 ## Ссылки
 

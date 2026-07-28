@@ -43,7 +43,7 @@ updated: 2026-07-26
 - [EPIC-004](../../epics/epic-004-client-shell-fsd/epic.md) — client-shell-fsd: React 19 + Vite, FSD «units», TanStack Router и Query, типизированный клиент, границы состояний
 - [EPIC-005](../../epics/epic-005-multi-tenancy-rls/epic.md) — multi-tenancy-rls: `organizationId` в схеме, PostgreSQL RLS, контекст арендатора в запросе, структурный CI-тест «таблица без политики ломает сборку»
 - [EPIC-006](../../epics/epic-006-auth-core/epic.md) — auth-core: регистрация организации, вход, сессии и refresh, восстановление пароля, базовые системные роли
-- [EPIC-007](../../epics/epic-007-design-system/epic.md) — design-system: Mantine 7 + CSS Modules, токены, светлая и тёмная темы, базовые компоненты и состояния (skeleton, empty, error)
+- [EPIC-007](../../epics/epic-007-design-system/epic.md) — design-system: Mantine 9 + CSS Modules, токены, светлая и тёмная темы, базовые компоненты и состояния (skeleton, empty, error)
 - [EPIC-008](../../epics/epic-008-i18n-en-ru/epic.md) — i18n-en-ru: инфраструктура локализации, EN и RU, линт против хардкод-строк и непарных ключей
 - [EPIC-009](../../epics/epic-009-observability/epic.md) — observability: структурные логи, метрики, трассировка, `/healthz` и `/readyz`, маскирование секретов в логах
 - [EPIC-010](../../epics/epic-010-e2e-harness/epic.md) — e2e-harness: Playwright-харнесс, сид-данные, автоматический a11y-аудит, прогон без внешнего интернета

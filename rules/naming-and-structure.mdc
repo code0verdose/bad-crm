@@ -165,8 +165,15 @@ export default function TaskCard({ task }: Props) {                     // ❌ d
 
 ## Исключения
 
-- **Сгенерированные файлы** (`routeTree.gen.ts`, `api-schema.d.ts`, миграции Prisma) не подчиняются
+- **Сгенерированные файлы** (`route-tree.gen.ts`, `api-schema.d.ts`, миграции Prisma) не подчиняются
   правилу имён и исключены из линта.
+- **File-based маршруты `packages/client/src/app/routes/**`** (добавлено STORY-004-05): имя файла —
+  это URL, а не описание роли. `__root.tsx`, `_authenticated.tsx`, `$.tsx`, `dashboard.tsx` —
+  словарь `@tanstack/router-plugin`, который читает этот каталог и генерирует дерево маршрутов;
+  переименование ради суффикса меняет таблицу маршрутизации. Исключение выключает ровно два правила
+  (`bad-crm/require-role-suffix`, `unicorn/filename-case`) и ровно в этом каталоге; всё остальное,
+  включая a11y- и React-правила, продолжает действовать. Границу исключения проверяет
+  `test/architecture/structure.test.ts`.
 - **Конфиги в корне пакета** (`vite.config.ts`, `eslint.config.js`, `vitest.config.ts`) —
   фиксированные имена инструментов.
 - **Fixed-имена** из п. 3 не требуют role-suffix.

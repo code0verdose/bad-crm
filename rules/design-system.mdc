@@ -1,10 +1,10 @@
 ---
-description: Building or styling any UI. Mantine 7 usage, design tokens, CSS Modules, when to create a shared component.
+description: Building or styling any UI. Mantine 9 usage, design tokens, CSS Modules, when to create a shared component.
 globs: packages/client/src/**/*.tsx, packages/client/src/**/*.css
 alwaysApply: false
 ---
 
-# Дизайн-система: Mantine 7 + CSS Modules
+# Дизайн-система: Mantine 9 + CSS Modules
 
 Основание: `docs/architecture/ux-architecture.md`, раздел «Дизайн-система». Доступность —
 `rules/a11y.mdc`; тексты — `rules/i18n.mdc`; состояния — `rules/errors-and-toasts.mdc`.
@@ -15,7 +15,7 @@ alwaysApply: false
 
 ## Правило
 
-1. **UI-kit один — Mantine 7.** Второй UI-kit не подключается. Перед использованием компонента или
+1. **UI-kit один — Mantine 9.** Второй UI-kit не подключается. Перед использованием компонента или
    хука спрашиваем официальный MCP `mantine` (`list_items` / `search_docs` / `get_item_props`) про
    API текущей версии, а не пишем по памяти.
 2. **Стилизация — CSS Modules (`<name>.module.css`) рядом с компонентом** + `classNames` Mantine.
@@ -24,8 +24,27 @@ alwaysApply: false
    `--bc-*` из `app/styles/tokens.css`; отступы — `--mantine-spacing-*` (`xs 10 / sm 12 / md 16 /
    lg 20 / xl 32`); радиусы — `--mantine-radius-*`. Произвольный hex, `px` и «магические» значения
    запрещены; промежуточное — `calc(var(--mantine-spacing-md) / 2)`.
-4. **Тёмная тема — через `light-dark()` в объявлениях**, а не отдельным набором классов. Любой новый
-   токен объявляется сразу для обеих тем. Переключатель — `system | light | dark`, дефолт `system`.
+4. **Тёмная тема — одно объявление в двух схемах, а не отдельный набор классов.** Любой новый токен
+   объявляется сразу для обеих тем. Переключатель — `system | light | dark`, дефолт `system`.
+   **Механизм зависит от того, где стоит объявление, и перепутать их нельзя:**
+   - **в `*.module.css` компонента — `light-dark(<светлое>, <тёмное>)`.** Штатный документированный
+     способ, он и остаётся правилом;
+   - **на `:root`/`html` (`app/styles/tokens.css`) — миксины `@mixin light-root` / `@mixin dark-root`.**
+     `postcss-preset-mantine` документирует, что `light-dark()` «does not work on `:root`/`html`
+     element»: он компилируется в потомковый селектор, и на `:root` тёмная половина становится
+     `[data-mantine-color-scheme='dark'] :root` — селектор, не совпадающий ни с чем. Тёмная тема
+     молча исчезает, CSS при этом собирается без единой ошибки.
+
+   ```css
+   /* app/styles/tokens.css — объявление токена */
+   :root {
+     @mixin light-root { --bc-surface: var(--mantine-color-white); }
+     @mixin dark-root  { --bc-surface: var(--mantine-color-dark-7); }
+   }
+
+   /* card.module.css — потребление и локальное объявление */
+   .card { border-color: light-dark(var(--mantine-color-gray-3), var(--mantine-color-dark-4)); }
+   ```
 5. **Inline `style={{}}` и `sx`-подобные объекты запрещены.** Динамические значения — CSS custom
    properties, выставляемые через ref или класс. `style={{ marginTop: 12 }}` — ошибка ревью,
    вместо неё `Stack`/`Group` с токеном отступа.
@@ -43,7 +62,10 @@ alwaysApply: false
    `shared/ui` не знает о доменах и не ходит в сеть.
 10. **Состояния экрана — только через `shared/ui`:** `DataState`, `EmptyState`, `ErrorState`,
     skeleton-набор. Свой спиннер, своя «Ничего не найдено», свой текст ошибки — нарушение.
-11. **Формы — `@mantine/form` + `mantine-form-zod-resolver`.** Оверлеи — `useDisclosure`, кроме
+11. **Формы — `@mantine/form` со встроенным `schemaResolver`** (Mantine 9 поддерживает Standard
+    Schema): `import { useForm, schemaResolver } from '@mantine/form'`,
+    `validate: schemaResolver(schema, { sync: true })`. Отдельный пакет `mantine-form-zod-resolver`
+    не ставится. Оверлеи — `useDisclosure`, кроме
     случаев, где открытость должна быть в URL (тогда её определяет search-параметр).
 12. **Таблицы:** модель — TanStack Table v8 (колонки, сортировка, выделение, виртуализация),
     разметка и стили — Mantine `Table`. Не наоборот. Свыше 200 строк на экране — виртуализация.

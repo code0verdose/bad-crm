@@ -63,6 +63,29 @@ alwaysApply: true
     обоснованием.
 12. **Code-splitting по маршрутам** (`.lazy.tsx` / lazy route). Тяжёлое (редактор, крипто-модуль,
     календарь) — за Suspense отдельным чанком.
+13. **Общие zod-схемы живут в `shared/lib/validation`.** Схема без домена (пагинация, поиск, email,
+    деньги, id) — туда; схема, знающая про сущность, — в `units/<unit>/model/validation` и никогда
+    в `shared` (та же граница, что в п. 8). Общие поля списочного экрана уже собраны:
+    `shared/lib/validation/list-search.schema.ts` — `listSearchSchema` с `page`, `perPage`, `cursor`,
+    `q`. Маршрут её **расширяет** (`listSearchSchema.extend({…})`), а не переписывает: иначе
+    «страница 2» означает разное в бэклоге и в аудите. Значения приходят из адресной строки, поэтому
+    везде `z.coerce` (в URL только строки) и `.catch(…)` вместо исключения — мусорный параметр даёт
+    дефолт, а не белый экран на присланной ссылке.
+14. **`sort` — только через whitelist-фабрику** `sortSchema(keys, fallback)` /
+    `listSearchSchemaWithSort(keys, fallback)` из того же файла; маршрут перечисляет свои колонки,
+    принимаются `key` и `-key` (`-createdAt` — убывание, одним параметром). Это фабрика, а не поле
+    общей схемы, потому что допустимые ключи — свойство конкретного списка. **`z.string()` для
+    `sort` — нарушение:** значение уходит в `ORDER BY` на сервере, и «любая строка» здесь не
+    валидация, а поверхность инъекции. Неизвестный ключ откатывается к `fallback`.
+15. **Dev-only код включается build-time-константой, а не рантайм-флагом.** Единственный
+    выключатель — `IS_DEV_SERVER` из `shared/config` (`is-dev-server.constant.ts`): Vite
+    подставляет литерал до сборки, ветка сворачивается и вырезается вместе с импортом, и в
+    production-бандле кода нет. За рантайм-`if` (поле разобранного конфига, `localStorage`, профиль)
+    панель скачивает и парсит **каждый** пользователь, чтобы решить её не показывать. Поэтому же
+    `IS_DEV_SERVER` не входит в `clientEnvSchema` — всё, что проходит через схему, становится
+    чтением свойства и перестаёт сворачиваться. Условие — `import.meta.env.MODE === 'development'`,
+    **не** `DEV`: `DEV` истинен и под Vitest. Эталон — `app/query-devtools.component.tsx`
+    (devtools TanStack Query), монтирование — в `app/providers.tsx`.
 
 ## Примеры
 
@@ -127,7 +150,7 @@ import { BoardPage } from '@pages/board';   // ❌
 | ESLint `no-restricted-globals: ['fetch']` вне `shared/api/**` | raw-запросы |
 | ESLint `react-hooks/exhaustive-deps` + кастомное правило `no-effect-for-derived-state` | `useEffect` вместо вычисления при рендере |
 | `import/no-cycle` | циклические зависимости |
-| `test/architecture/layers.spec.ts` (обход графа импортов) | нарушение call-chain `ui → service → api` |
+| `test/architecture/layers.test.ts` (обход графа импортов) | нарушение call-chain `ui → service → api` |
 | `size-limit` по чанкам маршрутов | потерянный code-splitting |
 
 ## Исключения

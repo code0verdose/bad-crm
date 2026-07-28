@@ -10,7 +10,7 @@ updated: 2026-07-26
 маршрутов, ключевые экраны, дизайн-систему, паттерны взаимодействия, отражение прав, доступность,
 локализацию, адаптивность и границы первых майлстоунов.
 
-Стек зафиксирован и не пересматривается: React 19 + Vite + Mantine 7 + CSS Modules
+Стек зафиксирован и не пересматривается: React 19 + Vite + Mantine 9 + CSS Modules
 (`postcss-preset-mantine`, `light-dark()`), TanStack Router (file-based), TanStack Query v5, Zod 4,
 FSD «units». Tailwind не используется.
 
@@ -809,12 +809,13 @@ Error — inline `DataState` с retry, не тост. No-access: без `materia
 
 ## Дизайн-система
 
-Дизайн-система строится поверх Mantine 7: мы не заменяем её тему, а сужаем — фиксируем подмножество
+Дизайн-система строится поверх Mantine 9: мы не заменяем её тему, а сужаем — фиксируем подмножество
 токенов и компонентов, чтобы интерфейс оставался однородным.
 
 ### Токены
 
-Источник правды — тема Mantine (`app/theme/theme.ts`), которая экспортирует CSS-переменные
+Источник правды — тема Mantine (`app/theme/app-theme.config.ts`; не `theme.ts` — role-суффикс
+обязателен по `rules/naming-and-structure.mdc`), которая экспортирует CSS-переменные
 (`--mantine-*`). В CSS Modules используем только переменные, никаких литеральных цветов и пикселей.
 
 **Палитра.**
@@ -833,23 +834,60 @@ Error — inline `DataState` с retry, не тост. No-access: без `materia
 
 ```css
 :root {
-  --bc-surface:        light-dark(var(--mantine-color-white), var(--mantine-color-dark-7));
-  --bc-surface-raised: light-dark(var(--mantine-color-gray-0), var(--mantine-color-dark-6));
-  --bc-border:         light-dark(var(--mantine-color-gray-3), var(--mantine-color-dark-4));
-  --bc-text:           light-dark(var(--mantine-color-gray-9), var(--mantine-color-dark-0));
-  --bc-text-muted:     light-dark(var(--mantine-color-gray-6), var(--mantine-color-dark-2));
-  --bc-danger-surface: light-dark(var(--mantine-color-red-0), var(--mantine-color-red-9));
+  @mixin light-root {
+    --bc-surface:        var(--mantine-color-white);
+    --bc-surface-raised: var(--mantine-color-gray-0);
+    --bc-border:         var(--mantine-color-gray-3);
+    --bc-text:           var(--mantine-color-gray-9);
+    --bc-text-muted:     var(--mantine-color-gray-7);
+    --bc-danger-surface: var(--mantine-color-red-0);
+  }
+
+  @mixin dark-root {
+    --bc-surface:        var(--mantine-color-dark-7);
+    --bc-surface-raised: var(--mantine-color-dark-6);
+    --bc-border:         var(--mantine-color-dark-4);
+    --bc-text:           var(--mantine-color-dark-0);
+    --bc-text-muted:     var(--mantine-color-dark-1);
+    --bc-danger-surface: var(--mantine-color-red-9);
+  }
 }
 ```
 
-Тёмная тема — не отдельный набор классов, а `light-dark()` в объявлениях. Переключатель темы —
-`system | light | dark`, по умолчанию `system`.
+> **Поправка 2026-07-28 (STORY-004-03): `--bc-text-muted`.** До этой правки документ объявлял здесь
+> `light-dark(var(--mantine-color-gray-6), var(--mantine-color-dark-2))`. Обе половины не проходят
+> порог WCAG 2.1 AA (4.5:1), которого требует `rules/a11y.mdc`: измерено по палитре Mantine —
+> `gray-6` (`#868e96`) на белом даёт **3.32:1**, `dark-2` (`#828282`) на `dark-7` — **4.03:1**.
+> Код (`packages/client/src/app/styles/tokens.css`) объявляет на шаг темнее и светлее
+> соответственно — `gray-7` (**8.17:1**) и `dark-1` (**7.82:1**), и это закреплено тестом
+> `packages/client/test/theme/tokens.test.ts`, который считает контраст из самого файла токенов.
+>
+> **Это была ошибка в спецификации, а не отступление реализации.** Возврат к `gray-6`/`dark-2`
+> «чтобы совпадало с документом» уронит тест контраста и сделает вторичный текст нечитаемым для
+> части пользователей.
+>
+> Второе отличие того же блока — механика, а не значения: код объявляет обе схемы через
+> `@mixin light-root` / `@mixin dark-root`. **Закрыто (2026-07-28):** сниппет выше приведён к этой
+> механике, различие «`:root` — миксины, `*.module.css` — `light-dark()`» вынесено в таблицу ниже.
+
+**Тёмная тема — не отдельный набор классов, а одно объявление в двух схемах. Механизм зависит от
+того, где объявление стоит:**
+
+| Где | Чем объявляем | Почему именно так |
+|---|---|---|
+| `:root` / `html` — `app/styles/tokens.css` | `@mixin light-root` / `@mixin dark-root` | `postcss-preset-mantine` документирует дословно: «`light-dark` function does not work on `:root`/`html` element». Функция компилируется в **потомковый** селектор, поэтому на `:root` тёмная половина превращается в `[data-mantine-color-scheme='dark'] :root` — он не совпадает ни с чем, и тёмная тема молча исчезает. Тест не поймает: CSS собирается без ошибок |
+| `*.module.css` компонента | `light-dark(<светлое>, <тёмное>)` | Штатный документированный способ и правило проекта: `light-dark(red, blue)` в `.demo` даёт `.demo { color: red }` плюс `[data-mantine-color-scheme='dark'] .demo { color: blue }` |
+
+Переключатель темы — `system | light | dark`, по умолчанию `system`.
 
 **Spacing.** Только шкала Mantine: `xs 10 / sm 12 / md 16 / lg 20 / xl 32` (`var(--mantine-spacing-*)`).
 Промежуточные значения — через `calc(var(--mantine-spacing-md) / 2)`, произвольные пиксели запрещены.
 
 **Radius.** `xs 2 / sm 4 / md 8 / lg 16 / xl 32`. Правило: контролы — `sm`, карточки и панели — `md`,
 модалки и дроверы — `lg`, аватары и бейджи — `xl`/круг. Один экран не смешивает больше двух радиусов.
+**`theme.defaultRadius` задаётся явно — `'sm'`** (`app/theme/app-theme.config.ts`), а не берётся из
+дефолта Mantine: в Mantine 9 дефолт сменился с `sm` (4px) на `md` (8px), и опора на него сделала бы
+все контролы продукта на шаг круглее без единой правки в репозитории.
 
 **Типографика.** Системный стек + `ui-monospace` для кода, ключей задач, хешей и секретов. Шкала —
 `--mantine-font-size-{xs..xl}` и заголовки `h1..h6` из темы. Правила: на странице ровно один `h1`
@@ -902,8 +940,11 @@ Error — inline `DataState` с retry, не тост. No-access: без `materia
 3. **Стилизуем через `classNames` и CSS Modules**, а не через `style` и не через `sx`-подобные
    инлайны. Ad-hoc `style={{ marginTop: 12 }}` — ошибка ревью, вместо этого `Stack`/`Group`
    с токеном отступа.
-4. **Формы — только `@mantine/form` + `mantine-form-zod-resolver`.** Второй формовой библиотеки
-   в проекте нет.
+4. **Формы — только `@mantine/form`.** Второй формовой библиотеки в проекте нет. Схема Zod
+   подключается **встроенным** `schemaResolver` того же пакета (Mantine 9 поддерживает Standard
+   Schema): `import { useForm, schemaResolver } from '@mantine/form'`,
+   `validate: schemaResolver(schema, { sync: true })`. Отдельный пакет `mantine-form-zod-resolver`
+   не ставится — см. [ADR-0006](adr/0006-mantine-css-modules-no-tailwind.md#поправка-2026-07-28--мажорная-версия-mantine).
 5. **Оверлеи — только через `useDisclosure`**, кроме случаев, где открытость должна быть в URL
    (тогда открытость определяется search-параметром, а `useDisclosure` не нужен).
 6. **Таблицы.** `TanStack Table v8` отвечает за модель (колонки, сортировка, выделение,
@@ -934,6 +975,24 @@ Error — inline `DataState` с retry, не тост. No-access: без `materia
 
 1. Состояние фильтров — в search-параметрах, схема — Zod, подключение — `validateSearch`.
    Мульти-значения — повторяющиеся ключи или список через запятую, всегда валидируемый whitelist-ом.
+
+   **Общие поля списка не переписываются на каждом экране.** Они живут одной схемой в
+   `shared/lib/validation/list-search.schema.ts` — `listSearchSchema` с `page`, `perPage`, `cursor`,
+   `q`; маршрут её **расширяет**, а не повторяет. Место — `shared/lib/validation`, потому что в этих
+   полях нет домена; доменные фильтры остаются в `units/<unit>/model/validation`
+   (`rules/zod-validation.mdc` §11). Всё — `z.coerce` (в URL только строки) и `.catch(…)` вместо
+   исключения: значения приходят из адресной строки — присланная ссылка, старая закладка, правка
+   руками, — и экран, падающий на `?page=abc`, падает на ссылке, которую отправили коллеге. Мусор
+   заменяется дефолтом, страница рендерится.
+
+   **`sort` — только whitelist, и никак иначе.** Поле выдаётся фабрикой
+   `sortSchema(keys, fallback)` (или сразу `listSearchSchemaWithSort(keys, fallback)`), где маршрут
+   перечисляет свои колонки; принимаются `key` и `-key` (`-createdAt` — убывание, одним параметром,
+   без второго `order=desc`). Фабрика, а не поле общей схемы, потому что допустимые ключи —
+   свойство конкретного списка, и общего безопасного ответа нет: **значение уходит в `ORDER BY` на
+   сервере, поэтому `z.string()` здесь не валидация, а поверхность инъекции и 500 в ожидании первого
+   человека, который поправит URL руками.** Неизвестный ключ откатывается к `fallback` ровно так же,
+   как плохой `page`.
 2. Хук `use-<entity>-filters.hook.ts` в юните читает `Route.useSearch()`, отдаёт
    `{ filters, setFilter, resetFilters, queryParams }`. Запись — `navigate({ search: prev => …,
    replace: true })`, чтобы не засорять историю.
@@ -949,8 +1008,9 @@ Error — inline `DataState` с retry, не тост. No-access: без `materia
 
 ### Формы
 
-- Схема Zod в `units/<unit>/model/validation`, тип через `z.infer`, резолвер
-  `mantine-form-zod-resolver`. Ни одной ручной проверки в компоненте.
+- Схема Zod в `units/<unit>/model/validation`, тип через `z.infer`, подключение — встроенный
+  `schemaResolver` из `@mantine/form`: `validate: schemaResolver(schema, { sync: true })`.
+  Ни одной ручной проверки в компоненте.
 - Валидация — `onBlur` для полей и полностью на `submit`. Ошибка — inline у поля
   (`aria-describedby`), никогда не тост. При submit с ошибками фокус переводится на первое
   невалидное поле, а над формой появляется сводка «Исправьте N полей» с якорями.
@@ -1390,6 +1450,31 @@ src/shared/i18n/locales/
   (свежесть оставляем Query). Дополнительно: при входе в проект в фоне префетчатся доски проекта.
 - Данные маршрута грузятся через `loader` + `queryClient.ensureQueryData`, компонент читает те же
   ключи `useSuspenseQuery` — второго запроса не происходит.
+
+### Код только для разработки
+
+Всё, что нужно исключительно разработчику (панель devtools, отладочные оверлеи), включается
+**build-time-константой, а не рантайм-флагом**: `IS_DEV_SERVER` из `shared/config`
+(`shared/config/is-dev-server.constant.ts`). Разница не стилистическая — от неё зависит, попадёт ли
+код в бандл пользователя:
+
+- **Build-time.** Vite подставляет литерал до того, как сборщик увидит модуль, выражение
+  сворачивается в `null`, ветка становится мёртвой и вырезается вместе с импортом. В production
+  этого кода физически нет.
+- **Рантайм-флаг** (свойство разобранного объекта конфигурации, запись в `localStorage`, поле
+  профиля) свернуть нельзя: панель скачивается и парсится **каждым** пользователем, чтобы затем
+  решить себя не показывать.
+
+Поэтому `IS_DEV_SERVER` намеренно **не** входит в `clientEnvSchema`: всё, что проходит через схему,
+превращается в чтение свойства и перестаёт быть сворачиваемым.
+
+Условие — `import.meta.env.MODE === 'development'`, **не** `import.meta.env.DEV`: `DEV` истинен и
+под Vitest, а прогон тестов — не dev-сервер, и плавающая панель попала бы в дерево доступности
+экранов, у которых её никогда не бывает. Это единственное легальное чтение `import.meta.env` вне
+схемы окружения, и оно остаётся внутри `shared/config`, где ESLint держит всё семейство.
+
+Так подключены devtools TanStack Query (`app/query-devtools.component.tsx`, монтируются в
+`app/providers.tsx`).
 
 ### Виртуализация
 
