@@ -12,11 +12,12 @@ Notion-подобные документы, Obsidian-подобная база �
 **Лицензия:** AGPL-3.0-or-later. **Языки интерфейса:** EN и RU (равноправные).
 **Модель поставки:** `docker compose up` на одном хосте; SaaS-версии нет.
 
-### Текущее состояние — M1, EPIC-004 закрыт
+### Текущее состояние — M1, EPIC-005 закрыт, EPIC-006 в работе
 
-Спецификация завершена (фаза 0). EPIC-001…EPIC-004 — в статусе `review`. Следующий по
-[roadmap](docs/product/roadmap.md) — EPIC-005. Актуальный борд — [`epics/README.md`](epics/README.md)
-(генерируется из frontmatter).
+Спецификация завершена (фаза 0). EPIC-001…EPIC-005 — в статусе `review`; EPIC-006 —
+`in-progress`: код поставлен и работает end-to-end, статус меняется на `review` только на зелёном
+commit-гейте. Следующий по [roadmap](docs/product/roadmap.md) — EPIC-007. Актуальный борд —
+[`epics/README.md`](epics/README.md) (генерируется из frontmatter).
 
 | Артефакт | Сколько | Где |
 |---|---|---|
@@ -24,7 +25,7 @@ Notion-подобные документы, Obsidian-подобная база �
 | Правила разработки | 34 файла `.mdc` | `rules/` |
 | Проектные агенты-ревьюеры | 9 | `.claude/agents/` |
 | Эпики | 46 (`epic.md`) | `epics/` |
-| Пользовательские истории | 113 (написаны для M1–M2) | `epics/*/stories/` |
+| Пользовательские истории | 114 (написаны для M1–M2) | `epics/*/stories/` |
 
 **Что уже работает:**
 
@@ -44,12 +45,27 @@ Notion-подобные документы, Obsidian-подобная база �
   optimistic-хелперами, типизированный клиент `openapi-fetch` с auth- и idempotency-middleware,
   TanStack Router с файловыми маршрутами, гардами и границами состояний, оболочка приложения
   (сайдбар, шапка, хлебные крошки, skip-link, объявление смены маршрута).
+- **EPIC-005** — мультиарендность на RLS: роли БД (`app_migrator`, `app_user`, `app_auth`,
+  `app_auth_definer`, `backup_role`) из `prisma/sql/00-bootstrap-roles.sql`, канонические политики с
+  `USING`+`WITH CHECK` и `FORCE RLS`, `withTenant`/`guardedClient`, isolation-тесты с положительным
+  контролем на реальном Postgres через Testcontainers.
+- **EPIC-006** — аутентификация: регистрация организации с владельцем, вход, ротация refresh-токена
+  с обнаружением повторного использования (отзыв всего семейства), выход, список сессий и их отзыв,
+  смена пароля, восстановление по письму (экраны `/forgot-password` и `/reset-password/$token`).
+  Пароли — argon2id; access-токен 15 минут только в памяти, refresh — opaque в httpOnly cookie,
+  в БД только SHA-256. Резолв учётной записи до того, как известна организация — **четыре**
+  `SECURITY DEFINER` функции (`auth_lookup_user`, `auth_lookup_users_by_email`,
+  `auth_lookup_session`, `auth_lookup_password_reset`) во владении роли `app_auth_definer` без права
+  подключения. Ограничитель частоты на Redis, fail-closed. Почта — nodemailer, отправка после
+  коммита транзакции; при `SMTP_URL` без `MAIL_FROM` почта отключается с предупреждением, а не
+  роняет старт.
 
-**Чего ещё нет:** сессий и аутентификации (EPIC-006) — контекст роутера несёт только `auth.status`,
-а bootstrap сессии нет; переключателя организации и юнита `units/organization` (заблокирован тем же);
-каталогов локалей EN/RU — в UI проставлены ключи, но переводить их нечем (EPIC-008); полной
-дизайн-системы и Storybook (EPIC-007); доменных юнитов (задачи, документы, время — M3+);
-Playwright-харнесса (`packages/e2e` — пустая заготовка, EPIC-010).
+**Чего ещё нет:** проверки **capability** на маршрутах — реестр объявляет право или причину быть
+публичным, но ни один маршрут пока не гейтится правом из каталога, проверяется только владение
+(EPIC-011); переключателя организации и юнита `units/organization`; каталогов локалей EN/RU — в UI
+проставлены ключи, но переводить их нечем (EPIC-008); полной дизайн-системы и Storybook (EPIC-007);
+доменных юнитов (задачи, документы, время — M3+); Playwright-харнесса (`packages/e2e` — пустая
+заготовка, EPIC-010).
 
 **Следствие для любой работы в этом репозитории:** проверяй по факту, а не по этому списку — он
 устаревает быстрее кода. Не утверждай «работает», не запустив.
@@ -140,7 +156,7 @@ Playwright-харнесса (`packages/e2e` — пустая заготовка,
 - **имена сущностей, таблиц, полей** → [`docs/architecture/data-model.md`](docs/architecture/data-model.md);
 - **права и роли** → [`docs/security/permission-model.md`](docs/security/permission-model.md);
 - **криптография и vault** → [`docs/security/e2ee-design.md`](docs/security/e2ee-design.md);
-- **контракт API** → `docs/api/openapi.yaml` (появится в EPIC-003);
+- **контракт API** → [`docs/api/openapi.yaml`](docs/api/openapi.yaml);
 - **термины домена (ubiquitous language)** → [`docs/product/glossary.md`](docs/product/glossary.md).
 
 ---
@@ -289,7 +305,7 @@ pnpm turbo run typecheck lint build test
 прогресс. Собирается скриптом `~/.claude/skills/pm/sync-board.sh`; руками не правится. Сгенерирован,
 все 46 эпиков в таблице.
 
-**Истории M3–M9 не написаны намеренно.** 113 историй существуют для M1–M2. Истории следующего
+**Истории M3–M9 не написаны намеренно.** 114 историй существуют для M1–M2. Истории следующего
 майлстоуна создаются на его kickoff командой `/pm epic <тема>` — писать их за полгода до реализации
 значит переписывать их дважды.
 

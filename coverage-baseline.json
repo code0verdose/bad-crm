@@ -10,8 +10,8 @@
       "branches": 100
     },
     "packages/server": {
-      "lines": 99.11,
-      "branches": 97.34
+      "lines": 99.23,
+      "branches": 97.45
     },
     "packages/client": {
       "lines": 100,
