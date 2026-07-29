@@ -41,7 +41,7 @@ updated: 2026-07-26
 | Файлы | `@aws-sdk/client-s3` + `s3-request-presigner` | 3.x | S3-совместимость: MinIO локально, любой S3 в проде; presigned upload минует Node | [ADR-0015](./adr/0015-s3-file-storage-presigned-urls.md) |
 | Поиск | Meilisearch | 1.x | Мгновенный typo-tolerant поиск, MIT, лёгкий по RAM; **опционален** (профиль `minimal` → `postgres-fts.adapter.ts`) | [ADR-0011](./adr/0011-meilisearch-permission-aware-search.md) |
 | Realtime | `socket.io` + `@socket.io/redis-streams-adapter` | 4.x | Комнаты по тенанту/сущности, авто-fallback, горизонтальное масштабирование | [ADR-0010](./adr/0010-realtime-socketio-redis-adapter.md) |
-| Почта | nodemailer | 6.x | SMTP без вендор-лока; Mailpit в dev (MailHog заброшен с 2020) | — |
+| Почта | nodemailer | 9.x | SMTP без вендор-лока; Mailpit в dev (MailHog заброшен с 2020) | — |
 | AI | `@anthropic-ai/sdk`, `openai` (в т.ч. `openai_compat` и `openrouter` через OpenAI-совместимый клиент) | latest | Четыре вида провайдера за одним портом; **опционально**, ключи вводит администратор организации в UI и они хранятся зашифрованными в `AIProvider` | [ADR-0014](./adr/0014-ai-provider-abstraction.md) |
 | Тесты | Vitest, supertest, Testcontainers, Playwright, RTL | latest | Один раннер на монорепо; реальный Postgres — единственный способ проверить RLS | — |
 | Клиент | React 19, Vite, Mantine 9, TanStack Query v5 / Router, i18next | latest | Детали — в [`ux-architecture.md`](./ux-architecture.md) | [ADR-0005](./adr/0005-fsd-units-frontend-architecture.md), [ADR-0006](./adr/0006-mantine-css-modules-no-tailwind.md), [ADR-0007](./adr/0007-tanstack-router-and-query.md) |
@@ -783,7 +783,7 @@ const envSchema = z.object({
   S3_ACCESS_KEY: z.string().min(1), S3_SECRET_KEY: z.string().min(1),
   S3_REGION: z.string().default('us-east-1'), S3_FORCE_PATH_STYLE: z.stringbool().default(true),
 
-  SMTP_URL: z.url().optional(),                        // нет → письма пишутся в лог
+  SMTP_URL: z.url().optional(),                        // нет → операция отвечает 503
   MEILI_HOST: z.url().optional(),                      // нет → поиск деградирует до postgres-fts
   MEILI_MASTER_KEY: z.string().optional(),
   // AI-провайдеры настраиваются администратором организации в UI и хранятся в таблице
@@ -816,11 +816,21 @@ export const loadEnv = (): Env => envSchema.parse(process.env);   // parse, не
 |---|---|
 | Meilisearch | `SearchPort` → `postgres-fts.adapter.ts` (`tsvector` + `pg_trgm`, permission-фильтрация та же); очередь `search-index` — no-op; в UI баннер «расширенный поиск недоступен» |
 | AI | AI-функции скрыты в UI и возвращают 501 `feature_disabled`; очередь `embeddings` — no-op |
-| SMTP | Письма пишутся в лог на уровне `info` (dev) / операция падает с понятной ошибкой (prod) |
+| SMTP | Операция отвечает 503 `mail_not_configured` — и в dev тоже. **Письмо в лог не пишется никогда** (правка 2026-07-28): единственное письмо ядра аутентификации несёт одноразовый токен сброса пароля внутри ссылки, и запись такого письма на уровне `info` раздаёт сброс пароля каждому, кто читает логи, — включая агрегатор, куда логи уезжают целиком. Это прямо противоречило бы `rules/observability.mdc` и разделу «Что нельзя логировать никогда». Для dev ответ — Mailpit из `docker-compose.yml`, он в профиле `default` |
 | OTel | Трейсы не экспортируются, логи и метрики работают |
 
 Здоровье выключенных сервисов не влияет на `/ready` — иначе инстанс в профиле `minimal`
 никогда не станет готовым.
+
+**Деградация, которая опциональной не является** (дополнено 2026-07-29). Две подсистемы попадают в
+ту же таблицу по форме, но не по смыслу: без них приложение не деградирует, а перестаёт пускать
+людей. Обе поэтому влияют на `/ready` — инстанс в таком состоянии должен выпасть из балансировки,
+а не отвечать 503 на каждый вход.
+
+| Сервис недоступен | Что происходит |
+|---|---|
+| **Redis** | Ограничитель попыток не может считать, а несчитаемый вход — это вход без ограничения, поэтому `/auth/{login,refresh,register}` отвечают **503 `service_unavailable`** (fail closed, `rules/security.mdc`). `/healthz` при этом жив: процесс исправен, недоступна зависимость. Симптом для оператора — «приложение отвечает, войти нельзя»; смотреть `/readyz`, поле `redis` |
+| **`DATABASE_AUTH_URL` не задана** | Подключения, которое находит учётную запись до того, как известна организация, не существует — вход невозможен. При старте пишется строка `warn` **до** открытия порта, в `/readyz` появляется `authentication: disabled`, первый вход отвечает 503 `service_unavailable`. На HTTP-статус `/ready` это не влияет: инсталляция, которая переменную никогда не задавала, иначе просто не поднялась бы |
 
 ---
 

@@ -96,3 +96,14 @@ repository — the opposite of what an allowlist is for.\
 """
 regexTarget = "line"
 regexes = ['''\.o7-signature''']
+
+[[allowlists]]
+description = """
+A password the tests assert is **refused**, not one that opens anything. `weak-password.util.ts` \
+rejects keyboard runs, and two suites feed it this exact string to prove the refusal reaches the \
+caller as 422 and that the value never appears in the response. Named here as well as inline \
+because `rules/security.mdc` («Исключения») wants every code exemption to exist twice, so that \
+deleting one marker cannot quietly change the verdict.\
+"""
+regexTarget = "line"
+regexes = ['''password: .qwertyuiop12.''']

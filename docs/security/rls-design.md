@@ -55,8 +55,19 @@ policy-слой домена. Она не защищает от суперпол
 |---|---|---|---|
 | `app_user` | процесс приложения (HTTP + воркеры), 99 % запросов | **подчиняется**, `BYPASSRLS` нет | ничем не владеет |
 | `app_migrator` | `prisma migrate deploy`, обслуживание партиций, ручные операции | владелец схемы и таблиц → **поэтому `FORCE`** | владеет схемой `public` и всеми объектами |
-| `app_auth` | логин/refresh до определения организации; владелец `SECURITY DEFINER`-функций | `BYPASSRLS` | владеет функциями-резолверами |
+| `app_auth` | логин/refresh до определения организации — **единственная** роль подключения на этом пути | без `BYPASSRLS`, **и без единой табличной привилегии**; вся доступная поверхность — `EXECUTE` на трёх функциях | ничем не владеет |
+| `app_auth_definer` | никто: `NOLOGIN`, подключиться под ней нельзя | `BYPASSRLS` | владеет `SECURITY DEFINER`-функциями-резолверами и имеет `SELECT` ровно на три таблицы |
 | `backup_role` | только `pg_dump` и снятие контрольных счётчиков строк | `BYPASSRLS` | ничем не владеет, прав на запись нет |
+
+> **Поправка 2026-07-28 — почему ролей стало две.** Исходно эта таблица описывала одну роль
+> `app_auth`, которая и подключается, и владеет функциями. На реализации выяснилось, что так не
+> работает: `SECURITY DEFINER` исполняется с правами владельца, а `BYPASSRLS` снимает **политики**,
+> но не **привилегии** — владелец без `SELECT` получает `permission denied for table users` изнутри
+> собственной функции (воспроизведено на PostgreSQL 16.14). Выдать `SELECT` роли, под которой
+> открывается соединение, значило бы сделать `DATABASE_AUTH_URL` учётными данными, дампящими все
+> учётки всех организаций — то есть ровно тем, чего разделение ролей избегает. Поэтому владение
+> вынесено в `NOLOGIN`-роль: привилегии есть у того, под кем нельзя подключиться, а у того, под кем
+> подключаются, нет ничего, кроме права вызвать три функции с фиксированной сигнатурой.
 
 Смысл разделения: роли с `BYPASSRLS` не имеют прав на запись ни в одну доменную таблицу.
 У `app_auth` поверхность ограничена несколькими функциями с фиксированной сигнатурой; у
@@ -102,6 +113,10 @@ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'backup_role') THEN
     CREATE ROLE backup_role  LOGIN;
   END IF;
+  -- NOLOGIN и остаётся такой: под этой ролью не подключается никто, она только владеет функциями.
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_auth_definer') THEN
+    CREATE ROLE app_auth_definer NOLOGIN;
+  END IF;
 END $$;
 
 -- Атрибуты выставляются на КАЖДОМ прогоне, а не только при создании, и это принципиально.
@@ -112,8 +127,13 @@ END $$;
 -- отсутствие изоляции на инсталляции, чей bootstrap не напечатал ни одной ошибки.
 ALTER ROLE app_migrator LOGIN NOINHERIT NOSUPERUSER NOCREATEROLE NOCREATEDB NOREPLICATION NOBYPASSRLS;
 ALTER ROLE app_user     LOGIN NOINHERIT NOSUPERUSER NOCREATEROLE NOCREATEDB NOREPLICATION NOBYPASSRLS;
-ALTER ROLE app_auth     LOGIN NOINHERIT NOSUPERUSER NOCREATEROLE NOCREATEDB NOREPLICATION   BYPASSRLS;
+-- app_auth — БЕЗ BYPASSRLS. Обходит политики та роль, под которой исполняются тела резолверов
+-- (app_auth_definer), а не та, под которой открывается соединение: у app_auth нет ни одной табличной
+-- привилегии, применять политику не к чему. Оставить ей BYPASSRLS «на всякий случай» — значит
+-- потерять второй рубеж молча: первый же `GRANT … TO app_auth` станет чтением по всем организациям.
+ALTER ROLE app_auth     LOGIN NOINHERIT NOSUPERUSER NOCREATEROLE NOCREATEDB NOREPLICATION NOBYPASSRLS;
 ALTER ROLE backup_role  LOGIN NOINHERIT NOSUPERUSER NOCREATEROLE NOCREATEDB NOREPLICATION   BYPASSRLS;
+ALTER ROLE app_auth_definer NOLOGIN NOINHERIT NOSUPERUSER NOCREATEROLE NOCREATEDB NOREPLICATION BYPASSRLS;
 
 -- Членства, выданные прошлой инсталляцией, снимаются здесь: NOINHERIT сам по себе только отменяет
 -- автоматическое применение прав — членом можно оставаться и получить их через SET ROLE.
@@ -128,8 +148,13 @@ BEGIN
     FROM   pg_auth_members am
     JOIN   pg_roles granted ON granted.oid = am.roleid
     JOIN   pg_roles member  ON member.oid  = am.member
-    WHERE  granted.rolname IN ('app_migrator', 'app_user', 'app_auth', 'backup_role')
-      AND  member.rolname  IN ('app_migrator', 'app_user', 'app_auth', 'backup_role')
+    WHERE  granted.rolname IN ('app_migrator', 'app_user', 'app_auth', 'app_auth_definer',
+                               'backup_role')
+      AND  member.rolname  IN ('app_migrator', 'app_user', 'app_auth', 'app_auth_definer',
+                               'backup_role')
+      -- Единственная санкционированная пара: `ALTER FUNCTION … OWNER TO app_auth_definer` требует
+      -- членства в целевой роли, а миграция идёт под app_migrator. Выдаётся ниже с INHERIT FALSE.
+      AND  NOT (granted.rolname = 'app_auth_definer' AND member.rolname = 'app_migrator')
   LOOP
     EXECUTE format('REVOKE %I FROM %I', membership.granted_role, membership.member_role);
     RAISE WARNING 'снято членство % в %', membership.member_role, membership.granted_role;
@@ -144,12 +169,16 @@ ALTER ROLE app_auth     PASSWORD
   :'auth_pw';
 ALTER ROLE backup_role  PASSWORD
   :'backup_pw';
+
+-- app_auth_definer — NOLOGIN, пароля у неё нет и быть не должно.
+GRANT app_auth_definer TO app_migrator WITH INHERIT FALSE;
 ```
 
 ```sql
 -- база принадлежит мигратору, PUBLIC не имеет к ней ничего
 CREATE DATABASE bad_crm OWNER app_migrator;
 REVOKE ALL ON DATABASE bad_crm FROM PUBLIC;
+-- app_auth_definer здесь намеренно отсутствует: она NOLOGIN, CONNECT ей не нужен.
 GRANT CONNECT ON DATABASE bad_crm TO app_user, app_auth, backup_role;
 ```
 
@@ -157,7 +186,7 @@ GRANT CONNECT ON DATABASE bad_crm TO app_user, app_auth, backup_role;
 -- \c bad_crm  · дальше внутри базы
 ALTER SCHEMA public OWNER TO app_migrator;
 REVOKE ALL   ON SCHEMA public FROM PUBLIC;      -- в PG15+ CREATE у PUBLIC уже снят, но фиксируем явно
-GRANT  USAGE ON SCHEMA public TO app_user, app_auth, backup_role;
+GRANT  USAGE ON SCHEMA public TO app_user, app_auth, backup_role, app_auth_definer;
 
 CREATE EXTENSION IF NOT EXISTS pgcrypto;        -- gen_random_uuid()
 CREATE EXTENSION IF NOT EXISTS citext;          -- User.email
@@ -1321,9 +1350,11 @@ WHERE  EXISTS (
 SELECT m.rolname, 'может SET ROLE в ' || g.rolname AS problem
 FROM   pg_roles m CROSS JOIN pg_roles g
 WHERE  m.rolname <> g.rolname
-  AND  m.rolname IN ('app_user','app_migrator','app_auth','backup_role')
-  AND  g.rolname IN ('app_user','app_migrator','app_auth','backup_role')
-  AND  pg_has_role(m.rolname, g.oid, 'MEMBER');
+  AND  m.rolname IN ('app_user','app_migrator','app_auth','app_auth_definer','backup_role')
+  AND  g.rolname IN ('app_user','app_migrator','app_auth','app_auth_definer','backup_role')
+  AND  pg_has_role(m.rolname, g.oid, 'MEMBER')
+  -- единственная санкционированная пара, см. bootstrap
+  AND  NOT (m.rolname = 'app_migrator' AND g.rolname = 'app_auth_definer');
 ```
 
 Как это устроено в коде (три файла, ни один не дублирует другой):
@@ -1640,6 +1671,27 @@ CASCADE` под владельцем в режиме обслуживания, �
 Три места, где обычный «контекст из JWT → `withTenant`» не работает. Каждое — потенциальная дыра,
 поэтому каждое описано целиком.
 
+> **Несущий элемент, который легко потерять (добавлено 2026-07-29).** Функции-резолверы этого
+> раздела помечены комментарием `bad-crm:auth-resolver`, и маркер — не документация, а
+> **классификатор**: `01-grants.sql` по нему решает, какой `SECURITY DEFINER`-функции вернуть
+> владельца и права после восстановления из бэкапа. У этого свойства есть неприятная особенность:
+> `pg_dump --no-comments` его стирает, и до 2026-07-29 потеря деградировала **в открытую сторону** —
+> файл грантов печатал `0 security definer functions` и завершался успешно, оставляя резолверы во
+> владении `app_migrator` с правом `EXECUTE` у `PUBLIC`.
+>
+> Измерено на живом кластере, и цепочка оказалась глубже, чем «функцию можно вызвать»:
+> `app.maintenance` — обычная GUC, её вправе выставить любая роль, а тело восстановленной функции
+> исполняется под `app_migrator`, то есть под ролью, для которой написана политика
+> `maintenance_access`. В результате `app_user` — роль, под которой идёт каждый HTTP-запрос и под
+> которой выполнилась бы SQL-инъекция, — получал полный кросс-тенантный дамп `users` вместе с
+> `password_hash`.
+>
+> Поэтому шаг проверки сделан **fail-closed**: функция, которая объявлена `SECURITY DEFINER`, не
+> принадлежит расширению и не несёт маркера, останавливает применение грантов. Единственное
+> исключение — функции установленных расширений: у оператора нет способа их исправить (любой `ALTER`
+> не переживёт следующего обновления расширения), а отказ оставил бы восстановленную базу вообще без
+> прав, поэтому для них — предупреждение, а не отказ.
+
 ### Путь 1. Логин: организация ещё не известна
 
 Проблема курицы и яйца: чтобы прочитать `users`, нужен `app.organization_id`; чтобы его узнать,
@@ -1651,9 +1703,14 @@ CASCADE` под владельцем в режиме обслуживания, �
 оракулом «в каких организациях есть такой e-mail».
 
 ```sql
--- функции пути аутентификации принадлежат app_auth (единственная роль с BYPASSRLS)
-SET ROLE app_auth;   -- выполняется миграцией под app_migrator, который членом app_auth не является;
-                     -- на практике: CREATE FUNCTION ... ; ALTER FUNCTION ... OWNER TO app_auth;
+-- Функции пути аутентификации принадлежат app_auth_definer — NOLOGIN-роли с BYPASSRLS и SELECT
+-- ровно на три таблицы. НЕ app_auth: тело SECURITY DEFINER исполняется с правами ВЛАДЕЛЬЦА, а
+-- BYPASSRLS снимает политики, но не привилегии, поэтому владелец без SELECT получает
+-- `permission denied for table users` изнутри собственной функции — а выдать этот SELECT роли,
+-- под которой открывается соединение, значит сделать DATABASE_AUTH_URL дампом всех учёток.
+-- На практике: CREATE FUNCTION ... ; ALTER FUNCTION ... OWNER TO app_auth_definer;
+-- (миграция идёт под app_migrator, которому bootstrap выдаёт членство в app_auth_definer
+--  WITH INHERIT FALSE — иначе ALTER ... OWNER TO отвечает `42501 must be able to SET ROLE`).
 
 CREATE OR REPLACE FUNCTION auth_lookup_user(p_email citext, p_org_slug text)
 RETURNS TABLE (
@@ -1679,9 +1736,15 @@ AS $$
     AND  o.deleted_at IS NULL
 $$;
 
-ALTER FUNCTION auth_lookup_user(citext, text) OWNER TO app_auth;
+ALTER FUNCTION auth_lookup_user(citext, text) OWNER TO app_auth_definer;
 REVOKE ALL     ON FUNCTION auth_lookup_user(citext, text) FROM PUBLIC;
 GRANT  EXECUTE ON FUNCTION auth_lookup_user(citext, text) TO   app_auth;
+
+-- Маркер, по которому prisma/sql/01-grants.sql узнаёт резолверы этого проекта и восстанавливает им
+-- владельца и права после pg_restore. Комментарий — единственное из трёх свойств (владелец, ACL,
+-- комментарий), которое переживает `--no-privileges`; классификация по одному prosecdef захватила бы
+-- и функции расширений, установленных в public.
+COMMENT ON FUNCTION auth_lookup_user(citext, text) IS 'bad-crm:auth-resolver — ...';
 ```
 
 Что здесь важно построчно:
@@ -1702,8 +1765,20 @@ GRANT  EXECUTE ON FUNCTION auth_lookup_user(citext, text) TO   app_auth;
 без поддомена. Он опаснее (это готовый оракул «существует ли такой e-mail в системе»), поэтому
 обставлен ограничениями:
 
+> **Поправка 2026-07-28 — где именно стоит защита от раскрытия списка организаций.** Набросок ниже
+> прячет её в самой функции: при `n <> 1` не отдавать ничего, кроме счётчика. Реализация так не
+> может — договор (`OrganizationSelectionRequired` в `docs/api/openapi.yaml`) обязан вернуть список
+> организаций после **успешной** проверки пароля, а функция, которая при двух совпадениях не отдаёт
+> хешей, делает эту проверку невозможной. Поэтому реализованная `auth_lookup_users_by_email`
+> возвращает все совпадения (`LIMIT 8`), а защита стоит там, где проходит настоящая граница
+> раскрытия — **в use-case**: наружу уходят только те организации, чей хеш пароль действительно
+> открыл. Свойство от этого не ослабло, а стало проверяемым: тест «три кандидата, пароль подходит
+> двум → в ответе две» ловит подмену списка `verified` на `candidates`, и эта мутация в ходе работы
+> действительно выжила первую версию теста. `LIMIT 8` — граница стоимости: один и тот же адрес в
+> девяти организациях не превращает вход в девять проверок Argon2id по 19 MiB каждая.
+
 ```sql
-CREATE OR REPLACE FUNCTION auth_lookup_user_by_email(p_email citext)
+CREATE OR REPLACE FUNCTION auth_lookup_users_by_email(p_email citext)
 RETURNS TABLE (
   user_id         uuid,
   organization_id uuid,
@@ -1736,9 +1811,9 @@ BEGIN
     WHERE  u.email = p_email AND u.deleted_at IS NULL AND o.deleted_at IS NULL;
 END $$;
 
-ALTER FUNCTION auth_lookup_user_by_email(citext) OWNER TO app_auth;
-REVOKE ALL     ON FUNCTION auth_lookup_user_by_email(citext) FROM PUBLIC;
-GRANT  EXECUTE ON FUNCTION auth_lookup_user_by_email(citext) TO   app_auth;
+ALTER FUNCTION auth_lookup_users_by_email(citext) OWNER TO app_auth_definer;
+REVOKE ALL     ON FUNCTION auth_lookup_users_by_email(citext) FROM PUBLIC;
+GRANT  EXECUTE ON FUNCTION auth_lookup_users_by_email(citext) TO   app_auth;
 ```
 
 При `match_count > 1` API отвечает «уточните организацию» — и это единственная ситуация, в которой
@@ -1758,7 +1833,7 @@ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public AS $$
   WHERE  s.refresh_token_hash = p_refresh_hash
 $$;
 
-ALTER FUNCTION auth_lookup_session(bytea) OWNER TO app_auth;
+ALTER FUNCTION auth_lookup_session(bytea) OWNER TO app_auth_definer;
 REVOKE ALL     ON FUNCTION auth_lookup_session(bytea) FROM PUBLIC;
 GRANT  EXECUTE ON FUNCTION auth_lookup_session(bytea) TO   app_auth;
 ```
@@ -1783,7 +1858,7 @@ interface AuthUserRow {
 export async function lookupUserForLogin(email: string, orgSlug: string | null): Promise<AuthUserRow | null> {
   const rows = orgSlug
     ? await authPrisma.$queryRaw<AuthUserRow[]>`SELECT * FROM auth_lookup_user(${email}::citext, ${orgSlug})`
-    : await authPrisma.$queryRaw<AuthUserRow[]>`SELECT * FROM auth_lookup_user_by_email(${email}::citext)`;
+    : await authPrisma.$queryRaw<AuthUserRow[]>`SELECT * FROM auth_lookup_users_by_email(${email}::citext)`;
   return rows[0] ?? null;
 }
 ```
@@ -1887,7 +1962,7 @@ BEGIN
            r.resource_type::text, r.resource_id, r.requires_auth, r.password_hash;
 END $$;
 
-ALTER FUNCTION secure_link_resolve(bytea, text, text) OWNER TO app_auth;
+ALTER FUNCTION secure_link_resolve(bytea, text, text) OWNER TO app_auth_definer;
 REVOKE ALL     ON FUNCTION secure_link_resolve(bytea, text, text) FROM PUBLIC;
 -- вызывает обычный обработчик запроса, поэтому EXECUTE выдаётся app_user
 GRANT  EXECUTE ON FUNCTION secure_link_resolve(bytea, text, text) TO app_user;
@@ -2042,7 +2117,7 @@ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public AS $$
   SELECT o.id FROM organizations o WHERE o.deleted_at IS NULL ORDER BY o.created_at
 $$;
 
-ALTER FUNCTION tenant_list_organization_ids() OWNER TO app_auth;
+ALTER FUNCTION tenant_list_organization_ids() OWNER TO app_auth_definer;
 REVOKE ALL     ON FUNCTION tenant_list_organization_ids() FROM PUBLIC;
 GRANT  EXECUTE ON FUNCTION tenant_list_organization_ids() TO app_user;
 ```
@@ -2449,12 +2524,21 @@ CREATE INDEX idx_outbox_pending
 `tenancy-rls-auditor`. Ручное ревью здесь ненадёжно: 95 почти одинаковых блоков SQL читаются
 по диагонали.
 
-**3. `BYPASSRLS` у `app_auth`.** Это единственная роль в системе, обходящая изоляцию. Её реальная
-граница — не атрибут роли, а **список выданных ей грантов и список функций, которыми она владеет**.
-Расширение этого списка (кто-то добавил ещё одну «удобную» функцию, кто-то выдал `SELECT` на
-таблицу) молча расширяет и поверхность обхода. Правила: функции `app_auth` перечислены в этом
+**3. `BYPASSRLS` у `app_auth_definer`.** Это единственная роль пути аутентификации, обходящая
+изоляцию, и подключиться под ней нельзя — она `NOLOGIN`. Её реальная граница — не атрибут роли, а
+**список таблиц, на которые ей выдан `SELECT`, и список функций, которыми она владеет**. Расширение
+любого из двух (кто-то добавил ещё одну «удобную» функцию, кто-то дописал таблицу в `definer_reads`
+файла `01-grants.sql`) молча расширяет поверхность обхода. Правила: функции перечислены в этом
 документе, любое добавление проходит через `tenancy-rls-auditor`, `EXECUTE` выдаётся точечно, а не
 `PUBLIC`, и на все три функции стоит rate-limit на HTTP-уровне.
+
+`app_auth` — роль, под которой открывается соединение, — `BYPASSRLS` **не имеет**: у неё нет ни
+одной табличной привилегии, применять политику не к чему. Атрибут на ней ничего не менял бы сегодня
+и снял бы второй рубеж завтра: первый же `GRANT … TO app_auth` — от миграции, от оператора, от
+восстановления, расширившего ACL, — стал бы чтением по всем организациям, и ни один поведенческий
+тест разницы бы не увидел. Каталог проверяется тестом
+`packages/server/test/integration/db/role-catalog.test.ts`, согласие трёх артефактов (bootstrap SQL,
+эта таблица ролей, preflight `postgres.check.ts`) — тестом `test/infra/role-canon.test.ts`.
 
 **4. Суперпользователь и владелец инсталляции.** `postgres`, `app_migrator` в режиме
 обслуживания, доступ к диску, реплике или бэкапу — всё это вне зоны действия RLS. Для self-hosted

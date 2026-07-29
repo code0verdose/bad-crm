@@ -318,11 +318,14 @@ gpg --decrypt backup-2026-07-26.tar.gz.gpg | tar xzf -
 docker compose exec -T postgres \
   psql -U "${POSTGRES_USER:-bad_crm}" -d postgres -v ON_ERROR_STOP=1 -c "DROP DATABASE IF EXISTS bad_crm WITH (FORCE);"
 
-# 3. РОЛИ И БАЗА. Идёт первым и создаёт всё, чего нет: четыре роли, саму базу
+# 3. РОЛИ И БАЗА. Идёт первым и создаёт всё, чего нет: пять ролей, саму базу
 #    (`CREATE DATABASE … OWNER app_migrator`), владельца схемы `public`, CONNECT и USAGE.
 #    Именно поэтому шага «CREATE DATABASE вручную» здесь нет: на новом хосте он падал бы
 #    с `role "app_migrator" does not exist` — роли к этому моменту ещё не создан.
-pnpm db:bootstrap   # роли app_migrator / app_user / app_auth / backup_role + база, идемпотентно
+#    Пятая роль — `app_auth_definer`, NOLOGIN: она владеет SECURITY DEFINER-резолверами
+#    аутентификации и держит табличные привилегии, с которыми исполняются их тела. Пароля у неё нет
+#    именно потому, что подключаться под ней нельзя. Шаг 7 без неё не отработает.
+pnpm db:bootstrap   # роли app_migrator / app_user / app_auth / app_auth_definer / backup_role + база, идемпотентно
 
 # 4. СУПЕРПОЛЬЗОВАТЕЛЕМ создать расширения.
 #    Дамп содержит `CREATE EXTENSION IF NOT EXISTS vector`, а pgvector не является
@@ -342,8 +345,23 @@ docker compose exec -T postgres \
 #      pg_restore: error: could not execute query: ERROR:  must be owner of extension btree_gist
 #    Отсюда фильтрация оглавления: пять записей выбрасываются, всё остальное восстанавливается.
 #    Терять нечего — эти комментарии уже созданы в базе шагом 4 самим `CREATE EXTENSION`.
-#    `--no-comments` не годится: он снёс бы и комментарии к таблицам и колонкам, которых нет
-#    больше нигде, кроме дампа.
+#
+#    ⚠️  `--no-comments` НЕ ГОДИТСЯ, и цена ошибки выросла. Раньше довод был косметический:
+#    флаг снёс бы комментарии к таблицам и колонкам, которых нет больше нигде, кроме дампа.
+#    Теперь он снесёт и `COMMENT ON FUNCTION … 'bad-crm:auth-resolver …'` — единственный
+#    признак, по которому шаг 7 отличает резолверы аутентификации этого проекта от любой
+#    другой SECURITY DEFINER-функции. Владелец и ACL к этому моменту уже уничтожены
+#    `--no-privileges`, комментарий — всё, что остаётся.
+#    Замер на PostgreSQL 16.14: после восстановления из дампа с `--no-comments` все три
+#    резолвера остаются во владении `app_migrator` с `proacl = NULL`, то есть с `EXECUTE`
+#    для `PUBLIC`. `app_user` — роль, под которой идёт каждый HTTP-запрос и под которой
+#    выполнилась бы SQL-инъекция, — может их вызвать; под `SET app.maintenance = 'on'` тело
+#    функции, исполняясь уже как `app_migrator`, отдаёт все аккаунты всех организаций
+#    вместе с `password_hash`.
+#    С версии EPIC-006 шаг 7 (`pnpm db:grants`) на такое состояние **не выдаёт гранты
+#    молча, а падает** с сообщением про отсутствующий маркер. Это не сбой процедуры, а её
+#    срабатывание: восстановление нужно повторить без `--no-comments` (либо вернуть
+#    COMMENT-строки из миграции `20260729120000_auth_owner_and_lookup_functions`).
 docker compose cp backups/<дата>/db.dump postgres:/tmp/db.dump
 docker compose exec -T postgres sh -c \
   "pg_restore -l /tmp/db.dump | grep -v 'COMMENT - EXTENSION' > /tmp/db.toc"
@@ -358,6 +376,12 @@ docker compose exec -T postgres \
 #    не пережил дамп: после восстановления app_user не видит ни одной таблицы, а backup_role
 #    не может снять следующий бэкап. Их возвращает идемпотентный `01-grants.sql`, который
 #    обходит каталог и раздаёт права по правилам, а не по списку таблиц.
+#    Ожидаемый вывод — `NOTICE: grants applied: N tables, M sequences, 3 security definer
+#    functions`. **`0 security definer functions` — это отказ, а не успех**: с версии
+#    EPIC-006 такое состояние останавливает шаг с сообщением про маркер (см. шаг 5).
+#    Отдельно возможен `WARNING: … from extension …  has no fixed search_path` — шаг при
+#    этом доводится до конца намеренно: функцию расширения оператор починить не может, а
+#    прервать единственный путь возврата привилегий хуже. Это находка к расширению.
 pnpm db:grants
 
 # 8. ANALYZE. pg_restore не собирает статистику: `pg_statistic` после восстановления пуст,

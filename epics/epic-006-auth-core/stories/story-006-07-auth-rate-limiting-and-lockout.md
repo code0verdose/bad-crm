@@ -1,7 +1,7 @@
 ---
 id: STORY-006-07
 epic: EPIC-006
-status: backlog
+status: in-progress
 blocked: false
 priority: must
 estimate: S
@@ -25,19 +25,112 @@ estimate: S
 
 ## Задачи
 
-- [ ] Написать тесты первыми: `test/integration/auth/rate-limit.test.ts` (порог, `Retry-After`, сброс после успеха, экспоненциальная задержка), `test/unit/auth/limiter-fail-closed.test.ts` (поведение при недоступном Redis), `test/integration/auth/register-limit.test.ts`.
-- [ ] Реализовать `infrastructure/redis/rate-limiter.adapter.ts` под портом `RateLimiterPort` на `rate-limiter-flexible`.
-- [ ] Настроить наборы лимитов из [`stack.md`](../../../docs/architecture/stack.md): логин/сброс/2FA (IP+email, 5/15 мин), регистрация (IP, 3/час), общий API (userId/IP, 300/мин), тяжёлые endpoint'ы (10/мин).
-- [ ] Реализовать middleware применения лимита с корректным вычислением ключа (учёт доверенных прокси при определении IP).
-- [ ] Реализовать сброс счётчика при успешной аутентификации.
-- [ ] Реализовать явную политику fail-closed при недоступности Redis и её логирование.
+- [x] Написать тесты первыми: порог, `Retry-After`, сброс после успеха, экспоненциальная задержка, поведение при недоступном Redis.
+      *Сделано 2026-07-29:* `test/unit/rate-limit/**` (34 теста: ключ-пара, таблица лимитов,
+      эскалация, fail-closed, содержимое лога) и `test/integration/rate-limit/shared-counter.test.ts`
+      (6 тестов против **живого Redis** в Testcontainers: один бюджет на две реплики, реальный
+      `Retry-After` с положительным контролем по `PTTL`, сброс с другой реплики, разные пары с
+      одного адреса, отказ при остановленном контейнере). Имена файлов из задачи не использованы:
+      каталог называется по подсистеме (`rate-limit`), а не по эндпоинту, потому что лимитер общий
+      для логина, сброса пароля, регистрации и API. `register-limit` отдельным файлом не нужен —
+      политика `organization_registration` описана в той же таблице и покрыта её тестом; её
+      применение к маршруту приходит вместе с самим маршрутом.
+- [x] Реализовать адаптер под портом на `rate-limiter-flexible`.
+      *Сделано 2026-07-29:* порт — `application/platform/ports/rate-limit.port.ts` (имя
+      `RateLimitPort`, не `RateLimiterPort`: порт описывает лимит, а не библиотеку), адаптер —
+      `infrastructure/rate-limit/rate-limiter.adapter.ts`. Каталог `rate-limit/`, а не `redis/`:
+      `infrastructure/redis/` — это владелец клиента ioredis, и он придёт с composition root;
+      клиент адаптеру **передаётся**, чтобы одно соединение обслуживало лимитер, BullMQ и
+      socket.io и закрывалось одним shutdown-шагом.
+- [x] Настроить наборы лимитов из [`stack.md`](../../../docs/architecture/stack.md): логин/сброс/2FA (IP+email, 5/15 мин), регистрация (IP, 3/час), общий API (userId/IP, 300/мин), тяжёлые endpoint'ы (10/мин).
+      *Сделано 2026-07-29:* `infrastructure/rate-limit/rate-limit-policy.constant.ts`. Пара
+      «политика → вид субъекта» выражена типом (`RateLimitSubjects` в порту), поэтому
+      `consume('auth_attempt', { ipAddress })` **не компилируется**: требование «ключ — пара»
+      перестало быть фразой в документе.
+- [x] Реализовать применение лимита с корректным вычислением ключа (учёт доверенных прокси при определении IP).
+      *Закрыто 2026-07-29 (гейт безопасности).* Применение живёт **не в middleware, а в use-case'ах**
+      — и это решение, а не сокращение пути. Порядок «лимит до проверки пароля» — свойство
+      прикладного сценария, а не транспорта, и в use-case он проверяется тестом на порядок вызовов
+      (`journal[0] === 'rate-limit:consume:auth_attempt'`), тогда как в middleware его гарантировал бы
+      только порядок элементов массива `handlers`. Там же, рядом с `consume`, живёт `reset` — иначе
+      бюджет тратится в одном слое, а обнуляется в другом. Ключ по-прежнему строит
+      `rate-limit-key.util.ts`; адрес приходит из `req.ip`, а `req.ip` теперь означает то, что
+      сказал оператор (см. `TRUSTED_PROXY_HOPS` ниже), а не то, что прислал клиент.
+      *(историческая заметка: **вычисление ключа сделано**, применение — нет. `rate-limit-key.util.ts`
+      строит ключ и его маскированную форму для лога из одного места. Ни адреса, ни email в
+      открытом виде нет **ни в ключе, ни в метке**: ключ хеширует оба (счётчик по-прежнему
+      различает адреса точно, но в Redis, его AOF и бэкапах ПДн не лежит), метка несёт
+      `ip=203.0.113.0/24` через существующий `maskIpAddress` и `email=sha256:<16 hex>`. Middleware
+      и `trust proxy` — за волной, которая владеет `presentation/`; определение IP там обязано
+      считаться доверенным ровно настолько, насколько настроен reverse-proxy, иначе заголовок
+      `X-Forwarded-For` сам становится способом сменить счётчик.)*
+- [x] Реализовать сброс счётчика при успешной аутентификации.
+      *Сделано 2026-07-29:* `RateLimitPort.reset(...)` чистит и бюджет, и память эскалации.
+      Ошибку хранилища **глотает намеренно**: вызов происходит после того, как учётные данные уже
+      приняты, и превращать состоявшийся вход в 503 хуже, чем счётчик, который сам истечёт.
+- [x] Реализовать явную политику fail-closed при недоступности Redis и её логирование.
+      *Сделано 2026-07-29:* `consume` поднимает `ServiceUnavailableError` (→ 503
+      `service_unavailable`, уже объявленный в спеке на `login` и `refresh`) и пишет `error` с
+      маскированным субъектом. Решение держится на трёх вещах, каждая проверена мутацией:
+      `insuranceLimiter` библиотеки **не задан** (это её fail-open в память процесса),
+      `rejectIfRedisNotReady: true` (иначе ioredis складывает команду в offline-очередь и логин
+      висит вместо отказа), и разбор отказа по типу — `RateLimiterRes` это «превышено», всё
+      остальное «хранилище недоступно».
 - [ ] Добавить метрику `auth_rate_limited_total{endpoint}` (подключается к [EPIC-009](../../epic-009-observability/epic.md)).
+      *(2026-07-29: не сделано — `prom-client` в проекте ещё нет. Точка подключения готова:
+      отказ уже логируется одной строкой `rate limit exceeded` с полями `policy` и
+      `retryAfterSeconds`, инкремент счётчика встаёт рядом. Лейбл берётся из `policy`, не из
+      маршрута и не из субъекта: идентификаторы и адреса в лейблах метрик запрещены,
+      `rules/observability.mdc`, п. 9.)*
 - [ ] Отразить лимиты в `docs/api/openapi.yaml` (ответ 429) и в `docs/runbooks/`.
       *(2026-07-28: **половина в спеке сделана** — 429 с обязательным `Retry-After` объявлен на
       `login`, `refresh`, `register`, `forgot-password`, `reset-password` и `change-password`.
       Отдельно добавлен ответ 503 `service_unavailable` на `login` и `refresh`: при недоступном
       Redis лимитер не может считать, а несчитаемый логин — это логин без лимита, поэтому запрос
       отклоняется (fail closed). Раздел в `docs/runbooks/` — за этой историей.)*
+- [x] **Подключить порт: composition root и маршруты.**
+      *Закрыто 2026-07-29 (гейт безопасности).* Все шесть пунктов ниже выполнены:
+      (1) `infrastructure/redis/redis.client.ts` открывает ioredis (`enableOfflineQueue: false`,
+      `maxRetriesPerRequest: 1`, `commandTimeout`) и `container.factory.ts` собирает
+      `createRedisWindowLimiters(client)` + `RedisRateLimiterAdapter`; контейнер без Redis получает
+      `detachedRateLimit()`, который **отказывает**, а не пропускает;
+      (2) шаг `redis` зарегистрирован в `shutdownSteps` (`closes every client it opened…`);
+      (3) `consume` вызывается **до** проверки пароля — в `LoginUseCase` перед `candidates`/`verify`,
+      в `RegisterOrganizationUseCase` перед argon2-хешем и созданием тенанта, в
+      `RefreshSessionUseCase` перед поиском токена;
+      (4) на `allowed: false` бросается `RateLimitedError(retryAfterSeconds)`, заголовок ставит
+      `error-handler.middleware.ts` — проверено на живом ответе (`Retry-After: 873`, не `0`);
+      (5) `reset` вызывается после успешной аутентификации, и **только** когда сессия действительно
+      выдаётся: обнулять счётчик на любом верном пароле значило бы дать неограниченный argon2-бюджет
+      тому, кто знает пароль приостановленного аккаунта;
+      (6) живая проба Redis добавлена в `/ready` (`redis-readiness.adapter.ts`) — она читает статус
+      соединения и только потом шлёт `PING`, а в `detail` кладёт статус, а не сообщение драйвера
+      (оно цитирует connection string, а `/ready` не аутентифицирован).
+      **Мутация, которой механизм обязан быть уронен:** перенос `consume` ниже `verifyAll` в
+      `login.use-case.ts` роняет `«spends a point before any digest is verified»`; удаление `reset`
+      роняет `«puts the whole budget back when the password is finally right»`.
+      *(историческая заметка: оставлено следующей волне намеренно — `infrastructure/bootstrap/**` и
+      `presentation/**` принадлежат параллельной вертикали входа, и правка их отсюда была бы
+      конфликтом. Что именно нужно сделать: (1) открыть клиент ioredis в
+      `container.factory.ts`, собрать `createRedisWindowLimiters(client)` и
+      `new RedisRateLimiterAdapter(limiters, logger)`; (2) зарегистрировать закрытие клиента
+      в `shutdownSteps` — `rules/hexagonal-backend.mdc`, п. 13; (3) вызывать `consume` **до**
+      проверки пароля, а не после: Argon2id на 19 MiB, вызванный до лимитера, сам становится
+      вектором исчерпания памяти (`threat-model.md`, T-IAM-08); (4) на `allowed: false` бросать
+      `RateLimitedError(retryAfterSeconds)` — заголовок `Retry-After` уже проставляет
+      `error-handler.middleware.ts`, отдельного кода не нужно; (5) вызывать `reset` после
+      успешной аутентификации; (6) добавить живую пробу Redis в `/ready`.)*
+- [x] **Расширить `include` в `vitest.integration.config.ts`.**
+      *(**Закрыто 2026-07-29.** Диагноз был верен: `test/integration/{rate-limit,mail}/**` не
+      подхватывался ни одним проектом — `vitest.config.ts` берёт `http/**`, контейнерный конфиг брал
+      `db/**` — и оба набора прогонялись временным конфигом, то есть в CI не исполнялись вообще.
+      Конфиг разведён на два проекта: `db` с `globalSetup` на PostgreSQL и `services` без него, как
+      и предполагалось — поднимать PostgreSQL ради Redis-теста незачем. Чтобы это не повторилось,
+      заведён `test/repo/integration-coverage.test.ts`: он сверяет **перечень каталогов** под
+      `test/integration` с тем, что заявлено в обоих конфигах, поэтому каталог, добавленный завтра,
+      обязан быть заявлен в день появления, а не в день, когда кто-то положит два конфига рядом.
+      Попутно в `inputs` задачи `//#test:repo` добавлен `packages/*/vitest.integration.config.ts`:
+      прежняя строка `packages/*/vitest.config.ts` — литеральный glob и этот файл не покрывала.)*
 
 ## Definition of Done
 

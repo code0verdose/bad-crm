@@ -22,16 +22,49 @@ export const REQUIRED_EXTENSIONS = [
 
 export interface RoleExpectation {
   readonly role: string;
-  /** `docs/security/rls-design.md`: only the two read-only/auth roles may bypass row-level security. */
+  /** `docs/security/rls-design.md`: only the backup role and the function owner may bypass RLS. */
   readonly bypassRls: boolean;
+  /** `app_auth_definer` is NOLOGIN by design: its privileges are reachable only through functions. */
+  readonly canLogin: boolean;
   readonly why: string;
 }
 
+/**
+ * The five roles of `docs/security/rls-design.md`, in the shape a preflight can check.
+ *
+ * `app_auth_definer` is on this list because leaving it off was not a cosmetic omission: it is the
+ * role `20260729120000_auth_owner_and_lookup_functions` transfers ownership to, so on a cluster
+ * without it the very next `prisma migrate deploy` fails with `P3018` — and the preflight, which
+ * exists to catch exactly that class of "the bootstrap never ran here", reported everything in
+ * order. `test/infra/role-canon.test.ts` holds this table against the bootstrap SQL and the design
+ * document so the three cannot drift again.
+ */
 export const EXPECTED_ROLES: readonly RoleExpectation[] = [
-  { role: 'app_migrator', bypassRls: false, why: 'owns the schema, runs migrations' },
-  { role: 'app_user', bypassRls: false, why: 'serves requests under RLS' },
-  { role: 'app_auth', bypassRls: true, why: 'owns the SECURITY DEFINER resolvers' },
-  { role: 'backup_role', bypassRls: true, why: 'pg_dump under FORCE ROW LEVEL SECURITY' },
+  {
+    role: 'app_migrator',
+    bypassRls: false,
+    canLogin: true,
+    why: 'owns the schema, runs migrations',
+  },
+  { role: 'app_user', bypassRls: false, canLogin: true, why: 'serves requests under RLS' },
+  {
+    role: 'app_auth',
+    bypassRls: false,
+    canLogin: true,
+    why: 'holds EXECUTE on the three resolvers and no privilege on any table',
+  },
+  {
+    role: 'app_auth_definer',
+    bypassRls: true,
+    canLogin: false,
+    why: 'owns the SECURITY DEFINER resolvers, whose bodies run with its privileges',
+  },
+  {
+    role: 'backup_role',
+    bypassRls: true,
+    canLogin: true,
+    why: 'pg_dump under FORCE ROW LEVEL SECURITY',
+  },
 ];
 
 export interface RoleFact {
@@ -80,7 +113,14 @@ export const interpretPostgres = (facts: PostgresFacts): CheckOutcome => {
       );
     }
     if (actual.rolsuper) issues.push(`role ${expected.role} is SUPERUSER — it must not be`);
-    if (!actual.rolcanlogin) issues.push(`role ${expected.role} cannot LOGIN`);
+
+    if (actual.rolcanlogin !== expected.canLogin) {
+      issues.push(
+        expected.canLogin
+          ? `role ${expected.role} cannot LOGIN`
+          : `role ${expected.role} can LOGIN — it must not: ${expected.why}`,
+      );
+    }
 
     return issues;
   });

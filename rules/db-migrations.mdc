@@ -35,12 +35,37 @@ alwaysApply: false
    → бэкфилл → переключить чтение → drop через два релиза. Смена типа — через новую колонку, не
    `ALTER TYPE`.
 6. **`CREATE INDEX` на непустой таблице — только `CONCURRENTLY`, в отдельном файле миграции**,
-   содержащем **только** эту команду (`CONCURRENTLY` не работает внутри транзакции, а Prisma
-   оборачивает файл в транзакцию). Миграция идемпотентна:
-   `DROP INDEX CONCURRENTLY IF EXISTS …; CREATE INDEX CONCURRENTLY IF NOT EXISTS …`.
-7. **Каждая миграция начинается с `SET lock_timeout = '3s'; SET statement_timeout = '5min';`**
+   содержащем **ровно одну** команду `CREATE INDEX CONCURRENTLY IF NOT EXISTS …` (`CONCURRENTLY` не
+   работает внутри транзакции, а Prisma оборачивает файл в транзакцию, как только команд больше
+   одной).
+
+   *Поправка 2026-07-29.* Прежняя редакция предписывала идемпотентную пару
+   `DROP INDEX CONCURRENTLY IF EXISTS …; CREATE INDEX CONCURRENTLY IF NOT EXISTS …` в одном файле.
+   **Это невыполнимо** и измерено: две команды заставляют Prisma открыть транзакцию, и первая же
+   падает с `DROP INDEX CONCURRENTLY cannot run inside a transaction block`.
+
+   Цена одиночной формы — не идемпотентность, а **молчаливый успех при повторе**: сорванная
+   конкурентная сборка (отмена, дедлок, `lock_timeout`, рестарт сервера) оставляет индекс в
+   состоянии `INVALID`, а `IF NOT EXISTS` при повторе печатает `already exists, skipping` и миграция
+   **завершается успешно** — с невалидным индексом, которым планировщик не пользуется. Поэтому
+   восстановление после неудачной миграции обязано включать проверку:
+
+   ```sql
+   SELECT c.relname FROM pg_index i JOIN pg_class c ON c.oid = i.indexrelid WHERE NOT i.indisvalid;
+   ```
+
+   и лечение `REINDEX INDEX CONCURRENTLY …` либо `DROP INDEX CONCURRENTLY …` с повтором миграции.
+   Процедура — `docs/runbooks/upgrade.md` §6.
+7. **Каждая миграция начинается с `SET LOCAL lock_timeout = '3s'; SET LOCAL statement_timeout = '5min';`**
    `lock_timeout` критичен: `ALTER TABLE`, ждущий `ACCESS EXCLUSIVE`, блокирует все запросы позади
    себя, включая читающие. Лучше упасть через 3 секунды и повторить.
+
+   *Поправка 2026-07-29:* именно `SET LOCAL`, и это не косметика. `SET` переживает `COMMIT` своей
+   транзакции, а `prisma migrate deploy` применяет **все** миграции одного развёртывания на одном
+   соединении — значит обычный `SET` протекает в следующие файлы. Измерено: конкурентная сборка
+   индекса наследовала `statement_timeout = 5min` от предыдущей миграции, а на большой таблице это
+   отменённая сборка, невалидный индекс и застрявшее обновление (см. правило 6). Форму проверяет
+   линтер миграций, правило `session-timeout`.
 8. **Бэкфилл — пачками с паузой** (`UPDATE … WHERE id IN (SELECT id … LIMIT 5000)` в цикле).
    Один `UPDATE` на всю таблицу держит снапшот, блокирует autovacuum и раздувает таблицу.
 9. **RLS-политика создаётся в той же миграции, что и таблица.** Таблица без политики — блокирующий
@@ -64,15 +89,16 @@ alwaysApply: false
 
 ```sql
 -- 20260801_expand_add_task_due_at/migration.sql
-SET lock_timeout = '3s';
-SET statement_timeout = '5min';
+SET LOCAL lock_timeout = '3s';        -- LOCAL: иначе протечёт в следующий файл того же deploy
+SET LOCAL statement_timeout = '5min';
 
 ALTER TABLE tasks ADD COLUMN due_at timestamptz;          -- nullable: старый код не ломается
 ```
 
 ```sql
--- 20260801_index_tasks_due_at/migration.sql   ← отдельный файл, только индекс
-DROP  INDEX CONCURRENTLY IF EXISTS idx_tasks_org_due_at;
+-- 20260801_index_tasks_due_at/migration.sql   ← отдельный файл, РОВНО одна команда
+-- Без преамбулы таймаутов: она сделала бы команд две, Prisma открыла бы транзакцию,
+-- и CONCURRENTLY упал бы. Таймауты здесь — атрибуты роли app_migrator.
 CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_tasks_org_due_at ON tasks (organization_id, due_at);
 ```
 
@@ -103,7 +129,7 @@ npx prisma db push
 | Механизм | Что ловит |
 |---|---|
 | CI-шаг `check:migration-present` (`git diff schema.prisma` без изменений в `migrations/`) | схему без миграции |
-| Линтер миграций `packages/server/test/support/migration-lint.util.ts`, прогоняется по всем закоммиченным миграциям в `packages/server/test/unit/db/migration-lint.test.ts` (то есть в `pnpm test`, а не отдельной командой) | `DROP COLUMN`/`RENAME`/`SET NOT NULL` напрямую, `CREATE INDEX` без `CONCURRENTLY` **на таблице, которую эта миграция не создаёт** (правило 6 — про непустую таблицу; новая таблица приезжает одним файлом вместе с политикой, грантами и индексами по правилам 9 и 13), отсутствие `lock_timeout`, `CONCURRENTLY` вместе с другими командами в файле |
+| Линтер миграций `packages/server/test/support/migration-lint.util.ts`, прогоняется по всем закоммиченным миграциям в `packages/server/test/unit/db/migration-lint.test.ts` (то есть в `pnpm test`, а не отдельной командой) | `DROP COLUMN`/`RENAME`/`SET NOT NULL` напрямую, `CREATE INDEX` без `CONCURRENTLY` **на таблице, которую эта миграция не создаёт** (правило 6 — про непустую таблицу; новая таблица приезжает одним файлом вместе с политикой, грантами и индексами по правилам 9 и 13), отсутствие `SET LOCAL lock_timeout` (правило `missing-timeouts`), голый `SET lock_timeout`/`statement_timeout` без `LOCAL` (правило `session-timeout` — такой `SET` протекает в следующие файлы того же `migrate deploy`), `CONCURRENTLY` вместе с другими командами в файле |
 | `pnpm check:rls -- <url>` (живой хост) | новую таблицу без политики, политику без `WITH CHECK`, политику на `PUBLIC`, расхождение каталога с реестром — там, где контейнер поднять негде: staging после восстановления из бэкапа |
 | `pnpm test:integration` (Testcontainers, `prisma migrate deploy` на чистой БД) | неприменимую миграцию и сломанную RLS-изоляцию после неё |
 | `test/integration/migrations/rollback.spec.ts` | невозможность отката (восстановление дампа + предыдущий образ + smoke) |
