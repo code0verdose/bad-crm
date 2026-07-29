@@ -1,7 +1,7 @@
 ---
 id: STORY-006-02
 epic: EPIC-006
-status: backlog
+status: review
 blocked: false
 priority: must
 estimate: M

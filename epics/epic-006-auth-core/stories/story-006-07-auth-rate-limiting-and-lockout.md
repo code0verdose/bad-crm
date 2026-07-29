@@ -1,7 +1,7 @@
 ---
 id: STORY-006-07
 epic: EPIC-006
-status: in-progress
+status: review
 blocked: false
 priority: must
 estimate: S
