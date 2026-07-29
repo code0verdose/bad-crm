@@ -57,6 +57,8 @@ export interface TestDatabaseUrls {
   readonly superuser: string;
   readonly migrator: string;
   readonly appUser: string;
+  /** `app_auth`: BYPASSRLS, no table privileges, three SECURITY DEFINER functions and nothing else. */
+  readonly auth: string;
   readonly backup: string;
 }
 
@@ -95,6 +97,7 @@ export default async function setup(project: TestProject): Promise<void> {
     superuser: urlFor(host, port, SUPERUSER, PASSWORDS.superuser),
     migrator: urlFor(host, port, 'app_migrator', PASSWORDS.migrator),
     appUser: urlFor(host, port, 'app_user', PASSWORDS.appUser),
+    auth: urlFor(host, port, 'app_auth', PASSWORDS.auth),
     backup: urlFor(host, port, 'backup_role', PASSWORDS.backup),
   };
 

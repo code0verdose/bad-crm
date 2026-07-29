@@ -9,10 +9,12 @@ import {
 } from '@/infrastructure/logging/pino-logger.adapter.js';
 import { buildContainer } from '@/infrastructure/bootstrap/container.factory.js';
 import {
+  blockingDegradationWarnings,
   describeDegradations,
   insecureDefaultWarnings,
 } from '@/infrastructure/bootstrap/env-features.util.js';
 import { loadEnv } from '@/infrastructure/bootstrap/load-env.util.js';
+import { type StartupCheck } from '@/infrastructure/bootstrap/container.types.js';
 import {
   createShutdownHandler,
   type ClosableServer,
@@ -22,6 +24,7 @@ import {
   connectDatabase,
   type DatabaseConnection,
 } from '@/infrastructure/persistence/prisma/database.factory.js';
+import { connectRedis, type RedisConnection } from '@/infrastructure/redis/redis.client.js';
 import { createHttpServer } from '@/presentation/http/http-server.factory.js';
 import { type LoggerPort } from '@/application/platform/ports/logger.port.js';
 import { type ServerEnv } from '@/infrastructure/bootstrap/env.schema.js';
@@ -55,11 +58,25 @@ export interface ApiProcessSeams {
   readonly createLogger: (env: ServerEnv, requestContext: AsyncRequestContextAdapter) => Logger;
   readonly connectDatabase: (env: ServerEnv, logger: LoggerPort) => DatabaseConnection;
   /**
+   * Opened beside the pool and before the port, because the rate limiter fails closed: without a
+   * connection every sign-in is refused 503, so this is not an optional client that can arrive
+   * later. It does not *wait* for the connection — see `connectRedis`.
+   */
+  readonly connectRedis: (env: ServerEnv, logger: LoggerPort) => RedisConnection;
+  /**
    * Refuses the connection when the role it was made as can escape row level security. Separate
    * from `connectDatabase` so the order — pool, then check, then port — is asserted in the test
    * rather than assumed (STORY-005-05).
    */
   readonly verifyDatabaseRole: (database: DatabaseConnection) => Promise<unknown>;
+  /**
+   * Runs whatever the container asked to have verified before the port opens — today the role of
+   * the `app_auth` pool, which only exists when `DATABASE_AUTH_URL` is set.
+   *
+   * A seam because the checks talk to a database: without it every assertion about the *order* of
+   * the startup sequence would need a live PostgreSQL to reach the line after them.
+   */
+  readonly runStartupChecks: (checks: readonly StartupCheck[]) => Promise<void>;
   readonly listen: (app: Express, port: number) => Promise<ListeningServer>;
   readonly onSignal: (signal: string, handler: () => void) => void;
   readonly exit: (code: number) => void;
@@ -72,7 +89,13 @@ const defaultSeams: ApiProcessSeams = {
   createLogger: (env, requestContext) =>
     createRootLogger({ level: env.LOG_LEVEL, version: APP_INFO.version, requestContext }),
   connectDatabase: (env, logger) => connectDatabase({ url: env.DATABASE_URL, logger }),
+  connectRedis: (env, logger) => connectRedis({ url: env.REDIS_URL, logger }),
   verifyDatabaseRole: (database) => assertRuntimeDbRole(database.base),
+  runStartupChecks: async (checks) => {
+    for (const check of checks) {
+      await check.run();
+    }
+  },
   listen: (app, port) =>
     new Promise((resolve, reject) => {
       const server = app.listen(port, () => resolve(server));
@@ -104,7 +127,8 @@ const defaultSeams: ApiProcessSeams = {
  * which is what reports its failure — and the role it connected as is verified **before** the port,
  * because a role that can escape row level security produces no error at all: every request is
  * served, nothing is filtered, and the first symptom is one tenant reading another's data
- * (STORY-005-05). Redis and the queues join the same step when they land.
+ * (STORY-005-05). Redis is opened in the same step — the rate limiter fails closed, so a process
+ * without it refuses every sign-in — and the queues join it when they land.
  */
 export const startApiProcess = async (overrides: Partial<ApiProcessSeams> = {}): Promise<void> => {
   const seams: ApiProcessSeams = { ...defaultSeams, ...overrides };
@@ -116,8 +140,10 @@ export const startApiProcess = async (overrides: Partial<ApiProcessSeams> = {}):
     const requestContext = new AsyncRequestContextAdapter();
     logger = seams.createLogger(env, requestContext);
 
-    // ── infrastructure clients (Redis: EPIC-025 joins here) ──
-    const database = seams.connectDatabase(env, new PinoLoggerAdapter(logger));
+    // ── infrastructure clients ──
+    const loggerPort = new PinoLoggerAdapter(logger);
+    const database = seams.connectDatabase(env, loggerPort);
+    const redis = seams.connectRedis(env, loggerPort);
 
     // Before the port, and before any worker: a connection made as the schema owner, as a
     // superuser or as any BYPASSRLS role serves every request correctly and filters nothing. The
@@ -125,11 +151,25 @@ export const startApiProcess = async (overrides: Partial<ApiProcessSeams> = {}):
     // data (invariant 1 of CLAUDE.md, docs/security/rls-design.md).
     await seams.verifyDatabaseRole(database);
 
-    const container = buildContainer({ env, logger, requestContext, database });
+    const container = buildContainer({ env, logger, requestContext, database, redis });
+
+    // Whatever the container built and can verify — today the `app_auth` pool, whose role decides
+    // whether the authentication path is the narrow credential it is documented to be. Before the
+    // port, like the check above and for the same reason: the failures these catch have no
+    // functional symptom, so the refusal to start is the only signal there is.
+    await seams.runStartupChecks(container.startupChecks);
+
     const app = createHttpServer(container.http);
 
     for (const warning of insecureDefaultWarnings(env)) {
       logger.warn({ warning }, 'insecure development default in use');
+    }
+
+    // Not a field of the listening line below: a subsystem that is *gone* rather than reduced has
+    // to be findable by level. Without `DATABASE_AUTH_URL` this container is green, `/ready` is
+    // 200, every route answers — and nobody can sign in (rules/self-host-packaging.mdc, rule 2).
+    for (const warning of blockingDegradationWarnings(env)) {
+      logger.warn({ warning }, 'a required subsystem is not configured');
     }
 
     const server = await seams.listen(app, env.PORT);

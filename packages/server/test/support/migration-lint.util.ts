@@ -64,6 +64,28 @@ const PATTERNS: readonly {
 ];
 
 const SET_NOT_NULL = /\balter\s+column\s+"?\w+"?\s+set\s+not\s+null\b/i;
+
+/**
+ * The preamble, and why it must be `SET LOCAL`.
+ *
+ * Prisma applies every pending migration of one `migrate deploy` over a **single** connection, and
+ * a session-level `SET` outlives the COMMIT of the migration that issued it. The preamble of one
+ * file therefore becomes the preamble of every file applied after it in the same run — including a
+ * `CREATE INDEX CONCURRENTLY` file, which by rule 6 may contain nothing but the index statement and
+ * so has no way to undo it. A concurrent build that runs past an inherited `statement_timeout` is
+ * cancelled, leaves an INVALID index and a migration marked failed, and every later deploy answers
+ * `P3009` — the stuck installation this rule set exists to prevent.
+ *
+ * `SET LOCAL` is scoped to the transaction Prisma wraps the file in, which is where the timeouts
+ * are wanted and the only place they are wanted. Verified against PostgreSQL 16
+ * (pgvector/pgvector:0.8.5-pg16) with Prisma 6.19.3: a probe migration reads
+ * `statement_timeout=5min` after a session-level `SET` in the previous file and `statement_timeout=0`
+ * after the `LOCAL` form, while the `LOCAL` form still applies inside its own file.
+ */
+const LOCAL_LOCK_TIMEOUT = /\bset\s+local\s+lock_timeout\b/i;
+const LOCAL_STATEMENT_TIMEOUT = /\bset\s+local\s+statement_timeout\b/i;
+/** `SET [SESSION] lock_timeout` — anything but the `LOCAL` form. */
+const SESSION_TIMEOUT = /\bset\s+(?:session\s+)?(?:lock_timeout|statement_timeout)\b/i;
 const CREATE_INDEX = /\bcreate\s+(unique\s+)?index\b/i;
 const INDEX_STATEMENT = /^\s*(create\s+(unique\s+)?index|drop\s+index)\b/i;
 const CONCURRENTLY = /\bconcurrently\b/i;
@@ -136,6 +158,16 @@ export const lintMigrationSql = (file: string, sql: string): MigrationFinding[] 
       });
     }
 
+    if (SESSION_TIMEOUT.test(line) && !/\bset\s+local\b/i.test(line)) {
+      findings.push({
+        file,
+        line: at,
+        rule: 'session-timeout',
+        message:
+          'SET without LOCAL survives the COMMIT of its own migration: Prisma applies every pending migration of one deploy over a single connection, so this timeout is inherited by every migration after it — including a CREATE INDEX CONCURRENTLY file, which may carry nothing that could undo it. Write SET LOCAL (rules/db-migrations.mdc, 7)',
+      });
+    }
+
     if (
       CREATE_INDEX.test(line) &&
       !CONCURRENTLY.test(line) &&
@@ -164,16 +196,13 @@ export const lintMigrationSql = (file: string, sql: string): MigrationFinding[] 
           'CONCURRENTLY cannot run inside a transaction, and Prisma wraps a migration file in one: the file may contain nothing but the index statements (rules/db-migrations.mdc, 6)',
       });
     }
-  } else if (
-    !/\bset\s+lock_timeout\b/i.test(wholeFile) ||
-    !/\bset\s+statement_timeout\b/i.test(wholeFile)
-  ) {
+  } else if (!LOCAL_LOCK_TIMEOUT.test(wholeFile) || !LOCAL_STATEMENT_TIMEOUT.test(wholeFile)) {
     findings.push({
       file,
       line: 1,
       rule: 'missing-timeouts',
       message:
-        "every migration opens with SET lock_timeout = '3s'; SET statement_timeout = '5min'; — an ALTER waiting for a lock queues every query behind it (rules/db-migrations.mdc, 7)",
+        "every migration opens with SET LOCAL lock_timeout = '3s'; SET LOCAL statement_timeout = '5min'; — an ALTER waiting for a lock queues every query behind it, and the LOCAL form keeps the setting from leaking into the migrations applied after it on the same connection (rules/db-migrations.mdc, 7)",
     });
   }
 

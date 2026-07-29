@@ -36,6 +36,15 @@ describe('secret redaction', () => {
     ['secret', { webhook: { secret: 's3cr3t-token' } }],
     ['otp', { auth: { otp: 's3cr3t-token' } }],
     ['recoveryCode', { auth: { recoveryCode: 's3cr3t-token' } }],
+    /**
+     * pino matches a **whole key**, not a substring of one, so `*.token` never covered
+     * `accessToken` and `*.password` never covered `passwordHash`. Nothing logs these three today
+     * — which is precisely why the gap was invisible — and the net exists for the line somebody
+     * adds tomorrow while debugging a sign-in.
+     */
+    ['accessToken', { session: { accessToken: 's3cr3t-token' } }],
+    ['refreshTokenHash', { session: { refreshTokenHash: 's3cr3t-token' } }],
+    ['passwordHash', { user: { passwordHash: 's3cr3t-token' } }],
   ])('replaces %s with the placeholder', (_path, payload) => {
     const destination = capturingDestination();
 
@@ -82,6 +91,20 @@ describe('secret redaction', () => {
         '*.recoveryCode',
       ]),
     );
+  });
+
+  /**
+   * Every entry exists in both spellings, and the reason is pino's matcher rather than tidiness:
+   * `*.token` matches a key one level below some parent, and a bare `token` matches the top level
+   * that `logger.warn({ token })` produces. One without the other is a net with a hole in exactly
+   * the shape of the call that is easiest to write.
+   */
+  it('declares each key both nested and at the top level', () => {
+    const nested = REDACTED_PATHS.filter((path) => path.startsWith('*.')).map((path) =>
+      path.slice(2),
+    );
+
+    expect(nested.filter((key) => !REDACTED_PATHS.includes(key))).toEqual([]);
   });
 });
 

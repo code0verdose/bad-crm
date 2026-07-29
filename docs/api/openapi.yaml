@@ -53,11 +53,13 @@ security:
 paths:
   # ── auth ──────────────────────────────────────────────────────────────────────────────────────
   #
-  # Every operation below is marked `x-implemented-by`: it is published here before the route
-  # exists, because this contract is written first and implemented afterwards (ADR-0003). The marker
-  # is not a comment — `packages/server/test/contract/planned-operations.test.ts` refuses a marker
-  # that names a story which does not exist, and refuses a marker on an operation the router already
-  # serves, so it has to be deleted in the same commit that implements the route.
+  # An operation still marked `x-implemented-by` is published here and not yet served: the contract
+  # is written first and implemented afterwards (ADR-0003). The marker is not a comment —
+  # `packages/server/test/contract/planned-operations.test.ts` refuses one that names a story which
+  # does not exist, and refuses one on an operation the router already serves, so it has to be
+  # deleted in the same commit that implements the route. Registration, sign-in, rotation, sign-out
+  # and the three session operations lost theirs in EPIC-006; change-password and the two
+  # password-reset operations still carry one.
   #
   # Two rules hold across the whole group and are stated once here rather than ten times below.
   #
@@ -93,7 +95,6 @@ paths:
         Bootstrap of an empty installation: the subject a permission would be checked against is
         created by this very request. Bounded instead by the installation-wide "open registration"
         setting (403 registration_disabled) and by 3 requests per hour per IP.
-      x-implemented-by: STORY-006-01
       parameters:
         - $ref: '#/components/parameters/IdempotencyKey'
       requestBody:
@@ -181,7 +182,6 @@ paths:
       x-public-reason: >-
         Sign-in itself: the session a permission would be read from is what this operation issues.
         Bounded by 5 failed attempts per 15 minutes per IP + email, with an exponential delay.
-      x-implemented-by: STORY-006-02
       requestBody:
         required: true
         content:
@@ -279,7 +279,6 @@ paths:
       x-self-service-reason: >-
         Authorised by possession of the refresh cookie, which identifies one session of one person;
         there is no capability to check, and the account has no say over its own session rotation.
-      x-implemented-by: STORY-006-03
       responses:
         '200':
           description: Rotated. The previous refresh token is now spent.
@@ -337,7 +336,6 @@ paths:
       x-self-service-reason: >-
         Ending one's own session is not a capability anybody can be denied; the subject and the
         object are the same person.
-      x-implemented-by: STORY-006-04
       responses:
         '204':
           description: The session is over. Clearing the client's query cache is the caller's job.
@@ -371,7 +369,6 @@ paths:
         Reading one's own sessions. `user:read_sessions` — listed in `docs/security/permission-model.md`
         §3 and not yet in the code catalog, which EPIC-011 fills — is the administrator's right over
         *another* person's sessions and belongs to a different operation.
-      x-implemented-by: STORY-006-04
       responses:
         '200':
           description: Every session of the caller that is neither revoked nor expired.
@@ -424,7 +421,6 @@ paths:
       x-self-service-reason: >-
         Closing one's own session. Ownership is the check, and it is made in the use-case by
         matching the session against the caller rather than by a capability.
-      x-implemented-by: STORY-006-04
       parameters:
         - $ref: '#/components/parameters/SessionId'
       responses:
@@ -455,7 +451,6 @@ paths:
       tags: [auth]
       x-self-service-reason: >-
         Same subject and object as `POST /auth/logout`, over the rest of one's own sessions.
-      x-implemented-by: STORY-006-04
       responses:
         '200':
           description: The other sessions are gone.

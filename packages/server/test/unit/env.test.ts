@@ -224,6 +224,32 @@ describe('password hashing parameters', () => {
   });
 });
 
+/**
+ * How many `X-Forwarded-For` hops the process believes.
+ *
+ * A default of `0` and not `1`: the shipped `docker-compose.yml` has no reverse proxy in it, so on
+ * the deployment this product actually describes there is no hop between the client and Node — and
+ * a process that trusts one takes the client's own header as its address. That address is written
+ * into `sessions.ip_hash` / `sessions.ip_masked` and is the rate limiter's key.
+ */
+describe('TRUSTED_PROXY_HOPS', () => {
+  it('trusts nothing by default, because the shipped compose file ships no proxy', () => {
+    expect(loadEnv(VALID_ENV).TRUSTED_PROXY_HOPS).toBe(0);
+  });
+
+  it('coerces the number an operator with a proxy sets', () => {
+    expect(loadEnv(withEnv({ TRUSTED_PROXY_HOPS: '1' })).TRUSTED_PROXY_HOPS).toBe(1);
+  });
+
+  it.each(['-1', '1.5', 'true', ''])('refuses %o rather than guessing a hop count', (value) => {
+    expect(issuePathsOf(withEnv({ TRUSTED_PROXY_HOPS: value }))).toContain('TRUSTED_PROXY_HOPS');
+  });
+
+  it('names the variable in the operator-facing message', () => {
+    expect(() => loadEnv(withEnv({ TRUSTED_PROXY_HOPS: '-1' }))).toThrow(/TRUSTED_PROXY_HOPS/);
+  });
+});
+
 describe('CORS_EXTRA_ORIGINS', () => {
   it('is absent by default: only APP_URL is allowed until an operator widens it', () => {
     expect(loadEnv(VALID_ENV).CORS_EXTRA_ORIGINS).toBeUndefined();
@@ -357,23 +383,37 @@ describe('optional services degrade instead of blocking the start', () => {
     expect(env.AI_ENABLED).toBe(false);
   });
 
+  /**
+   * `authentication` leads the list because it is the one entry that is not an optional service:
+   * `DATABASE_AUTH_URL` is `.optional()` in the schema and required in meaning, so its absence is a
+   * `blocking` degradation carrying the sentence that says what to do — see
+   * `test/unit/bootstrap/auth-availability.test.ts` for the rest of that behaviour.
+   */
   it('reports what is degraded, so the operator sees it in the startup log', () => {
     const degradations = describeDegradations(loadEnv(VALID_ENV));
 
     expect(degradations).toEqual([
-      { feature: 'search', fallback: 'postgres-fts' },
-      { feature: 'mail', fallback: 'log' },
-      { feature: 'ai', fallback: 'disabled' },
-      { feature: 'tracing', fallback: 'disabled' },
+      {
+        feature: 'authentication',
+        fallback: 'unavailable',
+        blocking: true,
+        remedy: expect.stringContaining('DATABASE_AUTH_URL') as string,
+      },
+      { feature: 'search', fallback: 'postgres-fts', blocking: false },
+      { feature: 'mail', fallback: 'unavailable', blocking: false },
+      { feature: 'ai', fallback: 'disabled', blocking: false },
+      { feature: 'tracing', fallback: 'disabled', blocking: false },
     ]);
   });
 
   it('reports nothing degraded once every optional service is configured', () => {
     const env = loadEnv(
       withEnv({
+        DATABASE_AUTH_URL: 'postgres://app_auth:secret@localhost:5432/bad_crm',
         MEILI_HOST: 'http://localhost:7700',
         MEILI_MASTER_KEY: 'm'.repeat(16),
         SMTP_URL: 'smtp://localhost:1025',
+        MAIL_FROM: 'Bad CRM <crm@example.com>',
         OTEL_EXPORTER_OTLP_ENDPOINT: 'http://localhost:4318',
         AI_ENABLED: 'true',
       }),
@@ -433,5 +473,71 @@ describe('production hardening (rules/security.mdc, T-SH-01)', () => {
 
   it('warns about nothing when development secrets are real', () => {
     expect(insecureDefaultWarnings(loadEnv(VALID_ENV))).toEqual([]);
+  });
+});
+
+/**
+ * The envelope sender, which an installation with a relay cannot do without.
+ *
+ * **Warned about, not demanded** — and the first version of this delta demanded it. Tying a hard
+ * requirement to `SMTP_URL` refuses to start every installation built from `.env.example`, which has
+ * carried `SMTP_URL` since EPIC-001, for a subsystem no route uses yet. `rules/self-host-packaging`
+ * rule 2 is explicit about the shape: release N warns, release N+1 refuses. The warning lives in
+ * `describeDegradations` as a blocking degradation, the same mechanism `DATABASE_AUTH_URL` uses.
+ */
+describe('MAIL_FROM', () => {
+  it('does not stop an existing installation from starting', () => {
+    // Not `issuePathsOf`: that helper asserts the parse fails, and the point here is that it no
+    // longer does. Every environment built from `.env.example` carries `SMTP_URL`.
+    expect(() => loadEnv(withEnv({ SMTP_URL: 'smtp://localhost:1025' }))).not.toThrow();
+  });
+
+  it('is named as a blocking degradation instead, with a remedy', () => {
+    const degraded = describeDegradations(loadEnv(withEnv({ SMTP_URL: 'smtp://localhost:1025' })));
+
+    expect(degraded).toContainEqual({
+      feature: 'mail',
+      fallback: 'unavailable',
+      blocking: true,
+      remedy: expect.stringContaining('MAIL_FROM') as string,
+    });
+  });
+
+  it('stops being named once the sender is configured', () => {
+    const degraded = describeDegradations(
+      loadEnv(withEnv({ SMTP_URL: 'smtp://localhost:1025', MAIL_FROM: 'crm@example.com' })),
+    );
+
+    expect(degraded.filter((entry) => entry.feature === 'mail')).toEqual([]);
+  });
+
+  it('is not demanded of an installation that sends no mail', () => {
+    expect(loadEnv(VALID_ENV).MAIL_FROM).toBeUndefined();
+  });
+
+  it('accepts a display name beside the address', () => {
+    const env = loadEnv(
+      withEnv({ SMTP_URL: 'smtp://localhost:1025', MAIL_FROM: 'Bad CRM <crm@example.com>' }),
+    );
+
+    expect(env.MAIL_FROM).toBe('Bad CRM <crm@example.com>');
+  });
+
+  /** The value ends up in a message header, and CR or LF in a header value is header injection. */
+  it('refuses a line break', () => {
+    expect(
+      issuePathsOf(
+        withEnv({
+          SMTP_URL: 'smtp://localhost:1025',
+          MAIL_FROM: 'crm@example.com\r\nBcc: everyone@example.com',
+        }),
+      ),
+    ).toContain('MAIL_FROM');
+  });
+
+  it('refuses a value that is not an address at all', () => {
+    expect(
+      issuePathsOf(withEnv({ SMTP_URL: 'smtp://localhost:1025', MAIL_FROM: 'Bad CRM' })),
+    ).toContain('MAIL_FROM');
   });
 });

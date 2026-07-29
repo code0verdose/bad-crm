@@ -18,8 +18,14 @@
 -- A lock wait is what turns a millisecond of catalog DDL into a two-minute outage: `ALTER TABLE`
 -- queues behind a running query, and every statement behind it queues behind the `ALTER`. Better
 -- to fail after three seconds and retry the deploy (rules/db-migrations.mdc, 7).
-SET lock_timeout = '3s';
-SET statement_timeout = '5min';
+--
+-- `SET LOCAL`, not `SET`. Prisma applies every pending migration of one `migrate deploy` over a
+-- single connection, and a session-level `SET` outlives the COMMIT of the file that issued it — so
+-- a plain `SET` here is inherited by every migration applied after it, including the
+-- `CREATE INDEX CONCURRENTLY` files that may carry nothing capable of undoing it. The `LOCAL` form
+-- is scoped to the transaction Prisma wraps this file in, which is exactly the scope wanted.
+SET LOCAL lock_timeout = '3s';
+SET LOCAL statement_timeout = '5min';
 
 -- ─── extensions ───────────────────────────────────────────────────────────────────────────────
 --

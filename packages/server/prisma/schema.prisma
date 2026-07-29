@@ -51,6 +51,25 @@ model Organization {
   defaultCurrency String @default("USD") @map("default_currency") @db.Char(3)
   settings        Json   @default("{}")
 
+  /// The account that administers this organization, set by the registration use-case of
+  /// STORY-006-01 immediately after it creates the owner.
+  ///
+  /// Nullable, and it is an EXPAND step rather than an oversight: the column is added to a table
+  /// that already exists, and the row it points at is written in the same transaction one statement
+  /// later, so it cannot be NOT NULL at the moment of the insert (rules/db-migrations.mdc, 2). The
+  /// composite foreign key is `(id, owner_id) -> users (organization_id, id)`: this table is the
+  /// tenant root, so its *own key* is the tenant column, and pairing it with the reference is what
+  /// stops an owner from another organization — foreign key checks bypass row-level security.
+  ///
+  /// `prisma validate` warns that `SetNull` meets a required referenced field, and the warning is
+  /// expected rather than ignored — the same case as `Session.rotatedFromId`. A plain composite
+  /// `ON DELETE SET NULL` would null `id`, the primary key, and die on its NOT NULL; the migration
+  /// writes the PostgreSQL 15 column list, `ON DELETE SET NULL (owner_id)`, which nulls only the
+  /// nullable half. Do not "fix" this by relaxing the action; read the migration.
+  ownerId String? @map("owner_id") @db.Uuid
+
+  owner User? @relation("OrganizationOwner", fields: [id, ownerId], references: [organizationId, id], onDelete: SetNull, map: "fk_organizations_owner_id")
+
   createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
   deletedAt DateTime? @map("deleted_at") @db.Timestamptz(6)
@@ -147,6 +166,7 @@ model User {
   deletedAt DateTime? @map("deleted_at") @db.Timestamptz(6)
 
   organization        Organization         @relation(fields: [organizationId], references: [id], onDelete: Restrict, map: "fk_users_organization_id")
+  ownedOrganizations  Organization[]       @relation("OrganizationOwner")
   sessions            Session[]
   passwordResetTokens PasswordResetToken[]
 
@@ -219,6 +239,12 @@ model Session {
   @@unique([organizationId, id], map: "uq_sessions_org_id")
   @@unique([refreshTokenHash], map: "uq_sessions_refresh_hash")
   @@index([organizationId, userId, familyId], map: "idx_sessions_org_user_family")
+  /// Revoking a family on reuse detection knows the digest, not the user, so the statement is
+  /// `WHERE family_id = $1` with `organization_id` supplied by the policy. The three-column index
+  /// above cannot answer that — `user_id` sits between the two columns given — and `family_id`
+  /// becomes a filter over every session of the organization
+  /// (`migrations/20260729130000_index_sessions_org_family`).
+  @@index([organizationId, familyId], map: "idx_sessions_org_family")
   /// `idx_sessions_org_expires` is partial (`WHERE revoked_at IS NULL`) and lives in the migration.
   @@map("sessions")
 }
@@ -251,7 +277,19 @@ model PasswordResetToken {
   user         User         @relation(fields: [organizationId, userId], references: [organizationId, id], onDelete: Cascade, map: "fk_password_reset_tokens_user_id")
 
   @@unique([tokenHash], map: "uq_password_reset_tokens_hash")
-  /// The two working indexes are partial (`WHERE used_at IS NULL`) and live in the migration.
+  /// Not partial, unlike `idx_password_reset_tokens_org_expires` below it in the migration: this is
+  /// also the index the composite foreign key on `users` uses when a user row is removed, and a
+  /// partial index cannot serve a cascade.
+  ///
+  /// Declared here and not only in the migration, which is where it lived and where being alone was
+  /// a defect: `prisma migrate diff --to-schema-datamodel` answered `DROP INDEX
+  /// "idx_password_reset_tokens_org_user"`, and `prisma migrate dev` generates the next migration
+  /// out of exactly that diff. The index would have been dropped by whoever next added a field.
+  /// Held by `test/integration/db/schema-drift.test.ts`.
+  @@index([organizationId, userId], map: "idx_password_reset_tokens_org_user")
+  /// `idx_password_reset_tokens_org_expires` is partial (`WHERE used_at IS NULL`), which Prisma
+  /// cannot express, so it stays in the migration — and stays invisible to `migrate diff`, which
+  /// models no partial index and therefore neither demands nor drops it.
   @@map("password_reset_tokens")
 }
 

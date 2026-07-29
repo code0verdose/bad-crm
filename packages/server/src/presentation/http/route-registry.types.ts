@@ -81,6 +81,26 @@ export interface SelfServiceRoute extends RouteBase {
    * and no named ownership check, nothing at all decides who may call the route.
    */
   readonly ownershipCheckedIn: string;
+
+  /**
+   * Which credential proves the caller, when it is not the bearer token alone.
+   *
+   * Declared per route, and only on this member of the union, because both values *widen* what
+   * counts as proof. The refresh cookie is scoped to `Path=/api/v1/auth`, so the browser attaches it
+   * to every operation of that group; treating it as a credential everywhere would make each of them
+   * reachable with an ambient one rather than with a header a cross-site request cannot set.
+   *
+   * - `'either'` — bearer or cookie. `POST /auth/logout`, the one place where refusing the cookie
+   *   would be worse than accepting it: an expired access token must not make it impossible to close
+   *   a session, and the contract says so by declaring two security schemes on that operation.
+   * - `'refresh-cookie'` — the cookie, and the handler itself consumes it. `POST /auth/refresh`,
+   *   whose whole purpose is to re-establish a session from that token: a guard in front of it would
+   *   read the same row twice and answer 401 without the cookie-clearing the contract requires on
+   *   every refusal. The ownership check named by `ownershipCheckedIn` is then the authorization.
+   *
+   * Absent means the bearer token, which is the default the document's `security` block states.
+   */
+  readonly credential?: 'either' | 'refresh-cookie';
 }
 
 /**

@@ -23,7 +23,10 @@
 -- Four roles, four reasons (docs/security/rls-design.md):
 --   app_user     — the application process. Subject to RLS, owns nothing.
 --   app_migrator — owns the schema and every object, runs migrations. Never used at runtime.
---   app_auth     — BYPASSRLS, but reaches no domain table: it only owns SECURITY DEFINER resolvers.
+--   app_auth     — NO BYPASSRLS, and no table privilege at all: it holds EXECUTE on three
+--                  SECURITY DEFINER resolvers and nothing else. This is DATABASE_AUTH_URL.
+--   app_auth_definer — NOLOGIN, BYPASSRLS, SELECT on the three tables those resolvers read. It owns
+--                  them, so their bodies run with these privileges; nothing can connect as it.
 --   backup_role  — BYPASSRLS, read-only. pg_dump taken as the table owner under FORCE ROW LEVEL
 --                  SECURITY silently produces a partial dump (docs/runbooks/backup-restore.md).
 
@@ -70,6 +73,10 @@ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'backup_role') THEN
     CREATE ROLE backup_role  LOGIN;
   END IF;
+  -- NOLOGIN and it stays that way: nothing ever connects as this role. See the block below.
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_auth_definer') THEN
+    CREATE ROLE app_auth_definer NOLOGIN;
+  END IF;
 END $$;
 
 -- Attributes are asserted on EVERY run, not only at creation, and that is the whole point of this
@@ -84,8 +91,40 @@ END $$;
 -- deploy pipeline and not in the application environment.
 ALTER ROLE app_migrator LOGIN NOINHERIT NOSUPERUSER NOCREATEROLE NOCREATEDB NOREPLICATION NOBYPASSRLS;
 ALTER ROLE app_user     LOGIN NOINHERIT NOSUPERUSER NOCREATEROLE NOCREATEDB NOREPLICATION NOBYPASSRLS;
-ALTER ROLE app_auth     LOGIN NOINHERIT NOSUPERUSER NOCREATEROLE NOCREATEDB NOREPLICATION   BYPASSRLS;
+-- `app_auth` is NOBYPASSRLS, and the reason is worth stating because the opposite looks harmless.
+--
+-- The resolvers this role calls are `SECURITY DEFINER` and execute with the privileges of
+-- `app_auth_definer` — that is the role whose BYPASSRLS the org-less path actually needs, and it is
+-- the one that has it. The connecting role needs none: it holds no privilege on any table, so there
+-- is no query whose result the attribute would change.
+--
+-- Which is exactly why it was wrong to leave it on. It breaks nothing today and it silently removes
+-- the second line of defence: the day any `GRANT … TO app_auth` is written — by a migration, by an
+-- operator, by a restore that widened the ACL — that grant becomes a read across every organization
+-- on the installation, and no behavioural test can tell the difference. The role table of
+-- `docs/security/rls-design.md` has always said «без `BYPASSRLS`»; this line now says the same, and
+-- `test/integration/db/role-catalog.test.ts` reads the catalog to keep the three in step.
+ALTER ROLE app_auth     LOGIN NOINHERIT NOSUPERUSER NOCREATEROLE NOCREATEDB NOREPLICATION NOBYPASSRLS;
 ALTER ROLE backup_role  LOGIN NOINHERIT NOSUPERUSER NOCREATEROLE NOCREATEDB NOREPLICATION   BYPASSRLS;
+
+-- `app_auth_definer` — the role the authentication resolvers *run as*, and the reason `app_auth`
+-- can be a credential that reads nothing.
+--
+-- `docs/security/rls-design.md` («Особые пути») describes one role for both jobs, and one role
+-- cannot do both. A `SECURITY DEFINER` function executes with the privileges of its **owner**, and
+-- BYPASSRLS skips *policies*, not *privilege checks* — so an owner with no `SELECT` on `users`
+-- produces `permission denied for table users` from inside the function. Giving the owner that
+-- `SELECT` is what makes it work; giving it to the role the application connects as is what would
+-- make `DATABASE_AUTH_URL` a credential that dumps every account of every organization, which is
+-- exactly the enumeration the narrow path exists to prevent. Verified against PostgreSQL 16.14.
+--
+-- Split in two, therefore:
+--   * `app_auth`         — LOGIN, **NOBYPASSRLS**, **no privilege on any table**, `EXECUTE` on three
+--                          functions. This is what `DATABASE_AUTH_URL` holds.
+--   * `app_auth_definer` — NOLOGIN, BYPASSRLS, `SELECT` on the three tables those functions read
+--                          (granted by `01-grants.sql`). Nothing can connect as it, so the
+--                          privileges are reachable only *through* the functions.
+ALTER ROLE app_auth_definer NOLOGIN NOINHERIT NOSUPERUSER NOCREATEROLE NOCREATEDB NOREPLICATION BYPASSRLS;
 
 -- Memberships granted by an earlier installation are removed here. NOINHERIT alone is not enough:
 -- it only stops rights from being applied automatically — a member may still `SET ROLE` into the
@@ -104,14 +143,39 @@ BEGIN
     FROM   pg_auth_members am
     JOIN   pg_roles granted ON granted.oid = am.roleid
     JOIN   pg_roles member  ON member.oid  = am.member
-    WHERE  granted.rolname IN ('app_migrator', 'app_user', 'app_auth', 'backup_role')
-      AND  member.rolname  IN ('app_migrator', 'app_user', 'app_auth', 'backup_role')
+    WHERE  granted.rolname IN ('app_migrator', 'app_user', 'app_auth', 'app_auth_definer',
+                               'backup_role')
+      AND  member.rolname  IN ('app_migrator', 'app_user', 'app_auth', 'app_auth_definer',
+                               'backup_role')
+      -- The one sanctioned pair, granted immediately below with INHERIT switched off. It is excluded
+      -- here rather than re-granted afterwards, so that a re-run of this file does not leave a window
+      -- in which the migration cannot transfer ownership.
+      AND  NOT (granted.rolname = 'app_auth_definer' AND member.rolname = 'app_migrator')
   LOOP
     EXECUTE format('REVOKE %I FROM %I', membership.granted_role, membership.member_role);
     RAISE WARNING 'removed membership of % in % left by an earlier installation',
       membership.member_role, membership.granted_role;
   END LOOP;
 END $memberships$;
+
+-- The single exception to the rule above, and it exists because of a PostgreSQL requirement rather
+-- than because of anything this system wants: `ALTER FUNCTION … OWNER TO app_auth_definer` may only
+-- be issued by a member of that role, and the migration that creates the authentication resolvers
+-- runs as app_migrator (the migration 20260729120000_auth_owner_and_lookup_functions).
+--
+-- `WITH INHERIT FALSE` narrows it as far as PostgreSQL allows: none of the target's privileges apply
+-- to app_migrator automatically. `SET FALSE` was tried and cannot be used — `ALTER … OWNER TO` goes
+-- through `check_can_set_role`, and the server answers `42501 must be able to SET ROLE` (PostgreSQL
+-- 16.14). So app_migrator *can* `SET ROLE app_auth_definer` explicitly.
+--
+-- That is a real widening and it is stated rather than hidden. It is also not a material one: this
+-- role already owns every table in the schema, and an owner can `ALTER TABLE … DISABLE ROW LEVEL
+-- SECURITY` or drop a policy outright. Anything reachable by becoming app_auth_definer was already
+-- reachable one statement earlier. The distinction this file protects is between the *runtime*
+-- roles — app_user and app_auth must never reach app_migrator or each other — and that distinction
+-- is untouched: the loop above still removes every other pair, and neither runtime role is a member
+-- of anything.
+GRANT app_auth_definer TO app_migrator WITH INHERIT FALSE;
 
 -- `ALTER ROLE … PASSWORD '<value>'` is DDL, so a server running with `log_statement = ddl` (or
 -- `all`) writes the four passwords into its log verbatim — verified against PostgreSQL 16.14. The
@@ -167,13 +231,15 @@ WHERE NOT EXISTS (SELECT 1 FROM pg_database WHERE datname = :'db_name')\gexec
 
 ALTER DATABASE :"db_name" OWNER TO app_migrator;
 REVOKE ALL   ON DATABASE :"db_name" FROM PUBLIC;
+-- `app_auth_definer` is deliberately absent: it is NOLOGIN, so it needs no CONNECT, and a role that
+-- cannot connect is a set of privileges reachable only through the functions that own them.
 GRANT CONNECT ON DATABASE :"db_name" TO app_user, app_auth, backup_role;
 
 \connect :"db_name"
 
 ALTER SCHEMA public OWNER TO app_migrator;
 REVOKE ALL   ON SCHEMA public FROM PUBLIC;  -- PG15+ already drops CREATE for PUBLIC; make it explicit
-GRANT  USAGE ON SCHEMA public TO app_user, app_auth, backup_role;
+GRANT  USAGE ON SCHEMA public TO app_user, app_auth, backup_role, app_auth_definer;
 
 -- backup_role deliberately receives no table grant here. BYPASSRLS skips the policies, not the
 -- GRANT check, and ALTER DEFAULT PRIVILEGES is forbidden by docs/security/rls-design.md — so every

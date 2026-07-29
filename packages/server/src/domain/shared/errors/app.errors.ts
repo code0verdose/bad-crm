@@ -51,6 +51,36 @@ export class NotFoundError extends AppError {
 }
 
 /**
+ * No usable session, or a credential that was presented and refused.
+ *
+ * **The two codes are one class on purpose, and `message` is a constant.** `invalid_credentials`
+ * covers an address nobody has *and* a wrong password, and the epic's acceptance criterion is that
+ * nothing the caller can observe separates them — not the status, not the code, not the `detail`
+ * line the error handler builds out of `message`, and not the elapsed time (which the login use-case
+ * equalises by verifying a dummy digest). A constructor taking a per-case message would put the
+ * oracle back one throw site at a time, so it does not take one.
+ */
+export class UnauthenticatedError extends AppError {
+  constructor(code: 'unauthenticated' | 'invalid_credentials' = 'unauthenticated') {
+    super(code, code === 'unauthenticated' ? 'Unauthenticated' : 'Invalid credentials');
+  }
+}
+
+/**
+ * The credential was right and the account may still not do this.
+ *
+ * `account_suspended` is reachable only *after* a password verified, and `registration_disabled` is
+ * decided before any address is looked at. Both are properties of the installation or of the
+ * account rather than of the request, which is why neither is a `ForbiddenError`: that one is about
+ * a capability inside an organization, and there is no organization here yet.
+ */
+export class AccountRefusedError extends AppError {
+  constructor(code: 'account_suspended' | 'registration_disabled', details?: ErrorDetails) {
+    super(code, `Refused: ${code}`, details);
+  }
+}
+
+/**
  * The caller may see the resource but not perform this action **inside their own organization**.
  *
  * A denial that crosses organizations is a `NotFoundError`; the choice is made once, in

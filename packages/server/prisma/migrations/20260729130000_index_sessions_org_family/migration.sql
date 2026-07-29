@@ -1,0 +1,55 @@
+-- EPIC-006 — the index the revocation of a session family actually needs.
+--
+-- `PrismaSessionRepository.revokeFamily` is the response to a stolen refresh token: reuse was
+-- detected from the digest, so the *user* is not known yet and the statement is
+-- `UPDATE sessions … WHERE family_id = $1` — with `organization_id` added by the row-level security
+-- policy, and nothing else.
+--
+-- `idx_sessions_org_user_family (organization_id, user_id, family_id)` cannot serve that — and the
+-- way it fails is not the way one would guess. PostgreSQL *does* attach `family_id` to a scan of
+-- that index, as a **non-boundary** qual: the plan reads
+-- `Index Cond: ((organization_id = …) AND (family_id = …))` and shows no `Filter` at all. What the
+-- index cannot do is position on it. `user_id` sits between the two columns the statement supplies,
+-- so the scan starts at the first entry of the organization and walks every one of them, testing
+-- `family_id` on each. The planner costs that correctly and prefers to read the heap instead. The
+-- observable symptom is therefore a sequential scan, never a `Filter: family_id`.
+--
+-- The comment above that index in `20260728120000_auth_core_identity_and_sessions` describes a
+-- three-column predicate the code does not issue; it is left as written rather than edited, because
+-- a committed migration is history and drift is corrected by a new migration
+-- (`rules/db-migrations.mdc`, 12).
+--
+-- Measured on PostgreSQL 16 (pgvector/pgvector:0.8.5-pg16), one organization with 20 100 sessions:
+--
+--   before  Seq Scan on sessions, Rows Removed by Filter: 20 099, shared hit=447, 1.567 ms
+--   after   Index Scan using idx_sessions_org_family, shared hit=3,   0.013 ms
+--
+-- And, with `enable_seqscan = off` to force the three-column index into the plan, the cost of the
+-- path the planner was avoiding: 1092.43 against 8.32.
+--
+-- Two orders of magnitude on the path an operator takes while a token is in somebody else's hands.
+-- Held by `test/integration/db/refresh-rotation.test.ts`, which seeds an organization and asserts
+-- the plan the planner picks on its own settings — an assertion on `Index Cond` / `Filter` would
+-- pass with this index dropped, which is exactly what it used to do.
+--
+-- CONCURRENTLY, alone in its file, per `rules/db-migrations.mdc` (6): `CREATE INDEX CONCURRENTLY`
+-- cannot run inside a transaction block, and PostgreSQL wraps a multi-statement simple query in an
+-- implicit one — so this file carries exactly one statement. The concurrent build takes no lock that
+-- blocks writes, which is what makes it safe on an installation whose `sessions` table is not empty.
+--
+-- WHERE THE TIMEOUTS OF THIS FILE COME FROM, since it sets none and cannot.
+--
+-- Not from a fresh session: `prisma migrate deploy` applies every pending migration over **one**
+-- connection, so this file runs on the connection the previous migration left behind. That is why
+-- the preamble of every other migration is `SET LOCAL` — a session-level `SET statement_timeout`
+-- one file earlier would cap the build here, and rule 6 leaves this file nothing it could use to
+-- raise it again. A build cancelled by an inherited timeout leaves an INVALID index and a migration
+-- marked failed, after which every later deploy answers `P3009`.
+--
+-- Measured on PostgreSQL 16 (pgvector/pgvector:0.8.5-pg16) with Prisma 6.19.3, by a probe migration
+-- placed where this one sits: `statement_timeout=5min lock_timeout=3s` inherited from a session-level
+-- preamble, against `statement_timeout=0 lock_timeout=5s` — the values Prisma itself establishes —
+-- once the preambles became `SET LOCAL`. The rule is held by the linter
+-- (`test/support/migration-lint.util.ts`, `session-timeout`), so a future migration cannot
+-- reintroduce the leak silently.
+CREATE INDEX CONCURRENTLY IF NOT EXISTS "idx_sessions_org_family" ON "sessions" ("organization_id", "family_id");

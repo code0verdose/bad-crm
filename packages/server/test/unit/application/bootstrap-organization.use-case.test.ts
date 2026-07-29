@@ -41,8 +41,9 @@ const draft: OrganizationDraft = {
 
 const owner: OwnerDraft = {
   email: 'owner@example.com',
-  name: 'Owner',
   passwordHash: '$argon2id$v=19$m=19456,t=2,p=1$c2FsdA$aGFzaA',
+  locale: 'en',
+  timezone: 'Europe/Berlin',
 };
 
 interface Row {
@@ -99,6 +100,8 @@ class InMemoryDatabase {
   };
 
   readonly users: UserRepositoryPort = {
+    findById: (): Promise<null> => Promise.resolve(null),
+    updatePasswordHash: (): Promise<void> => Promise.resolve(),
     createOwner: (ownerDraft: OwnerDraft): Promise<string> => {
       const scope = this.scopes.at(-1);
 

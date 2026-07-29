@@ -65,6 +65,8 @@ const idsReturning = (id: string): IdGeneratorPort => ({
  * duplicate email would, so the rollback can be observed rather than argued about.
  */
 const ownerWriting = (options: { failing?: boolean } = {}): UserRepositoryPort => ({
+  findById: () => Promise.resolve(null),
+  updatePasswordHash: () => Promise.resolve(),
   createOwner: async () => {
     const { tx, ctx } = requireTenant('TestOwnerRepository.createOwner');
     const team = await tx.team.create({
@@ -92,8 +94,9 @@ const draftFor = (slug: string) => ({
 
 const owner = {
   email: 'owner@example.com',
-  name: 'Owner',
   passwordHash: '$argon2id$v=19$m=19456,t=2,p=1$c2FsdA$aGFzaA',
+  locale: 'en',
+  timezone: 'UTC',
 };
 
 const useCaseFor = (

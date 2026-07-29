@@ -9,7 +9,9 @@ import {
 const rulesOf = (findings: MigrationFinding[]): string[] => findings.map((finding) => finding.rule);
 
 const INITIAL_HEADER = '-- bad-crm:initial-migration\n';
-const TIMEOUTS = "SET lock_timeout = '3s';\nSET statement_timeout = '5min';\n";
+const TIMEOUTS = "SET LOCAL lock_timeout = '3s';\nSET LOCAL statement_timeout = '5min';\n";
+/** The same preamble without `LOCAL` — the form that outlives its own migration. */
+const SESSION_TIMEOUTS = "SET lock_timeout = '3s';\nSET statement_timeout = '5min';\n";
 
 const clean = `${TIMEOUTS}ALTER TABLE teams ADD COLUMN archived_at timestamptz;\n`;
 
@@ -29,8 +31,46 @@ describe('the migration linter', () => {
     ['set-not-null', `${TIMEOUTS}ALTER TABLE teams ALTER COLUMN description SET NOT NULL;\n`],
     ['blocking-index', `${TIMEOUTS}CREATE INDEX idx_teams_org_name ON teams (name);\n`],
     ['missing-timeouts', 'ALTER TABLE teams ADD COLUMN archived_at timestamptz;\n'],
+    [
+      'session-timeout',
+      `${SESSION_TIMEOUTS}ALTER TABLE teams ADD COLUMN archived_at timestamptz;\n`,
+    ],
   ])('flags %s', (rule, sql) => {
     expect(rulesOf(lintMigrationSql('20260801_change/migration.sql', sql))).toContain(rule);
+  });
+
+  /**
+   * `SET` and `SET LOCAL` differ in exactly one property, and it is the one that matters here.
+   *
+   * Prisma applies every pending migration of one `migrate deploy` over a **single** connection,
+   * and a session-level `SET` outlives the COMMIT of its own migration. So the preamble of one file
+   * silently becomes the preamble of every file applied after it — including a
+   * `CREATE INDEX CONCURRENTLY` file, which by rule 6 may carry nothing but the index statement and
+   * therefore cannot undo it. Measured with a probe migration against PostgreSQL 16
+   * (pgvector/pgvector:0.8.5-pg16) and Prisma 6.19.3: after `SET statement_timeout = '5min'` in the
+   * previous file the probe read `PROBE statement_timeout=5min lock_timeout=3s`; with `SET LOCAL`
+   * it read `PROBE statement_timeout=0 lock_timeout=5s`, the values Prisma itself establishes.
+   *
+   * The consequence is not a slow build but a broken installation: a concurrent build that runs
+   * past the inherited `statement_timeout` is cancelled, leaves an INVALID index behind and marks
+   * the migration failed, after which every later deploy answers `P3009`.
+   */
+  it('flags a session-level SET even when the LOCAL form is also present', () => {
+    const sql = `${TIMEOUTS}SET statement_timeout = '10min';\nALTER TABLE teams ADD COLUMN archived_at timestamptz;\n`;
+
+    expect(rulesOf(lintMigrationSql('20260801_change/migration.sql', sql))).toEqual([
+      'session-timeout',
+    ]);
+  });
+
+  it('names the line the session-level SET sits on', () => {
+    const findings = lintMigrationSql('20260801_change/migration.sql', SESSION_TIMEOUTS);
+
+    expect(findings.map((finding) => `${finding.line}:${finding.rule}`)).toEqual([
+      '1:session-timeout',
+      '1:missing-timeouts',
+      '2:session-timeout',
+    ]);
   });
 
   it('reports the line a finding sits on', () => {

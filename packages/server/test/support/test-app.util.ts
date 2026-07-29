@@ -31,6 +31,7 @@ export const testEnv = (overrides: Partial<ServerEnv> = {}): ServerEnv =>
     AI_ENABLED: false,
     LOG_LEVEL: 'debug',
     RUN_WORKERS_IN_PROCESS: false,
+    TRUSTED_PROXY_HOPS: 0,
     ARGON2_MEMORY_COST: 19_456,
     ARGON2_TIME_COST: 2,
     ARGON2_PARALLELISM: 1,

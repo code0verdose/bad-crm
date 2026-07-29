@@ -397,20 +397,31 @@ describe('foreign keys between tenant tables', () => {
     expect(foreignKeys.length).toBeGreaterThan(0);
   });
 
+  /**
+   * The referencing side has to carry **its own** tenant column, which is not always
+   * `organization_id`: `organizations` is the tenant root, so its tenant column is its primary key.
+   * The registry already states which one each table uses, and asking it is what lets
+   * `organizations (id, owner_id) → users (organization_id, id)` be recognised as the composite
+   * reference it is instead of reported as a single-column one.
+   *
+   * Keyed on the registry rather than on the column name for the same reason `01-grants.sql` stopped
+   * classifying tables by `organization_id`: the one table where the two ideas differ is the one
+   * that matters most.
+   */
   it('carries the tenant on every reference from one tenant table to another', () => {
-    const registry: Record<string, unknown> = TENANT_TABLES;
+    const registry: Record<string, { tenantColumn: string } | undefined> = TENANT_TABLES;
     const singleColumn = foreignKeys
       .filter(
         (key) =>
           registry[key.table] !== undefined &&
           registry[key.target] !== undefined &&
-          // A reference to the tenant root is the tenant column itself; there is nothing to pair
+          // A reference *to* the tenant root is the tenant column itself; there is nothing to pair
           // it with, and `organizations` has no `organization_id` to point at.
           key.target !== 'organizations',
       )
       .filter(
         (key) =>
-          !key.columns.includes('organization_id') ||
+          !key.columns.includes(registry[key.table]?.tenantColumn ?? 'organization_id') ||
           !key.targetColumns.includes('organization_id'),
       );
 
@@ -418,6 +429,24 @@ describe('foreign keys between tenant tables', () => {
       singleColumn.map((key) => `${key.table}.${key.constraint} → ${key.target}`),
       'a single-column reference confirms a parent row of another organization: FK checks bypass RLS',
     ).toEqual([]);
+  });
+
+  /**
+   * The positive control the assertion above cannot have of its own: it walks a filtered list, and
+   * an empty one is also what a broken lookup produces. The organization's owner is the reference
+   * the rule was generalised for, so it has to be *in* the set being judged.
+   */
+  it('is judging the owner reference, which is the composite one that is not organization_id', () => {
+    const owner = foreignKeys.find((key) => key.constraint === 'fk_organizations_owner_id');
+
+    expect(owner).toMatchObject({
+      table: 'organizations',
+      target: 'users',
+      columns: ['id', 'owner_id'],
+      // Attribute order, not the order the constraint was written in: `pg_attribute` numbers `id`
+      // before `organization_id` on `users`, and the ARRAY() above follows the join, not `confkey`.
+      targetColumns: ['id', 'organization_id'],
+    });
   });
 
   it('anchors every tenant table to the organization it belongs to', () => {
@@ -570,6 +599,106 @@ describe('grants', () => {
   });
 });
 
+/**
+ * `organizations.owner_id` in the state the expand step leaves it, pinned so the contract step is a
+ * deliberate change and not a drift.
+ *
+ * `docs/architecture/data-model.md` («Про `Organization.ownerId`») describes exactly this shape and
+ * names what it does **not** cover: the column is nullable, so «у организации всегда есть владелец»
+ * is held by the registration use-case and by nothing in the database. `ON DELETE SET NULL` catches
+ * a physically deleted owner; it cannot catch a softly deleted one, because the row is still there.
+ * Both gaps are closed by STORY-006-09, and until then this test is what keeps the document honest.
+ */
+describe('the owner of an organization', () => {
+  it('is a nullable column — the expand step, with the contract step still open', async () => {
+    const { rows } = await pools.owner.query<{ is_nullable: string; data_type: string }>(
+      `SELECT is_nullable, data_type
+         FROM information_schema.columns
+        WHERE table_schema = 'public' AND table_name = 'organizations' AND column_name = 'owner_id'`,
+    );
+
+    expect(rows[0]?.data_type).toBe('uuid');
+    expect(rows[0]?.is_nullable).toBe('YES');
+  });
+
+  /**
+   * The pair, and the column list on the action. A bare `SET NULL` would null both columns of
+   * `(id, owner_id)` — including the primary key — and die on its NOT NULL; the composite target is
+   * what stops an owner from another organization being named at all, since foreign key checks run
+   * as the table owner and bypass row-level security (`rules/tenancy-rls.mdc`, 7).
+   */
+  it('references (organization_id, id) of users and nulls only the nullable half', async () => {
+    const { rows } = await pools.owner.query<{
+      confdeltype: string;
+      columns: string[];
+      referenced: string[];
+      delete_set_cols: string[] | null;
+    }>(
+      `SELECT c.confdeltype,
+              (SELECT array_agg(a.attname::text ORDER BY k.ord)
+                 FROM unnest(c.conkey) WITH ORDINALITY AS k(attnum, ord)
+                 JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = k.attnum) AS columns,
+              (SELECT array_agg(a.attname::text ORDER BY k.ord)
+                 FROM unnest(c.confkey) WITH ORDINALITY AS k(attnum, ord)
+                 JOIN pg_attribute a ON a.attrelid = c.confrelid AND a.attnum = k.attnum) AS referenced,
+              (SELECT array_agg(a.attname::text)
+                 FROM unnest(c.confdelsetcols) AS k(attnum)
+                 JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = k.attnum) AS delete_set_cols
+         FROM pg_constraint c
+        WHERE c.conname = 'fk_organizations_owner_id'`,
+    );
+
+    expect(rows[0]?.columns).toEqual(['id', 'owner_id']);
+    expect(rows[0]?.referenced).toEqual(['organization_id', 'id']);
+    // 'n' — ON DELETE SET NULL.
+    expect(rows[0]?.confdeltype).toBe('n');
+    expect(rows[0]?.delete_set_cols).toEqual(['owner_id']);
+  });
+
+  /**
+   * And the gap the schema cannot close, stated as a test so it cannot be forgotten: a softly
+   * deleted owner leaves the reference intact and the organization without a reachable one. This is
+   * a characterisation of today's behaviour — when STORY-006-09 forbids offboarding an owner without
+   * transferring ownership, this test is the one that has to change.
+   */
+  it('keeps pointing at an owner who was softly deleted — an application invariant, not a schema one', async () => {
+    const organizationId = randomUUID();
+
+    const ownerId = await asMaintenance(pools.owner, async (client) => {
+      await client.query(
+        `INSERT INTO organizations (id, slug, name, updated_at) VALUES ($1, $2, 'Owner Co', now())`,
+        [organizationId, `owner-${organizationId.slice(0, 8)}`],
+      );
+
+      const { rows } = await client.query<{ id: string }>(
+        `INSERT INTO users (organization_id, email, password_hash, status, updated_at)
+           VALUES ($1, $2, 'placeholder-not-a-credential', 'ACTIVE', now())
+         RETURNING id`,
+        [organizationId, `owner-${organizationId.slice(0, 8)}@example.test`],
+      );
+
+      const id = rows[0]?.id ?? '';
+
+      await client.query('UPDATE organizations SET owner_id = $2 WHERE id = $1', [
+        organizationId,
+        id,
+      ]);
+      await client.query('UPDATE users SET deleted_at = now() WHERE id = $1', [id]);
+
+      return id;
+    });
+
+    const { rows } = await asMaintenance(pools.owner, (client) =>
+      client.query<{ owner_id: string | null }>(
+        'SELECT owner_id FROM organizations WHERE id = $1',
+        [organizationId],
+      ),
+    );
+
+    expect(rows[0]?.owner_id, 'a soft delete is not a delete: the FK never fires').toBe(ownerId);
+  });
+});
+
 describe('database roles', () => {
   it('runs the application under a role that cannot escape RLS', async () => {
     const { rows } = await pools.owner.query<{
@@ -578,7 +707,8 @@ describe('database roles', () => {
       rolbypassrls: boolean;
     }>(
       `SELECT rolname, rolsuper, rolbypassrls FROM pg_roles
-        WHERE rolname IN ('app_user', 'app_migrator', 'app_auth', 'backup_role')`,
+        WHERE rolname IN ('app_user', 'app_migrator', 'app_auth', 'app_auth_definer',
+                          'backup_role')`,
     );
     const roleNamed = (name: string) => rows.find((row) => row.rolname === name);
 
@@ -587,7 +717,11 @@ describe('database roles', () => {
     expect(roleNamed('app_migrator')?.rolbypassrls).toBe(false);
     // Without BYPASSRLS the dump is silently partial rather than failing (backup-restore runbook).
     expect(roleNamed('backup_role')?.rolbypassrls).toBe(true);
-    expect(roleNamed('app_auth')?.rolbypassrls).toBe(true);
+    // `app_auth` is the role the application *connects* as on the org-less path, and it bypasses
+    // nothing: the reading across organizations happens inside SECURITY DEFINER functions, which
+    // execute as `app_auth_definer`. See `role-catalog.test.ts` for the whole table.
+    expect(roleNamed('app_auth')?.rolbypassrls).toBe(false);
+    expect(roleNamed('app_auth_definer')?.rolbypassrls).toBe(true);
   });
 
   /**

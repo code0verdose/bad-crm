@@ -1,5 +1,13 @@
 import { type RequestHandler } from 'express';
 
+import { type AuthLookupPort } from '@/application/identity/ports/auth-lookup.port.js';
+import { type RefreshTokenPort } from '@/application/identity/ports/refresh-token.port.js';
+import { type AuthenticateSessionQuery } from '@/application/identity/use-cases/authenticate-session.query.js';
+import { type EndSessionUseCase } from '@/application/identity/use-cases/end-session.use-case.js';
+import { type ListSessionsQuery } from '@/application/identity/use-cases/list-sessions.query.js';
+import { type LoginUseCase } from '@/application/identity/use-cases/login.use-case.js';
+import { type RefreshSessionUseCase } from '@/application/identity/use-cases/refresh-session.use-case.js';
+import { type RegisterOrganizationUseCase } from '@/application/identity/use-cases/register-organization.use-case.js';
 import { type IdGeneratorPort } from '@/application/platform/ports/id-generator.port.js';
 import { type LoggerPort } from '@/application/platform/ports/logger.port.js';
 import { type RequestContextPort } from '@/application/platform/ports/request-context.port.js';
@@ -22,6 +30,12 @@ export interface HttpServerConfig {
   readonly corsExtraOrigins: string | undefined;
   /** `S3_ENDPOINT` — its origin goes into `connect-src`/`img-src` of the CSP (ADR-0023). */
   readonly storageEndpoint: string;
+  /**
+   * `TRUSTED_PROXY_HOPS` — how many `X-Forwarded-For` entries were written by the operator's own
+   * proxies. Decides what `req.ip` is, and therefore what goes into `sessions.ip_hash` and what the
+   * rate limiter counts against.
+   */
+  readonly trustedProxyHops: number;
 }
 
 /**
@@ -31,6 +45,25 @@ export interface HttpServerConfig {
  * cannot reach a Prisma client even by accident, and the whole HTTP surface can be driven by
  * supertest with in-memory implementations behind it.
  */
+/**
+ * The authentication surface, as the HTTP layer sees it: use-cases, plus the two ports the guard
+ * needs to resolve a refresh cookie on the one route whose contract accepts one.
+ *
+ * Grouped rather than spread across `HttpServerDependencies` so that "what does the auth surface
+ * depend on" is one declaration, and so that a controller cannot reach a repository — everything
+ * here is a use-case or a port (rules/hexagonal-backend.mdc).
+ */
+export interface IdentityDependencies {
+  readonly register: RegisterOrganizationUseCase;
+  readonly login: LoginUseCase;
+  readonly refresh: RefreshSessionUseCase;
+  readonly endSession: EndSessionUseCase;
+  readonly listSessions: ListSessionsQuery;
+  readonly authenticate: AuthenticateSessionQuery;
+  readonly authLookup: AuthLookupPort;
+  readonly refreshTokens: RefreshTokenPort;
+}
+
 export interface HttpServerDependencies {
   readonly config: HttpServerConfig;
   readonly logger: LoggerPort;
@@ -41,4 +74,5 @@ export interface HttpServerDependencies {
   readonly checkHealth: CheckHealthUseCase;
   readonly checkReadiness: CheckReadinessUseCase;
   readonly describeApi: DescribeApiUseCase;
+  readonly identity: IdentityDependencies;
 }

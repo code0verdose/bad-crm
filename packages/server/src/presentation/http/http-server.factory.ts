@@ -22,14 +22,6 @@ const BODY_LIMIT = '1mb';
 const HSTS_MAX_AGE_SECONDS = 31_536_000;
 
 /**
- * A single reverse proxy in front of the process (Caddy, per `docs/runbooks/hosting.md`).
- *
- * `true` would trust the whole `X-Forwarded-For` chain, letting any client spoof its address and
- * defeat every per-IP rate limit; `1` trusts exactly the hop we operate.
- */
-const TRUSTED_PROXY_HOPS = 1;
-
-/**
  * The Express application, assembled from ports and use-cases — no listener, no signal handlers.
  *
  * Keeping `listen` out of this function is what makes the whole HTTP surface testable in-process
@@ -54,7 +46,22 @@ export const createHttpServer = (dependencies: HttpServerDependencies): Express 
   });
 
   app.disable('x-powered-by');
-  app.set('trust proxy', TRUSTED_PROXY_HOPS);
+  /**
+   * Whose word to take for the caller's address, from configuration and never from a constant.
+   *
+   * `X-Forwarded-For` is a request header, so it is evidence only where a proxy the operator runs
+   * has appended the real peer. `true` would trust the whole chain — any client could then name its
+   * own address — and a hard-coded `1` is the same mistake wherever no proxy exists, which is what
+   * the shipped `docker-compose.yml` describes: Caddy, nginx or Traefik is installed by the
+   * operator (`docs/runbooks/install.md` §3). The number of hops is therefore theirs to state, and
+   * `TRUSTED_PROXY_HOPS` defaults to `0`: believe the socket.
+   *
+   * What rides on it: `sessions.ip_hash` and `sessions.ip_masked`, which the account owner reads on
+   * `/settings/security` and an incident investigation reads afterwards, and the key the rate
+   * limiter counts a sign-in attempt against — one forged header per request would otherwise be a
+   * fresh budget per request.
+   */
+  app.set('trust proxy', dependencies.config.trustedProxyHops);
 
   app.use(
     createRequestContextMiddleware({

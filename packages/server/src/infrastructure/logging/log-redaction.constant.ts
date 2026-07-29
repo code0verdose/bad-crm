@@ -26,6 +26,19 @@ export const REDACTED_PATHS: readonly string[] = [
   '*.secret',
   '*.otp',
   '*.recoveryCode',
+  /**
+   * pino matches a **whole key**, never a substring of one, so `*.token` covers `token` and nothing
+   * that merely ends in it. The three below are the names this codebase actually uses for the
+   * values it must never write down — `accessToken` in the sign-in result, `refreshTokenHash` on a
+   * session row, `passwordHash` on a user row — and none of them was covered.
+   *
+   * Nothing logs them today, which is exactly why the gap was invisible: the net is for the line
+   * somebody adds while debugging a sign-in, and a net with a hole in the shape of the most likely
+   * mistake is not a net.
+   */
+  '*.accessToken',
+  '*.refreshTokenHash',
+  '*.passwordHash',
   // The same keys one level up: `logger.info({ password })` has no parent object for `*.` to match.
   'password',
   'token',
@@ -35,4 +48,7 @@ export const REDACTED_PATHS: readonly string[] = [
   'secret',
   'otp',
   'recoveryCode',
+  'accessToken',
+  'refreshTokenHash',
+  'passwordHash',
 ];

@@ -20,6 +20,7 @@ const row = (id: string): Organization => ({
   id,
   slug: 'acme',
   name: 'Acme',
+  ownerId: null,
   timezone: 'Europe/Berlin',
   defaultCurrency: 'EUR',
   settings: {},

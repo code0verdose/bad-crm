@@ -7,6 +7,7 @@ import { createRootLogger } from '../../../src/infrastructure/logging/pino-logge
 import { EnvValidationError } from '../../../src/infrastructure/bootstrap/env.errors.js';
 import { UnsafeDatabaseRoleError } from '../../../src/infrastructure/persistence/prisma/assert-db-role.util.js';
 import type { DatabaseConnection } from '../../../src/infrastructure/persistence/prisma/database.factory.js';
+import type { RedisConnection } from '../../../src/infrastructure/redis/redis.client.js';
 import type { ServerEnv } from '../../../src/infrastructure/bootstrap/env.schema.js';
 
 const VALID_ENCRYPTION_KEY = `${'A'.repeat(43)}=`;
@@ -36,6 +37,7 @@ const testEnv = (overrides: Partial<ServerEnv> = {}): ServerEnv =>
     LOG_LEVEL: 'info',
     OTEL_EXPORTER_OTLP_ENDPOINT: undefined,
     RUN_WORKERS_IN_PROCESS: false,
+    TRUSTED_PROXY_HOPS: 0,
     ARGON2_MEMORY_COST: 19_456,
     ARGON2_TIME_COST: 2,
     ARGON2_PARALLELISM: 1,
@@ -70,10 +72,28 @@ const fakeDatabase = (closed: string[]): DatabaseConnection =>
     },
   }) as unknown as DatabaseConnection;
 
+/**
+ * The Redis handle, shaped only where the startup sequence touches it.
+ *
+ * The client is never spoken to here: what the sequence has to get right is that it is opened
+ * alongside the database — before the port, because the rate limiter refuses every sign-in without
+ * it — and that it is closed on the way out.
+ */
+const fakeRedis = (closed: string[]): RedisConnection =>
+  ({
+    client: {},
+    close: () => {
+      closed.push('redis');
+
+      return Promise.resolve();
+    },
+  }) as unknown as RedisConnection;
+
 const harness = (
   overrides: {
     loadEnvironment?: () => ServerEnv;
     verifyDatabaseRole?: () => Promise<void>;
+    runStartupChecks?: () => Promise<void>;
   } = {},
 ) => {
   const order: string[] = [];
@@ -104,10 +124,20 @@ const harness = (
 
       return fakeDatabase(closed);
     },
+    connectRedis: () => {
+      order.push('redis');
+
+      return fakeRedis(closed);
+    },
     verifyDatabaseRole: () => {
       order.push('db-role');
 
       return overrides.verifyDatabaseRole?.() ?? Promise.resolve();
+    },
+    runStartupChecks: () => {
+      order.push('startup-checks');
+
+      return overrides.runStartupChecks?.() ?? Promise.resolve();
     },
     listen: (_app: Express, port: number) => {
       order.push('listen');
@@ -149,9 +179,67 @@ describe('startApiProcess', () => {
 
     await start;
 
-    expect(state.order).toEqual(['env', 'logger', 'database', 'db-role', 'listen']);
+    expect(state.order).toEqual([
+      'env',
+      'logger',
+      'database',
+      'redis',
+      'db-role',
+      'startup-checks',
+      'listen',
+    ]);
     expect(state.listened).toEqual([4321]);
     expect(state.exitCodes).toEqual([]);
+  });
+
+  /**
+   * The second pool skips row-level security by design, so *which role it is* is the only thing
+   * keeping the authentication path narrow. A `DATABASE_AUTH_URL` pointing at `app_migrator` or at
+   * a superuser produces no error at all — every sign-in works, over a connection with full write
+   * access to every organization. The port stays shut instead (`auth-database.util.ts`).
+   */
+  it('refuses to open the port when a startup check fails', async () => {
+    const { start, state } = harness({
+      runStartupChecks: () =>
+        Promise.reject(
+          new UnsafeDatabaseRoleError(['expected the role app_auth, got app_migrator']),
+        ),
+    });
+
+    await start;
+
+    expect(state.order).toEqual([
+      'env',
+      'logger',
+      'database',
+      'redis',
+      'db-role',
+      'startup-checks',
+    ]);
+    expect(state.listened).toEqual([]);
+    expect(state.exitCodes).toEqual([1]);
+    expect(state.fatals.join('\n')).toContain('app_migrator');
+  });
+
+  /**
+   * `DATABASE_AUTH_URL` is `.optional()` so that an existing installation still starts
+   * (`rules/self-host-packaging.mdc`, rule 2), which means the absence has to be *said* — on a line
+   * of its own, at `warn`, not as a field of the line announcing the port. Without it the container
+   * is green, `/ready` is 200, and the first person to sign in is the monitoring.
+   */
+  it('warns on its own line that nobody can sign in without DATABASE_AUTH_URL', async () => {
+    const { start, state } = harness();
+
+    await start;
+
+    const warning = state.lines
+      .map((line) => JSON.parse(line) as { level: number; msg: string; warning?: string })
+      .find((line) => line.msg === 'a required subsystem is not configured');
+
+    expect(warning?.warning).toContain('DATABASE_AUTH_URL');
+    // 40 is `warn`. The level is the assertion: an operator scanning a startup log for problems
+    // reads levels, and this one hides among `info` lines the moment it becomes one.
+    expect(warning?.level).toBe(40);
   });
 
   /**
@@ -174,13 +262,13 @@ describe('startApiProcess', () => {
 
     await start;
 
-    expect(state.order).toEqual(['env', 'logger', 'database', 'db-role']);
+    expect(state.order).toEqual(['env', 'logger', 'database', 'redis', 'db-role']);
     expect(state.listened).toEqual([]);
     expect(state.exitCodes).toEqual([1]);
     expect(state.fatals.join('\n')).toContain('BYPASSRLS');
   });
 
-  it('closes the database pool it opened when the process shuts down', async () => {
+  it('closes every client it opened when the process shuts down', async () => {
     const { start, state } = harness();
 
     await start;
@@ -188,7 +276,7 @@ describe('startApiProcess', () => {
     state.closeListener();
     await new Promise((resolve) => setImmediate(resolve));
 
-    expect(state.closed).toEqual(['database']);
+    expect(state.closed).toEqual(['database', 'redis']);
   });
 
   it('announces the port and the degraded optional services, so the log says what is off', async () => {

@@ -23,6 +23,20 @@ export interface HarnessPools {
   readonly owner: Pool;
   /** `backup_role`: BYPASSRLS, read-only — the role `pg_dump` uses. */
   readonly backup: Pool;
+  /**
+   * `app_auth`: the authentication path.
+   *
+   * BYPASSRLS and *no table privileges at all* — the two together are what make the path narrow.
+   * Assertions about it are therefore about what it cannot reach, not only about what it can.
+   */
+  readonly auth: Pool;
+  /**
+   * The cluster superuser.
+   *
+   * Used by one test, and only to *break* things the way a restore does — moving a function back to
+   * app_migrator is something no application role may do, which is the point.
+   */
+  readonly superuser: Pool;
 }
 
 export const createPools = (): HarnessPools => {
@@ -32,11 +46,19 @@ export const createPools = (): HarnessPools => {
     app: new Pool({ connectionString: urls.appUser, max: 4 }),
     owner: new Pool({ connectionString: urls.migrator, max: 4 }),
     backup: new Pool({ connectionString: urls.backup, max: 2 }),
+    auth: new Pool({ connectionString: urls.auth, max: 2 }),
+    superuser: new Pool({ connectionString: urls.superuser, max: 2 }),
   };
 };
 
 export const closePools = async (pools: HarnessPools): Promise<void> => {
-  await Promise.all([pools.app.end(), pools.owner.end(), pools.backup.end()]);
+  await Promise.all([
+    pools.app.end(),
+    pools.owner.end(),
+    pools.backup.end(),
+    pools.auth.end(),
+    pools.superuser.end(),
+  ]);
 };
 
 const inTransaction = async <T>(
@@ -113,21 +135,56 @@ export const truncateAll = async (owner: Pool): Promise<void> => {
 };
 
 /**
- * Re-applies `01-grants.sql` from a test process, to prove that a second run changes nothing.
+ * The shipped `01-grants.sql`, minus its single psql meta-command.
  *
- * The authoritative run happens in `globalSetup`, through psql inside the container, on the file as
- * it ships. Here the single psql meta-command (`\set ON_ERROR_STOP on`) is dropped so `pg` can send
- * the rest: `ON_ERROR_STOP` is psql's own error handling, and this client already throws on the
- * first error. Nothing else in the file is psql-specific — if that ever changes, this helper stops
- * matching the shipped file and the test that uses it starts failing, which is the right outcome.
+ * `\set ON_ERROR_STOP on` is psql's own error handling and `pg` cannot send it; this client throws
+ * on the first error anyway. Nothing else in the file is psql-specific — if that ever changes, this
+ * helper stops matching the shipped file and the tests using it start failing, which is right.
  */
-export const reapplyGrants = async (owner: Pool): Promise<void> => {
-  const sql = readFileSync(GRANTS_SQL, 'utf8')
+const grantsScript = (): string =>
+  readFileSync(GRANTS_SQL, 'utf8')
     .split('\n')
     .filter((line) => !line.startsWith('\\'))
     .join('\n');
 
-  await owner.query(sql);
+/**
+ * Re-applies `01-grants.sql` from a test process, to prove that a second run changes nothing.
+ *
+ * The authoritative run happens in `globalSetup`, through psql inside the container, on the file as
+ * it ships.
+ */
+export const reapplyGrants = async (owner: Pool): Promise<void> => {
+  await owner.query(grantsScript());
+};
+
+/**
+ * The same run, with the server's `NOTICE` and `WARNING` messages kept.
+ *
+ * `01-grants.sql` reports two things it cannot report any other way: the summary of what it granted,
+ * and — since the `search_path` guard stopped refusing objects an operator cannot fix — the
+ * extension functions it had to let past. A warning nobody can assert on is a warning that quietly
+ * stops being emitted, so the messages are collected rather than left to psql's stderr.
+ *
+ * A dedicated client, because `notice` is an event on the connection: taken from the pool for the
+ * duration of the run and released with its listener removed.
+ */
+export const reapplyGrantsCollectingNotices = async (owner: Pool): Promise<string[]> => {
+  const client = await owner.connect();
+  const messages: string[] = [];
+  const collect = (notice: { readonly message: string | undefined }): void => {
+    if (notice.message !== undefined) messages.push(notice.message);
+  };
+
+  client.on('notice', collect);
+
+  try {
+    await client.query(grantsScript());
+  } finally {
+    client.off('notice', collect);
+    client.release();
+  }
+
+  return messages;
 };
 
 /** Table-level privileges `app_user` actually holds, straight out of the catalog. */

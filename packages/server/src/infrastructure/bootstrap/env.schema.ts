@@ -32,6 +32,7 @@ export const INSECURE_VALUE_MARKERS = ['CHANGE_ME', 'dev_'] as const;
 export const SECRET_BEARING_ENV_KEYS = [
   'DATABASE_URL',
   'DATABASE_MIGRATION_URL',
+  'DATABASE_AUTH_URL',
   'REDIS_URL',
   'JWT_SECRET',
   'APP_ENCRYPTION_KEY',
@@ -101,6 +102,25 @@ const envBoolean = (variable: string, fallback: boolean) =>
     .optional()
     .transform((value) => (value === undefined ? fallback : value === 'true' || value === '1'));
 
+/**
+ * A count of proxy hops out of a shell variable.
+ *
+ * Matched against the digits rather than handed to `z.coerce.number()`, and the difference is the
+ * empty string: `Number('')` is `0`, so a coercing schema reads `TRUSTED_PROXY_HOPS=` — a line
+ * somebody half-edited — as a deliberate zero. Everything about this variable is a statement about
+ * whose word to take for a client's address, and "the operator wrote nothing after the equals sign"
+ * is not one of the statements it may make. The fallback is applied inside the transform for the
+ * same reason as in `envBoolean`: in Zod 4 a `.default()` short-circuits the pipeline.
+ */
+const hopCount = (variable: string, fallback: number) =>
+  z
+    .string()
+    .optional()
+    .refine((value) => value === undefined || /^\d+$/.test(value), {
+      error: `${variable} must be a whole number of proxy hops, zero or more`,
+    })
+    .transform((value) => (value === undefined ? fallback : Number(value)));
+
 const fields = z.object({
   NODE_ENV: z
     .enum(NODE_ENVS, { error: `NODE_ENV must be one of: ${NODE_ENVS.join(', ')}` })
@@ -126,6 +146,36 @@ const fields = z.object({
     ['postgres', 'postgresql'],
     'DATABASE_MIGRATION_URL',
   ).optional(),
+  /**
+   * The `app_auth` connection: the org-less authentication path, and nothing else.
+   *
+   * A separate role because it reaches the three resolvers nobody else may call, and a separate
+   * *pool* because the connection that opens the org-less path must not be one an ordinary
+   * repository can pick up (`docs/security/rls-design.md`, «Особые пути»). The role itself is
+   * `NOBYPASSRLS` — the attribute belongs to `app_auth_definer`, the `NOLOGIN` owner the function
+   * bodies execute as, so a credential that leaks opens nothing on its own. It holds no table
+   * privileges — its whole
+   * reachable surface is three `SECURITY DEFINER` functions.
+   *
+   * `.optional()` for the same reason as `DATABASE_MIGRATION_URL`: turning a variable into a hard
+   * requirement stops every existing installation from starting (rules/self-host-packaging.mdc,
+   * rule 2). **It is optional in the schema and required in meaning** — the sign-in routes have been
+   * in the router since STORY-006-02 — so the absence is announced three times rather than
+   * discovered by the first person who tries to sign in:
+   *
+   *   1. a `warn` line of its own at startup, before the port opens
+   *      (`blockingDegradationWarnings`, `api-process.factory.ts`);
+   *   2. `authentication: disabled` in the body of `GET /ready`
+   *      (`optionalServiceProbes`, `env-features.util.ts`);
+   *   3. `503 service_unavailable` naming the variable in `details` on the first use of the
+   *      authentication path, instead of the `500 internal_error` a bare `Error` produced
+   *      (`detached-database.adapter.ts`).
+   *
+   * When it *is* set, the role it connects as is verified before the port opens — a URL pointing at
+   * `app_migrator` or a superuser would otherwise work perfectly and hand the authentication path
+   * write access to every organization (`auth-database.util.ts`).
+   */
+  DATABASE_AUTH_URL: urlWithScheme(['postgres', 'postgresql'], 'DATABASE_AUTH_URL').optional(),
   REDIS_URL: urlWithScheme(['redis', 'rediss'], 'REDIS_URL'),
 
   JWT_SECRET: z.string().min(JWT_SECRET_MIN_LENGTH, {
@@ -143,8 +193,37 @@ const fields = z.object({
   /** MinIO and most S3-compatible servers need path-style addressing; AWS S3 does not. */
   S3_FORCE_PATH_STYLE: envBoolean('S3_FORCE_PATH_STYLE', true),
 
-  /** Absent → outgoing mail is written to the log in dev and fails loudly in production. */
+  /**
+   * Absent → nothing is sent and mail operations answer `503 mail_not_configured`.
+   *
+   * Not "written to the log", which this comment used to promise: the one letter the authentication
+   * core sends carries a single-use reset token inside its link, and a log is the least private
+   * place in a deployment (`rules/observability.mdc`).
+   */
   SMTP_URL: urlWithScheme(['smtp', 'smtps'], 'SMTP_URL').optional(),
+  /**
+   * The mailbox this installation sends from — the SMTP envelope sender, on every message.
+   *
+   * Required once `SMTP_URL` is set, by the cross-field rule below, and optional otherwise so that
+   * an installation with no mail at all is unaffected (`rules/self-host-packaging.mdc`, rule 2).
+   * Without it nodemailer sends an empty `MAIL FROM`: Mailpit accepts that — which is why a
+   * development setup and the integration suite show nothing wrong — and Postfix, SES and every
+   * relay that checks the envelope answer 5.x, so the installation sends no mail at all.
+   *
+   * A line break is refused outright. The value is written into a message header, and a header
+   * value carrying CR or LF is header injection.
+   */
+  MAIL_FROM: z
+    .string()
+    .min(1, { error: 'MAIL_FROM must not be empty' })
+    .refine((value) => !/[\r\n]/.test(value), {
+      error: 'MAIL_FROM must not contain a line break',
+    })
+    .refine((value) => value.includes('@'), {
+      error:
+        'MAIL_FROM must be an email address, optionally with a display name: Bad CRM <crm@example.com>',
+    })
+    .optional(),
 
   /** Absent → `SearchPort` falls back to PostgreSQL FTS (ADR-0011). */
   MEILI_HOST: z.url({ error: 'MEILI_HOST must be a URL' }).optional(),
@@ -169,6 +248,34 @@ const fields = z.object({
 
   /** Deliberate exception for the `minimal` profile, never the default (stack.md, `main.ts`). */
   RUN_WORKERS_IN_PROCESS: envBoolean('RUN_WORKERS_IN_PROCESS', false),
+
+  /**
+   * How many `X-Forwarded-For` hops in front of this process are the operator's own.
+   *
+   * **Default `0`, and the default is the security decision.** `X-Forwarded-For` is a request
+   * header: anybody who can reach the port writes one. It is evidence only where a proxy the
+   * operator runs has appended the real peer, and `docker-compose.yml` ships no proxy at all — the
+   * reverse proxy is installed by hand (`docs/runbooks/install.md` §3). On that deployment a value
+   * of `1` makes Express take the last entry of a header the *client* wrote, which lands in
+   * `sessions.ip_hash` and `sessions.ip_masked` — so the owner of an account reads a network the
+   * request never came from, an incident investigation reads values the attacker chose, and the
+   * rate limiter gets a fresh budget for every header (`rules/security.mdc` rule 11).
+   *
+   * Set it to `1` behind exactly one Caddy/nginx/Traefik, and to the number of hops when there are
+   * more. Zero means "believe the socket", which is right whenever nothing is in front.
+   */
+  TRUSTED_PROXY_HOPS: hopCount('TRUSTED_PROXY_HOPS', 0),
+
+  /**
+   * Whether this installation still accepts new organizations through `POST /auth/register`.
+   *
+   * Default `true`, because an installation that has never been registered against cannot be used
+   * otherwise — the first door has to be open before anybody can close it. `docs/runbooks/install.md`
+   * is where the operator is told to set it to `false` once their organization exists; leaving it
+   * open means an anonymous visitor can fill the database (`docs/api/openapi.yaml`,
+   * `RegistrationDisabled`).
+   */
+  REGISTRATION_OPEN: envBoolean('REGISTRATION_OPEN', true),
 
   ARGON2_MEMORY_COST: argon2Cost('ARGON2_MEMORY_COST', 19_456),
   ARGON2_TIME_COST: argon2Cost('ARGON2_TIME_COST', 2),
@@ -212,6 +319,20 @@ export const crossFieldEnvIssues = (env: Partial<EnvFields>): EnvIssue[] => {
       message: 'MEILI_MASTER_KEY is required when MEILI_HOST is set',
     });
   }
+
+  // `MAIL_FROM` is deliberately **not** here, and the first version of this delta had it.
+  //
+  // Tying it to `SMTP_URL` looked like the careful choice — demand it only of installations that
+  // would otherwise send nothing — but `SMTP_URL` has been in `.env.example` since EPIC-001 and in
+  // every development environment built from it. So the rule refused to start every installation
+  // that already existed, for a subsystem no route uses: `createMailer` is not assembled in the
+  // composition root, and `/auth/forgot-password` is not in the router.
+  //
+  // `rules/self-host-packaging.mdc` rule 2 says how this is done instead: release N warns, release
+  // N+1 refuses. The warning is a blocking degradation in `env-features.util.ts`, the same
+  // mechanism `DATABASE_AUTH_URL` uses two variables above — mail configured without a sender is
+  // mail that a relay checking the envelope will reject, so it is «configured» in name only. The
+  // hard requirement belongs to the release that wires the mailer.
 
   // Scoped by what is *not* development, not by what is production: `docs/security/threat-model.md`
   // (T-SH-01, T-SH-03) treats every non-development boot as internet-reachable. Checking for

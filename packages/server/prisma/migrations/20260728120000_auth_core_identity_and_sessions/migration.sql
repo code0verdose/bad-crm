@@ -15,9 +15,11 @@
 -- that turns row-level security on is granted as an ordinary tenant table.
 
 -- An ALTER waiting for a lock queues every query behind it, including the reads
--- (rules/db-migrations.mdc, 7).
-SET lock_timeout = '3s';
-SET statement_timeout = '5min';
+-- (rules/db-migrations.mdc, 7). `SET LOCAL` and not `SET`: one `migrate deploy` applies every
+-- pending migration over one connection, and a session-level setting outlives the COMMIT of its own
+-- file — the `LOCAL` form keeps this preamble from becoming the preamble of the migrations after it.
+SET LOCAL lock_timeout = '3s';
+SET LOCAL statement_timeout = '5min';
 
 -- ─── enums ────────────────────────────────────────────────────────────────────────────────────
 --

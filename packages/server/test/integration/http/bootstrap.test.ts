@@ -58,7 +58,28 @@ describe('GET /ready — readiness', () => {
     expect(response.status).toBe(200);
     expect(response.body.dependencies).toMatchObject({
       search: { status: 'disabled', detail: 'postgres-fts' },
-      mail: { status: 'disabled', detail: 'log' },
+      mail: { status: 'disabled', detail: 'unavailable' },
+    });
+  });
+
+  /**
+   * Authentication is in the same body for the opposite reason: it is not optional, and an
+   * installation without `DATABASE_AUTH_URL` answers 500 to the first sign-in while every probe
+   * says the container is fine. The field is what makes that visible before a user finds it.
+   *
+   * It does **not** change the status. A `/ready` that failed here would take the instance out of
+   * rotation entirely, and the operator would lose the working half of the installation along with
+   * the sign-in they cannot use anyway — the same reasoning as rule 13 of
+   * `rules/observability.mdc`. The `warn` line at startup is the part that demands attention.
+   */
+  it('names the authentication pool as unavailable when DATABASE_AUTH_URL is absent', async () => {
+    const { app } = createTestApp({ DATABASE_AUTH_URL: undefined });
+
+    const response = await request(app).get('/ready');
+
+    expect(response.status).toBe(200);
+    expect(response.body.dependencies).toMatchObject({
+      authentication: { status: 'disabled', detail: 'unavailable' },
     });
   });
 

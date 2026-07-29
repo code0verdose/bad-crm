@@ -1,5 +1,16 @@
 import { type Logger } from 'pino';
 
+import { type LoggerPort } from '@/application/platform/ports/logger.port.js';
+import { type RateLimitPort } from '@/application/platform/ports/rate-limit.port.js';
+import { type ReadinessProbePort } from '@/application/platform/ports/readiness-probe.port.js';
+import { AuthenticateSessionQuery } from '@/application/identity/use-cases/authenticate-session.query.js';
+import { EndSessionUseCase } from '@/application/identity/use-cases/end-session.use-case.js';
+import { IssueSessionUseCase } from '@/application/identity/use-cases/issue-session.use-case.js';
+import { ListSessionsQuery } from '@/application/identity/use-cases/list-sessions.query.js';
+import { LoginUseCase } from '@/application/identity/use-cases/login.use-case.js';
+import { RefreshSessionUseCase } from '@/application/identity/use-cases/refresh-session.use-case.js';
+import { RegisterOrganizationUseCase } from '@/application/identity/use-cases/register-organization.use-case.js';
+import { BootstrapOrganizationUseCase } from '@/application/organization/use-cases/bootstrap-organization.use-case.js';
 import { CheckHealthUseCase } from '@/application/platform/use-cases/check-health.use-case.js';
 import { CheckReadinessUseCase } from '@/application/platform/use-cases/check-readiness.use-case.js';
 import { DescribeApiUseCase } from '@/application/platform/use-cases/describe-api.use-case.js';
@@ -12,13 +23,40 @@ import { ProcessHealthAdapter } from '@/infrastructure/platform/process-health.a
 import { ProcessLifecycleAdapter } from '@/infrastructure/platform/process-lifecycle.adapter.js';
 import { SystemClockAdapter } from '@/infrastructure/platform/system-clock.adapter.js';
 import { SystemIdGeneratorAdapter } from '@/infrastructure/platform/system-id-generator.adapter.js';
+import { Argon2PasswordHasher } from '@/infrastructure/crypto/argon2-password-hasher.adapter.js';
+import { HmacAddressHasher } from '@/infrastructure/crypto/address-hasher.adapter.js';
+import { JwtAccessTokenAdapter } from '@/infrastructure/crypto/jwt-access-token.adapter.js';
+import { Sha256RefreshTokenAdapter } from '@/infrastructure/crypto/refresh-token.adapter.js';
+import { type DbRoleProbeClient } from '@/infrastructure/persistence/prisma/assert-db-role.util.js';
+import { PrismaAuthLookup } from '@/infrastructure/persistence/prisma/auth-lookup.adapter.js';
+import { createAuthLookupClient } from '@/infrastructure/persistence/prisma/auth-lookup.client.js';
 import { type DatabaseConnection } from '@/infrastructure/persistence/prisma/database.factory.js';
+import {
+  detachedAuthLookup,
+  detachedUnitOfWork,
+} from '@/infrastructure/persistence/prisma/detached-database.adapter.js';
+import { PrismaOrganizationRepository } from '@/infrastructure/persistence/prisma/organization.repository.js';
+import { PrismaOwnerRoleSeeder } from '@/infrastructure/persistence/prisma/owner-role-seeder.adapter.js';
+import { PrismaSessionRepository } from '@/infrastructure/persistence/prisma/session.repository.js';
+import { PrismaUnitOfWork } from '@/infrastructure/persistence/prisma/unit-of-work.adapter.js';
+import { PrismaUserRepository } from '@/infrastructure/persistence/prisma/user.repository.js';
+import { detachedRateLimit } from '@/infrastructure/rate-limit/detached-rate-limit.adapter.js';
+import { RedisRateLimiterAdapter } from '@/infrastructure/rate-limit/rate-limiter.adapter.js';
+import { createRedisWindowLimiters } from '@/infrastructure/rate-limit/redis-window-limiter.factory.js';
+import { redisReadinessProbe } from '@/infrastructure/redis/redis-readiness.adapter.js';
+import { type RedisConnection } from '@/infrastructure/redis/redis.client.js';
+import {
+  assertAuthDatabaseRole,
+  authDatabaseReadinessProbe,
+} from '@/infrastructure/bootstrap/auth-database.util.js';
 import {
   type AppContainer,
   type ShutdownStep,
+  type StartupCheck,
 } from '@/infrastructure/bootstrap/container.types.js';
 import { type ServerEnv } from '@/infrastructure/bootstrap/env.schema.js';
 import { API_VERSION } from '@/presentation/http/api-version.constant.js';
+import { type IdentityDependencies } from '@/presentation/http/http-server.types.js';
 
 export interface ContainerInput {
   readonly env: ServerEnv;
@@ -39,6 +77,14 @@ export interface ContainerInput {
    * the adapters that need it are constructed here.
    */
   readonly database?: DatabaseConnection;
+  /**
+   * The open Redis connection, when there is one.
+   *
+   * Optional for the same reason as `database`, and with the same consequence: a container without
+   * one gets `detachedRateLimit()`, which refuses every attempt instead of admitting it. `REDIS_URL`
+   * is required by the env schema, so only a test builds a container this way.
+   */
+  readonly redis?: RedisConnection;
 }
 
 /**
@@ -63,14 +109,6 @@ export const buildContainer = (input: ContainerInput): AppContainer => {
 
   const checkHealth = new CheckHealthUseCase(new ProcessHealthAdapter(APP_INFO.version), clock);
   const describeApi = new DescribeApiUseCase(clock, API_VERSION);
-  const checkReadiness = new CheckReadinessUseCase(
-    // Live probes for Postgres and Redis are appended here when their clients land (STORY-003-06,
-    // EPIC-009). Today the list describes what this installation deliberately does not run.
-    optionalServiceProbes(input.env),
-    lifecycle,
-    clock,
-    logger,
-  );
 
   // Closed after the listener, never before: the shutdown handler drains in-flight requests first,
   // and a pool closed early turns a deploy into a burst of "connection closed" in the very requests
@@ -81,17 +119,75 @@ export const buildContainer = (input: ContainerInput): AppContainer => {
       ? []
       : [{ name: 'database', close: (): Promise<void> => database.close() }];
 
+  // The limiter, and with it every authentication route's budget. Built here because this is the
+  // only place that may know both the port and ioredis (STORY-006-07): the adapter existed, was
+  // covered against a live server, and was constructed nowhere, which made every auth route
+  // unbounded no matter how carefully the policy table was written.
+  const rateLimit: RateLimitPort =
+    input.redis === undefined
+      ? detachedRateLimit()
+      : new RedisRateLimiterAdapter(createRedisWindowLimiters(input.redis.client), logger);
+
+  const identity = buildIdentity({
+    env: input.env,
+    clock,
+    idGenerator,
+    logger,
+    database,
+    rateLimit,
+  });
+
+  const authClient = identity.authClient;
+
+  // The second pool is verified before the port opens, for the reason `assert-db-role.util.ts`
+  // gives about the first one: a connection made as the schema owner or as a superuser serves every
+  // sign-in correctly and filters nothing, and this is the pool that skips row-level security by
+  // design. Prisma connects lazily, so without this the first connection is made by the first
+  // person to sign in — hours after the deploy, in the one operation nobody can work around.
+  const startupChecks: StartupCheck[] =
+    authClient === undefined
+      ? []
+      : [{ name: 'auth-database-role', run: () => assertAuthDatabaseRole(authClient) }];
+
+  const checkReadiness = new CheckReadinessUseCase(
+    // `optionalServiceProbes` describes what this installation deliberately does not run; the live
+    // probes sit beside it and are contributed by the clients that exist. Redis is live rather than
+    // optional: with it unreachable the limiter refuses every sign-in, so an instance that cannot
+    // reach it has to leave the load balancer's rotation. The `app_auth` pool is live for exactly
+    // the same reason, and appears as `disabled` instead when there is none. Postgres joins here in
+    // STORY-003-06.
+    [
+      ...optionalServiceProbes(input.env),
+      ...(input.redis === undefined ? [] : [redisReadinessProbe(input.redis.client)]),
+      ...(authClient === undefined ? [] : [authDatabaseReadinessProbe(authClient)]),
+    ] satisfies readonly ReadinessProbePort[],
+    lifecycle,
+    clock,
+    logger,
+  );
+
+  if (identity.closeAuthLookup !== undefined) {
+    shutdownSteps.push({ name: 'auth-database', close: identity.closeAuthLookup });
+  }
+
+  if (input.redis !== undefined) {
+    const redis = input.redis;
+
+    shutdownSteps.push({ name: 'redis', close: (): Promise<void> => redis.close() });
+  }
+
   return {
     env: input.env,
     logger,
     lifecycle,
-    // Redis registers itself here the moment it exists; the shutdown handler needs no change.
     shutdownSteps,
+    startupChecks,
     http: {
       config: {
         appUrl: input.env.APP_URL,
         corsExtraOrigins: input.env.CORS_EXTRA_ORIGINS,
         storageEndpoint: input.env.S3_ENDPOINT,
+        trustedProxyHops: input.env.TRUSTED_PROXY_HOPS,
       },
       logger,
       requestContext,
@@ -100,6 +196,125 @@ export const buildContainer = (input: ContainerInput): AppContainer => {
       checkHealth,
       checkReadiness,
       describeApi,
+      identity: identity.dependencies,
     },
   };
+};
+
+interface IdentityWiring {
+  readonly dependencies: IdentityDependencies;
+  /** Present only when a second pool was opened; registered as its own shutdown step. */
+  readonly closeAuthLookup?: () => Promise<void>;
+  /**
+   * The second pool itself, when there is one, so the container can register its startup check and
+   * its readiness probe. Absent means the installation has no `DATABASE_AUTH_URL`, and the
+   * `authentication` entry of `/ready` comes from `optionalServiceProbes` as `disabled` instead.
+   */
+  readonly authClient?: DbRoleProbeClient;
+}
+
+/**
+ * The authentication surface, assembled.
+ *
+ * Split out of `buildContainer` because it is the one part with a *conditional* shape: the ports
+ * that need a connection get one when the process has a database and an explicit refusal when it
+ * does not (`detached-database.adapter.ts`). Everything else — repositories, hashers, token
+ * services — is constructed unconditionally, because a repository holds no client: it reads the
+ * transaction out of the scope `withTenant` opened (`tenant-scoped.repository.ts`).
+ */
+const buildIdentity = (input: {
+  readonly env: ServerEnv;
+  readonly clock: SystemClockAdapter;
+  readonly idGenerator: SystemIdGeneratorAdapter;
+  readonly logger: LoggerPort;
+  readonly database: DatabaseConnection | undefined;
+  readonly rateLimit: RateLimitPort;
+}): IdentityWiring => {
+  const unitOfWork =
+    input.database === undefined ? detachedUnitOfWork() : new PrismaUnitOfWork(input.database.base);
+
+  const authClient =
+    input.env.DATABASE_AUTH_URL === undefined || input.database === undefined
+      ? undefined
+      : createAuthLookupClient(input.env.DATABASE_AUTH_URL);
+
+  const authLookup =
+    authClient === undefined ? detachedAuthLookup() : new PrismaAuthLookup(authClient);
+
+  const organizations = new PrismaOrganizationRepository();
+  const users = new PrismaUserRepository();
+  const sessions = new PrismaSessionRepository();
+
+  const hasher = new Argon2PasswordHasher({
+    memoryCost: input.env.ARGON2_MEMORY_COST,
+    timeCost: input.env.ARGON2_TIME_COST,
+    parallelism: input.env.ARGON2_PARALLELISM,
+  });
+  const refreshTokens = new Sha256RefreshTokenAdapter();
+  const accessTokens = new JwtAccessTokenAdapter(input.env.JWT_SECRET, input.clock);
+  const addresses = new HmacAddressHasher(input.env.APP_ENCRYPTION_KEY);
+
+  const issueSession = new IssueSessionUseCase(
+    sessions,
+    organizations,
+    refreshTokens,
+    accessTokens,
+    addresses,
+    input.clock,
+    input.idGenerator,
+  );
+
+  const bootstrap = new BootstrapOrganizationUseCase(
+    unitOfWork,
+    organizations,
+    users,
+    new PrismaOwnerRoleSeeder(),
+    input.idGenerator,
+  );
+
+  const dependencies: IdentityDependencies = {
+    register: new RegisterOrganizationUseCase(
+      bootstrap,
+      hasher,
+      unitOfWork,
+      issueSession,
+      { locale: 'en', timezone: 'UTC', currency: 'USD' },
+      input.env.REGISTRATION_OPEN,
+      input.rateLimit,
+    ),
+    login: new LoginUseCase(
+      authLookup,
+      hasher,
+      users,
+      unitOfWork,
+      issueSession,
+      input.rateLimit,
+      input.logger,
+    ),
+    refresh: new RefreshSessionUseCase(
+      authLookup,
+      refreshTokens,
+      sessions,
+      users,
+      organizations,
+      unitOfWork,
+      issueSession,
+      input.clock,
+      input.logger,
+      input.rateLimit,
+    ),
+    endSession: new EndSessionUseCase(sessions, unitOfWork, input.clock, input.logger),
+    listSessions: new ListSessionsQuery(sessions, unitOfWork, input.clock),
+    authenticate: new AuthenticateSessionQuery(accessTokens, sessions, unitOfWork, input.clock),
+    authLookup,
+    refreshTokens,
+  };
+
+  return authClient === undefined
+    ? { dependencies }
+    : {
+        dependencies,
+        closeAuthLookup: (): Promise<void> => authClient.$disconnect(),
+        authClient,
+      };
 };

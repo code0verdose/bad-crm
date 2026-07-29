@@ -58,7 +58,11 @@ psql_escape() {
   printf '%s' "$1" | sed -e 's/\\/\\\\/g' -e "s/'/\\\\'/g"
 }
 
-echo "bootstrap-roles: applying app_migrator / app_user / app_auth / backup_role in ${POSTGRES_DB}"
+# Five roles, and the fifth has no password of its own: `app_auth_definer` is NOLOGIN — it exists to
+# own the SECURITY DEFINER resolvers and to hold the table privileges their bodies run with, which is
+# precisely why nobody may connect as it. Naming it here anyway: this line is what an operator reads
+# to check that a bootstrap did what the restore runbook says it does.
+echo "bootstrap-roles: applying app_migrator / app_user / app_auth / app_auth_definer (NOLOGIN) / backup_role in ${POSTGRES_DB}"
 
 # The variables are fed over stdin instead of `psql --set name=value`. Command-line arguments of a
 # running process are world-readable (`ps -ef`, /proc/<pid>/cmdline), and during initdb this process
