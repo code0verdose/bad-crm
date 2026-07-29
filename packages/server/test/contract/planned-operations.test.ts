@@ -234,8 +234,30 @@ describe('the story lookup', () => {
     expect(storyExists('STORY-999-99')).toBe(false);
   });
 
+  /**
+   * Compared against the file rather than against a value typed here.
+   *
+   * It used to assert `{ epic: '006', status: 'backlog' }` for one story, which pinned an accident of
+   * the day it was written: the moment that story moved to `review` this failed, and the failure said
+   * nothing about the lookup. A test that has to be edited every time a board status changes trains
+   * the next reader to edit it without reading it.
+   *
+   * What the case is actually for is the direction that fails quietly — a lookup deriving facts from
+   * the id instead of the frontmatter — so it reads the same two fields out of the file itself and
+   * requires agreement. A derived status could not match, because the id does not carry one, and the
+   * assertion below keeps that from being vacuous by refusing an empty answer.
+   */
   it('reads the epic and the status out of the file, not out of the id', () => {
-    expect(readStory('STORY-006-04')).toEqual({ epic: '006', status: 'backlog' });
+    const id = 'STORY-006-04';
+    const file = storyFiles().find((entry) => entry.file.startsWith(`${id.toLowerCase()}-`));
+    const frontmatter = /^---\r?\n([\s\S]*?)\r?\n---/.exec(
+      readFileSync(`${EPICS_ROOT}/${file?.epic ?? ''}/stories/${file?.file ?? ''}`, 'utf8'),
+    )?.[1];
+
+    const onDisk = /^status:\s*(\S+)\s*$/m.exec(frontmatter ?? '')?.[1];
+
+    expect(onDisk, 'the story carries no status in its frontmatter').toMatch(/^[a-z-]+$/);
+    expect(readStory(id)).toEqual({ epic: '006', status: onDisk });
   });
 
   /**
