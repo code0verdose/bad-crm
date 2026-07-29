@@ -129,7 +129,7 @@ describe('a replay after a token refresh', () => {
     client.use(
       createAuthMiddleware({
         readAccessToken: () => 'expired',
-        refreshSession: () => Promise.resolve('fresh'),
+        refreshSession: () => Promise.resolve({ kind: 'rotated' as const }),
         onSessionLost: () => undefined,
       }),
     );

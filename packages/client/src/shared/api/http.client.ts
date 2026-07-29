@@ -20,6 +20,21 @@ export interface ApiClientOptions {
 }
 
 /**
+ * The configured base, made absolute against the current origin.
+ *
+ * `VITE_API_BASE_URL` is a same-origin path by default and `clientEnv` guarantees it is either that
+ * or an absolute URL (`shared/config/env.schema.ts`). A browser resolves the relative form against
+ * the document, but `openapi-fetch` builds a `Request`, and a `Request` outside a document refuses
+ * one outright — which is why the resolution a browser would do implicitly is done here explicitly.
+ * Same bytes on the wire, and the client behaves the same under the test runner as in a tab.
+ */
+const absoluteBaseUrl = (baseUrl: string): string => {
+  const origin = globalThis.location?.origin;
+
+  return baseUrl.startsWith('/') && origin !== undefined ? `${origin}${baseUrl}` : baseUrl;
+};
+
+/**
  * The only door to the API (`rules/api-contract.mdc` §3).
  *
  * Everything is typed off the generated schema, so a path the contract does not publish, a query
@@ -33,7 +48,7 @@ export interface ApiClientOptions {
  */
 export const createApiClient = (options: ApiClientOptions): ApiClient =>
   createFetchClient<paths>({
-    baseUrl: options.baseUrl,
+    baseUrl: absoluteBaseUrl(options.baseUrl),
     credentials: 'include',
     ...(options.fetch === undefined ? {} : { fetch: options.fetch }),
   });

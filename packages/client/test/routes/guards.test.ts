@@ -5,7 +5,6 @@ import { isRedirect } from '@tanstack/react-router';
 import { describe, expect, it } from 'vitest';
 
 import { AuthLib, AuthModel } from '@units/auth';
-import { SessionModel } from '@units/session';
 
 /**
  * The guards, as pure functions — allowed, denied, and the state in between.
@@ -25,10 +24,24 @@ const CLIENT_SRC = resolve(process.cwd(), 'src');
 
 const LOCATION = { href: '/dashboard?range=7d' };
 
-const argsFor = (status: AuthModel.GuardSessionStatus): AuthLib.GuardArgs => ({
+const argsFor = (
+  status: AuthModel.SessionStatus,
+  search?: { redirect?: string | undefined },
+): AuthLib.GuardArgs => ({
   context: { auth: { status } },
   location: LOCATION,
+  ...(search === undefined ? {} : { search }),
 });
+
+const thrownBy = (guard: () => void): unknown => {
+  try {
+    guard();
+  } catch (error) {
+    return error;
+  }
+
+  return undefined;
+};
 
 describe('requireSession', () => {
   it('lets an authenticated user through', () => {
@@ -38,13 +51,9 @@ describe('requireSession', () => {
   });
 
   it('sends an anonymous user to the login screen, keeping where they were going', () => {
-    let thrown: unknown;
-
-    try {
+    const thrown = thrownBy(() => {
       AuthLib.requireSession(argsFor('anonymous'));
-    } catch (error) {
-      thrown = error;
-    }
+    });
 
     expect(isRedirect(thrown)).toBe(true);
     expect(thrown).toMatchObject({
@@ -60,48 +69,85 @@ describe('requireSession', () => {
 });
 
 describe('redirectIfAuthed', () => {
-  it('keeps an anonymous user on the public page', () => {
-    expect(() => {
-      AuthLib.redirectIfAuthed(argsFor('anonymous'));
-    }).not.toThrow();
-  });
+  it.each([['anonymous'], ['unknown']] as const)(
+    'keeps a %s visitor on the public page',
+    (status) => {
+      expect(() => {
+        AuthLib.redirectIfAuthed(argsFor(status));
+      }).not.toThrow();
+    },
+  );
 
-  it('keeps a user of unknown session on the public page', () => {
-    expect(() => {
-      AuthLib.redirectIfAuthed(argsFor('unknown'));
-    }).not.toThrow();
-  });
-
-  it('sends an authenticated user to the dashboard instead of showing a login form', () => {
-    let thrown: unknown;
-
-    try {
+  it('sends an authenticated user to the dashboard when the URL asked for nothing', () => {
+    const thrown = thrownBy(() => {
       AuthLib.redirectIfAuthed(argsFor('authenticated'));
-    } catch (error) {
-      thrown = error;
-    }
+    });
 
     expect(isRedirect(thrown)).toBe(true);
-    expect(thrown).toMatchObject({ options: { to: '/dashboard' } });
+    expect(thrown).toMatchObject({ options: { href: AuthModel.POST_LOGIN_PATH } });
+  });
+
+  /**
+   * The return leg of a sign-in. `requireSession` put the destination in `search.redirect`; this is
+   * where it is spent, which is why the sign-in form itself navigates nowhere.
+   */
+  it('returns an authenticated user to the page they were originally going to', () => {
+    const thrown = thrownBy(() => {
+      AuthLib.redirectIfAuthed(argsFor('authenticated', { redirect: '/settings/security' }));
+    });
+
+    expect(thrown).toMatchObject({ options: { href: '/settings/security' } });
   });
 });
 
 /**
- * The guards live in `units/auth/lib/guards` (STORY-004-05), and a unit may not import the layer
- * above it or another unit — so the status vocabulary they branch on is declared inside the auth
- * unit rather than taken from `units/session`.
- *
- * That leaves two vocabularies which have to stay one, and each half is kept by a different
- * mechanism. `tsc` covers widening: the route files hand these guards the router context, whose
- * `auth.status` comes from `units/session`, and a parameter type is checked contravariantly — a
- * status added there and not here fails to compile in the route file, which is exactly where
- * somebody has to decide what the guard should do about it. This covers the other half, the one a
- * type cannot see: renamed or removed on both sides in different ways, both sides still compile and
- * the guard quietly decides on a value nobody produces.
+ * The destination is attacker-controlled by construction: the link is built by whoever sends it,
+ * the domain is this installation and the login form is the real one. `loginSearchSchema` is the
+ * mitigation, and what is asserted here is that the guard spends what the schema produced — a guard
+ * reading the raw parameter would be an open redirect with a validated value sitting unused beside
+ * it.
  */
-describe('the vocabulary the guards decide on', () => {
-  it('is the list the session unit publishes, in the same order', () => {
-    expect([...AuthModel.GUARD_SESSION_STATUSES]).toEqual([...SessionModel.SESSION_STATUSES]);
+describe('what the guard is allowed to return to', () => {
+  it.each([
+    ['an absolute URL', 'https://evil.example/x'],
+    ['a protocol-relative URL', '//evil.example/x'],
+    ['a backslash after the slash, which a browser reads as protocol-relative', '/\\evil.example'],
+    ['a scheme', 'javascript:alert(1)'],
+    ['a bare path with no leading slash', 'evil.example'],
+    /**
+     * The forms that survive an unanchored pattern. `.` matches everything except a line
+     * terminator, so a pattern with no `$` stops matching at the first one and reports a match
+     * anyway: `/\n//evil.example` is «a slash, then something the pattern never looked at».
+     *
+     * Nothing is exploitable through the router today — handed a value it cannot read as absolute,
+     * it keeps the `pathname` and the host is dropped. That is exactly the objection: the property
+     * this schema exists to guarantee would be held up by the internals of a dependency, and the
+     * day those change the hole opens with no edit of ours.
+     */
+    ['a newline the pattern stopped at', '/\n//evil.example'],
+    ['a carriage return', '/\r//evil.example'],
+    ['a line separator', '/\u2028//evil.example'],
+    ['a NUL byte', '/\u0000//evil.example'],
+    ['a tab', '/\t//evil.example'],
+  ])('falls back to the dashboard when the URL carried %s', (_case, redirect) => {
+    const search = AuthModel.loginSearchSchema.parse({ redirect });
+
+    const thrown = thrownBy(() => {
+      AuthLib.redirectIfAuthed(argsFor('authenticated', search));
+    });
+
+    expect(search.redirect).toBeUndefined();
+    expect(thrown).toMatchObject({ options: { href: AuthModel.POST_LOGIN_PATH } });
+  });
+
+  it('keeps a path on this origin, query string and all', () => {
+    const search = AuthModel.loginSearchSchema.parse({ redirect: '/dashboard?range=30d' });
+
+    const thrown = thrownBy(() => {
+      AuthLib.redirectIfAuthed(argsFor('authenticated', search));
+    });
+
+    expect(thrown).toMatchObject({ options: { href: '/dashboard?range=30d' } });
   });
 });
 
@@ -125,5 +171,15 @@ describe('where the guards live', () => {
 
   it('leaves nothing behind in app/guards', () => {
     expect(existsSync(`${CLIENT_SRC}/app/guards`)).toBe(false);
+  });
+
+  /**
+   * `units/session` was the reference unit of the tree and is gone: EPIC-006 merged it into
+   * `units/auth`, exactly as `docs/product/glossary.md` said it would. Asserted against the tree
+   * because a leftover directory keeps resolving, keeps passing every architecture sweep, and
+   * leaves two homes for one concept.
+   */
+  it('leaves nothing behind in units/session either', () => {
+    expect(existsSync(`${CLIENT_SRC}/units/session`)).toBe(false);
   });
 });

@@ -16,6 +16,25 @@ const refreshed = (body: unknown, status = 200): Response =>
     headers: { 'content-type': 'application/json' },
   });
 
+/** A rotation as the contract publishes it: the token, and who it belongs to. */
+const session = (accessToken: string) => ({
+  status: 'authenticated',
+  accessToken,
+  tokenType: 'Bearer',
+  expiresIn: 900,
+  user: {
+    id: 'b3f1c2d4-5e6a-4b7c-8d9e-0f1a2b3c4d5e',
+    email: 'ada@example.com',
+    locale: 'en',
+    timezone: 'Europe/Berlin',
+  },
+  organization: {
+    id: '7c9e6679-7425-40de-944b-e07fc1f90ae7',
+    name: 'Bad Company',
+    slug: 'bad-company',
+  },
+});
+
 afterEach(() => {
   vi.unstubAllGlobals();
 });
@@ -28,7 +47,7 @@ describe('exchanging the refresh cookie for an access token', () => {
       fetch: (request) => {
         sent = request;
 
-        return Promise.resolve(refreshed({ status: 'authenticated', accessToken: 'fresh' }));
+        return Promise.resolve(refreshed(session('fresh')));
       },
     });
 
@@ -51,7 +70,7 @@ describe('exchanging the refresh cookie for an access token', () => {
       fetch: (request) => {
         sent = request;
 
-        return Promise.resolve(refreshed({ status: 'authenticated', accessToken: 'fresh' }));
+        return Promise.resolve(refreshed(session('fresh')));
       },
     });
 
@@ -61,17 +80,51 @@ describe('exchanging the refresh cookie for an access token', () => {
     });
   });
 
-  it('returns the new access token', async () => {
+  /**
+   * The whole session, not only the token: a reloaded tab learns *who* it is from this same answer,
+   * and asking a second endpoint for something the first one already carried would be a second
+   * round trip on every start-up. Taking it apart is `units/auth`'s job.
+   */
+  it('returns the session the rotation issued', async () => {
     const refresh = createSessionRefresher({
       baseUrl: API_BASE_URL,
-      fetch: () => Promise.resolve(refreshed({ accessToken: 'fresh' })),
+      fetch: () => Promise.resolve(refreshed(session('fresh'))),
     });
 
-    await expect(refresh()).resolves.toBe('fresh');
+    await expect(refresh()).resolves.toMatchObject({
+      kind: 'session',
+      session: { accessToken: 'fresh', user: { id: 'b3f1c2d4-5e6a-4b7c-8d9e-0f1a2b3c4d5e' } },
+    });
+  });
+
+  /**
+   * Only the server saying so ends a session.
+   *
+   * This table used to be one case — every failure resolved to `null`, and the reasoning written
+   * here was that "refused", "unparsable" and "offline" mean the same thing to the caller. They do
+   * not, and the server was changed in this very epic on exactly that ground: an infrastructure
+   * failure answers `5xx` instead of `401` precisely so that thirty seconds of an unreachable
+   * database would stop signing everybody out. Collapsing the distinction here threw that away one
+   * layer higher — `docker compose up -d` from the upgrade runbook restarts Postgres, every open tab
+   * that happens to rotate in that window is told its session is gone, and people re-enter passwords
+   * while a valid refresh cookie sits in the browser.
+   *
+   * `401` is the only refusal: it is the answer that means the presented cookie will never work
+   * again. Everything else — `5xx`, a dropped connection, a body that is not the shape the contract
+   * promises — is `unavailable`, which says «ask again later» and leaves the session state alone.
+   * The direction of the default matters: guessing `unavailable` on a session that really is over
+   * costs one failed request, while guessing `refused` on a blip costs every open tab.
+   */
+  it('reports a refusal only when the endpoint refuses', async () => {
+    const refresh = createSessionRefresher({
+      baseUrl: API_BASE_URL,
+      fetch: () => Promise.resolve(refreshed({ code: 'unauthenticated' }, 401)),
+    });
+
+    await expect(refresh()).resolves.toEqual({ kind: 'refused' });
   });
 
   it.each([
-    ['the endpoint refuses', () => Promise.resolve(refreshed({ code: 'unauthenticated' }, 401))],
     ['the answer carries no token', () => Promise.resolve(refreshed({}))],
     ['the token is not a string', () => Promise.resolve(refreshed({ accessToken: 42 }))],
     [
@@ -79,10 +132,13 @@ describe('exchanging the refresh cookie for an access token', () => {
       () => Promise.resolve(new Response('<html/>', { status: 200 })),
     ],
     ['the network is gone', () => Promise.reject(new TypeError('Failed to fetch'))],
-  ])('reports no session when %s', async (_case, fetchImpl) => {
+    ['the database is down', () => Promise.resolve(refreshed({ code: 'internal' }, 500))],
+    ['the service is restarting', () => Promise.resolve(refreshed({ code: 'unavailable' }, 503))],
+    ['the gateway is not up yet', () => Promise.resolve(refreshed({}, 502))],
+  ])('reports the session as unavailable, not gone, when %s', async (_case, fetchImpl) => {
     const refresh = createSessionRefresher({ baseUrl: API_BASE_URL, fetch: fetchImpl });
 
-    await expect(refresh()).resolves.toBeNull();
+    await expect(refresh()).resolves.toEqual({ kind: 'unavailable' });
   });
 
   /**
@@ -98,11 +154,14 @@ describe('exchanging the refresh cookie for an access token', () => {
       fetch: (request) => {
         sent = request;
 
-        return Promise.resolve(refreshed({ status: 'authenticated', accessToken: 'fresh' }));
+        return Promise.resolve(refreshed(session('fresh')));
       },
     });
 
-    await expect(refresh()).resolves.toBe('fresh');
+    await expect(refresh()).resolves.toMatchObject({
+      kind: 'session',
+      session: { accessToken: 'fresh' },
+    });
     expect(sent?.url).toBe(`${globalThis.location.origin}/api/v1/auth/refresh`);
   });
 
@@ -111,10 +170,13 @@ describe('exchanging the refresh cookie for an access token', () => {
    * `rules/testing.mdc` §12 — no test in this repository reaches the network.
    */
   it('uses the platform transport when none is injected', async () => {
-    const platformFetch = vi.fn(() => Promise.resolve(refreshed({ accessToken: 'fresh' })));
+    const platformFetch = vi.fn(() => Promise.resolve(refreshed(session('fresh'))));
     vi.stubGlobal('fetch', platformFetch);
 
-    await expect(createSessionRefresher({ baseUrl: API_BASE_URL })()).resolves.toBe('fresh');
+    await expect(createSessionRefresher({ baseUrl: API_BASE_URL })()).resolves.toMatchObject({
+      kind: 'session',
+      session: { accessToken: 'fresh' },
+    });
     expect(platformFetch).toHaveBeenCalledTimes(1);
   });
 });

@@ -3,10 +3,12 @@ import { createRoot } from 'react-dom/client';
 
 import { App } from '@app/app.component.js';
 import { installApiMiddleware } from '@app/api-middleware.util.js';
-import { subscribeAuthRedirect } from '@app/auth-redirect.util.js';
+import { appQueryClient } from '@app/app-query-client.constant.js';
+import { subscribeAuthEvents } from '@app/auth-events.util.js';
 import { router } from '@app/router.js';
 import { installStyleNonce } from '@app/style-nonce.util.js';
 import { installTrustedTypesPolicy } from '@app/trusted-types.util.js';
+import { AuthService } from '@units/auth';
 
 // Mantine first, then the tokens that build on its variables, then the reset. Import order is
 // cascade order: tokens declared before the library that defines `--mantine-color-*` would resolve
@@ -27,7 +29,8 @@ import './global.css';
  * nonce published too late.
  *
  * The API middleware is installed before the tree so that no component can fire a request through
- * an unauthenticated client, and the sign-out subscription before it for the same reason.
+ * an unauthenticated client, and the session-event subscription before it for the same reason: an
+ * exchange that fails during the first paint has to find somebody listening.
  *
  * `StrictMode` is on in every environment, not only in development — it is how React 19 surfaces
  * an effect that is not idempotent, by mounting, unmounting and mounting again. Nothing in this
@@ -40,7 +43,7 @@ import './global.css';
 installTrustedTypesPolicy();
 installStyleNonce();
 installApiMiddleware();
-subscribeAuthRedirect(router);
+subscribeAuthEvents({ router, queryClient: appQueryClient, session: AuthService.authSession });
 
 const container = document.getElementById('root');
 

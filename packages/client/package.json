@@ -20,6 +20,7 @@
   "dependencies": {
     "@bad-crm/shared": "workspace:*",
     "@mantine/core": "^9.5.0",
+    "@mantine/form": "^9.5.0",
     "@mantine/hooks": "^9.5.0",
     "@mantine/notifications": "^9.5.0",
     "@tabler/icons-react": "^3.45.0",

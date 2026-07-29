@@ -112,16 +112,34 @@ describe('the envelope sender', () => {
   });
 
   /**
-   * Unreachable through `loadEnv` — the schema makes `MAIL_FROM` required as soon as `SMTP_URL` is
-   * set — and checked anyway, because the failure it prevents is one only a real relay shows: an
-   * installation that starts, answers 200 to a password-reset request and sends nothing.
+   * Disabled, not refused — and the distinction is the whole point of this test.
+   *
+   * This assertion used to be `toThrow(/MAIL_FROM/)`, on the stated grounds that `loadEnv` made
+   * `MAIL_FROM` required whenever `SMTP_URL` was set, so the throw was unreachable anyway. That
+   * requirement was then deliberately removed from `env.schema.ts`: a variable that becomes
+   * required in one release does not let an existing installation start, and `SMTP_URL` has been in
+   * `.env.example` since EPIC-001 while `MAIL_FROM` is new. The removal made the throw the *first*
+   * thing an upgraded installation hits — `buildContainer` runs before any degradation is printed —
+   * so the process exited before opening the port, and the `warn` branch in `env-features.util.ts`
+   * became unreachable code. `CHANGELOG.md` and `docs/runbooks/upgrade.md` promised a warning.
+   *
+   * So the rule the project already committed to — release N warns, release N+1 refuses — is
+   * implemented here: no sender means no transport, the installation boots, password reset answers
+   * as it does on an installation with no mail at all, and the operator is told at `warn` before
+   * the port opens. The refusal moves to the release that mounts mail in the container.
    */
-  it('refuses to build an SMTP mailer with no sender rather than one that cannot send', () => {
+  it('disables mail rather than refusing to start when the sender is missing', async () => {
     const { logger } = recordingLogger();
 
-    expect(() =>
-      createMailer({ smtpUrl: 'smtp://localhost:1025', mailFrom: undefined, logger }),
-    ).toThrow(/MAIL_FROM/);
+    const mailer = createMailer({
+      smtpUrl: 'smtp://localhost:1025',
+      mailFrom: undefined,
+      logger,
+    });
+
+    expect(
+      await mailer.send({ to: 'ada@example.com', subject: 's', text: 't', html: '<p>t</p>' }),
+    ).toEqual({ status: 'not_configured' });
   });
 
   /**

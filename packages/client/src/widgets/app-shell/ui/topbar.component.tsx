@@ -2,6 +2,7 @@ import { ActionIcon, Burger, Group, Text, Tooltip } from '@mantine/core';
 import { IconLayoutSidebarLeftCollapse, IconLayoutSidebarLeftExpand } from '@tabler/icons-react';
 
 import { ColorSchemeControl } from './color-scheme-control.component.js';
+import { SignOutControl } from './sign-out-control.component.js';
 import classes from './topbar.module.css';
 
 export interface TopbarProps {
@@ -18,6 +19,10 @@ export interface TopbarProps {
  * accessible name (`rules/a11y.mdc` §17), it is a hint for people who can see it. The burger is
  * `hiddenFrom="sm"` and the collapse control `visibleFrom="sm"`, because they do different things:
  * one opens a drawer over the content, the other narrows a rail beside it.
+ *
+ * The sign-out control is the third: it is the only way out of the shell until the avatar menu of
+ * EPIC-007 exists, and a workspace with no way to leave it is not a workspace anybody should open
+ * on a shared machine.
  *
  * Global search (`Cmd+K`), the project switcher, the running timer, notifications and the AI drawer
  * belong here too; they arrive with the epics that build them, and an empty button that does
@@ -56,7 +61,10 @@ export function Topbar({
         <Text fw={600}>Bad CRM</Text>
       </Group>
 
-      <ColorSchemeControl />
+      <Group gap="sm" wrap="nowrap">
+        <ColorSchemeControl />
+        <SignOutControl />
+      </Group>
     </Group>
   );
 }

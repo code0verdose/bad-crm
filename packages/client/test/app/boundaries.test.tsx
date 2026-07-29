@@ -1,4 +1,5 @@
 import { MantineProvider } from '@mantine/core';
+import { QueryClientProvider } from '@tanstack/react-query';
 import { RouterProvider, createMemoryHistory } from '@tanstack/react-router';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
@@ -7,7 +8,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { RouteError, RoutePending } from '@app/ui';
 import { createAppRouter } from '@app/router.js';
-import { SharedApi, SharedUi } from '@shared';
+import { SharedApi, SharedLib, SharedUi } from '@shared';
 
 /**
  * The two boundaries a route falls back to, rendered on their own.
@@ -18,8 +19,21 @@ import { SharedApi, SharedUi } from '@shared';
  * the inherited default from being an empty `<div>` nobody ever looked at.
  */
 
+/**
+ * Theme and cache, because the shell contains both kinds of component: one that only draws, and —
+ * since the sign-out control landed — one that reads a mutation. A wrapper with the theme alone
+ * fails the second at render time, which reads as a broken boundary rather than as a missing
+ * provider.
+ */
+const harnessQueryClient = SharedApi.createAppQueryClient({
+  notify: SharedLib.silentNotifications,
+  logError: () => undefined,
+});
+
 const Themed = ({ children }: { readonly children: ReactNode }) => (
-  <MantineProvider env="test">{children}</MantineProvider>
+  <MantineProvider env="test">
+    <QueryClientProvider client={harnessQueryClient}>{children}</QueryClientProvider>
+  </MantineProvider>
 );
 
 describe('the pending boundary', () => {

@@ -66,7 +66,8 @@ const idsReturning = (id: string): IdGeneratorPort => ({
  */
 const ownerWriting = (options: { failing?: boolean } = {}): UserRepositoryPort => ({
   findById: () => Promise.resolve(null),
-  updatePasswordHash: () => Promise.resolve(),
+  findCredential: () => Promise.resolve(null),
+  updatePasswordHash: () => Promise.resolve(true),
   createOwner: async () => {
     const { tx, ctx } = requireTenant('TestOwnerRepository.createOwner');
     const team = await tx.team.create({

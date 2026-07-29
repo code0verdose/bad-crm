@@ -72,6 +72,29 @@ describe('01-grants.sql agrees with the tenant table registry', () => {
   });
 
   /**
+   * `definer_reads` is the widest privilege this file grants, and it is the one list nothing was
+   * checking.
+   *
+   * These are the tables `app_auth_definer` may `SELECT`, and that role holds `BYPASSRLS` — the
+   * organization predicate does not apply to it. Every name here is therefore a table readable across
+   * every tenant from inside a `SECURITY DEFINER` body.
+   *
+   * Removing a name is caught the loud way: a resolver stops working and the sign-in path fails.
+   * **Adding** one is caught by nothing at all — the new table simply becomes cross-tenant readable,
+   * no test changes colour, and the next reviewer reads a norm that says «exactly four». So the set is
+   * pinned literally rather than derived: a fifth entry has to be typed here too, next to the reason
+   * it is dangerous, which is the whole point of making it inconvenient.
+   */
+  it('grants the BYPASSRLS role SELECT on exactly the four tables the org-less resolvers read', () => {
+    expect(sqlList('definer_reads').sort()).toEqual([
+      'organizations',
+      'password_reset_tokens',
+      'sessions',
+      'users',
+    ]);
+  });
+
+  /**
    * The classifier itself. Keying it on a column name is the defect described above; keying it on
    * row-level security is the definition invariant 1 gives. A future edit back to the column form
    * would pass every behavioural test and reintroduce the outage.

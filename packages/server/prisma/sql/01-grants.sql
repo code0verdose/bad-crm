@@ -117,7 +117,15 @@ DECLARE
   --
   -- Written out rather than derived: `SELECT` for a role that bypasses row-level security is the
   -- widest read this file hands out, and a table joins the list only when a resolver needs it.
-  definer_reads CONSTANT text[] := ARRAY['users', 'organizations', 'sessions'];
+  --
+  -- `password_reset_tokens` joined the list in STORY-006-08 together with
+  -- `auth_lookup_password_reset`: the reset link is opened by somebody who cannot sign in, so the
+  -- row has to be resolved to its organization before any tenant scope can be opened. The resolver
+  -- returns the id, the organization and the user — never `used_at` or `expires_at`, so the read
+  -- this GRANT enables cannot answer whether a token is still usable.
+  definer_reads CONSTANT text[] := ARRAY[
+    'users', 'organizations', 'sessions', 'password_reset_tokens'
+  ];
 
   -- The marker a migration puts on a SECURITY DEFINER function of this project, and the whole of
   -- the classifier for the loop in step 7. See «"OF THIS PROJECT"» in the header.

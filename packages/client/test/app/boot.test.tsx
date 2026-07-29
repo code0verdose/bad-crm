@@ -1,43 +1,63 @@
-import { render, screen } from '@testing-library/react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
-
-import { App } from '@app';
+import { screen } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 /**
- * The shell, from the entry point down.
+ * The entry point, from `index.html` down.
  *
- * Two things are under test and neither is a component: that the layers are wired to each other
- * (`app → pages → widgets → units`, now through the router), and that `main.tsx` really mounts —
- * the file every other test would otherwise leave uncovered while the page stays blank in a
- * browser.
+ * What is under test is `main.tsx` itself — the file every other suite would otherwise leave
+ * uncovered while the page stays blank in a browser: the policies it installs before the first
+ * render, the node it mounts into, and its refusal to start when that node is missing. Where the
+ * first navigation ends up once a session exists is `test/app/session-bootstrap.test.tsx`.
  *
- * The history starts at `/`, so a passing assertion proves the whole first navigation: the guard on
- * `_authenticated` let an unknown session through, the index route redirected to `/dashboard`, the
- * shell mounted, and the page rendered inside it.
+ * The transport is stubbed with a live session, because the entry point now starts one: the
+ * bootstrap exchange runs on the first render, and a suite that let it reach the real `fetch` would
+ * be a suite that depends on a server.
  */
-describe('application shell', () => {
+const USER_ID = 'b3f1c2d4-5e6a-4b7c-8d9e-0f1a2b3c4d5e';
+const ORGANIZATION_ID = '7c9e6679-7425-40de-944b-e07fc1f90ae7';
+
+const authenticated = (): Response =>
+  new Response(
+    JSON.stringify({
+      status: 'authenticated',
+      accessToken: 'access-token-1',
+      tokenType: 'Bearer',
+      expiresIn: 900,
+      user: { id: USER_ID, email: 'ada@example.com', locale: 'en', timezone: 'Europe/Berlin' },
+      organization: { id: ORGANIZATION_ID, name: 'Bad Company', slug: 'bad-company' },
+    }),
+    { status: 200, headers: { 'content-type': 'application/json' } },
+  );
+
+/**
+ * Restored rather than unstubbed: `vi.unstubAllGlobals()` would also remove `matchMedia`,
+ * `scrollTo` and `ResizeObserver`, the three platform APIs `test/setup` supplies because jsdom does
+ * not.
+ */
+const platformFetch = globalThis.fetch;
+
+describe('the entry point', () => {
   beforeEach(() => {
     // The entry module runs its work at import time, so each case needs a fresh evaluation.
     vi.resetModules();
+    vi.stubGlobal('fetch', () => Promise.resolve(authenticated()));
     document.body.innerHTML = '';
     window.history.pushState({}, '', '/');
   });
 
-  it('lands on the dashboard and renders it inside the shell', async () => {
-    render(<App />);
-
-    expect(await screen.findByRole('heading', { level: 1 })).toHaveTextContent('nav.dashboard');
-    expect(screen.getByRole('main')).toBeInTheDocument();
-    expect(screen.getByRole('banner')).toBeInTheDocument();
+  afterEach(() => {
+    vi.stubGlobal('fetch', platformFetch);
   });
 
-  it('mounts into #root when the entry module is loaded', async () => {
+  it('mounts into #root and renders the shell around the first screen', async () => {
     document.body.innerHTML = '<div id="root"></div>';
 
     await import('@app/main.js');
 
     // `createRoot(...).render(...)` schedules the first paint, so the assertion waits for the tree.
-    expect(await screen.findByRole('heading', { level: 1 })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { level: 1 })).toHaveTextContent('nav.dashboard');
+    expect(screen.getByRole('main')).toBeInTheDocument();
+    expect(screen.getByRole('banner')).toBeInTheDocument();
   });
 
   /**

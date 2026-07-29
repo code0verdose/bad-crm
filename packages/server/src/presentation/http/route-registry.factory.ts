@@ -15,8 +15,11 @@ import {
   type RouteDeclaration,
 } from '@/presentation/http/route-registry.types.js';
 import {
+  changePasswordBodySchema,
+  forgotPasswordBodySchema,
   loginBodySchema,
   registerBodySchema,
+  resetPasswordBodySchema,
   sessionIdParamsSchema,
 } from '@/presentation/http/validators/auth.validator.js';
 import { metaQuerySchema } from '@/presentation/http/validators/meta.validator.js';
@@ -50,6 +53,9 @@ export const createRouteRegistry = (
 
   const registerValidator = validate({ body: registerBodySchema });
   const loginValidator = validate({ body: loginBodySchema });
+  const changePasswordValidator = validate({ body: changePasswordBodySchema });
+  const forgotPasswordValidator = validate({ body: forgotPasswordBodySchema });
+  const resetPasswordValidator = validate({ body: resetPasswordBodySchema });
   const sessionIdValidator = validate({ params: sessionIdParamsSchema });
 
   const auth = createAuthController({
@@ -57,8 +63,14 @@ export const createRouteRegistry = (
     login: dependencies.identity.login,
     refresh: dependencies.identity.refresh,
     endSession: dependencies.identity.endSession,
+    changePassword: dependencies.identity.changePassword,
+    requestPasswordReset: dependencies.identity.requestPasswordReset,
+    confirmPasswordReset: dependencies.identity.confirmPasswordReset,
     registerValidator,
     loginValidator,
+    changePasswordValidator,
+    forgotPasswordValidator,
+    resetPasswordValidator,
   });
 
   const sessions = createSessionController({
@@ -156,6 +168,31 @@ export const createRouteRegistry = (
       selfServiceReason:
         'closing one’s own session; ownership is the check, and it is made in the use-case by matching the session against the caller rather than by a capability',
       ownershipCheckedIn: 'EndSessionUseCase.revoke',
+    },
+    {
+      method: 'post',
+      path: `${API_PREFIX}/auth/change-password`,
+      handlers: [requireIdempotencyKey(), changePasswordValidator.handler, auth.changePassword],
+      selfService: true,
+      selfServiceReason:
+        'changing one’s own password is authorised by knowing it, not by holding a capability; the subject and the object are the same person, and no right anybody could revoke would stop them (docs/security/permission-model.md §3.20)',
+      ownershipCheckedIn: 'ChangePasswordUseCase',
+    },
+    {
+      method: 'post',
+      path: `${API_PREFIX}/auth/forgot-password`,
+      handlers: [requireIdempotencyKey(), forgotPasswordValidator.handler, auth.forgotPassword],
+      public: true,
+      publicReason:
+        'account recovery is for people who cannot sign in, so requiring a session would defeat it; the answer is constant for every address, so no permission decision is being skipped, and the operation is bounded by the auth_attempt budget of five per fifteen minutes on the pair of address and account, spent in RequestPasswordResetUseCase before the address is resolved',
+    },
+    {
+      method: 'post',
+      path: `${API_PREFIX}/auth/reset-password`,
+      handlers: [requireIdempotencyKey(), resetPasswordValidator.handler, auth.resetPassword],
+      public: true,
+      publicReason:
+        'the credential is the single-use token in the body, which is the whole authorisation: the person is by definition unable to sign in, the token is 32 CSPRNG bytes stored only as a SHA-256 digest, it expires in an hour and it is spent by one conditional UPDATE in ConfirmPasswordResetUseCase; the ambient per-address budget is the only subject this half of the flow has, and the expensive work is bounded elsewhere — nothing is hashed until that UPDATE has actually spent a row, so the number of Argon2id computations an address can force is the number of tokens forgot-password issued to it under the auth_attempt budget of five per fifteen minutes',
     },
     {
       method: 'post',

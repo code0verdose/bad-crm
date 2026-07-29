@@ -1,0 +1,6 @@
+.root {
+  /* Wide enough for a long Russian label on one line, narrow enough that the eye does not travel
+     the width of a desktop between the label and the field it belongs to. */
+  inline-size: 100%;
+  max-inline-size: 22rem;
+}

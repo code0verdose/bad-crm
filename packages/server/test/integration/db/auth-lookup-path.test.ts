@@ -267,6 +267,7 @@ describe('who may call the resolvers', () => {
     'auth_lookup_user(citext, text)',
     'auth_lookup_users_by_email(citext)',
     'auth_lookup_session(bytea)',
+    'auth_lookup_password_reset(bytea)',
   ];
 
   /**
@@ -310,7 +311,7 @@ describe('who may call the resolvers', () => {
     expect(rows[0]?.config ?? []).toContain('search_path=pg_catalog, public');
   });
 
-  it('has no SECURITY DEFINER function beyond the three', async () => {
+  it('has no SECURITY DEFINER function beyond the four', async () => {
     const { rows } = await pools.owner.query<{ signature: string }>(
       `SELECT p.oid::regprocedure::text AS signature
          FROM pg_proc p
@@ -320,6 +321,7 @@ describe('who may call the resolvers', () => {
     );
 
     expect(rows.map((row) => row.signature)).toEqual([
+      'auth_lookup_password_reset(bytea)',
       'auth_lookup_session(bytea)',
       'auth_lookup_user(citext,text)',
       'auth_lookup_users_by_email(citext)',
@@ -630,7 +632,7 @@ describe('a SECURITY DEFINER function this project does not own', () => {
         ORDER BY signature`,
     );
 
-    expect(rows).toHaveLength(3);
+    expect(rows).toHaveLength(4);
 
     for (const row of rows) {
       expect(row.marker ?? '', `${row.signature} carries no project marker`).toContain(

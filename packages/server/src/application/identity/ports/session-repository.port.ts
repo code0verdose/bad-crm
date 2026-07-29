@@ -99,6 +99,19 @@ export interface SessionRepositoryPort {
    */
   revokeFamily(familyId: string, reason: SessionRevokedReason, at: Date): Promise<number>;
 
+  /**
+   * Revokes every live session of the user, keeping none. Returns the number of families closed.
+   *
+   * Separate from `revokeOtherFamilies` with an id that matches nothing, because that construction
+   * makes "close everything" depend on a value being *absent* from the table — and the day somebody
+   * passes a real family by mistake, the statement quietly keeps a session alive. A method whose
+   * signature has nowhere to put an exception cannot be called with the wrong one.
+   *
+   * Used by the password reset: whoever is recovering access is usually doing so because somebody
+   * else has it too, so no device is trusted, including the one asking.
+   */
+  revokeAllFamilies(userId: string, reason: SessionRevokedReason, at: Date): Promise<number>;
+
   /** Revokes every live session of the user except the given family. Returns the number of families. */
   revokeOtherFamilies(
     userId: string,

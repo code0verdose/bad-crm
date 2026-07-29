@@ -40,6 +40,13 @@ export default [
       '!dist/assets/_authenticated-*.js',
       '!dist/assets/dashboard-*.js',
       '!dist/assets/login-*.js',
+      // The two public recovery screens (STORY-006-08). Reached from a link on the sign-in form and
+      // from a mail, never on a first paint — and each measured on its own line below, so leaving
+      // them out of the entry is an exclusion rather than a hiding place.
+      '!dist/assets/forgot-password-*.js',
+      // `routes/reset-password.$token.tsx`. Rollup sanitises `$` to `_`, so the chunk carries the
+      // route file's name with the parameter spelled `_token`.
+      '!dist/assets/reset-password._token-*.js',
       // The splat route, `routes/_authenticated/$.tsx`. Rollup sanitises `$` to `_`, so the chunk
       // is `_-<hash>.js` — a name close enough to `_authenticated-*` to be missed by eye, which is
       // how it spent a delivery inside the initial budget it is not part of. It is downloaded only
@@ -66,6 +73,18 @@ export default [
   {
     name: 'route chunk — /login',
     path: 'dist/assets/login-*.js',
+    limit: '20 kB',
+    gzip: true,
+  },
+  {
+    name: 'route chunk — /forgot-password',
+    path: 'dist/assets/forgot-password-*.js',
+    limit: '20 kB',
+    gzip: true,
+  },
+  {
+    name: 'route chunk — /reset-password/$token',
+    path: 'dist/assets/reset-password._token-*.js',
     limit: '20 kB',
     gzip: true,
   },

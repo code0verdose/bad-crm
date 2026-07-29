@@ -3,6 +3,7 @@
  * and the layout that wraps the authenticated branch. Everything else that renders lives in
  * `pages`, `widgets` or `units` — `app` composes, it does not draw.
  */
+export * from './app-loading.component.js';
 export * from './authenticated-layout.component.js';
 export * from './route-error.component.js';
 export * from './route-not-found.component.js';

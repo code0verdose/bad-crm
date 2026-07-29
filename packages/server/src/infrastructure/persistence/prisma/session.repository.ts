@@ -140,6 +140,30 @@ export class PrismaSessionRepository
     );
   }
 
+  /**
+   * Every live session of one person, with no exception — the password-reset case.
+   *
+   * Written as its own statement rather than as `revokeOtherFamilies` with an id that matches
+   * nothing: that construction makes "close everything" depend on a value being *absent* from the
+   * table, and a `family_id <> $2` predicate with a real id passed by mistake silently leaves a
+   * session alive. Here there is nowhere to pass one.
+   */
+  revokeAllFamilies(userId: string, reason: SessionRevokedReason, at: Date): Promise<number> {
+    return this.run('revokeAllFamilies', async (tx) => {
+      const rows = await tx.$queryRaw<CountRow[]>`
+        WITH revoked AS (
+          UPDATE sessions
+             SET revoked_at = ${at}, revoked_reason = ${reason}::session_revoked_reason
+           WHERE user_id = ${userId}::uuid
+             AND revoked_at IS NULL
+        RETURNING family_id
+        )
+        SELECT count(DISTINCT family_id)::int AS count FROM revoked`;
+
+      return rows[0]?.count ?? 0;
+    });
+  }
+
   revokeOtherFamilies(
     userId: string,
     keepFamilyId: string,

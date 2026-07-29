@@ -2,6 +2,7 @@ import { createRouter, type RouterHistory } from '@tanstack/react-router';
 
 import { appQueryClient } from './app-query-client.constant.js';
 import { routeTree } from './route-tree.gen.js';
+import { routerAuth } from './router-auth.util.js';
 import { type AppRouterContext } from './router-context.types.js';
 import { RouteError } from './ui/route-error.component.js';
 import { RouteNotFound } from './ui/route-not-found.component.js';
@@ -52,13 +53,15 @@ export type AppRouter = ReturnType<typeof createAppRouter>;
 /**
  * The application's router instance.
  *
- * The context here is the starting value — `auth` is replaced on every render by `RouterProvider`
- * in `app.component.tsx`, which is how a guard sees the session as it is now rather than as it was
- * when the module loaded.
+ * The context is built once and never replaced. `auth` is a live view over the session store
+ * (`router-auth.util.ts`), so a guard reads the session at the moment `beforeLoad` runs rather than
+ * at whatever the last render happened to pass — and what makes the guards run again is
+ * `router.invalidate()`, called on the two session events that change the answer
+ * (`auth-events.util.ts`).
  */
 export const router = createAppRouter({
   queryClient: appQueryClient,
-  auth: { status: 'unknown' },
+  auth: routerAuth,
 });
 
 /**

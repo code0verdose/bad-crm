@@ -126,6 +126,29 @@ describe('the login search', () => {
     expect(AuthModel.loginSearchSchema.parse({ redirect }).redirect).toBeUndefined();
   });
 
+  /**
+   * The four cases above are all refused by the anchor — `^\/(?![/\\])` — and none of them reaches
+   * the character class that follows it. These do, and they are here because the class was added
+   * without a case that fails without it: every assertion in this file passed against
+   * `[\s\S]*`, which accepts a newline.
+   *
+   * That the value is only ever handed to `router.navigate` today is not the argument for keeping
+   * the class. The argument is that the string is also written to the URL bar and to a log line,
+   * and a path holding a raw CR/LF is not a route this application can produce — `location.href`
+   * percent-encodes it. So the class costs nothing legitimate and removes a character whose whole
+   * significance is that some parser downstream treats it as a terminator.
+   */
+  it.each([
+    ['a line feed', '/dashboard\nx'],
+    ['a carriage return', '/dashboard\rx'],
+    ['a CRLF pair', '/dashboard\r\nSet-Cookie: a=b'],
+    ['a tab', '/dashboard\tx'],
+    ['a raw space', '/dash board'],
+    ['a NUL byte', '/dashboard\u0000x'],
+  ])('drops a path carrying %s', (_name, redirect) => {
+    expect(AuthModel.loginSearchSchema.parse({ redirect }).redirect).toBeUndefined();
+  });
+
   it('falls back to one destination the form and the guard agree on', () => {
     expect(AuthModel.POST_LOGIN_PATH).toBe('/dashboard');
   });

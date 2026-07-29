@@ -10,13 +10,20 @@
 
 import { Route as rootRouteImport } from './routes/__root';
 import { Route as AuthenticatedRouteImport } from './routes/_authenticated';
+import { Route as ForgotPasswordRouteImport } from './routes/forgot-password';
 import { Route as LoginRouteImport } from './routes/login';
 import { Route as AuthenticatedIndexRouteImport } from './routes/_authenticated/index';
 import { Route as AuthenticatedSplatRouteImport } from './routes/_authenticated/$';
 import { Route as AuthenticatedDashboardRouteImport } from './routes/_authenticated/dashboard';
+import { Route as ResetPasswordTokenRouteImport } from './routes/reset-password.$token';
 
 const AuthenticatedRoute = AuthenticatedRouteImport.update({
   id: '/_authenticated',
+  getParentRoute: () => rootRouteImport,
+} as any);
+const ForgotPasswordRoute = ForgotPasswordRouteImport.update({
+  id: '/forgot-password',
+  path: '/forgot-password',
   getParentRoute: () => rootRouteImport,
 } as any);
 const LoginRoute = LoginRouteImport.update({
@@ -39,44 +46,71 @@ const AuthenticatedDashboardRoute = AuthenticatedDashboardRouteImport.update({
   path: '/dashboard',
   getParentRoute: () => AuthenticatedRoute,
 } as any);
+const ResetPasswordTokenRoute = ResetPasswordTokenRouteImport.update({
+  id: '/reset-password/$token',
+  path: '/reset-password/$token',
+  getParentRoute: () => rootRouteImport,
+} as any);
 
 export interface FileRoutesByFullPath {
   '/': typeof AuthenticatedIndexRoute;
+  '/forgot-password': typeof ForgotPasswordRoute;
   '/login': typeof LoginRoute;
   '/$': typeof AuthenticatedSplatRoute;
   '/dashboard': typeof AuthenticatedDashboardRoute;
+  '/reset-password/$token': typeof ResetPasswordTokenRoute;
 }
 export interface FileRoutesByTo {
+  '/forgot-password': typeof ForgotPasswordRoute;
   '/login': typeof LoginRoute;
   '/$': typeof AuthenticatedSplatRoute;
   '/dashboard': typeof AuthenticatedDashboardRoute;
+  '/reset-password/$token': typeof ResetPasswordTokenRoute;
   '/': typeof AuthenticatedIndexRoute;
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport;
   '/_authenticated': typeof AuthenticatedRouteWithChildren;
+  '/forgot-password': typeof ForgotPasswordRoute;
   '/login': typeof LoginRoute;
   '/_authenticated/$': typeof AuthenticatedSplatRoute;
   '/_authenticated/dashboard': typeof AuthenticatedDashboardRoute;
+  '/reset-password/$token': typeof ResetPasswordTokenRoute;
   '/_authenticated/': typeof AuthenticatedIndexRoute;
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath;
-  fullPaths: '/' | '/login' | '/$' | '/dashboard';
+  fullPaths:
+    | '/'
+    | '/forgot-password'
+    | '/login'
+    | '/$'
+    | '/dashboard'
+    | '/reset-password/$token';
   fileRoutesByTo: FileRoutesByTo;
-  to: '/login' | '/$' | '/dashboard' | '/';
+  to:
+    | '/forgot-password'
+    | '/login'
+    | '/$'
+    | '/dashboard'
+    | '/reset-password/$token'
+    | '/';
   id:
     | '__root__'
     | '/_authenticated'
+    | '/forgot-password'
     | '/login'
     | '/_authenticated/$'
     | '/_authenticated/dashboard'
+    | '/reset-password/$token'
     | '/_authenticated/';
   fileRoutesById: FileRoutesById;
 }
 export interface RootRouteChildren {
   AuthenticatedRoute: typeof AuthenticatedRouteWithChildren;
+  ForgotPasswordRoute: typeof ForgotPasswordRoute;
   LoginRoute: typeof LoginRoute;
+  ResetPasswordTokenRoute: typeof ResetPasswordTokenRoute;
 }
 
 declare module '@tanstack/react-router' {
@@ -86,6 +120,13 @@ declare module '@tanstack/react-router' {
       path: '';
       fullPath: '/';
       preLoaderRoute: typeof AuthenticatedRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    '/forgot-password': {
+      id: '/forgot-password';
+      path: '/forgot-password';
+      fullPath: '/forgot-password';
+      preLoaderRoute: typeof ForgotPasswordRouteImport;
       parentRoute: typeof rootRouteImport;
     };
     '/login': {
@@ -116,6 +157,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedDashboardRouteImport;
       parentRoute: typeof AuthenticatedRoute;
     };
+    '/reset-password/$token': {
+      id: '/reset-password/$token';
+      path: '/reset-password/$token';
+      fullPath: '/reset-password/$token';
+      preLoaderRoute: typeof ResetPasswordTokenRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
   }
 }
 
@@ -137,7 +185,9 @@ const AuthenticatedRouteWithChildren = AuthenticatedRoute._addFileChildren(
 
 const rootRouteChildren: RootRouteChildren = {
   AuthenticatedRoute: AuthenticatedRouteWithChildren,
+  ForgotPasswordRoute: ForgotPasswordRoute,
   LoginRoute: LoginRoute,
+  ResetPasswordTokenRoute: ResetPasswordTokenRoute,
 };
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

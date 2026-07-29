@@ -1,12 +1,15 @@
 import { type Express } from 'express';
 
 import { AuthenticateSessionQuery } from '@/application/identity/use-cases/authenticate-session.query.js';
+import { ChangePasswordUseCase } from '@/application/identity/use-cases/change-password.use-case.js';
+import { ConfirmPasswordResetUseCase } from '@/application/identity/use-cases/confirm-password-reset.use-case.js';
 import { EndSessionUseCase } from '@/application/identity/use-cases/end-session.use-case.js';
 import { IssueSessionUseCase } from '@/application/identity/use-cases/issue-session.use-case.js';
 import { ListSessionsQuery } from '@/application/identity/use-cases/list-sessions.query.js';
 import { LoginUseCase } from '@/application/identity/use-cases/login.use-case.js';
 import { RefreshSessionUseCase } from '@/application/identity/use-cases/refresh-session.use-case.js';
 import { RegisterOrganizationUseCase } from '@/application/identity/use-cases/register-organization.use-case.js';
+import { RequestPasswordResetUseCase } from '@/application/identity/use-cases/request-password-reset.use-case.js';
 import { BootstrapOrganizationUseCase } from '@/application/organization/use-cases/bootstrap-organization.use-case.js';
 import { createHttpServer } from '@/presentation/http/http-server.factory.js';
 
@@ -17,11 +20,15 @@ import {
   FakeAuthLookup,
   FakeClock,
   FakeIdGenerator,
+  FakeMail,
+  FakeMailDispatcher,
   FakeOrganizations,
+  FakePasswordResetTokens,
   FakePasswordHasher,
   FakeRateLimit,
   type FakeRateLimitOptions,
   FakeRefreshTokens,
+  FakeResetTokens,
   FakeSessions,
   FakeUnitOfWork,
   FakeUsers,
@@ -49,6 +56,9 @@ export interface AuthApp {
   readonly hasher: FakePasswordHasher;
   readonly logger: RecordingLogger;
   readonly rateLimit: FakeRateLimit;
+  readonly mail: FakeMail;
+  readonly dispatcher: FakeMailDispatcher;
+  readonly resetTokens: FakeResetTokens;
   /**
    * Every serialized pino line the application produced, in order.
    *
@@ -66,7 +76,12 @@ export interface AuthAppOptions {
   readonly rateLimit?: FakeRateLimitOptions;
   /** Hops of `X-Forwarded-For` the application is configured to believe. */
   readonly trustedProxyHops?: number;
+  /** `false` models an installation without `SMTP_URL`; the mail operations then answer 503. */
+  readonly mailConfigured?: boolean;
 }
+
+/** `APP_URL` of the application these suites build; the reset links are absolute against it. */
+export const APP_URL = 'https://crm.example.com';
 
 export const createAuthApp = (options: AuthAppOptions = {}): AuthApp => {
   const clock = new FakeClock();
@@ -91,10 +106,29 @@ export const createAuthApp = (options: AuthAppOptions = {}): AuthApp => {
   const rateLimit = new FakeRateLimit(options.rateLimit ?? {});
   const refreshTokens = new FakeRefreshTokens();
   const logger = new RecordingLogger();
+  const mail = new FakeMail();
+  const dispatcher = new FakeMailDispatcher();
+  const resetTokens = new FakeResetTokens();
+  const resetTokenRows = new FakePasswordResetTokens(unitOfWork);
+
+  mail.configured = options.mailConfigured ?? true;
+
+  // The digests the sign-in path verifies against are the same rows `ChangePasswordUseCase` reads
+  // and rewrites: a second store here would let a test change a password and still sign in with the
+  // old one, which is the assertion that matters most.
+  for (const account of accounts) {
+    users.credentials.set(account.userId, {
+      email: account.email,
+      passwordHash: account.passwordHash,
+      locale: account.locale,
+    });
+  }
 
   // One token service for the whole application: the guard has to verify what the sign-in minted,
   // and two instances would make every authenticated request a 401 for the wrong reason.
   const accessTokens = new FakeAccessTokens();
+
+  lookup.readingCredentials(users).readingResetTokens(resetTokenRows);
 
   const issueSession = new IssueSessionUseCase(
     sessions,
@@ -137,7 +171,44 @@ export const createAuthApp = (options: AuthAppOptions = {}): AuthApp => {
       logger,
       rateLimit,
     ),
+    requestPasswordReset: new RequestPasswordResetUseCase(
+      lookup,
+      resetTokenRows,
+      resetTokens,
+      new FakeAddressHasher(),
+      unitOfWork,
+      rateLimit,
+      mail,
+      dispatcher,
+      clock,
+      logger,
+      APP_URL,
+    ),
+    confirmPasswordReset: new ConfirmPasswordResetUseCase(
+      lookup,
+      resetTokenRows,
+      resetTokens,
+      users,
+      sessions,
+      hasher,
+      unitOfWork,
+      rateLimit,
+      clock,
+      logger,
+    ),
     endSession: new EndSessionUseCase(sessions, unitOfWork, clock, logger),
+    changePassword: new ChangePasswordUseCase(
+      users,
+      sessions,
+      resetTokenRows,
+      hasher,
+      unitOfWork,
+      rateLimit,
+      dispatcher,
+      clock,
+      logger,
+      APP_URL,
+    ),
     listSessions: new ListSessionsQuery(sessions, unitOfWork, clock),
     authenticate: new AuthenticateSessionQuery(accessTokens, sessions, unitOfWork, clock),
     authLookup: lookup,
@@ -157,6 +228,9 @@ export const createAuthApp = (options: AuthAppOptions = {}): AuthApp => {
     hasher,
     logger,
     rateLimit,
+    mail,
+    dispatcher,
+    resetTokens,
     logLines: testApp.logLines,
   };
 };

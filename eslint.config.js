@@ -344,6 +344,27 @@ const NO_PERSISTENT_TOKEN_STORAGE = ['localStorage', 'sessionStorage'].map((name
     'Auth tokens must not live in persistent storage — use an httpOnly cookie plus in-memory state (rules/security.mdc).',
 }));
 
+/**
+ * The same ban, spelled through the global object.
+ *
+ * `no-restricted-globals` matches an unqualified identifier and nothing else, so
+ * `globalThis.localStorage.setItem(...)` walked past it — measured while mutating the session store
+ * to check that the invariant was actually held. Only the architecture test caught that form, which
+ * means the fast feedback loop did not: a developer writing it sees a green `pnpm lint` and learns
+ * the rule from a test run minutes later, if at all.
+ */
+const NO_PERSISTENT_TOKEN_STORAGE_PROPERTIES = [
+  'error',
+  ...['localStorage', 'sessionStorage'].flatMap((property) =>
+    ['globalThis', 'window', 'self'].map((object) => ({
+      object,
+      property,
+      message:
+        'Auth tokens must not live in persistent storage — use an httpOnly cookie plus in-memory state (rules/security.mdc). Reaching it through the global object is the same storage.',
+    })),
+  ),
+];
+
 const NO_CONSOLE = ['error', { allow: ['warn', 'error'] }];
 
 // ─── configuration reaches the code through a schema, never through a raw read ────────────────
@@ -837,6 +858,11 @@ export default tseslint.config(
         ...NO_FETCH_GLOBALS.filter((global) => global.name !== 'fetch'),
         ...NO_PERSISTENT_TOKEN_STORAGE,
       ],
+      // The same ban in both spellings, and here for the same reason it is on the auth unit: this
+      // is the layer that owns the request carrying the token. Declaring the identifier form alone
+      // would have left half the client — the half that touches the credential on every call —
+      // catching only the unqualified spelling.
+      'no-restricted-properties': NO_PERSISTENT_TOKEN_STORAGE_PROPERTIES,
     },
   },
   {
@@ -854,6 +880,7 @@ export default tseslint.config(
     files: [CLIENT_AUTH_UNIT],
     rules: {
       'no-restricted-globals': ['error', ...NO_FETCH_GLOBALS, ...NO_PERSISTENT_TOKEN_STORAGE],
+      'no-restricted-properties': NO_PERSISTENT_TOKEN_STORAGE_PROPERTIES,
     },
   },
   {

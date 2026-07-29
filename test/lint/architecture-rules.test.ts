@@ -123,6 +123,19 @@ const CLIENT_FSD: ForbiddenCase[] = [
     rule: 'no-restricted-globals',
     hint: 'shared/api',
   },
+  // Both spellings of the storage ban, in both layers that hold the credential. The property form
+  // exists because the identifier rule matches an unqualified name and nothing else, so
+  // `globalThis.localStorage.setItem(...)` passed lint while breaking invariant 3.
+  {
+    fixture: 'packages/client/src/units/auth/lib/global-storage.util.ts',
+    rule: 'no-restricted-properties',
+    hint: 'persistent storage',
+  },
+  {
+    fixture: 'packages/client/src/shared/api/global-storage.util.ts',
+    rule: 'no-restricted-properties',
+    hint: 'persistent storage',
+  },
   {
     fixture: 'packages/client/src/units/task/api/tasks.api.ts',
     rule: 'no-restricted-syntax',

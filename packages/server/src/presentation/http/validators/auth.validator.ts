@@ -38,6 +38,57 @@ export const loginBodySchema = z.strictObject({
   organizationSlug: slugSchema.optional(),
 });
 
+/**
+ * `POST /auth/change-password`.
+ *
+ * Both fields carry `passwordSchema`, so the length policy is enforced on the *current* password
+ * too. That looks redundant — the value either matches the stored digest or it does not — and it is
+ * not: without it, a caller can send a one-megabyte string and have it verified against an Argon2id
+ * digest, which is the cheapest half of the memory-exhaustion vector the limiter exists to close.
+ *
+ * "The new password equals the current one" is deliberately **not** a `.refine` here. It is refused
+ * by the use-case, together with the strength policy, so the two answers come from one place and
+ * both land on `newPassword` with one code (`change-password.use-case.ts`).
+ */
+export const changePasswordBodySchema = z.strictObject({
+  currentPassword: passwordSchema,
+  newPassword: passwordSchema,
+});
+
+export const forgotPasswordBodySchema = z.strictObject({
+  email: emailSchema,
+});
+
+/**
+ * The bounds `ResetPasswordRequest` publishes for the token.
+ *
+ * Thirty-two CSPRNG bytes are 43 base64url characters, so the lower bound is comfortably below what
+ * this server mints and the upper one is there to stop a megabyte "token" from being hashed and
+ * looked up. Both are deliberately loose: a schema tight enough to describe the exact format would
+ * separate "not a token of ours" from "a token of ours that is not usable", and that is the one
+ * distinction `password_reset_token_invalid` exists to hide.
+ */
+const RESET_TOKEN_MIN = 32;
+const RESET_TOKEN_MAX = 512;
+
+/**
+ * `POST /auth/reset-password`, with the token in the **body**.
+ *
+ * Never a query parameter and never a path segment: a query string is written to the access log of
+ * every proxy in front of the installation, is handed to the next origin in `Referer`, and is the
+ * part of a URL people paste into support tickets. The emailed link carries it in a path segment of
+ * the *SPA* route, and the browser turns it into this body, so the token never appears in a URL this
+ * API sees. `test/contract/route-authorization.test.ts` refuses any path or query parameter whose
+ * name looks like a credential, which is what keeps that true after this file.
+ */
+export const resetPasswordBodySchema = z.strictObject({
+  token: z
+    .string({ error: 'validation.token.invalid' })
+    .min(RESET_TOKEN_MIN, { error: 'validation.token.invalid' })
+    .max(RESET_TOKEN_MAX, { error: 'validation.token.invalid' }),
+  newPassword: passwordSchema,
+});
+
 export const sessionIdParamsSchema = z.strictObject({
   sessionId: z.uuid({ error: 'validation.id.invalid' }),
 });

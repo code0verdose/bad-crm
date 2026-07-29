@@ -1,7 +1,12 @@
 import createClient from 'openapi-fetch';
 import { describe, expect, it, vi } from 'vitest';
 
-import { AUTH_RETRY_HEADER, createApiClient, createAuthMiddleware } from '@shared/api';
+import {
+  AUTH_RETRY_HEADER,
+  createApiClient,
+  createAuthMiddleware,
+  type TokenRefresh,
+} from '@shared/api';
 
 import { API_BASE_URL } from './test-api.util.js';
 
@@ -55,6 +60,8 @@ const settle = async (): Promise<void> => {
 const harness = (options: {
   respond: (request: Request, attempt: number) => Response;
   token?: string | null;
+  /** Overrides the deferred rotation, for the cases whose point is *which* outcome comes back. */
+  refresh?: () => Promise<TokenRefresh>;
 }): Harness => {
   const attempts: Request[] = [];
   let refreshCalls = 0;
@@ -77,10 +84,13 @@ const harness = (options: {
       readAccessToken: () => token,
       refreshSession: () => {
         refreshCalls += 1;
-        return new Promise<string | null>((resolve) => {
+
+        if (options.refresh !== undefined) return options.refresh();
+
+        return new Promise<TokenRefresh>((resolve) => {
           resolveRefresh = (value) => {
             if (value !== null) token = value;
-            resolve(value);
+            resolve(value === null ? { kind: 'refused' } : { kind: 'rotated' });
           };
         });
       },
@@ -215,10 +225,10 @@ describe('a burst of 401s', () => {
       createAuthMiddleware({
         readAccessToken: () => token,
         refreshSession: () =>
-          new Promise<string | null>((resolve) => {
+          new Promise<TokenRefresh>((resolve) => {
             resolveRefresh = (value) => {
               token = value;
-              resolve(value);
+              resolve(value === null ? { kind: 'refused' } : { kind: 'rotated' });
             };
           }),
         onSessionLost: () => undefined,
@@ -287,6 +297,56 @@ describe('a refresh that fails', () => {
   });
 
   /**
+   * A rotation that never reached the server is not a sign-out, and this is the assertion that says
+   * so in the failing direction.
+   *
+   * The server was changed earlier in this epic to answer `5xx` rather than `401` when the database
+   * is unreachable, for one reason: a thirty-second outage was signing out every member of an
+   * organization. This layer used to collapse both into a single `null`, which put the same incident
+   * back — `docker compose up -d` from the upgrade runbook restarts Postgres, and every tab that
+   * happened to rotate in that window was told its session was over while a valid refresh cookie sat
+   * in the browser.
+   *
+   * So the request still fails with its original 401 — nothing can be replayed without a token — but
+   * `onSessionLost` is **not** called, and the refresh is not marked terminal: the next request tries
+   * again once the server is answering.
+   */
+  /**
+   * A rotation that reports success while the token store is empty: a sign-out landed in the
+   * microtask between them. There is nothing to replay with, and the session has already been ended
+   * by whoever cleared the token — so the 401 stands and `onSessionLost` is not called a second time.
+   */
+  it('does not replay when a sign-out cleared the token mid-rotation', async () => {
+    const { client, attempts, sessionLost, setToken } = harness({
+      respond: () => unauthorized(),
+      refresh: () => {
+        setToken(null);
+
+        return Promise.resolve<TokenRefresh>({ kind: 'rotated' });
+      },
+    });
+
+    expect((await client.GET('/meta')).response.status).toBe(401);
+    expect(sessionLost).not.toHaveBeenCalled();
+    expect(attempts()).toHaveLength(1);
+  });
+
+  it('leaves the session alone when the rotation could not reach the server', async () => {
+    const { client, attempts, sessionLost, refreshCalls } = harness({
+      respond: () => unauthorized(),
+      refresh: () => Promise.resolve<TokenRefresh>({ kind: 'unavailable' }),
+    });
+
+    expect((await client.GET('/meta')).response.status).toBe(401);
+    expect(sessionLost).not.toHaveBeenCalled();
+
+    // Not terminal: a second request rotates again rather than giving up until a fresh sign-in.
+    expect((await client.GET('/meta')).response.status).toBe(401);
+    expect(refreshCalls()).toBe(2);
+    expect(attempts()).toHaveLength(2);
+  });
+
+  /**
    * A failed refresh is terminal until somebody signs in again. Without this, every later request of
    * a signed-out tab starts another refresh — a tab left open overnight then hammers the endpoint
    * once per poll.
@@ -343,7 +403,7 @@ describe('a transport that never answers', () => {
         readAccessToken: () => 'token',
         refreshSession: () => {
           refreshCalls += 1;
-          return Promise.resolve(null);
+          return Promise.resolve<TokenRefresh>({ kind: 'refused' });
         },
         onSessionLost: () => undefined,
       }),

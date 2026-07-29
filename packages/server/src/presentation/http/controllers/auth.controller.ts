@@ -1,10 +1,13 @@
 import { type Request, type RequestHandler } from 'express';
 
+import { type ChangePasswordUseCase } from '@/application/identity/use-cases/change-password.use-case.js';
+import { type ConfirmPasswordResetUseCase } from '@/application/identity/use-cases/confirm-password-reset.use-case.js';
 import { type EndSessionUseCase } from '@/application/identity/use-cases/end-session.use-case.js';
 import { type SessionClient } from '@/application/identity/use-cases/issue-session.use-case.js';
 import { type LoginUseCase } from '@/application/identity/use-cases/login.use-case.js';
 import { type RefreshSessionUseCase } from '@/application/identity/use-cases/refresh-session.use-case.js';
 import { type RegisterOrganizationUseCase } from '@/application/identity/use-cases/register-organization.use-case.js';
+import { type RequestPasswordResetUseCase } from '@/application/identity/use-cases/request-password-reset.use-case.js';
 import { UnauthenticatedError } from '@/domain/shared/errors/app.errors.js';
 import { readCaller } from '@/presentation/http/middleware/authenticate.middleware.js';
 import { type RequestValidator } from '@/presentation/http/middleware/validate.middleware.js';
@@ -18,8 +21,11 @@ import {
   serializeOrganizationSelection,
 } from '@/presentation/http/serializers/auth.serializer.js';
 import {
+  type changePasswordBodySchema,
+  type forgotPasswordBodySchema,
   type loginBodySchema,
   type registerBodySchema,
+  type resetPasswordBodySchema,
 } from '@/presentation/http/validators/auth.validator.js';
 
 export interface AuthControllerDependencies {
@@ -27,8 +33,14 @@ export interface AuthControllerDependencies {
   readonly login: LoginUseCase;
   readonly refresh: RefreshSessionUseCase;
   readonly endSession: EndSessionUseCase;
+  readonly changePassword: ChangePasswordUseCase;
+  readonly requestPasswordReset: RequestPasswordResetUseCase;
+  readonly confirmPasswordReset: ConfirmPasswordResetUseCase;
   readonly registerValidator: RequestValidator<{ body: typeof registerBodySchema }>;
   readonly loginValidator: RequestValidator<{ body: typeof loginBodySchema }>;
+  readonly changePasswordValidator: RequestValidator<{ body: typeof changePasswordBodySchema }>;
+  readonly forgotPasswordValidator: RequestValidator<{ body: typeof forgotPasswordBodySchema }>;
+  readonly resetPasswordValidator: RequestValidator<{ body: typeof resetPasswordBodySchema }>;
 }
 
 /**
@@ -59,6 +71,9 @@ export const createAuthController = (
   readonly login: RequestHandler;
   readonly refresh: RequestHandler;
   readonly logout: RequestHandler;
+  readonly changePassword: RequestHandler;
+  readonly forgotPassword: RequestHandler;
+  readonly resetPassword: RequestHandler;
 } => ({
   register: async (request, response) => {
     const { body } = dependencies.registerValidator.read(response);
@@ -159,6 +174,70 @@ export const createAuthController = (
     );
 
     clearRefreshCookie(response);
+    response.status(204).end();
+  },
+
+  /**
+   * Changing one's own password.
+   *
+   * The two values the use-case may not take from the body are taken from the caller the guard
+   * established: **whose** password this is, and **which** session survives. A `userId` or a
+   * `sessionId` in the request would be a way to change somebody else's password and a way to
+   * choose which device stays signed in — and the second one is the more interesting of the two,
+   * because it is the intruder's obvious move.
+   *
+   * No cookie is touched and no token is issued: the current session is untouched by design, so
+   * the access token in the caller's memory stays valid (`docs/api/openapi.yaml`).
+   */
+  changePassword: async (request, response) => {
+    const caller = readCaller(response);
+    const { body } = dependencies.changePasswordValidator.read(response);
+
+    await dependencies.changePassword.execute({
+      actor: { organizationId: caller.organizationId, userId: caller.userId },
+      currentFamilyId: caller.familyId,
+      currentPassword: body.currentPassword,
+      newPassword: body.newPassword,
+      client: clientOf(request),
+    });
+
+    response.status(204).end();
+  },
+
+  /**
+   * Asking for a reset link.
+   *
+   * **202 and an empty body, always** — there is nowhere for the difference between "sent" and
+   * "not sent" to appear, which is the point of answering with no body at all. The handler does not
+   * branch: the use-case either completes or raises, and the only failure it raises is one that
+   * depends on the installation rather than on the address (`docs/api/openapi.yaml`).
+   */
+  forgotPassword: async (request, response) => {
+    const { body } = dependencies.forgotPasswordValidator.read(response);
+
+    await dependencies.requestPasswordReset.execute({
+      email: body.email,
+      client: clientOf(request),
+    });
+
+    response.status(202).end();
+  },
+
+  /**
+   * Spending a reset link.
+   *
+   * No cookie is set and no token is returned: a session minted from something that sat in a
+   * mailbox would be a session minted from a mailbox. The client sends the person to `/login`.
+   */
+  resetPassword: async (request, response) => {
+    const { body } = dependencies.resetPasswordValidator.read(response);
+
+    await dependencies.confirmPasswordReset.execute({
+      token: body.token,
+      newPassword: body.newPassword,
+      client: clientOf(request),
+    });
+
     response.status(204).end();
   },
 });

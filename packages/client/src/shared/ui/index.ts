@@ -7,6 +7,7 @@
  * component earns a place here by fixing something: the loading/error/empty triad, the single
  * toaster, the shape of a page heading.
  */
+export * from './centered-screen/index.js';
 export * from './data-state/index.js';
 export * from './page-header/index.js';
 export * from './skeletons/index.js';

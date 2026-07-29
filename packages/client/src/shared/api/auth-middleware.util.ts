@@ -11,11 +11,21 @@ export const AUTH_RETRY_HEADER = 'X-Auth-Retry';
 
 const HTTP_UNAUTHORIZED = 401;
 
+/**
+ * What one rotation attempt tells the middleware — three outcomes, because two is a bug.
+ *
+ * `refused` is the server declining the cookie; `unavailable` is not having reached the server at
+ * all. Only the first may end a session. Collapsing them was the shape this interface had before,
+ * and it turned any brief `5xx` into a sign-out for every open tab.
+ */
+export type TokenRefresh =
+  { readonly kind: 'rotated' } | { readonly kind: 'refused' } | { readonly kind: 'unavailable' };
+
 export interface AuthMiddlewareDeps {
   /** The access token of this tab, from memory. Never from Web Storage — CLAUDE.md invariant 3. */
   readonly readAccessToken: () => string | null;
-  /** Exchanges the httpOnly refresh cookie for a new access token, or answers `null`. */
-  readonly refreshSession: () => Promise<string | null>;
+  /** Exchanges the httpOnly refresh cookie for a new access token, or says why it could not. */
+  readonly refreshSession: () => Promise<TokenRefresh>;
   /** Announces that the session is over. This layer must not know what happens next. */
   readonly onSessionLost: () => void;
 }
@@ -45,10 +55,10 @@ export const createAuthMiddleware = (deps: AuthMiddlewareDeps): Middleware => {
    */
   const replays = new Map<string, Request>();
 
-  let refreshInFlight: Promise<string | null> | null = null;
+  let refreshInFlight: Promise<TokenRefresh> | null = null;
   let sessionLost = false;
 
-  const refreshOnce = (): Promise<string | null> => {
+  const refreshOnce = (): Promise<TokenRefresh> => {
     refreshInFlight ??= deps.refreshSession().finally(() => {
       refreshInFlight = null;
     });
@@ -81,19 +91,34 @@ export const createAuthMiddleware = (deps: AuthMiddlewareDeps): Middleware => {
       // refresh on every poll of a session it no longer has.
       if (sessionLost && deps.readAccessToken() === null) return undefined;
 
-      const token = await refreshOnce();
+      const refresh = await refreshOnce();
 
-      if (token === null) {
+      // Only a refusal ends the session. An `unavailable` rotation leaves the 401 to surface as the
+      // failed request it is: the caller sees an error, the session state is untouched, and the next
+      // request retries the rotation once the server is answering again. Treating it as a sign-out —
+      // which is what a single `null` for both outcomes forced — turned every restart of the
+      // database into a logout for every tab that happened to be rotating.
+      if (refresh.kind === 'unavailable') return undefined;
+
+      if (refresh.kind === 'refused') {
         sessionLost = true;
         deps.onSessionLost();
 
         return undefined;
       }
 
+      // Read rather than returned by the rotation, because there is exactly one place the token is
+      // allowed to live and this layer already knows how to ask it. A rotation that succeeded while
+      // the store came up empty means a sign-out landed in between — there is nothing to replay
+      // with, and the session was already ended by whoever cleared it.
+      const rotated = deps.readAccessToken();
+
+      if (rotated === null) return undefined;
+
       sessionLost = false;
 
       const headers = new Headers(replay.headers);
-      headers.set('Authorization', `Bearer ${token}`);
+      headers.set('Authorization', `Bearer ${rotated}`);
       headers.set(AUTH_RETRY_HEADER, '1');
 
       return options.fetch(new Request(replay, { headers }));

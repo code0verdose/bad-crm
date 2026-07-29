@@ -495,7 +495,7 @@ rolling deploy (старый код всегда писал значение); �
 - **Хранится хеш, а не токен.** `tokenHash` — SHA-256 (32 байта, `bytea`) от 32 байт CSPRNG; сам
   токен существует только в письме и в URL. Дополнительная соль не нужна: у входа 256 бит энтропии,
   медленный хеш здесь избыточен (тот же приём, что у `SecureLink.tokenHash`).
-- **TTL — 60 минут**, `expiresAt` проставляется при выдаче; просроченный и погашенный токены дают
+- **TTL — 30 минут** (`docs/security/threat-model.md`, T-IAM-07), `expiresAt` проставляется при выдаче; просроченный и погашенный токены дают
   **неразличимый** ответ, чтобы не сообщать, какой именно случай произошёл.
 - **Повторное использование отвергается на уровне БД, а не проверкой перед записью.** Погашение —
   `UPDATE password_reset_tokens SET used_at = now() WHERE id = $1 AND used_at IS NULL RETURNING id`:
@@ -512,11 +512,17 @@ rolling deploy (старый код всегда писал значение); �
   `permission denied for table password_reset_tokens` изнутри самой себя (проверено на PostgreSQL
   16.14, см. поправку в [`../security/rls-design.md`](../security/rls-design.md), «Роли и права
   БД»). Предыдущая редакция этого документа предписывала владение `app_auth`; исправлено 2026-07-29.
-  Функции также потребуется `COMMENT ON FUNCTION … IS 'bad-crm:auth-resolver …'` — по этому маркеру
+  Функция несёт `COMMENT ON FUNCTION … IS 'bad-crm:auth-resolver …'` — по этому маркеру
   `prisma/sql/01-grants.sql` восстанавливает владение и права после `pg_restore`, а таблица —
   `GRANT SELECT … TO app_auth_definer` в списке `definer_reads` того же файла. Сам сброс выполняется
-  уже под `app_user` в `withTenant`. Функция заводится в STORY-006-08 вместе с use-case'ом; таблица
-  и её политика — здесь.
+  уже под `app_user` в `withTenant`.
+
+  **Имя функции — `auth_lookup_password_reset(bytea)`**, заведена миграцией
+  `20260729140000_password_reset_resolver`. Названа здесь потому, что этот документ — источник истины
+  по именам объектов БД: предыдущая редакция описывала функцию, не называя её, и читалась как
+  обещание на будущее («заводится в STORY-006-08»), хотя объект уже существовал. Полный список
+  резолверов — четыре: `auth_lookup_user`, `auth_lookup_users_by_email`, `auth_lookup_session`,
+  `auth_lookup_password_reset`.
 - `requestedIpHash` — тот же хеш IP, что и у `Session.ipHash` (полный адрес не хранится); нуллабелен,
   потому что запрос может прийти из окружения, где адрес недоступен.
 

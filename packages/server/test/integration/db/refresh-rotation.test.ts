@@ -377,6 +377,63 @@ describe('revoking a family', () => {
   });
 
   /**
+   * The same guard for the statement a password change runs, which is the one with no upper bound on
+   * how much it touches.
+   *
+   * `revokeAllFamilies` closes every session of one person — after a password change, and after a
+   * reset. It filters on `user_id` alone, and `idx_sessions_org_user_family` starts with
+   * `organization_id`, so under RLS the tenant predicate supplies that column and the index is usable.
+   * Whether the planner *uses* it is not something the behavioural tests can see: measured with the
+   * index dropped, the statement returns exactly the same count from a `Seq Scan on sessions,
+   * Rows Removed by Filter: 39 900` — right answer, whole table read, every test still green.
+   *
+   * That matters more here than for a single family because the row count grows with the installation
+   * rather than with the session: this is the statement that runs while somebody waits for their
+   * password change to answer.
+   */
+  it('revokes every family of one person through an index rather than a scan', async () => {
+    const fixture = await seed();
+
+    // The noise belongs to a **different** person in the same organization, and it has to: with the
+    // target's own sessions filling the table, a sequential scan is the correct plan and asserting
+    // against it would be asserting a falsehood. The index only earns its keep when one person's
+    // sessions are a small share of the tenant's — which is what an installation looks like.
+    await asMaintenance(pools.owner, async (client) => {
+      const { rows: others } = await client.query<{ id: string }>(
+        `INSERT INTO users (organization_id, email, password_hash, status, updated_at)
+           VALUES ($1, $2, 'placeholder-not-a-credential', 'ACTIVE', now())
+         RETURNING id`,
+        [fixture.organizationId, `grace-${fixture.organizationId.slice(0, 8)}@example.test`],
+      );
+
+      await client.query(
+        `INSERT INTO sessions (organization_id, user_id, family_id, refresh_token_hash, user_agent,
+                               ip_hash, ip_masked, expires_at, updated_at)
+         SELECT $1, $2, gen_random_uuid(), sha256(g::text::bytea), 'integration-suite', 'hmac',
+                '203.0.113.0/24', now() + interval '30 days', now()
+           FROM generate_series(1, $3::int) g`,
+        [fixture.organizationId, others[0]?.id ?? '', NOISE_SESSIONS],
+      );
+      await client.query('ANALYZE sessions');
+    });
+
+    const plan = await asTenant(pools.app, fixture.organizationId, async (client) => {
+      const { rows } = await client.query<{ 'QUERY PLAN': string }>(
+        `EXPLAIN (ANALYZE, BUFFERS) UPDATE sessions
+            SET revoked_at = now(), revoked_reason = 'PASSWORD_CHANGED'
+          WHERE user_id = $1::uuid AND revoked_at IS NULL`,
+        [fixture.userId],
+      );
+
+      return rows.map((row) => row['QUERY PLAN']).join('\n');
+    });
+
+    expect(plan, `closing every session of one person reads the whole table:\n${plan}`).not.toMatch(
+      /Seq Scan on sessions/,
+    );
+  });
+
+  /**
    * The positive control for the measurement above: the row count it depends on is really there.
    * A seeding statement that silently inserted nothing would leave the planner with three rows, an
    * index scan by default, and an assertion that passes for the wrong reason.

@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { App } from '@app';
 import { DashboardPage } from '@pages';
 import { FSD_ALIASES } from '@shared/config';
-import { SessionService } from '@units/session';
+import { AuthService } from '@units/auth';
 import { AppStatus } from '@widgets/app-status';
 
 /**
@@ -22,7 +22,7 @@ describe('FSD aliases resolve at runtime', () => {
     ['@app', App],
     ['@pages', DashboardPage],
     ['@widgets/*', AppStatus],
-    ['@units/*', SessionService.useSessionStatus],
+    ['@units/*', AuthService.useBootstrapSession],
     ['@shared/*', FSD_ALIASES],
   ])('%s resolves to a real module export', (_alias, imported) => {
     expect(imported).toBeDefined();
@@ -32,7 +32,7 @@ describe('FSD aliases resolve at runtime', () => {
    * The list is closed on purpose, and `@/*` is deliberately absent.
    *
    * A catch-all next to layer aliases is a second spelling for every path the layer aliases
-   * restrict: `@/units/session/service/hooks/...` reached into another unit's internals with ESLint
+   * restrict: `@/units/auth/service/hooks/...` reached into another unit's internals with ESLint
    * silent and all twenty architecture tests green, because every guard matches the literal
    * `@units/`. Measured, not supposed. Re-adding it here re-opens all of them at once.
    */

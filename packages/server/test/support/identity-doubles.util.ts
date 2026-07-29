@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 
 import {
   type AccessTokenClaims,
@@ -8,14 +8,23 @@ import {
 import { type AddressHasherPort } from '@/application/identity/ports/address-hasher.port.js';
 import {
   type AuthLookupPort,
+  type AuthPasswordResetRecord,
   type AuthSessionRecord,
   type AuthUserRecord,
 } from '@/application/identity/ports/auth-lookup.port.js';
+import {
+  type PasswordResetTokenDraft,
+  type PasswordResetTokenRepositoryPort,
+} from '@/application/identity/ports/password-reset-token.port.js';
 import { type PasswordHasherPort } from '@/application/identity/ports/password-hasher.port.js';
 import {
   type MintedRefreshToken,
   type RefreshTokenPort,
 } from '@/application/identity/ports/refresh-token.port.js';
+import {
+  type MintedResetToken,
+  type ResetTokenPort,
+} from '@/application/identity/ports/reset-token.port.js';
 import {
   type ActiveSession,
   type CreatedSession,
@@ -34,6 +43,16 @@ import { type ClockPort } from '@/application/platform/ports/clock.port.js';
 import { type IdGeneratorPort } from '@/application/platform/ports/id-generator.port.js';
 import { type LogFields, type LoggerPort } from '@/application/platform/ports/logger.port.js';
 import {
+  type MailDispatchContext,
+  type MailDispatchPort,
+} from '@/application/platform/ports/mail-dispatch.port.js';
+import {
+  type MailDelivery,
+  type MailFailure,
+  type MailPort,
+  type OutgoingMail,
+} from '@/application/platform/ports/mail.port.js';
+import {
   type RateLimitDecision,
   type RateLimitPolicy,
   type RateLimitPort,
@@ -46,6 +65,7 @@ import {
 import { ServiceUnavailableError } from '@/domain/shared/errors/app.errors.js';
 import {
   type OwnerDraft,
+  type UserCredentialRecord,
   type UserRecord,
   type UserRepositoryPort,
 } from '@/application/identity/ports/user-repository.port.js';
@@ -117,14 +137,78 @@ export class RecordingLogger implements LoggerPort {
   }
 }
 
-/** Runs the work function and records the scope, so a test can assert which tenant was opened. */
+/**
+ * Runs the work function and records the scope, so a test can assert which tenant was opened.
+ *
+ * `current` is the scope in effect while the work runs — the in-memory stand-in for
+ * `app.organization_id`, so a fake repository can resolve the tenant the way a real one does
+ * (`tenant-scoped.repository.ts`) instead of being handed one the caller might get wrong.
+ *
+ * `onScopeClosed` is the seam for the one property that cannot be asserted after the fact: that
+ * nothing external was called *while* a transaction was open (`rules/outbox.mdc`, rule 2).
+ */
 export class FakeUnitOfWork implements UnitOfWorkPort {
   readonly scopes: TenantScope[] = [];
 
-  withTenant<T>(scope: TenantScope, work: () => Promise<T>): Promise<T> {
-    this.scopes.push(scope);
+  current: TenantScope | undefined;
 
-    return work();
+  onScopeClosed: (() => void) | undefined;
+
+  async withTenant<T>(scope: TenantScope, work: () => Promise<T>): Promise<T> {
+    this.scopes.push(scope);
+    this.current = scope;
+
+    try {
+      return await work();
+    } finally {
+      this.current = undefined;
+      this.onScopeClosed?.();
+    }
+  }
+}
+
+/** The mail transport, in memory, with both degradations the port distinguishes. */
+export class FakeMail implements MailPort {
+  readonly sent: OutgoingMail[] = [];
+
+  configured = true;
+
+  /** Set to make every send report a transport failure, the way an unreachable relay does. */
+  failure: MailFailure | undefined;
+
+  isConfigured(): boolean {
+    return this.configured;
+  }
+
+  send(mail: OutgoingMail): Promise<MailDelivery> {
+    if (!this.configured) return Promise.resolve({ status: 'not_configured' });
+
+    this.sent.push(mail);
+
+    if (this.failure !== undefined) {
+      return Promise.resolve({ status: 'failed', failure: this.failure });
+    }
+
+    return Promise.resolve({ status: 'sent', messageId: `<${this.sent.length}@example.test>` });
+  }
+}
+
+/**
+ * The dispatcher, recording what it was handed.
+ *
+ * It deliberately does **not** deliver: what a use-case suite asserts is that the message was handed
+ * over, that it was handed over after the transaction closed, and what is in it. Whether a message
+ * handed over actually reaches an SMTP server is the subject of the Mailpit suite.
+ */
+export class FakeMailDispatcher implements MailDispatchPort {
+  readonly dispatched: { mail: OutgoingMail; context: MailDispatchContext }[] = [];
+
+  dispatch(mail: OutgoingMail, context: MailDispatchContext): void {
+    this.dispatched.push({ mail, context });
+  }
+
+  drain(): Promise<void> {
+    return Promise.resolve();
   }
 }
 
@@ -233,6 +317,123 @@ export class FakeRateLimit implements RateLimitPort {
   }
 }
 
+/**
+ * Reset tokens, minted in order so a test can name the one it expects to be in a link.
+ *
+ * The digest is a *real* SHA-256 over a marked value rather than an encoded string: the assertion
+ * that the database stores a digest and never the token is only worth making against a hash the test
+ * can recompute, and a reversible encoding would let that assertion pass on an implementation that
+ * stored the token itself.
+ */
+export class FakeResetTokens implements ResetTokenPort {
+  readonly minted: string[] = [];
+
+  private counter = 0;
+
+  mint(): MintedResetToken {
+    this.counter += 1;
+    const token = `reset-token-${this.counter}-${randomUUID()}`;
+
+    this.minted.push(token);
+
+    return { token, hash: this.hash(token) };
+  }
+
+  hash(token: string): Uint8Array {
+    return createHash('sha256').update(`fake-reset:${token}`).digest();
+  }
+}
+
+export interface StoredResetToken {
+  readonly id: string;
+  readonly organizationId: string;
+  readonly userId: string;
+  readonly tokenHash: Uint8Array;
+  readonly expiresAt: Date;
+  usedAt: Date | null;
+}
+
+/**
+ * Reset-token rows, spent the way the real statement spends them.
+ *
+ * `consume` reproduces `UPDATE … WHERE id = $1 AND used_at IS NULL AND expires_at > $2 RETURNING
+ * user_id` — including that a second call answers `null` rather than throwing, which is what the
+ * "two clicks on one link" assertion leans on. The organization comes from the scope the unit of
+ * work has open, exactly as `TenantScopedRepository` reads it from `app.organization_id`: a
+ * constructor argument here would be a second source of truth for the tenant, which is the defect
+ * the real base class exists to remove.
+ */
+export class FakePasswordResetTokens implements PasswordResetTokenRepositoryPort {
+  readonly rows = new Map<string, StoredResetToken>();
+
+  /**
+   * `journal` is the same list `FakePasswordHasher` and `FakeRateLimit` write to.
+   *
+   * It is here because the order of *these two* is the whole of the confirm path: a digest computed
+   * before the row is spent is a digest a replayed link can force again and again, and no assertion
+   * about the two call lists separately can express "after".
+   */
+  constructor(
+    private readonly unitOfWork: FakeUnitOfWork,
+    private readonly journal: string[] = [],
+  ) {}
+
+  create(draft: PasswordResetTokenDraft): Promise<string> {
+    const scope = this.unitOfWork.current;
+
+    if (scope === undefined)
+      throw new Error('FakePasswordResetTokens.create outside a tenant scope');
+
+    const id = randomUUID();
+
+    this.rows.set(id, {
+      id,
+      organizationId: scope.organizationId,
+      userId: draft.userId,
+      tokenHash: draft.tokenHash,
+      expiresAt: draft.expiresAt,
+      usedAt: null,
+    });
+
+    return Promise.resolve(id);
+  }
+
+  consume(tokenId: string, now: Date): Promise<string | null> {
+    this.journal.push('reset-token:consume');
+
+    const row = this.rows.get(tokenId);
+
+    if (row === undefined || row.usedAt !== null || row.expiresAt.getTime() <= now.getTime()) {
+      return Promise.resolve(null);
+    }
+
+    row.usedAt = now;
+
+    return Promise.resolve(row.userId);
+  }
+
+  invalidateOutstanding(userId: string, at: Date): Promise<number> {
+    const live = [...this.rows.values()].filter(
+      (row) => row.userId === userId && row.usedAt === null,
+    );
+
+    for (const row of live) row.usedAt = at;
+
+    return Promise.resolve(live.length);
+  }
+
+  deleteSettled(userId: string, now: Date): Promise<number> {
+    const settled = [...this.rows.values()].filter(
+      (row) =>
+        row.userId === userId && (row.usedAt !== null || row.expiresAt.getTime() <= now.getTime()),
+    );
+
+    for (const row of settled) this.rows.delete(row.id);
+
+    return Promise.resolve(settled.length);
+  }
+}
+
 export class FakeRefreshTokens implements RefreshTokenPort {
   private counter = 0;
 
@@ -307,6 +508,8 @@ export class FakeOrganizations implements OrganizationRepositoryPort {
 
 export class FakeUsers implements UserRepositoryPort {
   readonly rows = new Map<string, UserRecord>();
+  /** The digests, kept apart from `rows` exactly as the repository keeps them out of `UserRecord`. */
+  readonly credentials = new Map<string, UserCredentialRecord>();
   readonly rehashed: { userId: string; passwordHash: string }[] = [];
   createdOwner: OwnerDraft | undefined;
 
@@ -332,10 +535,30 @@ export class FakeUsers implements UserRepositoryPort {
     return Promise.resolve(this.rows.get(userId) ?? null);
   }
 
-  updatePasswordHash(userId: string, passwordHash: string): Promise<void> {
+  findCredential(userId: string): Promise<UserCredentialRecord | null> {
+    return Promise.resolve(this.credentials.get(userId) ?? null);
+  }
+
+  /**
+   * Answers `false` when no row matched, exactly as `updateMany` reports a zero count.
+   *
+   * `vanished` is how a test reaches the one state the real statement can be in and this map cannot
+   * reach on its own: the account was soft-deleted between the read that found it and the write that
+   * follows. It is a state no fixture can set up by deleting from `rows`, because the callers read
+   * the account through `findCredential` or `findById` first.
+   */
+  vanished = false;
+
+  updatePasswordHash(userId: string, passwordHash: string): Promise<boolean> {
+    if (this.vanished) return Promise.resolve(false);
+
     this.rehashed.push({ userId, passwordHash });
 
-    return Promise.resolve();
+    const credential = this.credentials.get(userId);
+
+    if (credential !== undefined) this.credentials.set(userId, { ...credential, passwordHash });
+
+    return Promise.resolve(this.rows.has(userId) || credential !== undefined);
   }
 }
 
@@ -401,6 +624,18 @@ export class FakeSessions implements SessionRepositoryPort {
     for (const row of live) this.revokeRow(row.id, reason, at);
 
     return Promise.resolve(live.length);
+  }
+
+  revokeAllFamilies(userId: string, reason: SessionRevokedReason, at: Date): Promise<number> {
+    const families = new Set(
+      [...this.rows.values()]
+        .filter((row) => row.userId === userId && row.revokedAt === null)
+        .map((row) => row.familyId),
+    );
+
+    for (const family of families) void this.revokeFamily(family, reason, at);
+
+    return Promise.resolve(families.size);
   }
 
   revokeOtherFamilies(
@@ -511,6 +746,10 @@ export const authUser = (overrides: Partial<AuthUserRecord> = {}): AuthUserRecor
 export class FakeAuthLookup implements AuthLookupPort {
   private store: FakeSessions | undefined;
 
+  private accounts: FakeUsers | undefined;
+
+  private resetTokens: FakePasswordResetTokens | undefined;
+
   constructor(public users: AuthUserRecord[] = []) {}
 
   /** Point the lookup at the repository whose rows it resolves. */
@@ -520,15 +759,61 @@ export class FakeAuthLookup implements AuthLookupPort {
     return this;
   }
 
+  /**
+   * Read the digest out of the account rows rather than out of the seed.
+   *
+   * The real resolver selects `users.password_hash` — the same column `updatePasswordHash` writes —
+   * so a change of password is visible to the very next sign-in. Two copies here would let a suite
+   * change a password and still sign in with the old one, and the assertion that matters most in
+   * STORY-006-06 and STORY-006-08 would be asserting the double.
+   */
+  readingCredentials(accounts: FakeUsers): this {
+    this.accounts = accounts;
+
+    return this;
+  }
+
   findUsersByEmail(email: string): Promise<readonly AuthUserRecord[]> {
-    return Promise.resolve(this.users.filter((user) => user.email === email));
+    return Promise.resolve(
+      this.users.filter((user) => user.email === email).map((user) => this.withDigest(user)),
+    );
   }
 
   findUserByEmailAndSlug(email: string, organizationSlug: string): Promise<AuthUserRecord | null> {
+    const user = this.users.find(
+      (candidate) => candidate.email === email && candidate.organizationSlug === organizationSlug,
+    );
+
+    return Promise.resolve(user === undefined ? null : this.withDigest(user));
+  }
+
+  private withDigest(user: AuthUserRecord): AuthUserRecord {
+    const stored = this.accounts?.credentials.get(user.userId);
+
+    return stored === undefined ? user : { ...user, passwordHash: stored.passwordHash };
+  }
+
+  /**
+   * Resolve reset tokens out of the repository that wrote them — the same reason sessions are read
+   * back out of `FakeSessions`: the real resolver reads the very rows `create` inserted, and a
+   * second list here would let a suite spend a token the table no longer considers live.
+   */
+  readingResetTokens(store: FakePasswordResetTokens): this {
+    this.resetTokens = store;
+
+    return this;
+  }
+
+  findPasswordResetToken(tokenHash: Uint8Array): Promise<AuthPasswordResetRecord | null> {
+    const wanted = Buffer.from(tokenHash).toString('hex');
+    const row = [...(this.resetTokens?.rows.values() ?? [])].find(
+      (candidate) => Buffer.from(candidate.tokenHash).toString('hex') === wanted,
+    );
+
     return Promise.resolve(
-      this.users.find(
-        (user) => user.email === email && user.organizationSlug === organizationSlug,
-      ) ?? null,
+      row === undefined
+        ? null
+        : { tokenId: row.id, organizationId: row.organizationId, userId: row.userId },
     );
   }
 

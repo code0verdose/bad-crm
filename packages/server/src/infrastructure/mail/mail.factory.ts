@@ -40,11 +40,19 @@ export interface MailerInput {
 export const createMailer = (input: MailerInput): ClosableMailPort => {
   if (input.smtpUrl === undefined) return new UnconfiguredMailAdapter(input.logger);
 
-  if (input.mailFrom === undefined) {
-    throw new Error(
-      'SMTP_URL is set without MAIL_FROM: a relay that checks the envelope sender refuses every message. Set MAIL_FROM (docs/runbooks/install.md).',
-    );
-  }
+  // A transport with no envelope sender cannot deliver, so there is no point building one — but
+  // refusing here would exit the process before the port opens, and `SMTP_URL` has been in
+  // `.env.example` since EPIC-001 while `MAIL_FROM` is new: every installation upgrading with its
+  // existing `.env` would stop booting. That is the one thing `rules/self-host-packaging.mdc`
+  // forbids, and it would also make the `warn` in `env-features.util.ts` unreachable, because
+  // `buildContainer` runs before any degradation is printed.
+  //
+  // So mail is *disabled* for this release and the operator is told at `warn` before the port
+  // opens; the refusal belongs to the release that mounts mail in the container, alongside the
+  // upgrade note that makes it expected. Password reset then answers exactly as it does on an
+  // installation with no relay configured at all — `503 mail_not_configured`, decided before the
+  // address is resolved — rather than answering 200 and sending nothing.
+  if (input.mailFrom === undefined) return new UnconfiguredMailAdapter(input.logger);
 
   return new NodemailerMailAdapter(
     createSmtpTransport(input.smtpUrl),

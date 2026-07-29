@@ -248,7 +248,7 @@ flowchart TD
 
 | Маршрут | Файл route | Гард (beforeLoad) | Search-params (Zod) | Основной виджет |
 |---|---|---|---|---|
-| `/login` | `routes/login.tsx` | `redirectIfAuthed` | `loginSearchSchema`: `redirect?` | `LoginWidget` |
+| `/login` | `routes/login.tsx` | `redirectIfAuthed` | `loginSearchSchema`: `redirect?` | `AuthUi.LoginForm` |
 | `/forgot-password` | `routes/forgot-password.tsx` | `redirectIfAuthed` | — | `PasswordRecoveryWidget` |
 | `/reset-password/$token` | `routes/reset-password.$token.tsx` | — | — | `PasswordResetWidget` |
 | `/invite/$token` | `routes/invite.$token.tsx` | — | — | `InviteAcceptWidget` |

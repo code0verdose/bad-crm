@@ -324,15 +324,19 @@ export const crossFieldEnvIssues = (env: Partial<EnvFields>): EnvIssue[] => {
   //
   // Tying it to `SMTP_URL` looked like the careful choice — demand it only of installations that
   // would otherwise send nothing — but `SMTP_URL` has been in `.env.example` since EPIC-001 and in
-  // every development environment built from it. So the rule refused to start every installation
-  // that already existed, for a subsystem no route uses: `createMailer` is not assembled in the
-  // composition root, and `/auth/forgot-password` is not in the router.
+  // every development environment built from it, while `MAIL_FROM` is new. So the rule refused to
+  // start every installation that already existed.
   //
   // `rules/self-host-packaging.mdc` rule 2 says how this is done instead: release N warns, release
-  // N+1 refuses. The warning is a blocking degradation in `env-features.util.ts`, the same
-  // mechanism `DATABASE_AUTH_URL` uses two variables above — mail configured without a sender is
-  // mail that a relay checking the envelope will reject, so it is «configured» in name only. The
-  // hard requirement belongs to the release that wires the mailer.
+  // N+1 refuses. The warning is a blocking degradation in `env-features.util.ts`, the same mechanism
+  // `DATABASE_AUTH_URL` uses two variables above.
+  //
+  // Removing the rule from here was not enough on its own, and that is worth writing down: the
+  // mailer *also* threw on the same condition, `buildContainer` calls it before any degradation is
+  // printed, and so the process still exited before opening the port while this comment described a
+  // warning. Two gates, one of them invisible from here. `mail.factory.ts` now returns the
+  // unconfigured mailer instead, so mail is disabled rather than fatal and the `warn` above is
+  // reachable; the hard requirement belongs to the release that mounts mail in the container.
 
   // Scoped by what is *not* development, not by what is production: `docs/security/threat-model.md`
   // (T-SH-01, T-SH-03) treats every non-development boot as internet-reachable. Checking for

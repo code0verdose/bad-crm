@@ -473,7 +473,14 @@ paths:
       summary: Change the caller's password and close the other sessions.
       description: |
         One action that returns control of the account: the password changes, every other session is
-        revoked and denylisted, the current one survives, and a notification is mailed.
+        revoked and denylisted, every outstanding password-reset link is invalidated, the current
+        session survives, and a notification is mailed.
+
+        The reset links matter as much as the sessions and are easier to forget: a link mints a
+        *new* password and lives for an hour, so a change that closed every session and left one
+        alive would have returned control of the account to nobody. Anybody who was midway through
+        `POST /auth/forgot-password` has to ask again, which is the correct outcome — the password
+        they were recovering from no longer exists.
 
         A wrong `currentPassword` is `401 invalid_credentials` — the same code a refused login
         produces, because it is the same fact. It is not `422`: the field is well-formed, it is
@@ -484,6 +491,18 @@ paths:
         A new password equal to the current one, or one that fails the policy, is `422
         validation_failed` with `newPassword` in `errors[]` — both are decidable from the request.
 
+        **A notification is mailed, and its delivery is not a condition of the change.** There is no
+        `mail_not_configured` on this operation, and there deliberately is one on
+        `POST /auth/forgot-password`: that operation *is* the sending of a message and cannot work
+        without a transport, while this one changes a password and mails a notice about it. Changing
+        a password is a recovery action — the usual reason to do it is the suspicion that the old
+        one has leaked — and `SMTP_URL` is optional in the `minimal` profile, so refusing the remedy
+        because the courtesy cannot be delivered would make a basic security operation unavailable in
+        a supported configuration. An installation with no transport changes the password, closes the
+        other sessions and records that no notice went out. The 204 carries no report about it: the
+        message is handed over after the answer is decided, so at that moment the server does not yet
+        know whether anything was delivered, and the actionable half belongs to the operator anyway.
+
         `Idempotency-Key` is honoured. The retry of a request whose answer was lost is exactly the
         case that would otherwise fail with `invalid_credentials`, because the password it sends as
         "current" has already been replaced; the stored response makes the retry succeed. It also
@@ -492,7 +511,6 @@ paths:
       x-self-service-reason: >-
         Changing one's own password is verified by knowing it, not by holding a capability — the same
         reasoning `docs/security/permission-model.md` §3.20 applies to a person's own key pair.
-      x-implemented-by: STORY-006-06
       parameters:
         - $ref: '#/components/parameters/IdempotencyKey'
       requestBody:
@@ -519,8 +537,6 @@ paths:
           $ref: '#/components/responses/RateLimited'
         '500':
           $ref: '#/components/responses/InternalError'
-        '503':
-          $ref: '#/components/responses/MailNotConfigured'
 
   /auth/forgot-password:
     post:
@@ -556,7 +572,6 @@ paths:
       x-public-reason: >-
         Account recovery is for people who cannot sign in; requiring a session would defeat it. The
         answer is constant, so no permission decision is being skipped.
-      x-implemented-by: STORY-006-08
       parameters:
         - $ref: '#/components/parameters/IdempotencyKey'
       requestBody:
@@ -607,14 +622,22 @@ paths:
         signs in afterwards. A session minted straight from an emailed token would be a session
         minted from something that sat in a mailbox.
 
-        `Idempotency-Key` is honoured, so the retry of a lost answer succeeds instead of hitting the
-        single-use token it already spent.
+        It also invalidates **every other reset link of the account**, in the same transaction. An
+        address used in several organizations still gets one link per account, and asking twice
+        still produces two — but only until one of them is spent, after which the rest answer `400`
+        like any other used link. Without that, somebody who reached the mailbox for a few minutes
+        could keep a link, wait for the owner to recover the account, and then set a third password
+        and close the sessions the owner had just opened.
+
+        `Idempotency-Key` is **required and recorded, not yet replayed.** The header is validated for
+        presence and length; there is no keyed response store behind it, so retrying a lost `204`
+        answers `400 password_reset_token_invalid` — the token really was spent. Requiring the header
+        now is what lets replay be added without changing the contract; the store is its own story.
       tags: [auth]
       security: []
       x-public-reason: >-
         Same reason as the request half: the person is by definition unable to sign in. The token in
         the body is the credential, and it is single-use, short-lived and stored only as a hash.
-      x-implemented-by: STORY-006-08
       parameters:
         - $ref: '#/components/parameters/IdempotencyKey'
       requestBody:
@@ -1506,7 +1529,14 @@ components:
 
     MailNotConfigured:
       description: |
-        The operation has to send mail and this installation has no `SMTP_URL`.
+        The operation *is* the sending of a message and this installation has no `SMTP_URL`.
+
+        Declared only where the message is the effect rather than a notice about one — today
+        `POST /auth/forgot-password`. `POST /auth/change-password` mails a notification and does
+        **not** answer this code: refusing a recovery action because a courtesy cannot be delivered
+        would make a basic security operation unavailable on the `minimal` profile, where `SMTP_URL`
+        is optional by documentation. The rule for a new operation is the same question: without a
+        transport, is there anything left for it to do?
 
         Not `feature_disabled`: nobody switched password recovery off, the deployment is incomplete.
         The distinction is what the person on the other end is told — "ask your administrator" rather

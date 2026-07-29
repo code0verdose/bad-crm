@@ -2,6 +2,7 @@ import { type PrismaClient } from '@prisma/client';
 
 import {
   type AuthLookupPort,
+  type AuthPasswordResetRecord,
   type AuthSessionRecord,
   type AuthUserRecord,
 } from '@/application/identity/ports/auth-lookup.port.js';
@@ -17,6 +18,12 @@ interface AuthUserRow {
   readonly password_hash: string;
   readonly status: string;
   readonly permissions_version: number;
+}
+
+interface AuthPasswordResetRow {
+  readonly token_id: string;
+  readonly organization_id: string;
+  readonly user_id: string;
 }
 
 interface AuthSessionRow {
@@ -48,14 +55,14 @@ const toUser = (row: AuthUserRow): AuthUserRecord => ({
  * Every statement here is a call to a named function with a fixed signature — never a query this
  * adapter composes. That is the property the whole design rests on. The reading that crosses
  * organizations happens *inside* those functions, which are `SECURITY DEFINER` and execute as
- * `app_auth_definer` — a NOLOGIN role with `BYPASSRLS` and `SELECT` on exactly three tables.
+ * `app_auth_definer` — a NOLOGIN role with `BYPASSRLS` and `SELECT` on exactly four tables.
  * `app_auth`, the role this connection uses, has neither: no `BYPASSRLS` and no privilege on any
  * table, so there is nothing else it can ask (`docs/security/rls-design.md`, «Особые пути»).
  *
- * The three functions are `auth_lookup_users_by_email`, `auth_lookup_user` and
- * `auth_lookup_session`, created by the migration that also sets their owner, revokes `EXECUTE` from
- * `PUBLIC` and grants it to `app_auth` alone; `prisma/sql/01-grants.sql` re-applies all three after
- * a restore, which is the fail-open case a table does not have.
+ * The four functions are `auth_lookup_users_by_email`, `auth_lookup_user`, `auth_lookup_session`
+ * and `auth_lookup_password_reset`, created by the migrations that also set their owner, revoke
+ * `EXECUTE` from `PUBLIC` and grant it to `app_auth` alone; `prisma/sql/01-grants.sql` re-applies
+ * all four after a restore, which is the fail-open case a table does not have.
  */
 export class PrismaAuthLookup implements AuthLookupPort {
   constructor(private readonly client: PrismaClient) {}
@@ -77,6 +84,29 @@ export class PrismaAuthLookup implements AuthLookupPort {
     const row = rows[0];
 
     return row === undefined ? null : toUser(row);
+  }
+
+  /**
+   * The reset link, resolved to the tenant that has to be opened to spend it.
+   *
+   * Three columns and no more: `expires_at` and `used_at` are deliberately not returned, because a
+   * decision made from a read is a decision two concurrent requests can both make. Usability is
+   * decided by the conditional `UPDATE` in `PrismaPasswordResetTokenRepository.consume`, under
+   * `app_user`, inside `withTenant`.
+   */
+  async findPasswordResetToken(tokenHash: Uint8Array): Promise<AuthPasswordResetRecord | null> {
+    const rows = await this.client.$queryRaw<AuthPasswordResetRow[]>`
+      SELECT * FROM auth_lookup_password_reset(${Buffer.from(tokenHash)})`;
+
+    const row = rows[0];
+
+    return row === undefined
+      ? null
+      : {
+          tokenId: row.token_id,
+          organizationId: row.organization_id,
+          userId: row.user_id,
+        };
   }
 
   async findSessionByRefreshHash(refreshTokenHash: Uint8Array): Promise<AuthSessionRecord | null> {

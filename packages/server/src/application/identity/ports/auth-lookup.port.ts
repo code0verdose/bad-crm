@@ -41,6 +41,22 @@ export interface AuthSessionRecord {
   readonly expiresAt: Date;
 }
 
+/**
+ * Where a reset token lives — and nothing about whether it is still usable.
+ *
+ * The three columns that answer "which tenant do I open" and no more. `expires_at` and `used_at` are
+ * deliberately absent: deciding usability here would mean deciding it with a read, and the decision
+ * has to be the conditional `UPDATE` that spends the row, or two clicks on one link both pass
+ * (`password-reset-token.port.ts`). Leaving them out also means this privileged surface cannot be
+ * used to ask "did somebody complete a reset", which is the one thing the single answer of
+ * `password_reset_token_invalid` is designed to hide.
+ */
+export interface AuthPasswordResetRecord {
+  readonly tokenId: string;
+  readonly organizationId: string;
+  readonly userId: string;
+}
+
 export interface AuthLookupPort {
   /**
    * Every account that can sign in with this address, across the organizations of the installation.
@@ -63,4 +79,13 @@ export interface AuthLookupPort {
 
   /** One session, by the digest of its refresh token. Read-only: rotation happens under `app_user`. */
   findSessionByRefreshHash(refreshTokenHash: Uint8Array): Promise<AuthSessionRecord | null>;
+
+  /**
+   * The fourth org-less read: a reset link is opened by somebody who cannot sign in, so the only
+   * thing the request carries is the token — which is why `uq_password_reset_tokens_hash` is global.
+   *
+   * Read-only, like the other three. Spending the token happens under `app_user` inside
+   * `withTenant`, once this has said which organization that is.
+   */
+  findPasswordResetToken(tokenHash: Uint8Array): Promise<AuthPasswordResetRecord | null>;
 }

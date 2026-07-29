@@ -1,15 +1,20 @@
 import { type Logger } from 'pino';
 
 import { type LoggerPort } from '@/application/platform/ports/logger.port.js';
+import { type MailDispatchPort } from '@/application/platform/ports/mail-dispatch.port.js';
+import { type MailPort } from '@/application/platform/ports/mail.port.js';
 import { type RateLimitPort } from '@/application/platform/ports/rate-limit.port.js';
 import { type ReadinessProbePort } from '@/application/platform/ports/readiness-probe.port.js';
 import { AuthenticateSessionQuery } from '@/application/identity/use-cases/authenticate-session.query.js';
+import { ChangePasswordUseCase } from '@/application/identity/use-cases/change-password.use-case.js';
+import { ConfirmPasswordResetUseCase } from '@/application/identity/use-cases/confirm-password-reset.use-case.js';
 import { EndSessionUseCase } from '@/application/identity/use-cases/end-session.use-case.js';
 import { IssueSessionUseCase } from '@/application/identity/use-cases/issue-session.use-case.js';
 import { ListSessionsQuery } from '@/application/identity/use-cases/list-sessions.query.js';
 import { LoginUseCase } from '@/application/identity/use-cases/login.use-case.js';
 import { RefreshSessionUseCase } from '@/application/identity/use-cases/refresh-session.use-case.js';
 import { RegisterOrganizationUseCase } from '@/application/identity/use-cases/register-organization.use-case.js';
+import { RequestPasswordResetUseCase } from '@/application/identity/use-cases/request-password-reset.use-case.js';
 import { BootstrapOrganizationUseCase } from '@/application/organization/use-cases/bootstrap-organization.use-case.js';
 import { CheckHealthUseCase } from '@/application/platform/use-cases/check-health.use-case.js';
 import { CheckReadinessUseCase } from '@/application/platform/use-cases/check-readiness.use-case.js';
@@ -18,6 +23,8 @@ import { APP_INFO } from '@/app-info.constant.js';
 import { AsyncRequestContextAdapter } from '@/infrastructure/logging/async-request-context.adapter.js';
 import { createHttpLogger } from '@/infrastructure/logging/http-logger.middleware.js';
 import { PinoLoggerAdapter } from '@/infrastructure/logging/pino-logger.adapter.js';
+import { createMailer } from '@/infrastructure/mail/mail.factory.js';
+import { ImmediateMailDispatcher } from '@/infrastructure/mail/immediate-mail-dispatcher.adapter.js';
 import { optionalServiceProbes } from '@/infrastructure/platform/optional-service-probes.adapter.js';
 import { ProcessHealthAdapter } from '@/infrastructure/platform/process-health.adapter.js';
 import { ProcessLifecycleAdapter } from '@/infrastructure/platform/process-lifecycle.adapter.js';
@@ -27,6 +34,7 @@ import { Argon2PasswordHasher } from '@/infrastructure/crypto/argon2-password-ha
 import { HmacAddressHasher } from '@/infrastructure/crypto/address-hasher.adapter.js';
 import { JwtAccessTokenAdapter } from '@/infrastructure/crypto/jwt-access-token.adapter.js';
 import { Sha256RefreshTokenAdapter } from '@/infrastructure/crypto/refresh-token.adapter.js';
+import { Sha256ResetTokenAdapter } from '@/infrastructure/crypto/reset-token.adapter.js';
 import { type DbRoleProbeClient } from '@/infrastructure/persistence/prisma/assert-db-role.util.js';
 import { PrismaAuthLookup } from '@/infrastructure/persistence/prisma/auth-lookup.adapter.js';
 import { createAuthLookupClient } from '@/infrastructure/persistence/prisma/auth-lookup.client.js';
@@ -37,6 +45,7 @@ import {
 } from '@/infrastructure/persistence/prisma/detached-database.adapter.js';
 import { PrismaOrganizationRepository } from '@/infrastructure/persistence/prisma/organization.repository.js';
 import { PrismaOwnerRoleSeeder } from '@/infrastructure/persistence/prisma/owner-role-seeder.adapter.js';
+import { PrismaPasswordResetTokenRepository } from '@/infrastructure/persistence/prisma/password-reset-token.repository.js';
 import { PrismaSessionRepository } from '@/infrastructure/persistence/prisma/session.repository.js';
 import { PrismaUnitOfWork } from '@/infrastructure/persistence/prisma/unit-of-work.adapter.js';
 import { PrismaUserRepository } from '@/infrastructure/persistence/prisma/user.repository.js';
@@ -113,11 +122,12 @@ export const buildContainer = (input: ContainerInput): AppContainer => {
   // Closed after the listener, never before: the shutdown handler drains in-flight requests first,
   // and a pool closed early turns a deploy into a burst of "connection closed" in the very requests
   // graceful shutdown exists to protect (rules/hexagonal-backend.mdc, rule 13).
+  //
+  // The steps are ordered at the end of this function rather than pushed as their subjects are
+  // built, because the order *is* the behaviour: `createShutdownHandler` awaits them one after
+  // another, in array order.
   const database = input.database;
-  const shutdownSteps: ShutdownStep[] =
-    database === undefined
-      ? []
-      : [{ name: 'database', close: (): Promise<void> => database.close() }];
+  const shutdownSteps: ShutdownStep[] = [];
 
   // The limiter, and with it every authentication route's budget. Built here because this is the
   // only place that may know both the port and ioredis (STORY-006-07): the adapter existed, was
@@ -128,6 +138,17 @@ export const buildContainer = (input: ContainerInput): AppContainer => {
       ? detachedRateLimit()
       : new RedisRateLimiterAdapter(createRedisWindowLimiters(input.redis.client), logger);
 
+  // The mailer, and with it the one operation of this epic that leaves the process. Built here
+  // because this is the only place allowed to know both the port and nodemailer — and because the
+  // adapter existed, was covered against a live Mailpit, and was constructed nowhere, which is the
+  // same shape of defect the rate limiter had (STORY-006-08).
+  const mailer = createMailer({
+    smtpUrl: input.env.SMTP_URL,
+    mailFrom: input.env.MAIL_FROM,
+    logger,
+  });
+  const mailDispatcher = new ImmediateMailDispatcher(mailer, logger);
+
   const identity = buildIdentity({
     env: input.env,
     clock,
@@ -135,6 +156,8 @@ export const buildContainer = (input: ContainerInput): AppContainer => {
     logger,
     database,
     rateLimit,
+    mail: mailer,
+    mailDispatcher,
   });
 
   const authClient = identity.authClient;
@@ -165,6 +188,29 @@ export const buildContainer = (input: ContainerInput): AppContainer => {
     clock,
     logger,
   );
+
+  // Mail first, and the order is the point rather than a preference.
+  //
+  // A message handed over microseconds before SIGTERM is a password-reset link somebody is waiting
+  // for, so it is drained before the transport is closed and both happen **before the pools**. The
+  // steps used to be pushed in the order their subjects were constructed, which put mail after both
+  // database pools — the exact opposite of what the comment claimed, and unnoticed because
+  // `identity-wiring.test.ts` compared the names as a set and closed them with `Promise.all`.
+  //
+  // Today nothing breaks either way: the dispatcher only talks to nodemailer. It stops being free the
+  // moment the outbox of ADR-0021 lands, because marking an event delivered is a write, and a write
+  // against a closed pool turns a sent message into one that will be sent again.
+  shutdownSteps.push({
+    name: 'mail',
+    close: async (): Promise<void> => {
+      await mailDispatcher.drain();
+      await mailer.close();
+    },
+  });
+
+  if (database !== undefined) {
+    shutdownSteps.push({ name: 'database', close: (): Promise<void> => database.close() });
+  }
 
   if (identity.closeAuthLookup !== undefined) {
     shutdownSteps.push({ name: 'auth-database', close: identity.closeAuthLookup });
@@ -229,6 +275,8 @@ const buildIdentity = (input: {
   readonly logger: LoggerPort;
   readonly database: DatabaseConnection | undefined;
   readonly rateLimit: RateLimitPort;
+  readonly mail: MailPort;
+  readonly mailDispatcher: MailDispatchPort;
 }): IdentityWiring => {
   const unitOfWork =
     input.database === undefined ? detachedUnitOfWork() : new PrismaUnitOfWork(input.database.base);
@@ -244,6 +292,7 @@ const buildIdentity = (input: {
   const organizations = new PrismaOrganizationRepository();
   const users = new PrismaUserRepository();
   const sessions = new PrismaSessionRepository();
+  const resetTokenRows = new PrismaPasswordResetTokenRepository();
 
   const hasher = new Argon2PasswordHasher({
     memoryCost: input.env.ARGON2_MEMORY_COST,
@@ -251,6 +300,7 @@ const buildIdentity = (input: {
     parallelism: input.env.ARGON2_PARALLELISM,
   });
   const refreshTokens = new Sha256RefreshTokenAdapter();
+  const resetTokens = new Sha256ResetTokenAdapter();
   const accessTokens = new JwtAccessTokenAdapter(input.env.JWT_SECRET, input.clock);
   const addresses = new HmacAddressHasher(input.env.APP_ENCRYPTION_KEY);
 
@@ -302,6 +352,43 @@ const buildIdentity = (input: {
       input.clock,
       input.logger,
       input.rateLimit,
+    ),
+    changePassword: new ChangePasswordUseCase(
+      users,
+      sessions,
+      resetTokenRows,
+      hasher,
+      unitOfWork,
+      input.rateLimit,
+      input.mailDispatcher,
+      input.clock,
+      input.logger,
+      input.env.APP_URL,
+    ),
+    requestPasswordReset: new RequestPasswordResetUseCase(
+      authLookup,
+      resetTokenRows,
+      resetTokens,
+      addresses,
+      unitOfWork,
+      input.rateLimit,
+      input.mail,
+      input.mailDispatcher,
+      input.clock,
+      input.logger,
+      input.env.APP_URL,
+    ),
+    confirmPasswordReset: new ConfirmPasswordResetUseCase(
+      authLookup,
+      resetTokenRows,
+      resetTokens,
+      users,
+      sessions,
+      hasher,
+      unitOfWork,
+      input.rateLimit,
+      input.clock,
+      input.logger,
     ),
     endSession: new EndSessionUseCase(sessions, unitOfWork, input.clock, input.logger),
     listSessions: new ListSessionsQuery(sessions, unitOfWork, input.clock),

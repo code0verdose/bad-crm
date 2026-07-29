@@ -62,6 +62,48 @@ describe('the public branch', () => {
 
     expect(await screen.findByRole('heading', { level: 1 })).toHaveTextContent('auth.login.title');
   });
+
+  /**
+   * The recovery screens, and they are here for the reason this file exists: `guards.test.ts` proves
+   * `redirectIfAuthed` as a function, and until now nothing proved it was *attached* to
+   * `/forgot-password`. Deleting the `beforeLoad` from that route file left the whole suite green.
+   *
+   * What the guard prevents is a signed-in person ordering themselves a single-use password-reset
+   * token by email — a live credential mailed out to an account that did not need one.
+   */
+  it('keeps a signed-in user off the password recovery form', async () => {
+    const { router } = renderApp({ path: '/forgot-password', status: 'authenticated' });
+
+    await waitFor(() => {
+      expect(router.state.location.pathname).toBe('/dashboard');
+    });
+  });
+
+  it('shows the recovery form to an anonymous visitor', async () => {
+    renderApp({ path: '/forgot-password', status: 'anonymous' });
+
+    expect(await screen.findByRole('heading', { level: 1 })).toHaveTextContent(
+      'auth.forgotPassword.title',
+    );
+  });
+
+  /**
+   * And the opposite, which is a decision rather than an omission: `/reset-password/$token` has **no**
+   * guard on purpose. Following a reset link on a second device — a phone, a browser already signed in
+   * as somebody else — has to work, because the person following it is the one who cannot get in.
+   *
+   * Asserted because a decision nobody can see is a decision the next reader will "fix": adding
+   * `redirectIfAuthed` here also left the suite green, while sending every signed-in visitor to the
+   * dashboard and silently stranding a valid link.
+   */
+  it('lets a signed-in visitor follow a reset link, deliberately unguarded', async () => {
+    const { router } = renderApp({ path: '/reset-password/abc123', status: 'authenticated' });
+
+    expect(await screen.findByRole('heading', { level: 1 })).toHaveTextContent(
+      'auth.resetPassword.title',
+    );
+    expect(router.state.location.pathname).toBe('/reset-password/abc123');
+  });
 });
 
 describe('search parameters', () => {

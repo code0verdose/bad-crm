@@ -143,6 +143,39 @@ export class RateLimitedError extends AppError {
   }
 }
 
+/**
+ * An operation that has to send mail ran on an installation with no `SMTP_URL`.
+ *
+ * `503`, not `501 feature_disabled`: nobody switched password recovery off, the deployment is
+ * incomplete — the reasoning is written out in the catalog entry in
+ * `packages/shared/src/errors/error-code.enums.ts`, and the alternative it exists to prevent is
+ * answering success to a request whose whole effect was a message that never left.
+ *
+ * **Where it is raised is part of its meaning.** On `POST /auth/forgot-password` it is decided
+ * before the address is resolved, so the choice between 503 and 202 depends on the installation and
+ * never on whether the address is registered; raised after the lookup it would be the enumeration
+ * oracle the constant 202 was designed not to be (`docs/api/openapi.yaml`, `requestPasswordReset`).
+ */
+export class MailNotConfiguredError extends AppError {
+  constructor(details?: ErrorDetails) {
+    super('mail_not_configured', 'This installation cannot send mail', details);
+  }
+}
+
+/**
+ * The reset token is unknown, already spent, or expired — one error for all three.
+ *
+ * It takes no argument saying *which*, and that is the point: a constructor with a reason would put
+ * the distinction one throw site away from the response, and telling the three apart lets a holder
+ * of a guessed token learn whether it ever existed and lets "already used" confirm that somebody
+ * completed a reset.
+ */
+export class PasswordResetTokenInvalidError extends AppError {
+  constructor() {
+    super('password_reset_token_invalid', 'The password reset link is not usable');
+  }
+}
+
 /** The body exceeded the 1 MB limit; files never travel through the API (ADR-0015). */
 export class PayloadTooLargeError extends AppError {
   constructor(details?: ErrorDetails, cause?: unknown) {

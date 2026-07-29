@@ -22,17 +22,32 @@ export class FakeWindowLimiter implements WindowLimiter {
   private readonly consumed = new Map<string, number>();
   private readonly expiresAt = new Map<string, number>();
 
+  /**
+   * A counter, not `Date.now()` — and that is the whole point.
+   *
+   * The clock used to be `Date.now()` plus an accumulated offset, so **real** time kept flowing
+   * between `advance()` and the assertion that followed it. A case that advances to one millisecond
+   * before the block expires then passes or fails depending on how long the process took to get to
+   * the next line: measured, «rounds the last fraction of a second up» flaked about once in three
+   * runs under load. A test whose verdict depends on machine speed teaches people to re-run the
+   * suite, which is worse than the test not existing.
+   *
+   * The start is an arbitrary fixed instant. Zero would pass every case here today — checked — so
+   * this is a precaution rather than a caught bug: a non-zero epoch keeps a future `if (!timestamp)`
+   * from reading an initial instant as "unset".
+   */
+  private clock = 1_767_225_600_000;
+
+  private readonly now = (): number => this.clock;
+
   constructor(
     private readonly points: number,
     private readonly windowMs: number,
-    private now: () => number = () => Date.now(),
   ) {}
 
-  /** Moves the fake clock; the window expires without a timer. */
+  /** Moves the fake clock; the window expires without a timer and without real time passing. */
   advance(ms: number): void {
-    const base = this.now;
-
-    this.now = () => base() + ms;
+    this.clock += ms;
   }
 
   async consume(key: string): Promise<LimiterReading> {

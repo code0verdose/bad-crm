@@ -12,6 +12,22 @@ const UNSAFE_METHODS: ReadonlySet<string> = new Set(['POST', 'PUT', 'PATCH', 'DE
 const randomIdempotencyKey = (): string => crypto.randomUUID();
 
 /**
+ * The header, as the *type* of an operation that declares it demands it.
+ *
+ * `components.parameters.IdempotencyKey` is `required: true` in the contract, so `openapi-fetch`
+ * refuses a call to `POST /auth/forgot-password` — or to anything else that declares it — without
+ * one. The middleware below fills it in for every unsafe request, but a middleware is a runtime
+ * fact and the generated types cannot see it; the call site still has to satisfy the signature.
+ *
+ * The value comes from the same generator the middleware uses rather than from a second one, and
+ * the middleware then leaves it alone — «a key the caller chose is never overwritten» — so one call
+ * still means one key, including across the replay this client performs after a token refresh.
+ */
+export const idempotencyParams = (): {
+  readonly params: { readonly header: { readonly 'Idempotency-Key': string } };
+} => ({ params: { header: { [IDEMPOTENCY_KEY_HEADER]: randomIdempotencyKey() } } });
+
+/**
  * Attaches `Idempotency-Key` to every unsafe request, so that no call site can forget it.
  *
  * The server stores `(organization_id, key, endpoint, request_hash)` for 24 hours and answers a

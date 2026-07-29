@@ -1,21 +1,33 @@
 import { createApiClient, type ApiClientOptions } from './http.client.js';
+import type { components } from './schemas/api-schema.js';
 
 export type SessionRefresherOptions = ApiClientOptions;
 
 /**
- * The configured base, made absolute against the current origin.
+ * What a rotation answers with, exactly as `docs/api/openapi.yaml` publishes it: the access token
+ * for the next fifteen minutes, and who it belongs to.
  *
- * `VITE_API_BASE_URL` is a same-origin path by default and `clientEnv` guarantees it is either that
- * or an absolute URL (`shared/config/env.schema.ts`). The typed client turns a call into a
- * `Request`, and `Request` will not accept a relative URL outside a document — so the resolution a
- * browser would do implicitly is done here explicitly, which also makes this module behave the same
- * under the test runner as it does in a tab.
+ * Named here rather than deep in the generated schema so that a unit can take the answer apart
+ * without importing `components['schemas'][…]` by hand. The refresh token is not part of it and
+ * never will be — it is a `Set-Cookie` the browser keeps and no script in this bundle can read.
  */
-const absoluteBaseUrl = (baseUrl: string): string => {
-  const origin = globalThis.location?.origin;
+export type RefreshedSession = components['schemas']['AuthenticatedSession'];
 
-  return baseUrl.startsWith('/') && origin !== undefined ? `${origin}${baseUrl}` : baseUrl;
-};
+/** The one status that ends a session rather than postponing it. */
+const HTTP_UNAUTHORIZED = 401;
+
+/**
+ * The three things a rotation can tell the caller apart — and they are three, not two.
+ *
+ * `refused` is the server declining the presented cookie: the session is over and the tab has to
+ * sign in again. `unavailable` is everything that is not an answer about the session — `5xx`, a
+ * dropped connection, a body that does not match the contract. The distinction exists because the
+ * two demand opposite handling: one clears the session, the other must leave it exactly as it was.
+ */
+export type RefreshOutcome =
+  | { readonly kind: 'session'; readonly session: RefreshedSession }
+  | { readonly kind: 'refused' }
+  | { readonly kind: 'unavailable' };
 
 /**
  * Exchanges the httpOnly refresh cookie for a fresh access token.
@@ -31,25 +43,45 @@ const absoluteBaseUrl = (baseUrl: string): string => {
  * allowed a raw `fetch` in this one module has nothing left to stand on — a wrong path or a wrong
  * method here is a compile error now, like everywhere else in the client.
  *
- * Nothing is read from the answer but the access token. The refresh token itself never appears here:
- * it lives in an httpOnly cookie scoped to `/api/v1/auth`, which `credentials: 'include'` sends and
- * no script in this bundle can read (CLAUDE.md, «Чувствительность данных»).
+ * The refresh token itself never appears here: it lives in an httpOnly cookie scoped to
+ * `/api/v1/auth`, which `credentials: 'include'` sends and no script in this bundle can read
+ * (CLAUDE.md, «Чувствительность данных»).
+ *
+ * The whole session is handed back rather than only the token, because a rotation is also how a
+ * reloaded tab learns *who* it is: without the identity the shell would have to ask a second
+ * endpoint for something the first answer already carried. Taking it apart — token to memory,
+ * identity to the state — is `units/auth`'s job, not the transport's.
+ *
+ * An answer that carries no `accessToken` is not a session, whatever its status line said.
  */
 export const createSessionRefresher = (
   options: SessionRefresherOptions,
-): (() => Promise<string | null>) => {
-  const client = createApiClient({ ...options, baseUrl: absoluteBaseUrl(options.baseUrl) });
+): (() => Promise<RefreshOutcome>) => {
+  const client = createApiClient(options);
 
   return async () => {
     try {
-      const { data } = await client.POST('/auth/refresh', {});
+      const { data, response } = await client.POST('/auth/refresh', {});
 
-      return typeof data?.accessToken === 'string' ? data.accessToken : null;
+      if (typeof data?.accessToken === 'string') return { kind: 'session', session: data };
+
+      // `401` is the only answer that ends a session: it says the cookie just presented will never
+      // work again. Everything else is «ask again later».
+      //
+      // The earlier version of this function returned `null` for all of them, on the reasoning that
+      // the caller cannot act on the difference. It can, and the cost of not doing so is concrete:
+      // the server answers `5xx` rather than `401` on an infrastructure failure *specifically* so a
+      // brief database outage stops signing everyone out, and collapsing it here reintroduced that
+      // incident one layer up. A `docker compose up -d` from the upgrade runbook is enough.
+      //
+      // A `2xx` whose body is not the promised shape lands here too, and deliberately: it is a
+      // contract violation, which is evidence about the deployment and no evidence at all about
+      // whether this person is still signed in.
+      return response.status === HTTP_UNAUTHORIZED ? { kind: 'refused' } : { kind: 'unavailable' };
     } catch {
-      // Every failure means the same thing to the caller — there is no session to continue. The
-      // distinction between "refused", "unparsable" and "offline" belongs to a log, not to a branch
-      // in the middleware that awaits this.
-      return null;
+      // Thrown, not answered: a dropped connection, DNS, a blocked request. Nothing about the
+      // session is known, so nothing about it is claimed.
+      return { kind: 'unavailable' };
     }
   };
 };

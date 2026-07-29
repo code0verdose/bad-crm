@@ -7,6 +7,7 @@ import {
   detachedUnitOfWork,
 } from '@/infrastructure/persistence/prisma/detached-database.adapter.js';
 import { PrismaOwnerRoleSeeder } from '@/infrastructure/persistence/prisma/owner-role-seeder.adapter.js';
+import { PrismaPasswordResetTokenRepository } from '@/infrastructure/persistence/prisma/password-reset-token.repository.js';
 import { PrismaSessionRepository } from '@/infrastructure/persistence/prisma/session.repository.js';
 import { withTenant, type TxClient } from '@/infrastructure/persistence/prisma/tenant.context.js';
 import { PrismaUserRepository } from '@/infrastructure/persistence/prisma/user.repository.js';
@@ -25,6 +26,7 @@ import { PrismaUserRepository } from '@/infrastructure/persistence/prisma/user.r
 const ORG = '018f4a3b-0000-7000-8000-000000000001';
 const USER = '018f4a3b-0000-7000-8000-0000000000bb';
 const SESSION = '018f4a3b-0000-7000-8000-0000000000cc';
+const RESET_TOKEN = '018f4a3b-0000-7000-8000-0000000000dd';
 
 interface Recorder {
   /** Every raw statement, with the whitespace collapsed so a match reads like the SQL does. */
@@ -84,6 +86,23 @@ const recordingClient = (rows: unknown[] = [], affected = 1): Recorder => {
         calls.push({ method: 'session.findUnique', args });
 
         return Promise.resolve(rows[0] ?? null);
+      },
+    },
+    passwordResetToken: {
+      create: (args: unknown): Promise<{ id: string }> => {
+        calls.push({ method: 'passwordResetToken.create', args });
+
+        return Promise.resolve({ id: RESET_TOKEN });
+      },
+      updateMany: (args: unknown): Promise<{ count: number }> => {
+        calls.push({ method: 'passwordResetToken.updateMany', args });
+
+        return Promise.resolve({ count: affected });
+      },
+      deleteMany: (args: unknown): Promise<{ count: number }> => {
+        calls.push({ method: 'passwordResetToken.deleteMany', args });
+
+        return Promise.resolve({ count: affected });
       },
     },
     organization: {
@@ -179,6 +198,38 @@ describe('PrismaUserRepository', () => {
   });
 
   /**
+   * The one selection in this repository that reads `passwordHash`, and the reason it is separate
+   * from `findById`: that one feeds the session response, and a digest travelling with it is a
+   * digest somebody eventually serializes.
+   */
+  it('reads the digest, the address and the language, and nothing else, for a password change', async () => {
+    const client = recordingClient([
+      { email: 'ada@example.com', passwordHash: '$argon2id$digest', locale: 'ru' },
+    ]);
+
+    const found = await inScope(client, () => users.findCredential(USER));
+
+    expect(client.calls[0]).toEqual({
+      method: 'user.findFirst',
+      args: {
+        where: { id: USER, deletedAt: null },
+        select: { email: true, passwordHash: true, locale: true },
+      },
+    });
+    expect(found).toEqual({
+      email: 'ada@example.com',
+      passwordHash: '$argon2id$digest',
+      locale: 'ru',
+    });
+  });
+
+  it('answers nothing when the account behind a live session is gone', async () => {
+    const client = recordingClient([]);
+
+    await expect(inScope(client, () => users.findCredential(USER))).resolves.toBeNull();
+  });
+
+  /**
    * `updateMany`, so a row that moved between the sign-in and the re-hash leaves the digest as it
    * was instead of turning a successful sign-in into `user_not_found` through the base class's
    * `P2025` translation.
@@ -195,6 +246,24 @@ describe('PrismaUserRepository', () => {
         data: { passwordHash: '$argon2id$stronger' },
       },
     });
+  });
+
+  /**
+   * …and reports the count, because `updateMany` matching nothing is otherwise silent.
+   *
+   * The re-hash on sign-in may ignore that; the password change and the password reset may not — a
+   * zero there means the digest did not move under an operation that goes on to revoke sessions and
+   * answer success (`user-repository.port.ts`).
+   */
+  it.each([
+    ['a row was written', 1, true],
+    ['the account was gone', 0, false],
+  ])('answers whether the digest actually moved — %s', async (_case, affected, expected) => {
+    const client = recordingClient([], affected);
+
+    await expect(
+      inScope(client, () => users.updatePasswordHash(USER, '$argon2id$stronger')),
+    ).resolves.toBe(expected);
   });
 });
 
@@ -396,6 +465,27 @@ describe('PrismaSessionRepository', () => {
    * of a live family is the original sign-in, which a rotation revoked — so the fix is to compute it
    * per returned row instead of for every family the user has ever had.
    */
+  /**
+   * The statement the password reset issues. It has no `family_id <> …` clause at all, which is the
+   * difference from `revokeOtherFamilies` that matters: there is nowhere for a caller to pass an
+   * exception, so "close everything" cannot quietly become "close everything but one".
+   */
+  it('revokes every family with no exception, counting families and not rows', async () => {
+    const client = recordingClient([{ count: 3 }]);
+
+    const closed = await inScope(client, () =>
+      sessions.revokeAllFamilies(USER, 'PASSWORD_CHANGED', new Date('2026-07-29T10:00:00.000Z')),
+    );
+
+    const sql = client.statements[0] ?? '';
+
+    expect(closed).toBe(3);
+    expect(sql).toContain('UPDATE sessions');
+    expect(sql).toContain('revoked_at IS NULL');
+    expect(sql).toContain('count(DISTINCT family_id)');
+    expect(sql).not.toContain('family_id <>');
+  });
+
   it('computes each family’s start per live row, not over the user’s whole history', async () => {
     const client = recordingClient([]);
 
@@ -450,6 +540,23 @@ describe('PrismaAuthLookup', () => {
     status: 'ACTIVE',
     permissions_version: 1,
   };
+
+  it('asks a named function where a reset link lives, and reads back three columns', async () => {
+    const { adapter, statements } = client([
+      { token_id: RESET_TOKEN, organization_id: ORG, user_id: USER },
+    ]);
+
+    const found = await adapter.findPasswordResetToken(new Uint8Array([1, 2, 3]));
+
+    expect(statements[0]).toContain('auth_lookup_password_reset(');
+    expect(found).toEqual({ tokenId: RESET_TOKEN, organizationId: ORG, userId: USER });
+  });
+
+  it('answers nothing for a reset digest no row carries', async () => {
+    const { adapter } = client([]);
+
+    await expect(adapter.findPasswordResetToken(new Uint8Array([9]))).resolves.toBeNull();
+  });
 
   /**
    * Every call is to a named function with a fixed signature — never a query this adapter composes.
@@ -557,7 +664,133 @@ describe('a container built without a database', () => {
       'findSessionByRefreshHash',
       () => detachedAuthLookup().findSessionByRefreshHash(new Uint8Array(1)),
     ],
+    // Added late, and the gap it left is the reason this list is worth reading against the port
+    // rather than trusting: the method arrived with the reset flow while this table still named
+    // three, so replacing its refusal with a silent `null` left all 1057 server tests green. On an
+    // installation without the `app_auth` pool that turns a configuration failure into an ordinary
+    // `password_reset_token_invalid` for every link — nobody can recover access, and both the
+    // response and the log say the token was wrong.
+    [
+      'findPasswordResetToken',
+      () => detachedAuthLookup().findPasswordResetToken(new Uint8Array(1)),
+    ],
   ])('refuses %s rather than answering as an empty database', (_case, run) => {
     expect(run).toThrow(ServiceUnavailableError);
+  });
+});
+
+/**
+ * The reset-token rows, at the level the single-use guarantee is actually written.
+ *
+ * The assertion that matters is on the *shape* of the spend: one `UPDATE` carrying both predicates
+ * and a `RETURNING`. A live database cannot show the difference — a read followed by an
+ * unconditional write succeeds against PostgreSQL too, and only lets two clicks on one link both
+ * reset the password. `test/integration/auth/password-reset.test.ts` proves the same property from
+ * the other side, by forcing the interleaving that separates them.
+ */
+describe('PrismaPasswordResetTokenRepository', () => {
+  const tokens = new PrismaPasswordResetTokenRepository();
+  const NOW = new Date('2026-07-29T10:00:00.000Z');
+
+  it('writes the organization of the scope and the digest, never a token', async () => {
+    const client = recordingClient();
+
+    const id = await inScope(client, () =>
+      tokens.create({
+        userId: USER,
+        tokenHash: new Uint8Array([1, 2, 3]),
+        expiresAt: new Date('2026-07-29T11:00:00.000Z'),
+        requestedIpHash: 'hmac:203.0.113.7',
+      }),
+    );
+
+    expect(id).toBe(RESET_TOKEN);
+    expect(client.calls[0]).toEqual({
+      method: 'passwordResetToken.create',
+      args: {
+        data: {
+          organizationId: ORG,
+          userId: USER,
+          tokenHash: Buffer.from([1, 2, 3]),
+          expiresAt: new Date('2026-07-29T11:00:00.000Z'),
+          requestedIpHash: 'hmac:203.0.113.7',
+        },
+        select: { id: true },
+      },
+    });
+  });
+
+  it('accepts a request with no source address to record', async () => {
+    const client = recordingClient();
+
+    await inScope(client, () =>
+      tokens.create({
+        userId: USER,
+        tokenHash: new Uint8Array([4]),
+        expiresAt: NOW,
+        requestedIpHash: null,
+      }),
+    );
+
+    expect(
+      (client.calls[0]?.args as { data: { requestedIpHash: unknown } }).data.requestedIpHash,
+    ).toBeNull();
+  });
+
+  it('spends the token in one statement carrying both predicates', async () => {
+    const client = recordingClient([{ user_id: USER }]);
+
+    const spentFor = await inScope(client, () => tokens.consume(RESET_TOKEN, NOW));
+
+    const sql = client.statements[0] ?? '';
+
+    expect(spentFor).toBe(USER);
+    expect(client.statements).toHaveLength(1);
+    expect(sql).toContain('UPDATE password_reset_tokens');
+    expect(sql).toContain('used_at IS NULL');
+    expect(sql).toContain('expires_at >');
+    expect(sql).toContain('RETURNING user_id');
+  });
+
+  it('answers nothing when the statement matched no row — spent, expired or gone', async () => {
+    const client = recordingClient([]);
+
+    await expect(inScope(client, () => tokens.consume(RESET_TOKEN, NOW))).resolves.toBeNull();
+  });
+
+  /**
+   * The predicate is `used_at IS NULL` and nothing else.
+   *
+   * Adding `expires_at > now` would be a second way of saying the same thing — an expired row is
+   * already refused by `consume` — and it would rewrite `used_at` on rows that no longer matter.
+   * Narrowing it to "every token *except* the one presented" would be the real mistake: the caller
+   * has just spent that one, so the predicate would have to know which, and a predicate that has to
+   * know something is a predicate that can be told the wrong thing.
+   */
+  it('spends every live token of the account in one statement, by user and used_at alone', async () => {
+    const client = recordingClient([], 2);
+
+    const closed = await inScope(client, () => tokens.invalidateOutstanding(USER, NOW));
+
+    expect(closed).toBe(2);
+    expect(client.calls[0]).toEqual({
+      method: 'passwordResetToken.updateMany',
+      args: { where: { userId: USER, usedAt: null }, data: { usedAt: NOW } },
+    });
+  });
+
+  /** Both halves: the ones a completed reset left behind, and the ones nobody ever clicked. */
+  it('deletes the settled rows of the account, used or expired', async () => {
+    const client = recordingClient([], 3);
+
+    const removed = await inScope(client, () => tokens.deleteSettled(USER, NOW));
+
+    expect(removed).toBe(3);
+    expect(client.calls[0]).toEqual({
+      method: 'passwordResetToken.deleteMany',
+      args: {
+        where: { userId: USER, OR: [{ usedAt: { not: null } }, { expiresAt: { lte: NOW } }] },
+      },
+    });
   });
 });

@@ -19,6 +19,17 @@ export default mergeConfig(
       // depends on real layout or on a real navigation belongs in Playwright instead.
       environment: 'jsdom',
       setupFiles: ['./test/setup/testing-library.setup.ts'],
+      /**
+       * Above Vitest's five seconds, and measured rather than guessed.
+       *
+       * A handful of suites mount the whole application — providers, route tree, session bootstrap
+       * — once per case, after `vi.resetModules()` forces the module graph to be built again. That
+       * is seconds of transform work on a cold cache, and under `turbo run test` it happens while
+       * the server package is compiling on the other cores: the same case that takes 300 ms alone
+       * has been measured past five seconds there. The failure it produced was a timeout, which
+       * reads as a hung application rather than as a busy machine.
+       */
+      testTimeout: 20_000,
       coverage: {
         enabled: true,
         provider: 'v8',

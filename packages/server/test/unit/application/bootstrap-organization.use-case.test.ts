@@ -101,7 +101,8 @@ class InMemoryDatabase {
 
   readonly users: UserRepositoryPort = {
     findById: (): Promise<null> => Promise.resolve(null),
-    updatePasswordHash: (): Promise<void> => Promise.resolve(),
+    findCredential: (): Promise<null> => Promise.resolve(null),
+    updatePasswordHash: (): Promise<boolean> => Promise.resolve(true),
     createOwner: (ownerDraft: OwnerDraft): Promise<string> => {
       const scope = this.scopes.at(-1);
 

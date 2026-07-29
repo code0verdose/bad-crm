@@ -1,29 +1,44 @@
-import { Stack, Text } from '@mantine/core';
+import { Anchor } from '@mantine/core';
+import { Link } from '@tanstack/react-router';
 
 import { SharedUi } from '@shared';
 
-import classes from './page.module.css';
+import { AuthService, AuthUi } from '@units/auth';
 
 /**
- * The public entry point, without a form yet.
+ * The public entry point: a heading, a form, the way to recovery, and nothing that knows about the
+ * network (`rules/frontend-fsd.mdc` rule 7).
  *
- * The sign-in flow — credentials, 2FA, the session it creates — is EPIC-006, and inventing a form
- * that posts nowhere would be a fallback pretending to be a feature. What exists here now is what
- * the router needs to be complete: a real route outside `_authenticated`, so that `requireSession`
- * has somewhere to send an anonymous visitor and `redirectIfAuthed` has somewhere to send them back
- * from.
+ * **It does not navigate.** Where a session lands is decided once, by `redirectIfAuthed` on this
+ * route: signing in records the session and asks the router to re-check its guards, and the guard
+ * carries the user to `search.redirect` — the page they were going to when `requireSession`
+ * intercepted them, or `/dashboard`. A page that navigated on success would race that guard, and
+ * whichever won would pick the destination.
  *
- * The full-height centring is a class, not a `h="100dvh"` style prop: style props are inline styles
- * by another name (`rules/design-system.mdc` §5), and this one also broke the test runner — jsdom
- * cannot resolve `dvh` in `getComputedStyle` and threw while looking for a heading.
+ * The link to `/forgot-password` is what makes the recovery screen reachable by anybody who is not
+ * already holding a mail — this is the only screen a person who cannot sign in ever looks at.
+ *
+ * The centring and the `main` landmark come from `SharedUi.CenteredScreen`, shared with the two
+ * recovery screens: the public branch has no `AppShell.Main` to be the landmark, and content that
+ * sits in no landmark at all is an `axe` violation and a screen reader with nowhere to jump
+ * (`rules/a11y.mdc` §20).
  */
 export function LoginPage() {
+  const login = AuthService.useLogin();
+
   return (
-    <Stack align="center" className={classes['root']} gap="sm" justify="center">
+    <SharedUi.CenteredScreen>
       <SharedUi.PageHeader titleKey="auth.login.title" />
-      <Text c="var(--bc-text-muted)" ta="center">
-        auth.login.comingSoon
-      </Text>
-    </Stack>
+
+      <AuthUi.LoginForm
+        isPending={login.isPending}
+        noticeKey={login.noticeKey}
+        onSubmit={login.submit}
+      />
+
+      <Anchor component={Link} to="/forgot-password">
+        auth.login.forgotPassword
+      </Anchor>
+    </SharedUi.CenteredScreen>
   );
 }
