@@ -85,7 +85,17 @@ export const createHttpServer = (dependencies: HttpServerDependencies): Express 
       // protection comes from COOP below, which stays.
       crossOriginEmbedderPolicy: false,
       crossOriginOpenerPolicy: { policy: 'same-origin' },
-      referrerPolicy: { policy: 'strict-origin-when-cross-origin' },
+      // `no-referrer`, not helmet's `strict-origin-when-cross-origin`, and the difference is a live
+      // credential. `strict-origin-when-cross-origin` sends the origin, path *and* query string on
+      // a same-origin request — so a document at `/reset-password/<token>` puts that token in the
+      // `Referer` of every asset it loads and of the reset call itself. The operator supplies their
+      // own reverse proxy (`docs/runbooks/install.md`), and nginx's stock `combined` format logs
+      // `$http_referer`: an unspent token reaches an access log, which is enough to take the
+      // account over. `docs/security/threat-model.md` T-IAM-07 names this header for exactly that.
+      //
+      // Global rather than per-route: the SPA is one `index.html` for every path, so there is no
+      // per-route document to attach a response header to. Nothing here consumes a referrer.
+      referrerPolicy: { policy: 'no-referrer' },
       // Helmet's default is SAMEORIGIN, which contradicts `frame-ancestors 'none'` in the CSP. The
       // two headers are read by different browsers — a legacy one obeys X-Frame-Options and would
       // happily frame the application into another page of the same origin, which is exactly the

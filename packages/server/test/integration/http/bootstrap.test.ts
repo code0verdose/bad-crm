@@ -199,7 +199,23 @@ describe('HTTP hardening', () => {
 
   it.each([
     ['x-content-type-options', 'nosniff'],
-    ['referrer-policy', 'strict-origin-when-cross-origin'],
+    // `no-referrer`, and the previous value — helmet's `strict-origin-when-cross-origin` — was a
+    // live token leak, not a stylistic preference.
+    //
+    // `docs/security/threat-model.md` T-IAM-07 (impact «Выс.») prescribes this header by name for
+    // the reset page, and the delta that put the reset token in the *path* cites T-IAM-07 six times
+    // as the reason. But `strict-origin-when-cross-origin` sends «the origin, path, and query
+    // string» on a **same-origin** request, so the path is no safer than a query string: opening
+    // `/reset-password/<token>` makes the browser send `Referer: …/reset-password/<token>` on every
+    // same-origin asset and on `POST /api/v1/auth/reset-password`. `docs/runbooks/install.md` has
+    // the operator put their own reverse proxy in front, and nginx's stock `combined` format logs
+    // `$http_referer` — so a live, unspent token lands in an access log for up to its whole TTL,
+    // readable by anyone with log access, and it is enough to take the account over.
+    //
+    // It is set globally rather than on the reset route because there is no per-route document: the
+    // SPA serves one `index.html` for every path, so a route-scoped response header cannot exist.
+    // Nothing here needs a referrer — there is no analytics and no cross-origin consumer of one.
+    ['referrer-policy', 'no-referrer'],
     // Agrees with `frame-ancestors 'none'`; helmet's default SAMEORIGIN would not, and a browser
     // that only understands X-Frame-Options would follow the weaker of the two.
     ['x-frame-options', 'DENY'],
