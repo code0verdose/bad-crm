@@ -134,7 +134,14 @@
         "packages/*/prisma/**",
         // `test/repo/coverage-contract.test.ts` imports every vitest config: without these, the
         // coverage thresholds of rules/testing.mdc §7 can be lowered behind a cached pass.
+        //
+        // The second line is not a duplicate of the first: `packages/*/vitest.config.ts` is a
+        // literal glob and does **not** match `vitest.integration.config.ts`. That file decides
+        // which suites the container-backed run executes at all, and
+        // `test/repo/integration-coverage.test.ts` reads it to prove no directory of integration
+        // tests is left unclaimed — the defect that let two finished suites be run by nothing.
         "packages/*/vitest.config.ts",
+        "packages/*/vitest.integration.config.ts",
         "vitest.config.ts",
         // `test/repo/client-aliases.test.ts` imports the client's Vite config and compares its
         // resolver against `tsconfig.json`. That comparison is the only thing standing between the
@@ -150,6 +157,15 @@
         // edit reintroducing one of them must not be served from cache.
         "docs/runbooks/backup-restore.md",
         "docs/security/rls-design.md",
+        // `test/infra/upgrade-runbook.test.ts` reads the upgrade runbook and asserts that the role
+        // bootstrap runs before the migrations. A migration naming a role no installation has fails
+        // with P3018 and then blocks every later one with P3009 — an edit that moves or drops that
+        // step must not be served from cache.
+        "docs/runbooks/upgrade.md",
+        // `test/infra/data-model-indexes.test.ts` holds the index registry of the data model — the
+        // source of truth for names — against the migrations that implement it. A registry naming an
+        // index the schema does not have is what the next author plans queries around.
+        "docs/architecture/data-model.md",
         // `test/repo/service-checks.test.ts` and `test/repo/preflight.test.ts` import the preflight
         // check modules directly, so the scripts are code under test here, not tooling beside it.
         "scripts/**",

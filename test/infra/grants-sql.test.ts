@@ -87,6 +87,79 @@ describe('01-grants.sql — the single source of truth for grants', () => {
     expect(executable).toMatch(/RAISE EXCEPTION/);
   });
 
+  /**
+   * The classifier for functions is not `prosecdef` alone.
+   *
+   * `prosecdef` is true of every SECURITY DEFINER function in the schema, this project's and an
+   * extension's alike, and the file acts on what it selects: it takes ownership, grants `EXECUTE`
+   * to `app_auth` and — to do either — issues `SET LOCAL ROLE <current owner>`. Against an object
+   * owned by the cluster superuser that last statement is `permission denied to set role`, and the
+   * file is one transaction, so the repair path for a restored database destroys the privileges it
+   * exists to restore. Against a function app_migrator happens to own it succeeds, which is worse:
+   * an unrelated function silently joins the surface of `DATABASE_AUTH_URL`.
+   * `packages/server/test/integration/db/auth-lookup-path.test.ts` proves both against a container.
+   */
+  it('repairs only the functions the migrations marked as this project’s', () => {
+    expect(executable).toMatch(/obj_description|shobj_description|pg_description/);
+    expect(executable).toMatch(/bad-crm:auth-resolver/);
+  });
+
+  it('excludes objects that belong to an extension', () => {
+    // An extension's function is owned by whoever installed it — usually the cluster superuser —
+    // and is not this project's to re-own.
+    expect(executable).toMatch(/pg_depend/);
+    expect(executable).toMatch(/deptype\s*=\s*'e'/);
+  });
+
+  it('still stops on a SECURITY DEFINER function of its own schema without a pinned search_path', () => {
+    // The narrowing above must not reach the guard: a foreign function that can be made to read a
+    // caller-controlled table with the owner's rights is a defect whoever wrote it.
+    expect(executable).toMatch(/RAISE\s+EXCEPTION\s*\n?\s*'SECURITY DEFINER function/);
+    expect(executable).toMatch(/search\\_path=/);
+  });
+
+  /**
+   * Fail-closed on the loss of the marker, which is the property the narrowing above made the whole
+   * file depend on — and which `pg_dump --no-comments` erases in one flag.
+   *
+   * Without this the run reports `0 security definer functions` and exits 0 while every resolver is
+   * left owned by the restoring role and `EXECUTE`-able by `PUBLIC`.
+   * `packages/server/test/integration/db/auth-lookup-path.test.ts` reproduces that end to end; here
+   * only the shape is asserted, because a refusal that is deleted from the file passes every
+   * behavioural test that does not think to look for it.
+   */
+  it('refuses an unmarked SECURITY DEFINER function instead of skipping it', () => {
+    expect(executable).toMatch(/IF\s+NOT\s+rel\.marked\s+THEN[\s\S]{0,200}RAISE\s+EXCEPTION/);
+    expect(executable, 'the refusal does not say how to get the marker back').toMatch(
+      /--no-comments/,
+    );
+  });
+
+  /**
+   * And the one case that must *not* be a refusal. An extension's function cannot be repaired by an
+   * operator — `ALTER FUNCTION` is undone by the next extension update — and this file is the only
+   * way privileges come back after a restore, so refusing would make a restored database
+   * unrepairable for as long as the extension is installed.
+   */
+  it('warns rather than refuses when the function belongs to an extension', () => {
+    expect(executable).toMatch(
+      /rel\.extension\s+IS\s+NOT\s+NULL\s+THEN[\s\S]{0,400}RAISE\s+WARNING/,
+    );
+    expect(
+      executable,
+      'an extension branch that raises an exception makes db:grants unrunnable',
+    ).not.toMatch(/rel\.extension\s+IS\s+NOT\s+NULL\s+THEN[\s\S]{0,400}RAISE\s+EXCEPTION/);
+  });
+
+  /**
+   * `RAISE EXCEPTION` uses `%`, not `%s`. With `%s` the message printed the signature followed by a
+   * stray `s` — `… function no_path()s has no fixed search_path` — and this message is the one an
+   * operator reads when a deployment stops.
+   */
+  it('formats the refusal with % and not %s', () => {
+    expect(executable).not.toMatch(/RAISE\s+EXCEPTION[\s\S]{0,300}%s/);
+  });
+
   it('applies as one transaction so a failure leaves the previous state', () => {
     expect(executable).toMatch(/^\s*BEGIN;/m);
     expect(executable).toMatch(/^\s*COMMIT;/m);

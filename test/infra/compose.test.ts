@@ -219,20 +219,29 @@ describe('00-bootstrap-roles.sql — role attributes are re-asserted, not only s
     );
   });
 
-  it.each(['app_migrator', 'app_user', 'app_auth', 'backup_role'])(
+  it.each(['app_migrator', 'app_user', 'app_auth', 'app_auth_definer', 'backup_role'])(
     're-asserts NOINHERIT on %s outside the creation branch',
     (role) => {
       expect(unconditional).toMatch(new RegExp(`ALTER ROLE ${role}\\s+[^;]*\\bNOINHERIT\\b`));
     },
   );
 
-  it('re-asserts BYPASSRLS on app_auth even when the role already existed', () => {
-    expect(unconditional).toMatch(/ALTER ROLE app_auth\s+[^;]*\bBYPASSRLS\b/);
+  /**
+   * The role the org-less path executes as, and the only one on that path that bypasses policies.
+   *
+   * `app_auth` — the role the application *connects* as — is asserted NOBYPASSRLS below. That was
+   * not always so, and the drift was invisible: the attribute changes no result while the role
+   * holds no table privilege, and it changes every result the moment one is granted.
+   */
+  it('re-asserts BYPASSRLS on app_auth_definer, which is what the resolvers run as', () => {
+    expect(unconditional).toMatch(/ALTER ROLE app_auth_definer\s+[^;]*\bBYPASSRLS\b/);
+    expect(unconditional).toMatch(/ALTER ROLE app_auth_definer\s+[^;]*\bNOLOGIN\b/);
   });
 
-  it('re-asserts NOBYPASSRLS on the two roles that must stay subject to RLS', () => {
+  it('re-asserts NOBYPASSRLS on the three roles that must stay subject to RLS', () => {
     expect(unconditional).toMatch(/ALTER ROLE app_user\s+[^;]*\bNOBYPASSRLS\b/);
     expect(unconditional).toMatch(/ALTER ROLE app_migrator\s+[^;]*\bNOBYPASSRLS\b/);
+    expect(unconditional).toMatch(/ALTER ROLE app_auth\s+[^;]*\bNOBYPASSRLS\b/);
   });
 
   it('strips any pre-existing membership between the four roles so SET ROLE stays impossible', () => {
@@ -240,7 +249,13 @@ describe('00-bootstrap-roles.sql — role attributes are re-asserted, not only s
     expect(unconditional).toMatch(/pg_auth_members/);
     expect(unconditional).toMatch(/REVOKE %I FROM %I/);
 
-    for (const role of ['app_migrator', 'app_user', 'app_auth', 'backup_role']) {
+    for (const role of [
+      'app_migrator',
+      'app_user',
+      'app_auth',
+      'app_auth_definer',
+      'backup_role',
+    ]) {
       expect(unconditional.slice(unconditional.indexOf('pg_auth_members'))).toContain(`'${role}'`);
     }
   });

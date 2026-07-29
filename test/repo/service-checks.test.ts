@@ -315,7 +315,9 @@ const healthyFacts = {
     rolname: role.role,
     rolbypassrls: role.bypassRls,
     rolsuper: false,
-    rolcanlogin: true,
+    // Not `true`: `app_auth_definer` is NOLOGIN by design, and a fixture that says otherwise would
+    // make the "healthy" baseline a state no correct installation is ever in.
+    rolcanlogin: role.canLogin,
   })),
 };
 
@@ -409,6 +411,25 @@ describe('interpretPostgres', () => {
 
     expect(outcome.status).toBe('failed');
     expect(outcome.details.join(' ')).toContain('LOGIN');
+  });
+
+  /**
+   * The other direction, and it is not symmetry for its own sake. `app_auth_definer` owns the
+   * SECURITY DEFINER resolvers and holds `SELECT` on the three tables they read; the only thing
+   * keeping those privileges unreachable is that nobody can connect as it. A `LOGIN` granted there
+   * — by a hand-edited bootstrap, by a managed provider that creates roles its own way — turns the
+   * narrow authentication path into a credential that reads every account of every organization.
+   */
+  it('fails when the NOLOGIN function owner was given LOGIN', () => {
+    const outcome = interpretPostgres({
+      ...healthyFacts,
+      roles: healthyFacts.roles.map((role) =>
+        role.rolname === 'app_auth_definer' ? { ...role, rolcanlogin: true } : role,
+      ),
+    });
+
+    expect(outcome.status).toBe('failed');
+    expect(outcome.details.join(' ')).toContain('app_auth_definer can LOGIN');
   });
 });
 
