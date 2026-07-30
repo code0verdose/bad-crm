@@ -1,5 +1,4 @@
 import {
-  type OwnerDraft,
   type UserCredentialRecord,
   type UserRecord,
   type UserRepositoryPort,
@@ -20,35 +19,6 @@ import { TenantScopedRepository } from '@/infrastructure/persistence/prisma/tena
 export class PrismaUserRepository extends TenantScopedRepository implements UserRepositoryPort {
   protected readonly resource = 'user' as const;
   protected readonly repositoryName = 'UserRepository';
-
-  /**
-   * The first account of a new organization.
-   *
-   * `organizationId` is taken from the scope rather than from the draft: the row has to satisfy
-   * `WITH CHECK (organization_id = current_setting('app.organization_id')::uuid)`, and reading it
-   * from the scope makes any other value unreachable rather than merely refused.
-   *
-   * `status: 'ACTIVE'` is stated because the column has no default, on purpose: a row is created
-   * either by registration or by an invitation, and a default would decide that for whichever path
-   * forgets to (`schema.prisma`, `UserStatus`).
-   */
-  createOwner(draft: OwnerDraft): Promise<string> {
-    return this.run('createOwner', async (tx) => {
-      const row = await tx.user.create({
-        data: {
-          organizationId: this.organizationId('createOwner'),
-          email: draft.email,
-          passwordHash: draft.passwordHash,
-          locale: draft.locale,
-          timezone: draft.timezone,
-          status: 'ACTIVE',
-        },
-        select: { id: true },
-      });
-
-      return row.id;
-    });
-  }
 
   /**
    * The columns the session response and the authorization layer read — never the whole row.

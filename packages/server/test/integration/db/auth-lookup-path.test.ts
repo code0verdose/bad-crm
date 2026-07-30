@@ -7,6 +7,7 @@ import {
   asMaintenance,
   closePools,
   createPools,
+  insertOrganizationWithOwner,
   reapplyGrants,
   reapplyGrantsCollectingNotices,
   truncateAll,
@@ -65,10 +66,10 @@ const seed = async (): Promise<Fixture> => {
       [organizationId, 'bad-company'],
       [otherOrganizationId, 'side-project'],
     ] as const) {
-      await client.query(
-        `INSERT INTO organizations (id, slug, name, updated_at) VALUES ($1, $2, $3, now())`,
-        [id, slug, slug === 'bad-company' ? 'Bad Company' : 'Side Project'],
-      );
+      await insertOrganizationWithOwner(client, id, {
+        slug,
+        name: slug === 'bad-company' ? 'Bad Company' : 'Side Project',
+      });
     }
 
     const { rows: users } = await client.query<{ id: string }>(

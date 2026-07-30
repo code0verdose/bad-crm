@@ -6,7 +6,6 @@ import {
   detachedAuthLookup,
   detachedUnitOfWork,
 } from '@/infrastructure/persistence/prisma/detached-database.adapter.js';
-import { PrismaOwnerRoleSeeder } from '@/infrastructure/persistence/prisma/owner-role-seeder.adapter.js';
 import { PrismaPasswordResetTokenRepository } from '@/infrastructure/persistence/prisma/password-reset-token.repository.js';
 import { PrismaSessionRepository } from '@/infrastructure/persistence/prisma/session.repository.js';
 import { withTenant, type TxClient } from '@/infrastructure/persistence/prisma/tenant.context.js';
@@ -130,34 +129,6 @@ const inScope = <T>(client: Recorder, work: () => Promise<T>): Promise<T> =>
 
 describe('PrismaUserRepository', () => {
   const users = new PrismaUserRepository();
-
-  it('writes the organization of the scope and an explicit ACTIVE status', async () => {
-    const client = recordingClient();
-
-    await inScope(client, () =>
-      users.createOwner({
-        email: 'ada@example.com',
-        passwordHash: '$argon2id$digest',
-        locale: 'en',
-        timezone: 'Europe/Berlin',
-      }),
-    );
-
-    expect(client.calls[0]).toEqual({
-      method: 'user.create',
-      args: {
-        data: {
-          organizationId: ORG,
-          email: 'ada@example.com',
-          passwordHash: '$argon2id$digest',
-          locale: 'en',
-          timezone: 'Europe/Berlin',
-          status: 'ACTIVE',
-        },
-        select: { id: true },
-      },
-    });
-  });
 
   /**
    * The selection is the guard: `passwordHash`, `totpSecretEnc` and the vault verifier columns are
@@ -495,19 +466,6 @@ describe('PrismaSessionRepository', () => {
 
     expect(sql).toContain('f.family_id = s.family_id');
     expect(sql).not.toMatch(/GROUP BY family_id/);
-  });
-});
-
-describe('PrismaOwnerRoleSeeder', () => {
-  it('records the owner on the organization of the scope, without naming its id twice', async () => {
-    const client = recordingClient();
-
-    await inScope(client, () => new PrismaOwnerRoleSeeder().seedSystemRoles(USER));
-
-    expect(client.calls[0]).toEqual({
-      method: 'organization.updateMany',
-      args: { where: { deletedAt: null }, data: { ownerId: USER } },
-    });
   });
 });
 

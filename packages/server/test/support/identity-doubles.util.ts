@@ -35,7 +35,9 @@ import {
   type SessionRevokedReason,
 } from '@/application/identity/ports/session-repository.port.js';
 import {
+  type BootstrappedOrganization,
   type OrganizationDraft,
+  type OrganizationOwnerDraft,
   type OrganizationRepositoryPort,
   type OrganizationSummary,
 } from '@/application/organization/ports/organization-repository.port.js';
@@ -64,7 +66,6 @@ import {
 } from '@/application/platform/ports/unit-of-work.port.js';
 import { ServiceUnavailableError } from '@/domain/shared/errors/app.errors.js';
 import {
-  type OwnerDraft,
   type UserCredentialRecord,
   type UserRecord,
   type UserRepositoryPort,
@@ -491,10 +492,17 @@ export class FakeOrganizations implements OrganizationRepositoryPort {
     },
   ) {}
 
-  create(draft: OrganizationDraft): Promise<OrganizationSummary> {
-    this.organization = { id: ORGANIZATION_ID, ...draft };
+  /** What the one statement of the real adapter writes, as the two rows it produces. */
+  createdOwner: OrganizationOwnerDraft | undefined;
 
-    return Promise.resolve(this.organization);
+  createWithOwner(
+    draft: OrganizationDraft,
+    owner: OrganizationOwnerDraft,
+  ): Promise<BootstrappedOrganization> {
+    this.organization = { id: ORGANIZATION_ID, ...draft };
+    this.createdOwner = owner;
+
+    return Promise.resolve({ organizationId: ORGANIZATION_ID, ownerId: USER_ID });
   }
 
   findCurrent(): Promise<OrganizationSummary | null> {
@@ -511,24 +519,9 @@ export class FakeUsers implements UserRepositoryPort {
   /** The digests, kept apart from `rows` exactly as the repository keeps them out of `UserRecord`. */
   readonly credentials = new Map<string, UserCredentialRecord>();
   readonly rehashed: { userId: string; passwordHash: string }[] = [];
-  createdOwner: OwnerDraft | undefined;
 
   constructor(seed: readonly UserRecord[] = []) {
     for (const row of seed) this.rows.set(row.id, row);
-  }
-
-  createOwner(draft: OwnerDraft): Promise<string> {
-    this.createdOwner = draft;
-    this.rows.set(USER_ID, {
-      id: USER_ID,
-      email: draft.email,
-      locale: draft.locale,
-      timezone: draft.timezone,
-      status: 'ACTIVE',
-      permissionsVersion: 1,
-    });
-
-    return Promise.resolve(USER_ID);
   }
 
   findById(userId: string): Promise<UserRecord | null> {

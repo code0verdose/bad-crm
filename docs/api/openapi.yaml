@@ -1129,6 +1129,7 @@ components:
         - vault_locked
         - stale_version
         - idempotency_key_reuse
+        - last_owner_required
         - rate_limited
         - feature_disabled
         - service_unavailable

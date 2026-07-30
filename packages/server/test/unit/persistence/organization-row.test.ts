@@ -16,7 +16,7 @@ describe('toOrganizationSummary', () => {
     id: '018f4a3b-0000-7000-8000-000000000001',
     slug: 'acme',
     name: 'Acme',
-    ownerId: null,
+    ownerId: '018f4a3b-0000-7000-8000-000000000002',
     timezone: 'Europe/Berlin',
     defaultCurrency: 'EUR',
     settings: { theme: 'dark' },

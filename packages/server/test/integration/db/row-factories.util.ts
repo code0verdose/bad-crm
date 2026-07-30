@@ -59,14 +59,33 @@ export const ROW_FACTORIES = {
    * application generates the id of a new organization and creates it inside `withTenant`
    * (docs/security/rls-design.md, «Особый случай: organizations»).
    */
-  organizations: (client, organizationId) =>
-    insert(
+  organizations: (client, organizationId) => {
+    // Two rows in one statement, the same way `OrganizationRepositoryPort.createWithOwner` does it:
+    // `owner_id` is NOT NULL and points at a user of this organization, while the user points back, so
+    // neither insert can go first. Foreign keys are `AFTER ROW` triggers evaluated when the statement
+    // ends, and by then both rows exist. A fixture that took a shortcut here would be a fixture that
+    // does not exercise the constraint the product lives under.
+    const ownerId = randomUUID();
+
+    return insert(
       client,
-      `INSERT INTO organizations (id, slug, name, updated_at)
-       VALUES ($1, $2, $3, now())
-       RETURNING id`,
-      [organizationId, `org-${organizationId.slice(0, 8)}-${randomUUID().slice(0, 8)}`, 'Acme'],
-    ),
+      `WITH created_organization AS (
+         INSERT INTO organizations (id, owner_id, slug, name, updated_at)
+         VALUES ($1, $2, $3, $4, now())
+         RETURNING id
+       )
+       INSERT INTO users (id, organization_id, email, password_hash, status, updated_at)
+       VALUES ($2, $1, $5, 'placeholder-not-a-credential', 'ACTIVE', now())
+       RETURNING organization_id AS id`,
+      [
+        organizationId,
+        ownerId,
+        `org-${organizationId.slice(0, 8)}-${randomUUID().slice(0, 8)}`,
+        'Acme',
+        `owner-${ownerId.slice(0, 8)}@example.test`,
+      ],
+    );
+  },
 
   users: createUser,
 

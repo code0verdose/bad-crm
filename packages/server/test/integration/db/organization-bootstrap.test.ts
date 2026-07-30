@@ -3,8 +3,6 @@ import { randomUUID } from 'node:crypto';
 import { type PrismaClient } from '@prisma/client';
 import { afterAll, beforeAll, beforeEach, describe, expect, inject, it } from 'vitest';
 
-import { type RoleSeederPort } from '@/application/identity/ports/role-seeder.port.js';
-import { type UserRepositoryPort } from '@/application/identity/ports/user-repository.port.js';
 import { type IdGeneratorPort } from '@/application/platform/ports/id-generator.port.js';
 import { type LoggerPort } from '@/application/platform/ports/logger.port.js';
 import { BootstrapOrganizationUseCase } from '@/application/organization/use-cases/bootstrap-organization.use-case.js';
@@ -18,6 +16,7 @@ import {
   asMaintenance,
   closePools,
   createPools,
+  insertOrganizationWithOwner,
   truncateAll,
   type HarnessPools,
 } from './db-harness.util.js';
@@ -60,32 +59,6 @@ const idsReturning = (id: string): IdGeneratorPort => ({
   uuid: () => id,
 });
 
-/**
- * The owner step, as a real write into a tenant-scoped table. `failing` makes it throw the way a
- * duplicate email would, so the rollback can be observed rather than argued about.
- */
-const ownerWriting = (options: { failing?: boolean } = {}): UserRepositoryPort => ({
-  findById: () => Promise.resolve(null),
-  findCredential: () => Promise.resolve(null),
-  updatePasswordHash: () => Promise.resolve(true),
-  createOwner: async () => {
-    const { tx, ctx } = requireTenant('TestOwnerRepository.createOwner');
-    const team = await tx.team.create({
-      data: {
-        organizationId: ctx.organizationId,
-        name: 'Owners',
-        slug: `owners-${randomUUID().slice(0, 8)}`,
-      },
-    });
-
-    if (options.failing === true) throw new Error('email already taken');
-
-    return team.id;
-  },
-});
-
-const rolesDoingNothing: RoleSeederPort = { seedSystemRoles: () => Promise.resolve() };
-
 const draftFor = (slug: string) => ({
   name: 'Acme',
   slug,
@@ -100,16 +73,16 @@ const owner = {
   timezone: 'UTC',
 };
 
-const useCaseFor = (
-  organizationId: string,
-  users: UserRepositoryPort,
-): BootstrapOrganizationUseCase =>
+const useCaseFor = (organizationId: string): BootstrapOrganizationUseCase =>
   new BootstrapOrganizationUseCase(
     new PrismaUnitOfWork(base),
     new PrismaOrganizationRepository(),
-    users,
-    rolesDoingNothing,
     idsReturning(organizationId),
+  );
+
+const countUsers = async (): Promise<number> =>
+  asMaintenance(pools.owner, async (client) =>
+    Number((await client.query<{ count: string }>('SELECT count(*) FROM users')).rows[0]?.count),
   );
 
 const countOrganizations = async (): Promise<number> =>
@@ -138,10 +111,10 @@ beforeEach(async () => {
 });
 
 describe('bootstrapping an organization', () => {
-  it('CONTROL: creates the organization and the rows beside it in one transaction', async () => {
+  it('CONTROL: creates the organization and its owner in one transaction', async () => {
     const organizationId = randomUUID();
 
-    const result = await useCaseFor(organizationId, ownerWriting()).execute({
+    const result = await useCaseFor(organizationId).execute({
       organization: draftFor('acme'),
       owner,
     });
@@ -152,18 +125,18 @@ describe('bootstrapping an organization', () => {
       organizations: (
         await client.query('SELECT id FROM organizations WHERE id = $1', [organizationId])
       ).rowCount,
-      teams: (
-        await client.query('SELECT id FROM teams WHERE organization_id = $1', [organizationId])
+      users: (
+        await client.query('SELECT id FROM users WHERE organization_id = $1', [organizationId])
       ).rowCount,
     }));
 
-    expect(rows).toEqual({ organizations: 1, teams: 1 });
+    expect(rows).toEqual({ organizations: 1, users: 1 });
   });
 
   it('CONTROL: the new organization is readable under its own scope right away', async () => {
     const organizationId = randomUUID();
 
-    await useCaseFor(organizationId, ownerWriting()).execute({
+    await useCaseFor(organizationId).execute({
       organization: draftFor('acme'),
       owner,
     });
@@ -195,7 +168,7 @@ describe('bootstrapping an organization', () => {
       async () => {
         const beforeCreate = await requireTenant('probe').tx.organization.findMany();
 
-        await repository.create(draftFor('acme'));
+        await repository.createWithOwner(draftFor('acme'), owner);
 
         const afterCreate = await requireTenant('probe').tx.organization.findMany();
 
@@ -217,7 +190,7 @@ describe('bootstrapping an organization', () => {
     const attempt = new PrismaUnitOfWork(base).withTenant(
       { organizationId, userId: null },
       async () => {
-        await new PrismaOrganizationRepository().create(draftFor('acme'));
+        await new PrismaOrganizationRepository().createWithOwner(draftFor('acme'), owner);
 
         await requireTenant('probe').tx.team.create({
           data: { organizationId: OTHER_ORG, name: 'Smuggled', slug: 'smuggled' },
@@ -238,17 +211,37 @@ describe('bootstrapping an organization', () => {
     expect(teamsOfTheOther).toBe(1);
   });
 
-  it('leaves no organization behind when a later step fails', async () => {
-    const organizationId = randomUUID();
+  /**
+   * «Neither, or both», which is what the single statement buys and what used to rest on the
+   * transaction alone.
+   *
+   * The previous version of this case forced the *second* write to fail and checked that the first was
+   * rolled back. There is no second write any more — `createWithOwner` is one statement — so the
+   * property worth asserting is the one a caller can observe: a refused registration leaves no
+   * organization **and no orphaned user**, and an accepted one leaves exactly one of each.
+   */
+  it('writes the organization and its owner together, or neither', async () => {
+    const takenSlug = `both-${randomUUID().slice(0, 8)}`;
+
+    await asMaintenance(pools.owner, (client) =>
+      insertOrganizationWithOwner(client, randomUUID(), { slug: takenSlug, name: 'Taken' }),
+    );
+
+    const before = { organizations: await countOrganizations(), users: await countUsers() };
 
     await expect(
-      useCaseFor(organizationId, ownerWriting({ failing: true })).execute({
-        organization: draftFor('acme'),
-        owner,
-      }),
-    ).rejects.toThrow('email already taken');
+      useCaseFor(randomUUID()).execute({ organization: draftFor(takenSlug), owner }),
+    ).rejects.toBeInstanceOf(ConflictError);
 
-    expect(await countOrganizations()).toBe(1);
+    expect({ organizations: await countOrganizations(), users: await countUsers() }).toEqual(
+      before,
+    );
+
+    const accepted = randomUUID();
+    await useCaseFor(accepted).execute({ organization: draftFor('accepted'), owner });
+
+    expect(await countOrganizations()).toBe(before.organizations + 1);
+    expect(await countUsers()).toBe(before.users + 1);
   });
 
   /**
@@ -259,15 +252,12 @@ describe('bootstrapping an organization', () => {
   it('reports a taken slug as a conflict, with no row left behind', async () => {
     const takenSlug = `taken-${randomUUID().slice(0, 8)}`;
 
-    await asMaintenance(pools.owner, async (client) => {
-      await client.query(
-        `INSERT INTO organizations (id, slug, name, updated_at) VALUES ($1, $2, 'Other', now())`,
-        [randomUUID(), takenSlug],
-      );
-    });
+    await asMaintenance(pools.owner, (client) =>
+      insertOrganizationWithOwner(client, randomUUID(), { slug: takenSlug, name: 'Other' }),
+    );
 
     const organizationId = randomUUID();
-    const failure = await useCaseFor(organizationId, ownerWriting())
+    const failure = await useCaseFor(organizationId)
       .execute({ organization: draftFor(takenSlug), owner })
       .catch((error: unknown) => error);
 

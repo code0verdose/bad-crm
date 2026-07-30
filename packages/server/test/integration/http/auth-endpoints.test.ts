@@ -123,7 +123,7 @@ describe('POST /api/v1/auth/register', () => {
       code: 'validation_failed',
       errors: [{ path: 'Idempotency-Key' }],
     });
-    expect(test.users.createdOwner).toBeUndefined();
+    expect(test.organizations.createdOwner).toBeUndefined();
   });
 
   it('refuses a key that is too short to be one', async () => {

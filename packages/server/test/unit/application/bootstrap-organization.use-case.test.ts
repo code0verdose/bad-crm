@@ -5,13 +5,10 @@ import {
   type TenantScope,
   type UnitOfWorkPort,
 } from '@/application/platform/ports/unit-of-work.port.js';
-import { type RoleSeederPort } from '@/application/identity/ports/role-seeder.port.js';
 import {
-  type OwnerDraft,
-  type UserRepositoryPort,
-} from '@/application/identity/ports/user-repository.port.js';
-import {
+  type BootstrappedOrganization,
   type OrganizationDraft,
+  type OrganizationOwnerDraft,
   type OrganizationRepositoryPort,
   type OrganizationSummary,
 } from '@/application/organization/ports/organization-repository.port.js';
@@ -39,7 +36,7 @@ const draft: OrganizationDraft = {
   defaultCurrency: 'EUR',
 };
 
-const owner: OwnerDraft = {
+const owner: OrganizationOwnerDraft = {
   email: 'owner@example.com',
   passwordHash: '$argon2id$v=19$m=19456,t=2,p=1$c2FsdA$aGFzaA',
   locale: 'en',
@@ -47,7 +44,7 @@ const owner: OwnerDraft = {
 };
 
 interface Row {
-  readonly kind: 'organization' | 'user' | 'roles';
+  readonly kind: 'organization' | 'user';
   readonly organizationId: string;
   readonly value: unknown;
 }
@@ -83,47 +80,29 @@ class InMemoryDatabase {
     this.rows.push({ kind, organizationId, value });
   }
 
+  /**
+   * One method, because the adapter it stands for writes both rows in one statement. The double keeps
+   * recording them as two, so the assertions can still say *what* was written — but there is no
+   * ordering left to get wrong, and no window between them to test for.
+   */
   readonly organizations: OrganizationRepositoryPort = {
-    create: (organizationDraft: OrganizationDraft): Promise<OrganizationSummary> => {
+    createWithOwner: (
+      organizationDraft: OrganizationDraft,
+      ownerDraft: OrganizationOwnerDraft,
+    ): Promise<BootstrappedOrganization> => {
       const scope = this.scopes.at(-1);
 
-      if (scope === undefined) throw new Error('create outside a tenant scope');
+      if (scope === undefined) throw new Error('createWithOwner outside a tenant scope');
       if (this.slugsTaken.has(organizationDraft.slug)) {
         throw new ConflictError('organization_already_exists');
       }
 
       this.write('organization', scope.organizationId, organizationDraft);
-
-      return Promise.resolve({ id: scope.organizationId, ...organizationDraft });
-    },
-    findCurrent: (): Promise<OrganizationSummary | null> => Promise.resolve(null),
-  };
-
-  readonly users: UserRepositoryPort = {
-    findById: (): Promise<null> => Promise.resolve(null),
-    findCredential: (): Promise<null> => Promise.resolve(null),
-    updatePasswordHash: (): Promise<boolean> => Promise.resolve(true),
-    createOwner: (ownerDraft: OwnerDraft): Promise<string> => {
-      const scope = this.scopes.at(-1);
-
-      if (scope === undefined) throw new Error('createOwner outside a tenant scope');
-
       this.write('user', scope.organizationId, ownerDraft);
 
-      return Promise.resolve(NEW_USER_ID);
+      return Promise.resolve({ organizationId: scope.organizationId, ownerId: NEW_USER_ID });
     },
-  };
-
-  readonly roles: RoleSeederPort = {
-    seedSystemRoles: (ownerUserId: string): Promise<void> => {
-      const scope = this.scopes.at(-1);
-
-      if (scope === undefined) throw new Error('seedSystemRoles outside a tenant scope');
-
-      this.write('roles', scope.organizationId, ownerUserId);
-
-      return Promise.resolve();
-    },
+    findCurrent: (): Promise<OrganizationSummary | null> => Promise.resolve(null),
   };
 
   kinds(): Row['kind'][] {
@@ -137,22 +116,16 @@ const fixedIds: IdGeneratorPort = {
 };
 
 const buildUseCase = (database: InMemoryDatabase): BootstrapOrganizationUseCase =>
-  new BootstrapOrganizationUseCase(
-    database.unitOfWork,
-    database.organizations,
-    database.users,
-    database.roles,
-    fixedIds,
-  );
+  new BootstrapOrganizationUseCase(database.unitOfWork, database.organizations, fixedIds);
 
 describe('BootstrapOrganizationUseCase', () => {
-  it('CONTROL: creates the organization, its owner and its system roles', async () => {
+  it('CONTROL: creates the organization and its owner', async () => {
     const database = new InMemoryDatabase();
 
     const result = await buildUseCase(database).execute({ organization: draft, owner });
 
     expect(result).toEqual({ organizationId: NEW_ORGANIZATION_ID, ownerId: NEW_USER_ID });
-    expect(database.kinds()).toEqual(['organization', 'user', 'roles']);
+    expect(database.kinds()).toEqual(['organization', 'user']);
   });
 
   /**
@@ -182,8 +155,13 @@ describe('BootstrapOrganizationUseCase', () => {
     );
   });
 
-  it.each(['user', 'roles'] as const)(
-    'leaves nothing behind when the %s step fails',
+  /**
+   * There is one write left, so this is no longer about the order of several — it is about the
+   * transaction: a failure anywhere inside `withTenant` must leave the tenant root absent rather than
+   * half-built, because an organization nobody owns is an installation nobody can administer.
+   */
+  it.each(['organization', 'user'] as const)(
+    'leaves nothing behind when the %s row fails',
     async (failingStep) => {
       const database = new InMemoryDatabase();
 

@@ -81,6 +81,19 @@ export abstract class TenantScopedRepository {
       return new ConflictError(`${this.resource}_already_exists`, { cause: error.code });
     }
 
+    // The same collision, seen through a raw statement. `$queryRaw` does not get `P2002`: Prisma
+    // reports `P2010` — "raw query failed" — and puts the PostgreSQL SQLSTATE in `meta.code`. The
+    // tenant root is written raw (one statement for two rows, `organization.repository.ts`), so
+    // without this branch a duplicate slug would answer `500` instead of `409` and the caller would be
+    // told to retry something that can never succeed.
+    //
+    // `23505` is `unique_violation`. Nothing else is translated here on purpose: a foreign key or a
+    // check violation from a raw statement is a defect in this code, and a 500 with the SQLSTATE in
+    // the log is the right answer to it.
+    if (error.code === 'P2010' && this.sqlStateOf(error) === '23505') {
+      return new ConflictError(`${this.resource}_already_exists`, { cause: 'P2010/23505' });
+    }
+
     // P2025: "an operation failed because it depends on one or more records that were required but
     // not found". Under RLS that covers a row of another organization too — the policy simply does
     // not return it — and the two must stay indistinguishable from outside, or the API becomes an
@@ -89,5 +102,22 @@ export abstract class TenantScopedRepository {
     if (error.code === 'P2025') return denyAccess(this.resource, 'other_organization');
 
     return error;
+  }
+
+  /**
+   * The PostgreSQL SQLSTATE behind a `P2010`, or `undefined` when the shape is not the one we know.
+   *
+   * `meta` is typed as `unknown` by the client, so it is narrowed rather than cast: a Prisma upgrade
+   * that changes the shape must make this return `undefined` — leaving the error untranslated and
+   * loud — instead of throwing inside the error handler, where the original failure would be lost.
+   */
+  private sqlStateOf(error: Prisma.PrismaClientKnownRequestError): string | undefined {
+    const meta: unknown = error.meta;
+
+    if (typeof meta !== 'object' || meta === null) return undefined;
+
+    const code: unknown = (meta as { code?: unknown }).code;
+
+    return typeof code === 'string' ? code : undefined;
   }
 }

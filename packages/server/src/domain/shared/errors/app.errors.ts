@@ -95,7 +95,11 @@ export class ForbiddenError extends AppError {
 /** The request collides with the current state: duplicate key, stale version, replayed key. */
 export class ConflictError extends AppError {
   constructor(
-    code: `${ErrorResource}_already_exists` | 'stale_version' | 'idempotency_key_reuse',
+    code:
+      | `${ErrorResource}_already_exists`
+      | 'stale_version'
+      | 'idempotency_key_reuse'
+      | 'last_owner_required',
     details?: ErrorDetails,
   ) {
     super(code, `Conflicting request: ${code}`, details);

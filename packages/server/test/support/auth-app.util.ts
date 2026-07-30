@@ -52,6 +52,7 @@ export interface AuthApp {
   readonly clock: FakeClock;
   readonly sessions: FakeSessions;
   readonly users: FakeUsers;
+  readonly organizations: FakeOrganizations;
   readonly lookup: FakeAuthLookup;
   readonly hasher: FakePasswordHasher;
   readonly logger: RecordingLogger;
@@ -143,8 +144,6 @@ export const createAuthApp = (options: AuthAppOptions = {}): AuthApp => {
   const bootstrap = new BootstrapOrganizationUseCase(
     unitOfWork,
     organizations,
-    users,
-    { seedSystemRoles: (): Promise<void> => Promise.resolve() },
     new FakeIdGenerator(),
   );
 
@@ -224,6 +223,7 @@ export const createAuthApp = (options: AuthAppOptions = {}): AuthApp => {
     clock,
     sessions,
     users,
+    organizations,
     lookup,
     hasher,
     logger,

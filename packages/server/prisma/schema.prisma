@@ -54,21 +54,29 @@ model Organization {
   /// The account that administers this organization, set by the registration use-case of
   /// STORY-006-01 immediately after it creates the owner.
   ///
-  /// Nullable, and it is an EXPAND step rather than an oversight: the column is added to a table
-  /// that already exists, and the row it points at is written in the same transaction one statement
-  /// later, so it cannot be NOT NULL at the moment of the insert (rules/db-migrations.mdc, 2). The
-  /// composite foreign key is `(id, owner_id) -> users (organization_id, id)`: this table is the
+  /// Mandatory since the contract step (`20260730120000_organization_owner_not_null`): an
+  /// organization whose owner is nobody is an organization nobody can administer, and that is now a
+  /// statement the database makes rather than one the registration transaction keeps.
+  ///
+  /// It was nullable through the expand step, because the row it points at was written a statement
+  /// later. That is no longer true: `OrganizationRepositoryPort.createWithOwner` writes both rows in
+  /// **one** statement, with both ids generated before it runs, so the reference is satisfiable at the
+  /// moment of the insert without deferring anything (docs/architecture/data-model.md, «Про
+  /// `Organization.ownerId`»).
+  ///
+  /// The composite foreign key is `(id, owner_id) -> users (organization_id, id)`: this table is the
   /// tenant root, so its *own key* is the tenant column, and pairing it with the reference is what
   /// stops an owner from another organization — foreign key checks bypass row-level security.
   ///
-  /// `prisma validate` warns that `SetNull` meets a required referenced field, and the warning is
-  /// expected rather than ignored — the same case as `Session.rotatedFromId`. A plain composite
-  /// `ON DELETE SET NULL` would null `id`, the primary key, and die on its NOT NULL; the migration
-  /// writes the PostgreSQL 15 column list, `ON DELETE SET NULL (owner_id)`, which nulls only the
-  /// nullable half. Do not "fix" this by relaxing the action; read the migration.
-  ownerId String? @map("owner_id") @db.Uuid
+  /// Both actions are `NoAction`, and deliberately. `SetNull` cannot succeed against a NOT NULL
+  /// column, so it would only ever raise about a constraint the reader was not looking at; `NoAction`
+  /// says the real rule — a user who owns an organization cannot be deleted, transfer first. `onUpdate`
+  /// is `NoAction` because the referenced key is an immutable uuid and a cascade would write both
+  /// columns of the pair, including the primary key. Do not "fix" either by relaxing it; read the
+  /// migration.
+  ownerId String @map("owner_id") @db.Uuid
 
-  owner User? @relation("OrganizationOwner", fields: [id, ownerId], references: [organizationId, id], onDelete: SetNull, map: "fk_organizations_owner_id")
+  owner User @relation("OrganizationOwner", fields: [id, ownerId], references: [organizationId, id], onDelete: NoAction, onUpdate: NoAction, map: "fk_organizations_owner_id")
 
   createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)

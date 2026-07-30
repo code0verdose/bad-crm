@@ -20,7 +20,7 @@ const row = (id: string): Organization => ({
   id,
   slug: 'acme',
   name: 'Acme',
-  ownerId: null,
+  ownerId: id,
   timezone: 'Europe/Berlin',
   defaultCurrency: 'EUR',
   settings: {},
@@ -35,18 +35,30 @@ interface Recorder {
   readonly base: Parameters<typeof withTenant>[0];
 }
 
-const recordingClient = (found: Organization | null = null): Recorder => {
+const recordingClient = (
+  found: Organization | null = null,
+  options: { writesNothing?: boolean } = {},
+): Recorder => {
   const createArgs: unknown[] = [];
   const findArgs: unknown[] = [];
 
   const tx = {
     $executeRaw: (): Promise<number> => Promise.resolve(1),
-    organization: {
-      create: (args: { data: { id: string } }): Promise<Organization> => {
-        createArgs.push(args);
+    // The tenant root is written with raw SQL — one statement for two rows, see the port — so the
+    // recorder captures the bound values rather than a Prisma `data` object.
+    $queryRaw: (
+      _template: TemplateStringsArray,
+      ...values: unknown[]
+    ): Promise<{ organization_id: string; owner_id: string }[]> => {
+      createArgs.push(values);
 
-        return Promise.resolve(row(args.data.id));
-      },
+      if (options.writesNothing === true) return Promise.resolve([]);
+
+      return Promise.resolve([
+        { organization_id: values[0] as string, owner_id: values[1] as string },
+      ]);
+    },
+    organization: {
       findFirst: (args: unknown): Promise<Organization | null> => {
         findArgs.push(args);
 
@@ -74,6 +86,13 @@ const draft = {
   defaultCurrency: 'EUR',
 };
 
+const owner = {
+  email: 'ada@example.com',
+  passwordHash: '$argon2id$digest',
+  locale: 'en',
+  timezone: 'Europe/Berlin',
+};
+
 describe('PrismaOrganizationRepository', () => {
   /**
    * The mechanism of the bootstrap path: the row's primary key is taken from the scope, so the only
@@ -84,27 +103,62 @@ describe('PrismaOrganizationRepository', () => {
     const client = recordingClient();
 
     const created = await withTenant(client.base, { organizationId: ORG, userId: null }, () =>
-      repository.create(draft),
+      repository.createWithOwner(draft, owner),
     );
 
-    expect(client.createArgs).toEqual([
-      {
-        data: {
-          id: ORG,
-          name: 'Acme',
-          slug: 'acme',
-          timezone: 'Europe/Berlin',
-          defaultCurrency: 'EUR',
-        },
-      },
+    // One statement, and the two ids appear in both halves of it. Asserted by position rather than as
+    // a flat list, because the property that matters is the *agreement*: the organization id is the
+    // one from the scope on both sides, and the owner id generated here is the same in the row that
+    // references it and in the row it points at. A statement that bound two different owner ids would
+    // insert a user nobody owns and an organization pointing at nobody, and the foreign key would
+    // report it as a puzzle about `organizations`.
+    expect(client.createArgs).toHaveLength(1);
+
+    const bound = client.createArgs[0] as unknown[];
+
+    expect(bound[0], 'organization id in the organizations half').toBe(ORG);
+    expect(bound[7], 'organization id in the users half').toBe(ORG);
+    expect(bound[1], 'owner id in the organizations half').toBe(bound[6]);
+    expect([bound[2], bound[3], bound[4], bound[5]]).toEqual([
+      'Acme',
+      'acme',
+      'Europe/Berlin',
+      'EUR',
     ]);
-    expect(created).toEqual({ id: ORG, ...draft });
+    expect([bound[8], bound[9], bound[10], bound[11]]).toEqual([
+      'ada@example.com',
+      '$argon2id$digest',
+      'en',
+      'Europe/Berlin',
+    ]);
+    expect(created.organizationId).toBe(ORG);
+    expect(created.ownerId).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/,
+    );
+  });
+
+  /**
+   * `INSERT … RETURNING` produces a row or raises, so an empty result is not a case the database can
+   * present — it would mean the write was dropped silently, which `WITH CHECK` does not do. Asserted
+   * because the caller's next step opens a session for the id this method returns: a `undefined` read
+   * as success would sign somebody into an organization that does not exist.
+   */
+  it('refuses an empty result rather than reporting an organization that was not written', async () => {
+    const client = recordingClient(null, { writesNothing: true });
+
+    await expect(
+      withTenant(client.base, { organizationId: ORG, userId: null }, () =>
+        repository.createWithOwner(draft, owner),
+      ),
+    ).rejects.toThrow(/wrote no row/);
   });
 
   it('refuses to create outside a tenant scope, before any statement is sent', async () => {
     const client = recordingClient();
 
-    await expect(repository.create(draft)).rejects.toBeInstanceOf(MissingTenantContextError);
+    await expect(repository.createWithOwner(draft, owner)).rejects.toBeInstanceOf(
+      MissingTenantContextError,
+    );
     expect(client.createArgs).toEqual([]);
   });
 

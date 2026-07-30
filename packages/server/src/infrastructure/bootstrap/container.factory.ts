@@ -44,7 +44,6 @@ import {
   detachedUnitOfWork,
 } from '@/infrastructure/persistence/prisma/detached-database.adapter.js';
 import { PrismaOrganizationRepository } from '@/infrastructure/persistence/prisma/organization.repository.js';
-import { PrismaOwnerRoleSeeder } from '@/infrastructure/persistence/prisma/owner-role-seeder.adapter.js';
 import { PrismaPasswordResetTokenRepository } from '@/infrastructure/persistence/prisma/password-reset-token.repository.js';
 import { PrismaSessionRepository } from '@/infrastructure/persistence/prisma/session.repository.js';
 import { PrismaUnitOfWork } from '@/infrastructure/persistence/prisma/unit-of-work.adapter.js';
@@ -314,13 +313,7 @@ const buildIdentity = (input: {
     input.idGenerator,
   );
 
-  const bootstrap = new BootstrapOrganizationUseCase(
-    unitOfWork,
-    organizations,
-    users,
-    new PrismaOwnerRoleSeeder(),
-    input.idGenerator,
-  );
+  const bootstrap = new BootstrapOrganizationUseCase(unitOfWork, organizations, input.idGenerator);
 
   const dependencies: IdentityDependencies = {
     register: new RegisterOrganizationUseCase(

@@ -112,6 +112,18 @@ const GENERIC_ERROR_CODE_STATUS = {
   vault_locked: 423,
   stale_version: 409,
   idempotency_key_reuse: 409,
+  /**
+   * The operation would leave the organization without an account nobody can take rights from.
+   *
+   * Two call sites, one condition: offboarding the owner (STORY-012-05) and removing the owner role
+   * from the last holder (STORY-011-04). The name is the one those stories already use — a second code
+   * for the same state would make the client translate the same sentence twice.
+   *
+   * A conflict rather than a denial: the caller may do this and the subject exists, so neither 403 nor
+   * 404 is true. The request cannot be satisfied in the current state, and one specific action changes
+   * it — transfer ownership first (`domain/identity/access/owner-offboarding.policy.ts`).
+   */
+  last_owner_required: 409,
   rate_limited: 429,
   /**
    * An optional subsystem is switched off in this installation, and the honest answer is "this

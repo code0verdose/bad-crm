@@ -1,10 +1,6 @@
-import { type RoleSeederPort } from '@/application/identity/ports/role-seeder.port.js';
-import {
-  type OwnerDraft,
-  type UserRepositoryPort,
-} from '@/application/identity/ports/user-repository.port.js';
 import {
   type OrganizationDraft,
+  type OrganizationOwnerDraft,
   type OrganizationRepositoryPort,
 } from '@/application/organization/ports/organization-repository.port.js';
 import { type IdGeneratorPort } from '@/application/platform/ports/id-generator.port.js';
@@ -12,7 +8,7 @@ import { type UnitOfWorkPort } from '@/application/platform/ports/unit-of-work.p
 
 export interface BootstrapOrganizationInput {
   readonly organization: OrganizationDraft;
-  readonly owner: OwnerDraft;
+  readonly owner: OrganizationOwnerDraft;
 }
 
 export interface BootstrapOrganizationResult {
@@ -33,8 +29,8 @@ export interface BootstrapOrganizationResult {
  * **How it is solved: the application generates the id first, and the scope is opened as that
  * organization.** The insert then satisfies the policy of `organizations`, which is
  * `WITH CHECK (id = current_setting('app.organization_id')::uuid)` — the row being written *is* the
- * tenant the connection already claims to be. Nothing else in the transaction needs special
- * treatment: from the second statement on, the organization exists and this is an ordinary scope.
+ * tenant the connection already claims to be. Nothing else needs special treatment: once that
+ * statement has run the organization exists, and this is an ordinary scope.
  *
  * **Why this path opens no hole.** The alternative — a `SECURITY DEFINER` function owned by
  * `app_auth`, which is what the login path uses — would create a second surface that bypasses RLS,
@@ -48,8 +44,11 @@ export interface BootstrapOrganizationResult {
  * ## Atomicity
  *
  * An organization without an owner is an installation nobody can administer; an owner without an
- * organization is a row no policy will ever show again. Both halves are written inside one
- * `withTenant`, and one transaction is what makes "neither, or both" true (STORY-005-06).
+ * organization is a row no policy will ever show again. Since the contract step of STORY-006-09 both
+ * rows are written by one **statement**, so "neither, or both" no longer rests on the transaction
+ * boundary alone — `organizations.owner_id` is NOT NULL, and the composite foreign key back to
+ * `users` is checked when that statement ends. The `withTenant` around it is still what pins the
+ * scope (STORY-005-06).
  *
  * ## What is deliberately not here
  *
@@ -61,8 +60,6 @@ export class BootstrapOrganizationUseCase {
   constructor(
     private readonly unitOfWork: UnitOfWorkPort,
     private readonly organizations: OrganizationRepositoryPort,
-    private readonly users: UserRepositoryPort,
-    private readonly roles: RoleSeederPort,
     private readonly ids: IdGeneratorPort,
   ) {}
 
@@ -73,16 +70,11 @@ export class BootstrapOrganizationUseCase {
     const organizationId = this.ids.uuid();
 
     return this.unitOfWork.withTenant({ organizationId, userId: null }, async () => {
-      // First, and not merely for tidiness: every later row carries `organization_id` and a
-      // composite foreign key back to this one. Foreign key checks run as the table owner and
-      // bypass RLS, so a child written before its parent would not be refused by a policy — it
-      // would be refused by the constraint, at the end of the transaction, with a message about
-      // the child.
-      await this.organizations.create(input.organization);
-
-      const ownerId = await this.users.createOwner(input.owner);
-
-      await this.roles.seedSystemRoles(ownerId);
+      // One call, because the two rows reference each other and `organizations.owner_id` is NOT NULL
+      // since the contract step. The repository writes both in a single statement; the ordering
+      // problem that used to live here — organization first, owner second, `owner_id` filled in by a
+      // third statement — is gone along with the nullable window it needed.
+      const { ownerId } = await this.organizations.createWithOwner(input.organization, input.owner);
 
       return { organizationId, ownerId };
     });

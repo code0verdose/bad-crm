@@ -31,10 +31,11 @@ const fakeBase = (): Parameters<typeof withTenant>[0] =>
       } as unknown as TxClient),
   }) as unknown as Parameters<typeof withTenant>[0];
 
-const prismaError = (code: string): Prisma.PrismaClientKnownRequestError =>
+const prismaError = (code: string, meta?: unknown): Prisma.PrismaClientKnownRequestError =>
   new Prisma.PrismaClientKnownRequestError(`prisma failed with ${code}`, {
     code,
     clientVersion: 'test',
+    ...(meta === undefined ? {} : { meta: meta as Record<string, unknown> }),
   });
 
 class TeamRepositoryProbe extends TenantScopedRepository {
@@ -94,6 +95,42 @@ describe('TenantScopedRepository', () => {
     expect(failure).toBeInstanceOf(ConflictError);
     expect((failure as ConflictError).code).toBe('team_already_exists');
     expect((failure as ConflictError).status).toBe(409);
+  });
+
+  /**
+   * The same collision through a raw statement, which is how the tenant root is written: one statement
+   * for two rows, because `organizations.owner_id` references a user that references it back.
+   *
+   * `$queryRaw` never yields `P2002`. Prisma reports `P2010` — "raw query failed" — and puts the
+   * PostgreSQL SQLSTATE in `meta.code`, so without this translation a duplicate slug would answer 500
+   * and tell the caller to retry something that can never succeed.
+   */
+  it('turns a raw unique violation into the same conflict', async () => {
+    const failure = await withTenant(fakeBase(), { organizationId: ORG_A, userId: null }, () =>
+      repository.failWith(prismaError('P2010', { code: '23505' })).catch((error: unknown) => error),
+    );
+
+    expect(failure).toBeInstanceOf(ConflictError);
+    expect((failure as ConflictError).code).toBe('team_already_exists');
+  });
+
+  /**
+   * And only that SQLSTATE. A raw statement that violates a foreign key or a check is a defect in this
+   * repository, not something a caller can act on: it stays a 500 with the code in the log. The last
+   * case is the shape guard — `meta` is typed `unknown`, and a Prisma upgrade that changes it must
+   * leave the error loud rather than throw inside the error handler.
+   */
+  it.each([
+    ['a different SQLSTATE', { code: '23503' }],
+    ['a meta with no code', { detail: 'something else' }],
+    ['a meta that is not an object', 'raw-string-meta'],
+    ['no meta at all', undefined],
+  ])('leaves a raw failure with %s untranslated', async (_case, meta) => {
+    const failure = await withTenant(fakeBase(), { organizationId: ORG_A, userId: null }, () =>
+      repository.failWith(prismaError('P2010', meta)).catch((error: unknown) => error),
+    );
+
+    expect(failure).toBeInstanceOf(Prisma.PrismaClientKnownRequestError);
   });
 
   it('turns a missing record into the not-found of its own resource', async () => {

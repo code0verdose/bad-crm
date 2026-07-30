@@ -27,6 +27,7 @@ import {
   asMaintenance,
   closePools,
   createPools,
+  insertOrganizationWithOwner,
   truncateAll,
   type HarnessPools,
 } from './db-harness.util.js';
@@ -189,10 +190,7 @@ const seed = async (): Promise<Fixture> => {
   const passwordHash = await new Argon2PasswordHasher(ARGON2).hash(PASSWORD);
 
   return asMaintenance(pools.owner, async (client) => {
-    await client.query(
-      `INSERT INTO organizations (id, slug, name, updated_at) VALUES ($1, $2, 'Bad Company', now())`,
-      [organizationId, `org-${organizationId.slice(0, 8)}`],
-    );
+    await insertOrganizationWithOwner(client, organizationId, { name: 'Bad Company' });
 
     const { rows } = await client.query<{ id: string }>(
       `INSERT INTO users (organization_id, email, password_hash, status, locale, timezone, updated_at)

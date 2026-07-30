@@ -214,12 +214,26 @@ describe.each(entries)('RLS · $table', ({ table, spec }) => {
    * would be invisible to a count-based assertion and would still hand a list endpoint the other
    * tenant's records.
    */
+  /**
+   * Membership rather than exact equality, and the difference is not a weakening.
+   *
+   * The assertion used to be `toEqual([idA])`, which held only while every fixture produced exactly one
+   * row per tenant. The organization factory now writes an owner beside the organization — it has to,
+   * since `organizations.owner_id` became NOT NULL — so `users` legitimately carries two rows for this
+   * tenant. Pinning the count would make this test fail on a fixture change instead of on a policy
+   * change.
+   *
+   * What the policy actually promises is asserted directly: the seeded row is visible, and the other
+   * tenant's row is not. `idB` is the positive control in the negative direction — a policy that
+   * returned everything would fail on it, and a connection with no rows at all would fail on `idA`.
+   */
   it('LIST: an unfiltered select returns no row of the other tenant', async () => {
     const ids = await asTenant(pools.app, ORG_A, async (client) =>
       (await client.query<{ id: string }>(`SELECT id FROM ${table}`)).rows.map((row) => row.id),
     );
 
-    expect(ids).toEqual([idA]);
+    expect(ids).toContain(idA);
+    expect(ids).not.toContain(idB);
   });
 
   it('COUNT: an aggregate counts the tenant’s rows and no others', async () => {

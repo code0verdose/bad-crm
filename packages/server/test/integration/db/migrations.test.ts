@@ -22,6 +22,7 @@ import {
   asMaintenance,
   closePools,
   createPools,
+  insertOrganizationWithOwner,
   reapplyGrants,
   truncateAll,
   type HarnessPools,
@@ -610,7 +611,7 @@ describe('grants', () => {
  * Both gaps are closed by STORY-006-09, and until then this test is what keeps the document honest.
  */
 describe('the owner of an organization', () => {
-  it('is a nullable column — the expand step, with the contract step still open', async () => {
+  it('is a mandatory column, held by the database and not by a use-case', async () => {
     const { rows } = await pools.owner.query<{ is_nullable: string; data_type: string }>(
       `SELECT is_nullable, data_type
          FROM information_schema.columns
@@ -618,7 +619,23 @@ describe('the owner of an organization', () => {
     );
 
     expect(rows[0]?.data_type).toBe('uuid');
-    expect(rows[0]?.is_nullable).toBe('YES');
+    expect(rows[0]?.is_nullable).toBe('NO');
+  });
+
+  /**
+   * The `CHECK` is kept after `SET NOT NULL` rather than dropped as redundant: it is the constraint
+   * whose `VALIDATE` names the table and the column when an installation has an organization with no
+   * owner, and it means a later `ALTER COLUMN … DROP NOT NULL` cannot quietly reopen the hole.
+   */
+  it('carries a validated check, not one that was never proven', async () => {
+    const { rows } = await pools.owner.query<{ convalidated: boolean; def: string }>(
+      `SELECT convalidated, pg_get_constraintdef(oid) AS def
+         FROM pg_constraint
+        WHERE conname = 'ck_organizations_owner_not_null'`,
+    );
+
+    expect(rows[0]?.convalidated).toBe(true);
+    expect(rows[0]?.def).toMatch(/owner_id IS NOT NULL/);
   });
 
   /**
@@ -627,14 +644,15 @@ describe('the owner of an organization', () => {
    * what stops an owner from another organization being named at all, since foreign key checks run
    * as the table owner and bypass row-level security (`rules/tenancy-rls.mdc`, 7).
    */
-  it('references (organization_id, id) of users and nulls only the nullable half', async () => {
+  it('references (organization_id, id) of users and refuses to lose its owner', async () => {
     const { rows } = await pools.owner.query<{
       confdeltype: string;
+      confupdtype: string;
       columns: string[];
       referenced: string[];
       delete_set_cols: string[] | null;
     }>(
-      `SELECT c.confdeltype,
+      `SELECT c.confdeltype, c.confupdtype,
               (SELECT array_agg(a.attname::text ORDER BY k.ord)
                  FROM unnest(c.conkey) WITH ORDINALITY AS k(attnum, ord)
                  JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = k.attnum) AS columns,
@@ -650,39 +668,33 @@ describe('the owner of an organization', () => {
 
     expect(rows[0]?.columns).toEqual(['id', 'owner_id']);
     expect(rows[0]?.referenced).toEqual(['organization_id', 'id']);
-    // 'n' — ON DELETE SET NULL.
-    expect(rows[0]?.confdeltype).toBe('n');
-    expect(rows[0]?.delete_set_cols).toEqual(['owner_id']);
+    // 'a' — NO ACTION on both sides. 'n' would be SET NULL, which NOT NULL makes unreachable: the
+    // action could only ever raise about a constraint the reader was not looking at.
+    expect(rows[0]?.confdeltype).toBe('a');
+    expect(rows[0]?.confupdtype).toBe('a');
+    expect(rows[0]?.delete_set_cols).toBeNull();
   });
 
   /**
-   * And the gap the schema cannot close, stated as a test so it cannot be forgotten: a softly
-   * deleted owner leaves the reference intact and the organization without a reachable one. This is
-   * a characterisation of today's behaviour — when STORY-006-09 forbids offboarding an owner without
-   * transferring ownership, this test is the one that has to change.
+   * The gap the schema cannot close, stated as a test so it cannot be forgotten.
+   *
+   * `owner_id` is NOT NULL and `ON DELETE NO ACTION` now, so a *hard* delete of the owner is refused by
+   * the database. A **soft** delete is not a delete: the row stays, the foreign key never fires, and
+   * the organization goes on pointing at an owner the application will never show again. No `CHECK` can
+   * see it either — a check cannot read another table.
+   *
+   * So this remains an application invariant, and it is the one
+   * `domain/identity/access/owner-offboarding.policy.ts` exists for. This test characterises what the
+   * schema does; the policy test characterises what the product refuses.
    */
-  it('keeps pointing at an owner who was softly deleted — an application invariant, not a schema one', async () => {
+  it('keeps pointing at an owner who was softly deleted — a policy invariant, not a schema one', async () => {
     const organizationId = randomUUID();
 
     const ownerId = await asMaintenance(pools.owner, async (client) => {
-      await client.query(
-        `INSERT INTO organizations (id, slug, name, updated_at) VALUES ($1, $2, 'Owner Co', now())`,
-        [organizationId, `owner-${organizationId.slice(0, 8)}`],
-      );
+      const { ownerId: id } = await insertOrganizationWithOwner(client, organizationId, {
+        name: 'Owner Co',
+      });
 
-      const { rows } = await client.query<{ id: string }>(
-        `INSERT INTO users (organization_id, email, password_hash, status, updated_at)
-           VALUES ($1, $2, 'placeholder-not-a-credential', 'ACTIVE', now())
-         RETURNING id`,
-        [organizationId, `owner-${organizationId.slice(0, 8)}@example.test`],
-      );
-
-      const id = rows[0]?.id ?? '';
-
-      await client.query('UPDATE organizations SET owner_id = $2 WHERE id = $1', [
-        organizationId,
-        id,
-      ]);
       await client.query('UPDATE users SET deleted_at = now() WHERE id = $1', [id]);
 
       return id;

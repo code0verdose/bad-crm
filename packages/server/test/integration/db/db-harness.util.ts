@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
@@ -126,6 +127,45 @@ export const asMaintenance = async <T>(
  * (rules/testing.mdc, 11). Runs as the owner: TRUNCATE is not subject to row-level security and is
  * granted to nobody else, on purpose — one statement would empty a table for every organization.
  */
+/**
+ * A tenant root and the owner it cannot exist without, in one statement.
+ *
+ * `organizations.owner_id` is NOT NULL and references a user of that same organization, while the user
+ * references the organization back, so neither insert can go first. Foreign keys are `AFTER ROW`
+ * triggers evaluated when the statement finishes, and by then both rows are there — which is exactly
+ * how `OrganizationRepositoryPort.createWithOwner` writes them in the product.
+ *
+ * Shared rather than repeated per suite: six fixtures used to write the organization alone, and each
+ * of them would otherwise have to learn this trick separately — and get it right separately.
+ */
+export const insertOrganizationWithOwner = async (
+  client: Pool | PoolClient,
+  organizationId: string,
+  options: { slug?: string; name?: string; ownerEmail?: string } = {},
+): Promise<{ ownerId: string }> => {
+  const ownerId = randomUUID();
+  const suffix = randomUUID().slice(0, 8);
+
+  await client.query(
+    `WITH created_organization AS (
+       INSERT INTO organizations (id, owner_id, slug, name, updated_at)
+       VALUES ($1::uuid, $2::uuid, $3, $4, now())
+       RETURNING id
+     )
+     INSERT INTO users (id, organization_id, email, password_hash, status, updated_at)
+     VALUES ($2::uuid, $1::uuid, $5, 'placeholder-not-a-credential', 'ACTIVE', now())`,
+    [
+      organizationId,
+      ownerId,
+      options.slug ?? `org-${organizationId.slice(0, 8)}-${suffix}`,
+      options.name ?? 'Acme',
+      options.ownerEmail ?? `owner-${ownerId.slice(0, 8)}@example.test`,
+    ],
+  );
+
+  return { ownerId };
+};
+
 export const truncateAll = async (owner: Pool): Promise<void> => {
   const tables = Object.keys(TENANT_TABLES)
     .map((table) => `public."${table}"`)

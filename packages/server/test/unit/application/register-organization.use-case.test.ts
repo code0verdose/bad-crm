@@ -34,7 +34,6 @@ interface Harness {
   readonly organizations: FakeOrganizations;
   readonly sessions: FakeSessions;
   readonly hasher: FakePasswordHasher;
-  readonly roles: { seeded: string[] };
   readonly rateLimit: FakeRateLimit;
   readonly journal: string[];
 }
@@ -51,19 +50,10 @@ const harness = (
   const hasher = new FakePasswordHasher(journal);
   const unitOfWork = new FakeUnitOfWork();
   const rateLimit = new FakeRateLimit({ ...rateLimitOptions, journal });
-  const roles = { seeded: [] as string[] };
 
   const bootstrap = new BootstrapOrganizationUseCase(
     unitOfWork,
     organizations,
-    users,
-    {
-      seedSystemRoles: (ownerUserId: string): Promise<void> => {
-        roles.seeded.push(ownerUserId);
-
-        return Promise.resolve();
-      },
-    },
     new FakeIdGenerator(),
   );
 
@@ -91,7 +81,6 @@ const harness = (
     organizations,
     sessions,
     hasher,
-    roles,
     rateLimit,
     journal,
   };
@@ -108,17 +97,16 @@ const refusal = async (run: () => Promise<unknown>): Promise<AppError> => {
 };
 
 describe('registering an organization', () => {
-  it('creates the organization, the owner and the system roles, and signs the owner in', async () => {
+  it('creates the organization and the owner, and signs the owner in', async () => {
     const test = harness();
 
     const result = await test.register.execute(REQUEST);
 
-    expect(test.users.createdOwner).toMatchObject({
+    expect(test.organizations.createdOwner).toMatchObject({
       email: 'ada@example.com',
       locale: 'en',
       timezone: 'UTC',
     });
-    expect(test.roles.seeded).toEqual([USER_ID]);
     expect(test.sessions.rows.size).toBe(1);
     expect(result.user).toEqual({
       id: USER_ID,
@@ -135,8 +123,12 @@ describe('registering an organization', () => {
 
     await test.register.execute(REQUEST);
 
-    expect(test.users.createdOwner?.passwordHash).toBe('$argon2id$hashed:correct-horse-battery');
-    expect(JSON.stringify(test.users.createdOwner)).not.toContain('"correct-horse-battery"');
+    expect(test.organizations.createdOwner?.passwordHash).toBe(
+      '$argon2id$hashed:correct-horse-battery',
+    );
+    expect(JSON.stringify(test.organizations.createdOwner)).not.toContain(
+      '"correct-horse-battery"',
+    );
   });
 
   it('takes the locale and timezone from the request when given', async () => {
@@ -147,7 +139,10 @@ describe('registering an organization', () => {
       owner: { ...REQUEST.owner, locale: 'ru', timezone: 'Europe/Berlin' },
     });
 
-    expect(test.users.createdOwner).toMatchObject({ locale: 'ru', timezone: 'Europe/Berlin' });
+    expect(test.organizations.createdOwner).toMatchObject({
+      locale: 'ru',
+      timezone: 'Europe/Berlin',
+    });
   });
 
   describe('when the installation does not accept new organizations', () => {
@@ -158,7 +153,7 @@ describe('registering an organization', () => {
 
       expect(error.code).toBe('registration_disabled');
       expect(error.status).toBe(403);
-      expect(test.users.createdOwner).toBeUndefined();
+      expect(test.organizations.createdOwner).toBeUndefined();
       expect(test.sessions.rows.size).toBe(0);
       expect(test.hasher.verified).toEqual([]);
     });
@@ -179,7 +174,7 @@ describe('registering an organization', () => {
         expect((error as ValidationError).issues).toEqual([
           { path: 'owner.password', code: 'custom', message: expect.any(String) },
         ]);
-        expect(test.users.createdOwner).toBeUndefined();
+        expect(test.organizations.createdOwner).toBeUndefined();
       },
     );
 
@@ -235,7 +230,7 @@ describe('registering an organization', () => {
       expect(error.status).toBe(429);
       expect((error as { retryAfterSeconds?: number }).retryAfterSeconds).toBe(3600);
       expect(test.hasher.hashed).toEqual([]);
-      expect(test.users.createdOwner).toBeUndefined();
+      expect(test.organizations.createdOwner).toBeUndefined();
     });
 
     /**
