@@ -1,3 +1,5 @@
+import i18next from 'i18next';
+import { initReactI18next } from 'react-i18next';
 import '@testing-library/jest-dom/vitest';
 
 import { cleanup } from '@testing-library/react';
@@ -51,3 +53,34 @@ vi.stubGlobal(
     disconnect = vi.fn();
   },
 );
+
+/**
+ * i18next in `cimode`, initialised once for the whole client suite.
+ *
+ * Every assertion in these tests names a key — `auth.login.title`, `common.retry` — and that is the
+ * right thing for them to name: a test that asserts «Sign in» fails when somebody improves the
+ * wording, which teaches the next reader to edit the assertion without reading it. `cimode` makes
+ * `t(key)` answer with the key, so the suite keeps asserting *which string* a component asks for and
+ * stays silent about what it says.
+ *
+ * The translations themselves are asserted where they are data:
+ * `test/i18n/catalogue-parity.test.ts` proves every used key exists in both languages, and
+ * `test/i18n/i18n-config.test.ts` proves the instance resolves a real one.
+ *
+ * Initialised globally rather than through a provider per test, because `useTranslation` falls back
+ * to the global instance — so an uninitialised one would leave every render depending on i18next's
+ * behaviour when it is not set up, which is a warning today and could be anything tomorrow.
+ */
+await i18next.use(initReactI18next).init({
+  lng: 'cimode',
+  // Without this, cimode answers with the key minus its namespace — `login.title` rather than
+  // `auth.login.title` — and every assertion in this suite names the full key.
+  appendNamespaceToCIMode: true,
+  fallbackLng: 'cimode',
+  ns: ['common', 'validation', 'errors', 'nav', 'auth', 'filter', 'pagination'],
+  defaultNS: 'common',
+  nsSeparator: '.',
+  keySeparator: '.',
+  resources: {},
+  interpolation: { escapeValue: false },
+});

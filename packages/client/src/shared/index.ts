@@ -6,6 +6,7 @@
  */
 export * as SharedApi from './api/index.js';
 export * as SharedConfig from './config/index.js';
+export * as SharedI18n from './i18n/index.js';
 export * as SharedHooks from './hooks/index.js';
 export * as SharedLib from './lib/index.js';
 export * as SharedUi from './ui/index.js';

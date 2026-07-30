@@ -1,3 +1,4 @@
+import i18next from 'i18next';
 import { render, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -61,7 +62,7 @@ const renderApplication = async () => {
   vi.resetModules();
   const { App } = await import('@app');
 
-  return within(render(<App />).container);
+  return within(render(<App i18n={i18next} />).container);
 };
 
 beforeEach(() => {

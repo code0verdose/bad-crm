@@ -1,0 +1,8 @@
+{
+  "email": { "invalid": "This is not an email address" },
+  "password": {
+    "mismatch": "The two passwords are different",
+    "required": "Enter a password",
+    "too_short": "Too short — at least 12 characters"
+  }
+}

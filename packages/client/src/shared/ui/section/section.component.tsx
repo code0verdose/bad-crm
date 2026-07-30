@@ -1,4 +1,5 @@
 import { Stack, Text, Title } from '@mantine/core';
+import { useTranslation } from 'react-i18next';
 import { useId, type ReactNode } from 'react';
 
 import classes from './section.module.css';
@@ -30,16 +31,17 @@ export interface SectionProps {
  * (`rules/design-system.mdc` §9).
  */
 export function Section({ titleKey, descriptionKey, children }: SectionProps) {
+  const { t } = useTranslation();
   const headingId = useId();
 
   return (
     <Stack aria-labelledby={headingId} className={classes['root']} component="section" gap="sm">
       <Title id={headingId} order={2} size="h3">
-        {titleKey}
+        {t(titleKey)}
       </Title>
       {descriptionKey !== undefined && (
         <Text c="var(--bc-text-muted)" size="sm">
-          {descriptionKey}
+          {t(descriptionKey)}
         </Text>
       )}
       {children}

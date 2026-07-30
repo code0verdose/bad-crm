@@ -3,6 +3,8 @@ import { render, type RenderResult } from '@testing-library/react';
 import { StrictMode } from 'react';
 import { vi } from 'vitest';
 
+import i18next from 'i18next';
+
 import { Providers } from '@app/providers.js';
 import { createAppRouter } from '@app/router.js';
 import { SharedApi, SharedUi } from '@shared';
@@ -50,7 +52,8 @@ export const renderApp = ({
     router,
     ...render(
       <StrictMode>
-        <Providers queryClient={queryClient}>
+        {/* The suite's cimode instance, so assertions keep naming keys rather than copy. */}
+        <Providers i18n={i18next} queryClient={queryClient}>
           <RouterProvider router={router} />
         </Providers>
       </StrictMode>,

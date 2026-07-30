@@ -38,7 +38,9 @@ describe('FilterBar', () => {
     const onRemove = vi.fn();
     wrap(<SharedUi.FilterBar active={FILTERS} onRemove={onRemove} onReset={vi.fn()} />);
 
-    await user.click(screen.getByRole('button', { name: 'filter.remove.status' }));
+    // One static key with the filter's name interpolated in — ADR-0019 forbids composing a key at
+    // runtime, so every chip's remove button shares this name and the chips are told apart by order.
+    await user.click(screen.getAllByRole('button', { name: 'filter.remove' })[0] as HTMLElement);
 
     expect(onRemove).toHaveBeenCalledWith('status');
   });
@@ -76,7 +78,7 @@ describe('FilterBar', () => {
     const onRemove = vi.fn();
     wrap(<SharedUi.FilterBar active={FILTERS} onRemove={onRemove} onReset={vi.fn()} />);
 
-    screen.getByRole('button', { name: 'filter.remove.status' }).focus();
+    (screen.getAllByRole('button', { name: 'filter.remove' })[0] as HTMLElement).focus();
     await user.keyboard('{Enter}');
 
     expect(onRemove).toHaveBeenCalledWith('status');

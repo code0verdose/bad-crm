@@ -1,8 +1,12 @@
+import { spawnSync } from 'node:child_process';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import { describe, expect, it } from 'vitest';
 
 import { PACKAGE_DIRS, readJson, readRepoFile } from './repo-fixture.util.js';
+
+const REPO_ROOT = fileURLToPath(new URL('../..', import.meta.url));
 
 interface PackageJson {
   engines?: Record<string, string>;
@@ -105,5 +109,45 @@ describe('Node version floor', () => {
     const [major, minor, patch] = floorOf(engineRange());
 
     expect(nvmrc).toBe(`${major}.${minor}.${patch}`);
+  });
+});
+
+/**
+ * Every scope the project declares can actually be written in a commit message.
+ *
+ * `commitlint.config.js` used to carry `scope-case: kebab-case` beside an exhaustive `scope-enum`,
+ * and the two disagreed: `kebab-case` rejects digits, so `i18n` and `a11y` — declared scopes, named
+ * by rules and by epics — failed every time somebody tried to use them. The failure said
+ * «scope must be kebab-case» about a scope the same file lists as allowed, which is the kind of
+ * message that gets worked around with a different scope rather than reported.
+ *
+ * Asserted by running the linter rather than by reading the config, because the config is where the
+ * contradiction lived.
+ */
+describe('the commit scopes', () => {
+  /**
+   * The two that were unusable, and two that were fine, run through the real linter as a subprocess.
+   *
+   * A subset rather than all forty: the defect was a *class* — a case rule that rejects digits beside
+   * an enum that contains them — and `i18n` and `a11y` are the only declared scopes with a digit in
+   * them. The two ordinary ones are the positive control: without them a linter that refused
+   * everything would pass this test.
+   */
+  it.each(['i18n', 'a11y', 'auth', 'client'])('accepts %s', (scope) => {
+    // Over stdin rather than through a temp file: `test/repo` may not touch `node:fs` directly —
+    // every read here goes through `readRepoFile` so the turbo-inputs audit can see it — and a
+    // message written to disk would need exactly that. The linter reads stdin as its documented
+    // input, so this is the real binary with the real configuration either way.
+    const message = `feat(${scope}): subject`;
+    const result = spawnSync('npx', ['--no-install', 'commitlint'], {
+      cwd: REPO_ROOT,
+      input: `${message}\n`,
+      encoding: 'utf8',
+    });
+
+    expect(
+      result.status,
+      `\`${message}\` is refused by the project's own commitlint:\n${result.stdout}`,
+    ).toBe(0);
   });
 });

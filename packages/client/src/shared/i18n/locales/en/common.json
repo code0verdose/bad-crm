@@ -1,0 +1,15 @@
+{
+  "loading": "Loading…",
+  "retry": "Try again",
+  "appearance": {
+    "colorScheme": {
+      "auto": "Match system",
+      "dark": "Dark",
+      "light": "Light"
+    },
+    "density": {
+      "comfortable": "Comfortable",
+      "compact": "Compact"
+    }
+  }
+}

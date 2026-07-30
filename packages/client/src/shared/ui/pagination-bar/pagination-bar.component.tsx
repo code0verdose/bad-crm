@@ -1,4 +1,5 @@
 import { Group, Pagination, Text } from '@mantine/core';
+import { useTranslation } from 'react-i18next';
 
 import classes from './pagination-bar.module.css';
 
@@ -10,6 +11,18 @@ export interface PaginationBarProps {
   readonly total: number;
   readonly onPageChange: (page: number) => void;
 }
+
+/**
+ * Written out rather than composed from the control name. ADR-0019 forbids assembling a key at
+ * runtime: `pagination.${control}` cannot be found by reading the source, and the parity gate would
+ * report four translated keys as zero used ones.
+ */
+const CONTROL_KEYS = {
+  first: 'pagination.first',
+  previous: 'pagination.previous',
+  next: 'pagination.next',
+  last: 'pagination.last',
+} as const;
 
 /** `26–50 / 137`, and `0 / 0` when nothing matched — never a range that promises rows that are not there. */
 const describeRange = (page: number, perPage: number, total: number): string => {
@@ -35,6 +48,7 @@ const describeRange = (page: number, perPage: number, total: number): string => 
  * numbers it is given and reports what was clicked.
  */
 export function PaginationBar({ page, perPage, total, onPageChange }: PaginationBarProps) {
+  const { t } = useTranslation();
   const pages = Math.ceil(total / perPage);
 
   return (
@@ -50,7 +64,7 @@ export function PaginationBar({ page, perPage, total, onPageChange }: Pagination
           // «button, button, button, button». axe reports it as `button-name`, and it was reporting
           // it about this component until these were added — the keys are resolved by EPIC-008 like
           // every other string a component takes.
-          getControlProps={(control) => ({ 'aria-label': `pagination.${control}` })}
+          getControlProps={(control) => ({ 'aria-label': t(CONTROL_KEYS[control]) })}
           onChange={onPageChange}
           size="sm"
           total={pages}

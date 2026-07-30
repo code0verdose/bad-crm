@@ -24,7 +24,7 @@ export type SessionStatus = (typeof SESSION_STATUSES)[number];
  * without someone noticing that it has no label.
  */
 export const SESSION_STATUS_LABEL_KEY: Record<SessionStatus, string> = {
-  unknown: 'session.status.unknown',
-  anonymous: 'session.status.anonymous',
-  authenticated: 'session.status.authenticated',
+  unknown: 'auth.session.status.unknown',
+  anonymous: 'auth.session.status.anonymous',
+  authenticated: 'auth.session.status.authenticated',
 };

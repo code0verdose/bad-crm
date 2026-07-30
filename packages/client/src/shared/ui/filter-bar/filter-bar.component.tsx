@@ -1,4 +1,5 @@
 import { Button, Group, Pill, Text } from '@mantine/core';
+import { useTranslation } from 'react-i18next';
 
 import classes from './filter-bar.module.css';
 
@@ -31,6 +32,8 @@ export interface FilterBarProps {
  * and never by label: a label is a translated string, and matching on it would break in Russian.
  */
 export function FilterBar({ active, onRemove, onReset }: FilterBarProps) {
+  const { t } = useTranslation();
+
   if (active.length === 0) return null;
 
   return (
@@ -54,16 +57,20 @@ export function FilterBar({ active, onRemove, onReset }: FilterBarProps) {
           // does not catch it either: an `aria-hidden` button is not a button it examines.
           removeButtonProps={{
             'aria-hidden': false,
-            'aria-label': `filter.remove.${filter.id}`,
+            // Interpolation, not a composed key. ADR-0019 forbids building a key at runtime,
+            // and the reason is this component: a key assembled from `filter.id` cannot be found by
+            // reading the source, so the parity gate cannot tell whether it is translated — the one
+            // check that stands between the product and a half-Russian interface.
+            'aria-label': t('filter.remove', { name: t(filter.labelKey) }),
             tabIndex: 0,
           }}
           withRemoveButton
         >
-          {filter.labelKey}
+          {t(filter.labelKey)}
         </Pill>
       ))}
       <Button onClick={onReset} size="compact-sm" variant="subtle">
-        filter.reset
+        {t('filter.reset')}
       </Button>
     </Group>
   );

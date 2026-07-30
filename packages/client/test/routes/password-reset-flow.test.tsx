@@ -1,3 +1,4 @@
+import i18next from 'i18next';
 import { render, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import axe from 'axe-core';
@@ -101,7 +102,7 @@ const startApplicationAt = async (
 
   // Scoped to the tree this case mounted: every case mounts a whole application, and a
   // document-wide query would also see what the previous one left behind.
-  const { container } = render(<App />);
+  const { container } = render(<App i18n={i18next} />);
   const screen = within(container);
   await screen.findByRole('heading', { level: 1 });
 

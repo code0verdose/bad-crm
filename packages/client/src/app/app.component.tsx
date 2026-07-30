@@ -1,4 +1,5 @@
 import { RouterProvider } from '@tanstack/react-router';
+import { type i18n as I18n } from 'i18next';
 
 import { AppLoading } from '@app/ui';
 import { AuthService } from '@units/auth';
@@ -26,11 +27,20 @@ import { router } from './router.js';
  * every render. Keeping all of this out of `main.tsx` is what lets a test render the whole
  * application without a DOM entry point.
  */
-export function App() {
+export interface AppProps {
+  /**
+   * The translation instance, passed through to `Providers`. Optional and normally absent — the
+   * composition root builds one. The seam exists for the suite, which runs i18next in `cimode` so a
+   * test asserts *which* key a screen asks for rather than what it currently says.
+   */
+  readonly i18n?: I18n;
+}
+
+export function App({ i18n }: AppProps = {}) {
   const session = AuthService.useBootstrapSession();
 
   return (
-    <Providers queryClient={appQueryClient}>
+    <Providers queryClient={appQueryClient} {...(i18n === undefined ? {} : { i18n })}>
       {session.status === 'unknown' ? <AppLoading /> : <RouterProvider router={router} />}
     </Providers>
   );

@@ -115,7 +115,14 @@ export default {
       ],
     ],
     'scope-enum': [2, 'always', SCOPES],
-    'scope-case': [2, 'always', 'kebab-case'],
+
+    // `scope-case` is deliberately absent, and its absence is the fix for a contradiction rather
+    // than a relaxation. commitlint's `kebab-case` rejects digits, so `i18n` and `a11y` — both
+    // declared in SCOPES above, both named by rules and epics — could never be written: every commit
+    // touching translations or accessibility failed on a rule the enum said nothing about.
+    //
+    // With a closed `scope-enum` the case rule adds nothing anyway: a scope is either one of the
+    // listed strings or it is refused, and the listed strings are how they are spelled.
     'subject-case': [2, 'always', 'lower-case'],
     'subject-empty': [2, 'never'],
     'subject-full-stop': [2, 'never', '.'],

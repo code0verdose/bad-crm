@@ -55,7 +55,14 @@ describe('the entry point', () => {
     await import('@app/main.js');
 
     // `createRoot(...).render(...)` schedules the first paint, so the assertion waits for the tree.
-    expect(await screen.findByRole('heading', { level: 1 })).toHaveTextContent('nav.dashboard');
+    //
+    // English text, and this is the one file in the suite that asserts it. Everywhere else the tests
+    // run i18next in `cimode` and name keys, because a test that asserts «Dashboard» fails when
+    // somebody improves the wording. Here the subject *is* the real entry point — the one path with
+    // no seam to inject a test instance through — so the translation being wired at all is part of
+    // what this case proves. It is also why the string is the shortest one in the product: the less
+    // copy an assertion carries, the less often it is edited without being read.
+    expect(await screen.findByRole('heading', { level: 1 })).toHaveTextContent('Dashboard');
     expect(screen.getByRole('main')).toBeInTheDocument();
     expect(screen.getByRole('banner')).toBeInTheDocument();
   });

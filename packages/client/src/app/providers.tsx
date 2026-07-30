@@ -2,6 +2,10 @@ import { MantineProvider } from '@mantine/core';
 import { Notifications } from '@mantine/notifications';
 import { QueryClientProvider, type QueryClient } from '@tanstack/react-query';
 import { useMemo, type ReactNode } from 'react';
+import { I18nextProvider } from 'react-i18next';
+import { type i18n as I18n } from 'i18next';
+
+import { createI18n } from '@shared/i18n';
 
 import { QueryDevtools } from './query-devtools.component.js';
 import { appTheme } from './theme/app-theme.config.js';
@@ -22,11 +26,18 @@ const NOTIFICATIONS_LIMIT = 3;
 export interface ProvidersProps {
   /** Built by the composition root, so a test can pass a cache of its own. */
   readonly queryClient: QueryClient;
+  /**
+   * The translation instance, for the same reason and with the same shape as `queryClient`: the
+   * suite runs i18next in `cimode`, where `t(key)` answers with the key, so a component test asserts
+   * *which* string a screen asks for rather than what it currently says. Without the seam this
+   * provider would build an English instance and override that.
+   */
+  readonly i18n?: I18n;
   readonly children: ReactNode;
 }
 
 /**
- * The provider tree: theme, notifications, query cache. Nothing else belongs here.
+ * The provider tree: theme, notifications, translations, query cache. Nothing else belongs here.
  *
  * `defaultColorScheme="auto"` is the product default (`rules/design-system.mdc` §4): a first visit
  * follows `prefers-color-scheme`, and an explicit choice is remembered by Mantine in
@@ -43,11 +54,14 @@ export interface ProvidersProps {
  * in anything but a dev-server build — see that module for why the check has to be on a constant
  * rather than on a flag.
  */
-export function Providers({ queryClient, children }: ProvidersProps) {
+export function Providers({ queryClient, i18n: injected, children }: ProvidersProps) {
   // Read once per mount, and only passed when there is something to pass: `getStyleNonce` must
   // return a string, and returning `''` would write `nonce=""` — an attribute that matches no
   // policy and blocks the element it was meant to allow.
   const nonce = useMemo(() => styleNonce(), []);
+  // One instance per mount of the tree, not per render: `createInstance` builds state, and a new one
+  // on every render would reset the language the moment anything above re-rendered.
+  const i18n = useMemo(() => injected ?? createI18n(), [injected]);
 
   return (
     <MantineProvider
@@ -56,10 +70,12 @@ export function Providers({ queryClient, children }: ProvidersProps) {
       {...(nonce === undefined ? {} : { getStyleNonce: () => nonce })}
     >
       <Notifications limit={NOTIFICATIONS_LIMIT} position={NOTIFICATIONS_POSITION} />
-      <QueryClientProvider client={queryClient}>
-        {children}
-        {QueryDevtools === null ? null : <QueryDevtools />}
-      </QueryClientProvider>
+      <I18nextProvider i18n={i18n}>
+        <QueryClientProvider client={queryClient}>
+          {children}
+          {QueryDevtools === null ? null : <QueryDevtools />}
+        </QueryClientProvider>
+      </I18nextProvider>
     </MantineProvider>
   );
 }

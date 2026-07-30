@@ -1,0 +1,15 @@
+{
+  "loading": "Загрузка…",
+  "retry": "Повторить",
+  "appearance": {
+    "colorScheme": {
+      "auto": "Как в системе",
+      "dark": "Тёмная",
+      "light": "Светлая"
+    },
+    "density": {
+      "comfortable": "Свободная",
+      "compact": "Плотная"
+    }
+  }
+}

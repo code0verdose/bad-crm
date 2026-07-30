@@ -19,28 +19,28 @@ const renderWithProviders = (ui: ReactNode) =>
 
 describe('Section', () => {
   it('gives its heading level two, under the page title and above nothing', () => {
-    renderWithProviders(<SharedUi.Section titleKey="section.members" />);
+    renderWithProviders(<SharedUi.Section titleKey="common.loading" />);
 
-    expect(screen.getByRole('heading', { level: 2 })).toHaveTextContent('section.members');
+    expect(screen.getByRole('heading', { level: 2 })).toHaveTextContent('common.loading');
   });
 
   it('labels the region with its own heading, so it is reachable as a landmark', () => {
-    renderWithProviders(<SharedUi.Section titleKey="section.members" />);
+    renderWithProviders(<SharedUi.Section titleKey="common.loading" />);
 
-    const region = screen.getByRole('region', { name: 'section.members' });
+    const region = screen.getByRole('region', { name: 'common.loading' });
 
     expect(within(region).getByRole('heading', { level: 2 })).toBeInTheDocument();
   });
 
   it('renders its content inside the region it labels', () => {
     renderWithProviders(
-      <SharedUi.Section titleKey="section.members">
+      <SharedUi.Section titleKey="common.loading">
         <p>the roster</p>
       </SharedUi.Section>,
     );
 
     expect(
-      within(screen.getByRole('region', { name: 'section.members' })).getByText('the roster'),
+      within(screen.getByRole('region', { name: 'common.loading' })).getByText('the roster'),
     ).toBeInTheDocument();
   });
 
@@ -50,23 +50,23 @@ describe('Section', () => {
    */
   it('places an optional description after the heading and before the content', () => {
     renderWithProviders(
-      <SharedUi.Section titleKey="section.members" descriptionKey="section.members.hint">
+      <SharedUi.Section titleKey="common.loading" descriptionKey="common.retry">
         <p>the roster</p>
       </SharedUi.Section>,
     );
 
-    const region = screen.getByRole('region', { name: 'section.members' });
+    const region = screen.getByRole('region', { name: 'common.loading' });
     const text = region.textContent ?? '';
 
-    expect(text.indexOf('section.members.hint')).toBeGreaterThan(text.indexOf('section.members'));
-    expect(text.indexOf('the roster')).toBeGreaterThan(text.indexOf('section.members.hint'));
+    expect(text.indexOf('common.retry')).toBeGreaterThan(text.indexOf('common.loading'));
+    expect(text.indexOf('the roster')).toBeGreaterThan(text.indexOf('common.retry'));
   });
 
   it('omits the description element entirely when there is none', () => {
-    renderWithProviders(<SharedUi.Section titleKey="section.members" />);
+    renderWithProviders(<SharedUi.Section titleKey="common.loading" />);
 
-    expect(screen.getByRole('region', { name: 'section.members' }).textContent).toBe(
-      'section.members',
+    expect(screen.getByRole('region', { name: 'common.loading' }).textContent).toBe(
+      'common.loading',
     );
   });
 
@@ -78,14 +78,14 @@ describe('Section', () => {
   it('keeps sections as siblings when a page has several', () => {
     renderWithProviders(
       <>
-        <SharedUi.Section titleKey="section.members" />
-        <SharedUi.Section titleKey="section.billing" />
+        <SharedUi.Section titleKey="common.loading" />
+        <SharedUi.Section titleKey="common.retry" />
       </>,
     );
 
     expect(screen.getAllByRole('heading', { level: 2 }).map((node) => node.textContent)).toEqual([
-      'section.members',
-      'section.billing',
+      'common.loading',
+      'common.retry',
     ]);
     expect(screen.queryByRole('heading', { level: 3 })).not.toBeInTheDocument();
   });

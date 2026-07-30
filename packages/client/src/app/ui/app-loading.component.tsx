@@ -5,7 +5,7 @@ import { SharedUi } from '@shared';
 import classes from './app-loading.module.css';
 
 /** What the region says while it waits. A key, never a sentence (`rules/i18n.mdc` §1). */
-const LOADING_MESSAGE_KEY = 'app.loading';
+const LOADING_MESSAGE_KEY = 'common.loading';
 
 /**
  * The one screen shown before the client knows who it is.

@@ -1,3 +1,4 @@
+import i18next from 'i18next';
 import { render, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -134,7 +135,7 @@ const startApplication = async (requests: string[]): Promise<StartedApplication>
 
   // Scoped to the tree this case mounted rather than to `document.body`: each case mounts a whole
   // application, and a document-wide query would also see whatever the previous one left behind.
-  const app = within(render(<App />).container);
+  const app = within(render(<App i18n={i18next} />).container);
   await app.findByRole('heading', { level: 1 });
 
   return { app, authSession: AuthService.authSession, apiClient: SharedApi.apiClient };
