@@ -1,7 +1,7 @@
 ---
 id: STORY-006-09
 epic: EPIC-006
-status: backlog
+status: review
 blocked: false
 priority: should
 estimate: S
@@ -54,18 +54,32 @@ estimate: S
 
 ## Задачи
 
-- [ ] Тесты первыми: интеграционный на порядок `NOT VALID` → `VALIDATE` → `SET NOT NULL` и на отказ
-      валидации при `owner_id IS NULL`; unit на политику офбординга владельца; интеграционный на
-      передачу владения одной транзакцией.
-- [ ] Миграция contract-шага отдельным релизом (не раньше, чем expand будет в выпущенной версии).
-- [ ] Политика в `domain/identity/access/`: офбординг владельца запрещён без передачи владения.
-- [ ] Use-case передачи владения + запись в `AuditLog` в той же транзакции.
-- [ ] Строка в `docs/runbooks/upgrade.md` §7 и в `CHANGELOG.md`; отметка в
-      `docs/architecture/data-model.md` («Про `Organization.ownerId`») о закрытии открытого пункта.
+- [x] Тесты первыми: интеграционные на `NOT NULL`, на валидированный `CHECK` и на оба действия ключа
+      (`migrations.test.ts`); «либо обе строки, либо ни одной» (`organization-bootstrap.test.ts`); unit
+      на политику офбординга владельца (`owner-offboarding.test.ts`).
+- [x] Миграция contract-шага `20260730120000_organization_owner_not_null` — вместе с переводом обоих
+      действий FK в `NO ACTION`.
+- [x] Циклический ключ разорван одним оператором: `OrganizationRepositoryPort.createWithOwner` пишет
+      обе строки в одном `WITH … INSERT`. `DEFERRABLE` отвергнут повторно — он дал бы **любой**
+      транзакции право ссылаться на несуществующую строку.
+- [x] Политика в `domain/identity/access/owner-offboarding.policy.ts` + код ошибки
+      `last_owner_required` (409) в каталоге и в контракте — имя, которое уже используют
+      STORY-011-04 и STORY-012-05.
+- [x] `docs/runbooks/upgrade.md` §7 (что делать, если `VALIDATE` упал), `CHANGELOG.md`,
+      `docs/architecture/data-model.md` — оба открытых пункта закрыты.
+
+**Передача владения — [STORY-012-06](../../epic-012-employee-management/stories/story-012-06-transfer-ownership.md)**, которая уже существует,
+и это пере-раскрой по факту, а не отсрочка. Здесь она была недостижима с двух сторон: записи в
+`AuditLog` в той же транзакции требовать нельзя — таблицы нет, она в EPIC-016, а порт в EPIC-009; и
+endpoint передачи требует слоя проверки прав из EPIC-011. Ровно та половина, которая принадлежит
+EPIC-006 — запрет остаться без владельца — сделана здесь и проверена тестом. Сама передача
+принадлежит офбордингу: это операция, которая ему предшествует, и жить ей естественно там, где будет и
+аудит, и права.
 
 ## Definition of Done
 
 - Красный тест предшествовал каждой правке; commit-гейт зелёный целиком.
-- `docs/architecture/data-model.md` больше не содержит открытого пункта про contract-шаг.
+- `docs/architecture/data-model.md` больше не содержит открытых пунктов про `Organization.ownerId` —
+  ни про contract-шаг, ни про действие `ON UPDATE`.
 - `pnpm turbo run typecheck lint build test` и `pnpm test:integration` зелёные.
 - Запись в журнале знаний (`docs/brain/`).

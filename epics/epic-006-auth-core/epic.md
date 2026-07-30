@@ -1,7 +1,7 @@
 ---
 id: EPIC-006
 title: Ядро аутентификации
-status: in-progress
+status: review
 blocked: false
 milestone: M1
 owner: unassigned
