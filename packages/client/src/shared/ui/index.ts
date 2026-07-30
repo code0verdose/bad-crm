@@ -9,6 +9,10 @@
  */
 export * from './centered-screen/index.js';
 export * from './data-state/index.js';
+export * from './filter-bar/index.js';
 export * from './page-header/index.js';
+export * from './pagination-bar/index.js';
+export * from './section/index.js';
 export * from './skeletons/index.js';
+export * from './split-pane/index.js';
 export * from './toaster/index.js';

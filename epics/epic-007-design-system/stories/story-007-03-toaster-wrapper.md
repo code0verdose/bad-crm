@@ -1,11 +1,16 @@
 ---
 id: STORY-007-03
 epic: EPIC-007
-status: backlog
+status: review
 blocked: false
 priority: must
 estimate: S
 ---
+
+**Закрыта фактически в EPIC-006.** `shared/ui/toaster` — обёртка над `@mantine/notifications` со
+стабильными идентификаторами и дедупликацией; правило «один сигнал на действие» держится глобальным
+обработчиком и покрыто тестами потока сброса пароля. Проверено сверкой 2026-07-30.
+
 
 # STORY-007-03 — Обёртка тостера над @mantine/notifications
 

@@ -899,6 +899,20 @@ export default tseslint.config(
       'react/no-danger': 'error',
       'react/forbid-dom-props': ['error', { forbid: ['style'] }],
       'react/forbid-component-props': ['error', { forbid: ['style'] }],
+
+      // A `button` carrying `role="separator"` is the WAI-ARIA window splitter, and the rule's table
+      // does not model it. ARIA classifies `separator` as a **widget** role when the separator is
+      // focusable — which a resizable one has to be, or it exists only for people who drag. The
+      // alternatives are worse in both directions: a `div` with `tabIndex` and key handlers trips
+      // `no-noninteractive-element-interactions` and `no-noninteractive-tabindex`, and it trips them
+      // fairly, because then nothing but the attribute says the element is operable.
+      //
+      // Scoped to that one pairing rather than switched off: every other interactive element given a
+      // static role is still an error.
+      'jsx-a11y/no-interactive-element-to-noninteractive-role': [
+        'error',
+        { button: ['separator'] },
+      ],
     },
   },
 

@@ -1,11 +1,16 @@
 ---
 id: STORY-007-02
 epic: EPIC-007
-status: backlog
+status: review
 blocked: false
 priority: must
 estimate: M
 ---
+
+**Закрыта фактически в EPIC-004 и EPIC-006.** `shared/ui` содержит `data-state` (с `EmptyState` и
+`ErrorState`), `skeletons`, `page-header`, `centered-screen`; поведение «ошибка списка инлайн, ошибка
+действия тостом» заложено глобальным `MutationCache.onError`. Проверено сверкой 2026-07-30.
+
 
 # STORY-007-02 — DataState, скелетоны, EmptyState, PageHeader
 

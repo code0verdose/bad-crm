@@ -1,0 +1,4 @@
+/* Spacing only; the chips and the button carry the theme themselves. */
+.root {
+  padding-block: var(--mantine-spacing-xs);
+}

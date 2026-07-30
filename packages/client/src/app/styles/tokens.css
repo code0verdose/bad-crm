@@ -69,6 +69,12 @@
      number is a ring that disappears on one control and not the others. */
   --bc-focus-ring-width: 2px;
   --bc-focus-ring-offset: 2px;
+
+  /* The line a resizable divider draws. Its *hit area* is deliberately not this number: a 4-pixel
+     target is one nobody catches with a mouse and nobody at all catches on a touch screen, so the
+     element is spacing-wide and the line is drawn inside it. Declared here because «how thick is a
+     divider» is one decision for the product, not one per component. */
+  --bc-divider-thickness: 4px;
 }
 
 [data-bc-density='compact'] {

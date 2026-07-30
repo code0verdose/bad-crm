@@ -1,0 +1,11 @@
+/*
+ * Spacing only. The heading is `h2` structurally and sized `h3` visually by the component, so this
+ * file has no say over type — one place decides, and it is the token scale.
+ */
+.root {
+  margin-block-end: var(--mantine-spacing-xl);
+}
+
+.root:last-child {
+  margin-block-end: 0;
+}

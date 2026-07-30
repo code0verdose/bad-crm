@@ -1,7 +1,7 @@
 ---
 id: EPIC-007
 title: Дизайн-система
-status: backlog
+status: in-progress
 blocked: false
 milestone: M1
 owner: unassigned

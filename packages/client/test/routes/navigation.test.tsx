@@ -1,4 +1,5 @@
 import { screen, waitFor } from '@testing-library/react';
+import axe from 'axe-core';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it } from 'vitest';
 
@@ -179,5 +180,33 @@ describe('the route announcer', () => {
     await waitFor(() => {
       expect(document.activeElement).toBe(screen.getByRole('heading', { level: 1 }));
     });
+  });
+});
+
+/**
+ * The two screens EPIC-007 names by hand, audited by axe rather than by reading.
+ *
+ * The recovery screens already carry this assertion; sign-in and the authenticated shell did not, and
+ * they are the two an installation shows first and shows always. A rule that runs on one flow and not
+ * on the surface everybody sees is a rule that reports success about the wrong thing.
+ *
+ * `color-contrast` is switched off here and only here, because jsdom paints nothing: axe would read
+ * every colour as `rgba(0,0,0,0)` and answer about the renderer rather than about the design. Contrast
+ * is asserted where the values actually are — `test/theme/tokens.test.ts` walks the token pairs in both
+ * schemes and fails below 4.5:1 — so the property is covered, by the tool that can see it.
+ */
+describe('accessibility of the screens an installation always shows', () => {
+  it.each([
+    ['the sign-in screen', '/login', 'anonymous'],
+    ['the authenticated shell', '/dashboard', 'authenticated'],
+  ] as const)('has no axe violation on %s', async (_case, path, status) => {
+    const { container } = renderApp({ path, status });
+    await screen.findByRole('heading', { level: 1 });
+
+    const { violations } = await axe.run(container, {
+      rules: { 'color-contrast': { enabled: false } },
+    });
+
+    expect(violations.map((violation) => violation.id)).toEqual([]);
   });
 });

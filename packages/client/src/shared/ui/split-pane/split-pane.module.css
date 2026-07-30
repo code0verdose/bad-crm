@@ -1,0 +1,39 @@
+/*
+ * The width lives in a custom property the component sets, so the layout is one declaration and the
+ * value is the same number `aria-valuenow` reports. Colours and spacing come from tokens; there are
+ * no literal pixels here except the divider's own hit area, which is a physical target size rather
+ * than a spacing decision.
+ */
+.root {
+  display: grid;
+  grid-template-columns: var(--bc-split-size) auto 1fr;
+  min-inline-size: 0;
+}
+
+.panel {
+  /* Without this a grid child refuses to shrink below its content and the page scrolls sideways. */
+  min-inline-size: 0;
+  overflow: hidden;
+}
+
+.divider {
+  /* Wider than the line it draws: the visible divider is `--bc-divider-thickness`, the area a
+     pointer has to hit is a spacing step. A four-pixel target is one nobody catches with a mouse and
+     nobody at all catches on a touch screen. */
+  background-color: transparent;
+  border-inline-start: var(--bc-divider-thickness) solid var(--bc-border);
+  cursor: col-resize;
+  inline-size: var(--mantine-spacing-sm);
+  touch-action: none;
+}
+
+.divider:focus-visible {
+  outline: var(--bc-focus-ring);
+  outline-offset: var(--bc-focus-ring-offset);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .divider {
+    transition: background-color var(--bc-motion-fast);
+  }
+}

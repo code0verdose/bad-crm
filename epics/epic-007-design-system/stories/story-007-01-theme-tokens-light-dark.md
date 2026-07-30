@@ -1,11 +1,19 @@
 ---
 id: STORY-007-01
 epic: EPIC-007
-status: backlog
+status: review
 blocked: false
 priority: must
 estimate: M
 ---
+
+**Закрыта фактически в EPIC-004 и доведена в EPIC-006.** Токены `--bc-*` объявлены в
+`app/styles/tokens.css` для обеих схем, контраст проверяется автоматически по парам токенов
+(`test/theme/tokens.test.ts`, оба режима), `prefers-reduced-motion` схлопывает обе длительности и это
+утверждается тестом, литеральные значения падают на stylelint (`color-no-hex`, `color-named`,
+`declaration-property-value-disallowed-list`). Проверено сверкой с критериями приёмки эпика
+2026-07-30, а не по памяти.
+
 
 # STORY-007-01 — Токены темы и светлая/тёмная схемы
 

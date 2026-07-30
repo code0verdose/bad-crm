@@ -1,0 +1,4 @@
+/* Spacing only: the pager and the count are Mantine components carrying the theme already. */
+.root {
+  padding-block: var(--mantine-spacing-sm);
+}
