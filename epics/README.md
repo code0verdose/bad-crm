@@ -10,8 +10,8 @@
 | EPIC-004 | Каркас клиента на FSD | 🔵 review | M1 | 0/7 |
 | EPIC-005 | Мультиарендность и Row Level Security | 🔵 review | M1 | 0/6 |
 | EPIC-006 | Ядро аутентификации | 🔵 review | M1 | 0/9 |
-| EPIC-007 | Дизайн-система | 🟡 in-progress | M1 | 0/6 |
-| EPIC-008 | Двуязычность EN/RU | ⚫ backlog | M1 | 0/5 |
+| EPIC-007 | Дизайн-система | 🔵 review | M1 | 0/5 |
+| EPIC-008 | Двуязычность EN/RU | ⚫ backlog | M1 | 0/6 |
 | EPIC-009 | Наблюдаемость | ⚫ backlog | M1 | 0/6 |
 | EPIC-010 | E2E-харнесс | ⚫ backlog | M1 | 0/6 |
 | EPIC-011 | Роли, права и ACL | ⚫ backlog | M2 | 0/11 |
