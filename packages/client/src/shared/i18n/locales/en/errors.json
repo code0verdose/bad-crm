@@ -1,4 +1,9 @@
 {
+  "app": {
+    "description": "This screen could not be shown. Reloading usually helps; if it does not, give an administrator the reference below.",
+    "reload": "Reload the page",
+    "title": "Something broke badly"
+  },
   "code": {
     "account_suspended": "This account is suspended. Ask an administrator of your organization.",
     "board_already_exists": "That board already exists.",

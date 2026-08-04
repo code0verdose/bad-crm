@@ -1,10 +1,14 @@
 import { RouterProvider } from '@tanstack/react-router';
 import { type i18n as I18n } from 'i18next';
+import { useEffect } from 'react';
 
 import { AppLoading } from '@app/ui';
 import { AuthService } from '@units/auth';
 
+import { AppErrorBoundary } from './ui/app-error-boundary.component.js';
 import { appQueryClient } from './app-query-client.constant.js';
+import { installGlobalErrorListeners } from './global-error-listeners.util.js';
+import { reportClientError } from './report-client-error.util.js';
 import { Providers } from './providers.js';
 import { router } from './router.js';
 
@@ -39,9 +43,16 @@ export interface AppProps {
 export function App({ i18n }: AppProps = {}) {
   const session = AuthService.useBootstrapSession();
 
+  // A rejected promise nobody awaited never reaches a boundary — React does not see it — so the
+  // listener is installed for the life of the tree. A legitimate effect: a subscription to
+  // something outside React, with its own teardown (`rules/frontend-fsd.mdc`, anti-`useEffect`).
+  useEffect(() => installGlobalErrorListeners({ report: reportClientError }), []);
+
   return (
     <Providers queryClient={appQueryClient} {...(i18n === undefined ? {} : { i18n })}>
-      {session.status === 'unknown' ? <AppLoading /> : <RouterProvider router={router} />}
+      <AppErrorBoundary report={reportClientError}>
+        {session.status === 'unknown' ? <AppLoading /> : <RouterProvider router={router} />}
+      </AppErrorBoundary>
     </Providers>
   );
 }
