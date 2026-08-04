@@ -378,11 +378,25 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      # The template is the source of truth for what an installation needs; the run uses it as is,
+      # The template is the source of truth for what an installation needs; the run starts from it,
       # so a variable added to the schema and forgotten in the template fails here rather than on
       # somebody's first install.
+      #
+      # The placeholders are then filled the way `docs/runbooks/install.md` §2.2 tells a person to
+      # fill them — `openssl rand`, one value per `CHANGE_ME`. That keeps the runbook honest: if the
+      # documented commands stop producing a configuration the schema accepts, this job is where it
+      # shows, and the first person to install is not the one who finds out.
       - name: Configure the installation from the template
-        run: cp .env.example .env
+        run: |
+          cp .env.example .env
+          sed -i "s|^APP_ENCRYPTION_KEY=.*|APP_ENCRYPTION_KEY=$(openssl rand -base64 32)|" .env
+          sed -i "s|^JWT_SECRET=.*|JWT_SECRET=$(openssl rand -base64 48)|" .env
+          for name in POSTGRES_PASSWORD APP_MIGRATOR_PASSWORD APP_USER_PASSWORD \
+                      APP_AUTH_PASSWORD BACKUP_ROLE_PASSWORD MINIO_ROOT_USER \
+                      MINIO_ROOT_PASSWORD MEILI_MASTER_KEY; do
+            sed -i "s|^$name=.*|$name=$(openssl rand -hex 24)|" .env
+          done
+          ! grep -q CHANGE_ME .env
 
       # Before the database steps: the seed runs application code, so its dependencies have to
       # exist as built output first.
