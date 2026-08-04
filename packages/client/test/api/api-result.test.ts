@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest';
 
-import { ApiError, errorMessageKey, isAbortError, unwrapApiResult } from '@shared/api';
+import {
+  ApiError,
+  apiErrorOf,
+  errorMessage,
+  errorMessageKey,
+  isAbortError,
+  unwrapApiResult,
+} from '@shared/api';
 
 /**
  * `openapi-fetch` never throws on a 4xx or a 5xx: it returns `{ error, response }` and leaves the
@@ -71,7 +78,7 @@ describe('choosing the message a user sees', () => {
   it('selects the i18n key by the stable code, never by the server text', () => {
     const error = new ApiError({ code: 'task_not_found', status: 404, requestId: 'r', issues: [] });
 
-    expect(errorMessageKey(error)).toBe('errors.task_not_found');
+    expect(errorMessageKey(error)).toBe('errors.code.task_not_found');
   });
 
   /**
@@ -81,7 +88,48 @@ describe('choosing the message a user sees', () => {
    */
   it('falls back to the internal-error key for anything that is not an API error', () => {
     expect(errorMessageKey(new TypeError('undefined is not a function'))).toBe(
-      'errors.internal_error',
+      'errors.code.internal_error',
     );
+  });
+});
+
+/**
+ * The one message that carries a value, and the reason it is interpolated rather than glued.
+ *
+ * «Try again in 30 s» and «Повторите через 30 с» put the number in different places and spell the
+ * unit differently; a string assembled from pieces in the source can only be right in the language
+ * it was assembled for. The wait itself is not invented here — `Retry-After` is part of the 429
+ * response in `docs/api/openapi.yaml`.
+ */
+describe('a message that carries a value', () => {
+  const rateLimited = (headers: Record<string, string>): ApiError =>
+    apiErrorOf(
+      { code: 'rate_limited', requestId: 'r' },
+      new Response(null, { status: 429, headers }),
+    );
+
+  it('passes the wait from Retry-After to the sentence', () => {
+    expect(errorMessage(rateLimited({ 'retry-after': '30' }))).toEqual({
+      key: 'errors.code.rate_limited',
+      values: { seconds: 30 },
+    });
+  });
+
+  it.each([
+    ['an HTTP-date, which this server never sends', 'Wed, 21 Oct 2026 07:28:00 GMT'],
+    ['a negative delay', '-5'],
+    ['rubbish', 'soon'],
+  ])('shows the sentence without a wait when the header is %s', (_case, header) => {
+    // `Number('soon')` is `NaN`, and a message reading «try again in NaN s» is worse than one that
+    // does not say when — so anything that is not a finite, non-negative number counts as absent.
+    expect(errorMessage(rateLimited({ 'retry-after': header }))).toEqual({
+      key: 'errors.code.rate_limited',
+    });
+  });
+
+  it('CONTROL: says nothing about a wait for a code that has none', () => {
+    const error = new ApiError({ code: 'task_forbidden', status: 403, requestId: 'r', issues: [] });
+
+    expect(errorMessage(error)).toEqual({ key: 'errors.code.task_forbidden' });
   });
 });

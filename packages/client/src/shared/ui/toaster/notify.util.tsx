@@ -2,6 +2,8 @@ import { notifications } from '@mantine/notifications';
 
 import { type NotificationPort, type NotificationRequest } from '@shared/lib';
 
+import { ToastMessage } from './toast-message.component.js';
+
 /**
  * The one wrapper over `@mantine/notifications` (`rules/errors-and-toasts.mdc` §1).
  *
@@ -9,11 +11,8 @@ import { type NotificationPort, type NotificationRequest } from '@shared/lib';
  * instead of in every call site.
  *
  * 1. **A signal carries a key, never a sentence.** The catalogue is `errors.json`/`common.json` in
- *    both languages and the text is chosen at render time (`rules/i18n.mdc` §1). Until i18next
- *    lands (EPIC-008) the key *is* the message, exactly as `SessionStatusBadge` renders its label
- *    key — a visible `errors.conflict` is a key nobody can forget to translate. The substitution is
- *    mechanical: `message: request.messageKey` becomes `message: t(request.messageKey)`, here and
- *    nowhere else.
+ *    both languages and the text is chosen at render time (`rules/i18n.mdc` §1) — by
+ *    `ToastMessage`, which is a component because that is where the i18n context is (EPIC-008).
  * 2. **One id, one toast.** A repeat updates the toast that is already on screen instead of
  *    appending a twin (§6). This is what keeps a retrying mutation from building a pile.
  * 3. **Failure is assertive, everything else is polite** (`rules/a11y.mdc` §13): a screen reader
@@ -49,11 +48,11 @@ const STYLES: Record<ToastKind, ToastStyle> = {
   loading: { loading: true, autoClose: false, role: 'status' },
 };
 
-const emit = (kind: ToastKind, { id, messageKey }: NotificationRequest): void => {
+const emit = (kind: ToastKind, { id, messageKey, values }: NotificationRequest): void => {
   const style = STYLES[kind];
   const payload = {
     id,
-    message: messageKey,
+    message: <ToastMessage messageKey={messageKey} {...(values === undefined ? {} : { values })} />,
     // Spread rather than `color: style.color`: a loading toast has no colour of its own, and
     // `color: undefined` is not the same as «no colour» under `exactOptionalPropertyTypes`.
     ...(style.color === undefined ? {} : { color: style.color }),

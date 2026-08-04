@@ -17,6 +17,8 @@ export interface ApiErrorInit {
   readonly requestId: string;
   /** Per-field issues of a `validation_failed`; empty for every other code. */
   readonly issues: readonly SharedErrors.ValidationIssue[];
+  /** Seconds left on a `rate_limited` counter, from `Retry-After`; absent for every other code. */
+  readonly retryAfterSeconds?: number;
 }
 
 export class ApiError extends Error {
@@ -24,6 +26,7 @@ export class ApiError extends Error {
   readonly status: number;
   readonly requestId: string;
   readonly issues: readonly SharedErrors.ValidationIssue[];
+  readonly retryAfterSeconds?: number;
 
   constructor(init: ApiErrorInit) {
     // Deliberately not the server `detail`: this string reaches logs and failing tests, and a
@@ -35,6 +38,7 @@ export class ApiError extends Error {
     this.status = init.status;
     this.requestId = init.requestId;
     this.issues = init.issues;
+    if (init.retryAfterSeconds !== undefined) this.retryAfterSeconds = init.retryAfterSeconds;
   }
 }
 
@@ -77,13 +81,33 @@ const asProblemDocument = (body: unknown): ProblemDocument | undefined => {
  * The status always comes from the response rather than from the body: the two are supposed to
  * agree, and when they do not, the one the browser acted on is the truthful one.
  */
+/**
+ * `Retry-After` as a number of seconds, or nothing.
+ *
+ * RFC 9110 allows an HTTP-date here as well as a delay; this server always sends the delay
+ * (`error-handler.middleware.ts`), and a date would parse to `NaN` — which must not reach a message
+ * as «try again in NaN s». Anything that is not a finite, non-negative number is treated as absent,
+ * and the sentence without a wait is shown instead.
+ */
+const retryAfterOf = (response: Response): number | undefined => {
+  const header = response.headers.get('retry-after');
+
+  if (header === null) return undefined;
+
+  const seconds = Number(header);
+
+  return Number.isFinite(seconds) && seconds >= 0 ? seconds : undefined;
+};
+
 export const apiErrorOf = (body: unknown, response: Response): ApiError => {
   const problem = asProblemDocument(body);
+  const retryAfterSeconds = retryAfterOf(response);
 
   return new ApiError({
     code: problem?.code ?? 'internal_error',
     status: response.status,
     requestId: problem?.requestId ?? response.headers.get('x-request-id') ?? '',
     issues: problem?.errors ?? [],
+    ...(retryAfterSeconds === undefined ? {} : { retryAfterSeconds }),
   });
 };

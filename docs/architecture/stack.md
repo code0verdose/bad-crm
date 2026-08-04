@@ -440,7 +440,7 @@ docs/api/openapi.yaml   ←── source of truth, правится руками
 }
 ```
 
-Каталог кодов ведётся в `packages/shared/src/errors/codes.ts` и обязан совпадать с `enum` в
+Каталог кодов ведётся в `packages/shared/src/errors/error-code.enums.ts` и обязан совпадать с `enum` в
 спеке — это проверяет тот же контрактный тест. Правила соответствия:
 
 | Ситуация | HTTP | `code` |

@@ -69,8 +69,11 @@ export function Providers({ queryClient, i18n: injected, children }: ProvidersPr
       theme={appTheme}
       {...(nonce === undefined ? {} : { getStyleNonce: () => nonce })}
     >
-      <Notifications limit={NOTIFICATIONS_LIMIT} position={NOTIFICATIONS_POSITION} />
       <I18nextProvider i18n={i18n}>
+        {/* Inside the i18n context, not above it: a toast renders a sentence from the catalogue, and
+            a `Notifications` mounted outside would resolve its keys against whatever global
+            instance happened to exist rather than against the one this tree was given. */}
+        <Notifications limit={NOTIFICATIONS_LIMIT} position={NOTIFICATIONS_POSITION} />
         <QueryClientProvider client={queryClient}>
           {children}
           {QueryDevtools === null ? null : <QueryDevtools />}

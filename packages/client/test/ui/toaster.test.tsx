@@ -2,6 +2,8 @@ import { MantineProvider } from '@mantine/core';
 import { Notifications } from '@mantine/notifications';
 import { render, screen, waitFor } from '@testing-library/react';
 import { type ReactNode } from 'react';
+import { I18nextProvider, initReactI18next } from 'react-i18next';
+import i18next, { type i18n as I18n } from 'i18next';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { SharedUi } from '@shared';
@@ -81,15 +83,19 @@ describe('notify', () => {
   it('turns a loading toast into its outcome under the same id', async () => {
     render(<Host />);
 
-    SharedUi.notify.loading({ id: 'import', messageKey: 'files.import.running' });
-    expect(await screen.findByText('files.import.running')).toBeInTheDocument();
+    // Keys from a namespace this application actually loads. The invented `files.*` pair that used
+    // to be here round-tripped only while the toaster rendered the key string verbatim; now that it
+    // translates, an unknown namespace comes back shortened and the assertion would be about
+    // i18next's fallback rather than about the toast being replaced.
+    SharedUi.notify.loading({ id: 'import', messageKey: 'common.loading' });
+    expect(await screen.findByText('common.loading')).toBeInTheDocument();
 
-    SharedUi.notify.success({ id: 'import', messageKey: 'files.import.done' });
+    SharedUi.notify.success({ id: 'import', messageKey: 'common.retry' });
 
     await waitFor(() => {
-      expect(screen.queryByText('files.import.running')).not.toBeInTheDocument();
+      expect(screen.queryByText('common.loading')).not.toBeInTheDocument();
     });
-    expect(screen.getByText('files.import.done')).toBeInTheDocument();
+    expect(screen.getByText('common.retry')).toBeInTheDocument();
   });
 
   it('dismisses a toast on request', async () => {
@@ -113,5 +119,73 @@ describe('notify', () => {
   it('satisfies the notification port the data layer expects', () => {
     expect(typeof SharedUi.notify.error).toBe('function');
     expect(typeof SharedUi.notify.success).toBe('function');
+  });
+});
+
+/**
+ * A toast says a sentence, and the sentence comes from the catalogue.
+ *
+ * Asserted against a **real** instance rather than the suite's `cimode` one, and that is the whole
+ * point of the file: in `cimode` a translated key and an untranslated key look identical, so a
+ * toaster that forgot to translate at all would pass every other test in this repository. The wait
+ * in a rate-limit message is interpolated for the same reason it is not concatenated — English puts
+ * the number before the unit and Russian after, and a sentence glued in the source can only be
+ * right in one of them.
+ */
+describe('what a toast actually says', () => {
+  const translating = async (): Promise<I18n> => {
+    const instance = i18next.createInstance();
+
+    await instance.use(initReactI18next).init({
+      lng: 'en',
+      // The same separators and namespace list the application uses, or `errors.code.rate_limited`
+      // splits into a namespace this instance never loaded and answers with the key — which is what
+      // a toaster that failed to translate would also do, making the test unable to tell them apart.
+      ns: ['errors'],
+      defaultNS: 'errors',
+      nsSeparator: '.',
+      keySeparator: '.',
+      resources: {
+        en: {
+          errors: { code: { rate_limited: 'Too many attempts. Try again in {{seconds}} s.' } },
+        },
+      },
+      interpolation: { escapeValue: false },
+    });
+
+    return instance;
+  };
+
+  it('renders the catalogue sentence, not the key', async () => {
+    render(
+      <MantineProvider env="test">
+        <I18nextProvider i18n={await translating()}>
+          <Notifications />
+        </I18nextProvider>
+      </MantineProvider>,
+    );
+
+    SharedUi.notify.error({ id: 'rate', messageKey: 'errors.code.rate_limited' });
+
+    expect(await screen.findByText(/Too many attempts/)).toBeInTheDocument();
+    expect(screen.queryByText('errors.code.rate_limited')).not.toBeInTheDocument();
+  });
+
+  it('puts an interpolated value where the sentence wants it', async () => {
+    render(
+      <MantineProvider env="test">
+        <I18nextProvider i18n={await translating()}>
+          <Notifications />
+        </I18nextProvider>
+      </MantineProvider>,
+    );
+
+    SharedUi.notify.error({
+      id: 'rate',
+      messageKey: 'errors.code.rate_limited',
+      values: { seconds: 30 },
+    });
+
+    expect(await screen.findByText('Too many attempts. Try again in 30 s.')).toBeInTheDocument();
   });
 });

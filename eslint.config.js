@@ -827,7 +827,7 @@ export default tseslint.config(
      * Declared after the `shared` block so that it wins, and re-declared rather than switched off:
      * `'off'` here would lift every other import ban in the directory that owns the toaster.
      */
-    files: ['packages/client/src/shared/ui/toaster/**/*.ts'],
+    files: ['packages/client/src/shared/ui/toaster/**/*.{ts,tsx}'],
     rules: {
       'no-restricted-imports': [
         'error',

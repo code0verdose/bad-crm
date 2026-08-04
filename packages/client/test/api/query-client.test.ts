@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
   ApiError,
+  apiErrorOf,
   createAppQueryClient,
   QUERY_RETRY_COUNT,
   QUERY_STALE_TIME_MS,
@@ -125,7 +126,9 @@ describe('the single source of mutation errors', () => {
     await runMutation(makeClient(), { fail: apiError(409) });
 
     expect(notify.error).toHaveBeenCalledTimes(1);
-    expect(notify.error.mock.calls[0]?.[0]).toMatchObject({ messageKey: 'errors.internal_error' });
+    expect(notify.error.mock.calls[0]?.[0]).toMatchObject({
+      messageKey: 'errors.code.internal_error',
+    });
   });
 
   it('gives the notification a stable id, so a repeated failure updates instead of stacking', async () => {
@@ -209,8 +212,41 @@ describe('the placeholder notifier', () => {
    */
   it('accepts every notification a query client can produce, and shows none', () => {
     expect(() => {
-      SharedLib.silentNotifications.error({ id: 'x', messageKey: 'errors.internal_error' });
+      SharedLib.silentNotifications.error({ id: 'x', messageKey: 'errors.code.internal_error' });
       SharedLib.silentNotifications.success({ id: 'x', messageKey: 'ok' });
     }).not.toThrow();
+  });
+});
+
+/**
+ * A message that carries a value has to reach the toast with the value.
+ *
+ * The sink is the only place a mutation failure becomes a signal, so a `values` dropped here is
+ * dropped everywhere — and the symptom is a sentence with a visible `{{seconds}}` in it, which no
+ * other test in this suite would notice.
+ */
+describe('a failure that carries a value', () => {
+  const rateLimited = () =>
+    apiErrorOf(
+      { code: 'rate_limited', requestId: 'r' },
+      new Response(null, { status: 429, headers: { 'retry-after': '42' } }),
+    );
+
+  it('hands the interpolated value to the toaster', async () => {
+    const client = makeClient();
+
+    const mutation = client.getMutationCache().build<void, Error, void, unknown>(client, {
+      mutationFn: () => Promise.reject(rateLimited()),
+      retry: false,
+    });
+    await mutation.execute().catch(() => undefined);
+
+    expect(notify.error).toHaveBeenCalledWith({
+      // Keyed by the code and not by the finished sentence: two rate limits a minute apart differ
+      // only in the seconds left, and an id carrying the number would stack them.
+      id: 'mutation-error:errors.code.rate_limited',
+      messageKey: 'errors.code.rate_limited',
+      values: { seconds: 42 },
+    });
   });
 });

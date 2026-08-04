@@ -175,10 +175,6 @@ const PENDING: Readonly<Record<string, string>> = {
     'Pluralisation lands with the first countable string. EPIC-008 has the catalogues and the ' +
     'instance (STORY-008-01) and no plural yet — 26 keys, none of them counted — so the suite would ' +
     'assert `one/few/many` about nothing.',
-  'i18n.mdc · file · test/i18n/error-codes.spec.ts':
-    'STORY-008-03 maps the 76 codes of `packages/shared/src/errors/error-code.enums.ts` onto ' +
-    '`errors.json`; today that namespace carries one entry, and the parity gate ' +
-    '(`test/i18n/catalogue-parity.test.ts`) is what holds it.',
 
   'i18n.mdc · eslint-rule · i18next/no-literal-string':
     '`eslint-plugin-i18next` is not a dependency and the application is single-language until ' +

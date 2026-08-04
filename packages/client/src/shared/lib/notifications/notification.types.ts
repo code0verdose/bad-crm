@@ -18,6 +18,12 @@ export interface NotificationRequest {
   readonly id: string;
   /** i18n key, resolved by the presentation layer. Never a message. */
   readonly messageKey: string;
+  /**
+   * What the sentence interpolates, when it has a placeholder — the wait in a rate-limit message,
+   * today. Values rather than a finished string: the number sits in a different place in each
+   * language, so anything glued here is right in one of them at most.
+   */
+  readonly values?: Readonly<Record<string, string | number>>;
 }
 
 export interface NotificationPort {

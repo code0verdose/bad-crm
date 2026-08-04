@@ -3,7 +3,7 @@ import { MutationCache, QueryCache, QueryClient } from '@tanstack/react-query';
 import { type NotificationPort } from '@shared/lib';
 
 import { isAbortError } from './abort.util.js';
-import { errorMessageKey } from './error-message-key.util.js';
+import { errorMessage } from './error-message-key.util.js';
 import { isApiError } from './problem.errors.js';
 
 /** `rules/tanstack-query.mdc` §1. A per-query deviation carries a comment; there is no other. */
@@ -85,11 +85,17 @@ export const createAppQueryClient = ({ notify, logError }: AppQueryClientDeps): 
 
         if (mutation.options.onError !== undefined) return;
 
-        const messageKey = errorMessageKey(error);
+        const { key: messageKey, values } = errorMessage(error);
 
         // The id carries the key, so repeats of the same failure update one toast while two
-        // different failures stay visible side by side (`rules/errors-and-toasts.mdc` §6).
-        notify.error({ id: `${MUTATION_ERROR_NOTIFICATION_ID}:${messageKey}`, messageKey });
+        // different failures stay visible side by side (`rules/errors-and-toasts.mdc` §6). The key
+        // rather than the whole message: two rate limits a minute apart differ only in the seconds
+        // left, and giving each its own id would stack the same sentence twice.
+        notify.error({
+          id: `${MUTATION_ERROR_NOTIFICATION_ID}:${messageKey}`,
+          messageKey,
+          ...(values === undefined ? {} : { values }),
+        });
       },
     }),
   });

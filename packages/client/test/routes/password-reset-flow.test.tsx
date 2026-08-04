@@ -4,6 +4,8 @@ import userEvent from '@testing-library/user-event';
 import axe from 'axe-core';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { setCimodeLanguage } from '../support/test-language.util.js';
+
 /**
  * Recovering an account, through the real route tree: the screen that asks for a link and the screen
  * the link leads to.
@@ -141,6 +143,7 @@ const setNewPassword = async (
 beforeEach(() => {
   vi.resetModules();
   localStorage.clear();
+  setCimodeLanguage();
   answer = () => new Response(null, { status: 202 });
 });
 
@@ -211,7 +214,7 @@ describe('asking for a reset link', () => {
 
     await askForALink(user, screen, EMAIL);
 
-    expect(await toasts().findByText('errors.mail_not_configured')).toBeInTheDocument();
+    expect(await toasts().findByText('errors.code.mail_not_configured')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'auth.forgotPassword.submit' })).toBeInTheDocument();
     expect(screen.queryByText('auth.forgotPassword.sent')).not.toBeInTheDocument();
   });
@@ -305,7 +308,9 @@ describe('spending a reset link', () => {
 
     await setNewPassword(user, screen, NEW_PASSWORD);
 
-    expect(await toasts().findByText('errors.password_reset_token_invalid')).toBeInTheDocument();
+    expect(
+      await toasts().findByText('errors.code.password_reset_token_invalid'),
+    ).toBeInTheDocument();
     expect(
       screen.getByRole('link', { name: 'auth.resetPassword.requestNewLink' }),
     ).toBeInTheDocument();

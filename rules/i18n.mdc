@@ -36,7 +36,10 @@ alwaysApply: true
    `one/other`. Ноль обрабатывается отдельным ключом там, где «0 задач» звучит плохо
    («Нет задач»).
 9. **Сервер отдаёт код, клиент выбирает текст.** В `application/problem+json` пользовательского
-   текста нет: `code` из `packages/shared/src/errors/codes.ts` → ключ в `errors.json`. `title` и
+   текста нет: `code` из `packages/shared/src/errors/error-code.enums.ts` → ключ в `errors.json`. Ключ
+   берётся из **выписанной** карты `ERROR_MESSAGE_KEY` (и `VALIDATION_ISSUE_MESSAGE_KEY` для
+   `errors[]`), а не собирается как `errors.${code}`: собранный ключ не виден гейту паритета, а
+   `Record<ErrorCode, string>` делает новый код на сервере ошибкой компиляции на клиенте. `title` и
    `detail` — для логов и разработчика. Серверные строки не локализуются и не показываются как есть.
 10. **Даты, числа, валюты — только `Intl.*`** (`DateTimeFormat`, `NumberFormat`,
     `RelativeTimeFormat`) с текущей локалью; обёртки в `shared/lib/format`. Ручные шаблоны
@@ -111,7 +114,7 @@ export const TASK_STATUS_LABEL = { todo: 'К выполнению', done: 'Го�
 | CI-шаг `pnpm i18n:check` (сверка деревьев ключей `en` ↔ `ru`) | ключ, существующий только в одном языке |
 | CI-шаг `pnpm i18n:unused` | ключи-сироты и ключи, собранные конкатенацией (не находятся статически) |
 | `test/i18n/plural.spec.ts` для RU и EN | отсутствие форм `few`/`many` |
-| `test/i18n/error-codes.spec.ts` | код ошибки из `codes.ts` без ключа в `errors.json` |
+| `test/i18n/error-codes-parity.test.ts` | код ошибки (или код проблемы поля) без ключа в `errors.json` любого из языков |
 | ESLint `no-restricted-syntax` на `toLocaleDateString`/`toLocaleString` вне `shared/lib/format` | форматирование мимо обёрток |
 | e2e Playwright с `locale: 'ru-RU'` по ключевым экранам + скриншот-диффы | переполнение и обрезку при длинном русском тексте |
 | `vitest-axe` | непереведённые `aria-label` (пустая метка) |
