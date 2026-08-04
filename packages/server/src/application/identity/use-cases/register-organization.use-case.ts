@@ -1,3 +1,4 @@
+import { type AuditLoggerPort } from '@/application/platform/ports/audit-logger.port.js';
 import { type PasswordHasherPort } from '@/application/identity/ports/password-hasher.port.js';
 import {
   type IssuedSession,
@@ -75,6 +76,7 @@ export class RegisterOrganizationUseCase {
      */
     private readonly registrationOpen: boolean,
     private readonly rateLimit: RateLimitPort,
+    private readonly audit: AuditLoggerPort,
   ) {}
 
   async execute(input: RegisterOrganizationInput): Promise<RegisterOrganizationResult> {
@@ -129,13 +131,34 @@ export class RegisterOrganizationUseCase {
       },
     });
 
-    const session = await this.unitOfWork.withTenant({ organizationId, userId: ownerId }, () =>
-      this.issueSession.execute({
-        userId: ownerId,
-        // A brand-new account: the version the column defaults to.
-        permissionsVersion: 1,
-        client: input.client,
-      }),
+    const session = await this.unitOfWork.withTenant(
+      { organizationId, userId: ownerId },
+      async () => {
+        const issued = await this.issueSession.execute({
+          userId: ownerId,
+          // A brand-new account: the version the column defaults to.
+          permissionsVersion: 1,
+          client: input.client,
+        });
+
+        // Inside the transaction, like every other privileged action: an organization created with
+        // no record of who created it is the one row an operator can least afford to find
+        // unexplained. The slug goes in `after`, the password does not — «after» carries what
+        // changed, never a credential.
+        await this.audit.record({
+          action: 'organization.registered',
+          actor: {
+            userId: ownerId,
+            organizationId,
+            ipAddress: input.client.ipAddress,
+          },
+          target: { type: 'organization', id: organizationId },
+          after: { slug: input.organization.slug, name: input.organization.name },
+          requestId: undefined,
+        });
+
+        return issued;
+      },
     );
 
     return {

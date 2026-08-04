@@ -11,6 +11,7 @@ import {
   FakeAccessTokens,
   FakeAddressHasher,
   FakeClock,
+  FakeAuditLogger,
   FakeIdGenerator,
   FakeOrganizations,
   FakeRefreshTokens,
@@ -51,6 +52,7 @@ const harness = (): Harness => {
     permissionsVersion: state.permissionsVersion,
   }));
   const unitOfWork = new FakeUnitOfWork();
+  const audit = new FakeAuditLogger();
   const accessTokens = new FakeAccessTokens();
   const logger = new RecordingLogger();
 
@@ -69,7 +71,7 @@ const harness = (): Harness => {
       clock,
       new FakeIdGenerator(),
     ),
-    end: new EndSessionUseCase(sessions, unitOfWork, clock, logger),
+    end: new EndSessionUseCase(sessions, unitOfWork, clock, logger, audit),
     list: new ListSessionsQuery(sessions, unitOfWork, clock),
     authenticate: new AuthenticateSessionQuery(accessTokens, sessions, unitOfWork, clock),
     get userStatus() {

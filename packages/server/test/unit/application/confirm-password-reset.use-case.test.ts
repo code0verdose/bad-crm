@@ -12,6 +12,7 @@ import {
 import {
   authUser,
   FakeAuthLookup,
+  FakeAuditLogger,
   FakeClock,
   FakePasswordHasher,
   FakePasswordResetTokens,
@@ -64,6 +65,7 @@ const buildHarness = (
   const clock = new FakeClock();
   const journal: string[] = [];
   const unitOfWork = new FakeUnitOfWork();
+  const audit = new FakeAuditLogger();
   const tokens = new FakePasswordResetTokens(unitOfWork, journal);
   const resetTokens = new FakeResetTokens();
   const sessions = new FakeSessions(clock);
@@ -104,6 +106,7 @@ const buildHarness = (
       rateLimit,
       clock,
       logger,
+      audit,
     ),
     tokens,
     resetTokens,

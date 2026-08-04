@@ -1,3 +1,4 @@
+import { type AuditLoggerPort } from '@/application/platform/ports/audit-logger.port.js';
 import {
   type SessionRepositoryPort,
   type SessionRevokedReason,
@@ -44,6 +45,7 @@ export class EndSessionUseCase {
     private readonly unitOfWork: UnitOfWorkPort,
     private readonly clock: ClockPort,
     private readonly logger: LoggerPort,
+    private readonly audit: AuditLoggerPort,
   ) {}
 
   /**
@@ -82,6 +84,42 @@ export class EndSessionUseCase {
    * thing whether or not the row was still live is what makes the operation idempotent — and
    * `docs/api/openapi.yaml` promises exactly that (204 either way).
    */
+  /**
+   * The audit record of a revocation, written **inside** the transaction.
+   *
+   * That is deliberately the opposite of the informational line below, and the two are different
+   * things. The line below is a description of something that happened, so writing it before a
+   * commit could describe a revocation a rollback then undid. The audit record is part of the action:
+   * a revocation nobody could write down must not take effect, which is what «fail-closed» means and
+   * why the write is where a rejection still aborts the transaction (STORY-009-06).
+   *
+   * The trade this makes is explicit and temporary: with a **log** behind the port, a rollback after
+   * the write leaves a line describing an action that did not happen. A missing record of a real
+   * revocation is the worse of the two — the trail exists so that nothing privileged happens
+   * unrecorded — and the trade disappears entirely when EPIC-016 puts the trail in a table that
+   * rolls back with everything else.
+   *
+   * `rules/outbox.mdc` rule 2 is not what forbids it: that rule is about **external** calls — S3,
+   * SMTP, HTTP — holding a connection and locks. A write to stdout is not one.
+   */
+  private recordAudit(
+    actor: SessionActor,
+    familyId: string,
+    reason: 'LOGOUT' | 'REVOKED_BY_USER',
+  ): Promise<void> {
+    return this.audit.record({
+      action: 'session.revoked',
+      actor: {
+        userId: actor.userId,
+        organizationId: actor.organizationId,
+        ipAddress: undefined,
+      },
+      target: { type: 'session-family', id: familyId },
+      after: { reason },
+      requestId: undefined,
+    });
+  }
+
   async signOut(actor: SessionActor, sessionId: string): Promise<void> {
     const now = this.clock.now();
 
@@ -91,6 +129,8 @@ export class EndSessionUseCase {
       if (session === null) return undefined;
 
       const rows = await this.sessions.revokeFamily(session.familyId, 'LOGOUT', now);
+
+      await this.recordAudit(actor, session.familyId, 'LOGOUT');
 
       return { familyId: session.familyId, rows };
     });
@@ -125,6 +165,8 @@ export class EndSessionUseCase {
       const current = await this.sessions.findOwner(currentSessionId);
 
       const rows = await this.sessions.revokeFamily(session.familyId, 'REVOKED_BY_USER', now);
+
+      await this.recordAudit(actor, session.familyId, 'REVOKED_BY_USER');
 
       return {
         familyId: session.familyId,

@@ -1,3 +1,4 @@
+import { type AuditLoggerPort } from '@/application/platform/ports/audit-logger.port.js';
 import {
   type AuthLookupPort,
   type AuthPasswordResetRecord,
@@ -121,6 +122,7 @@ export class ConfirmPasswordResetUseCase {
     private readonly rateLimit: RateLimitPort,
     private readonly clock: ClockPort,
     private readonly logger: LoggerPort,
+    private readonly audit: AuditLoggerPort,
   ) {}
 
   async execute(input: ConfirmPasswordResetInput): Promise<void> {
@@ -240,6 +242,21 @@ export class ConfirmPasswordResetUseCase {
       'PASSWORD_CHANGED',
       now,
     );
+
+    // Inside the transaction that spent the token: a password set through a recovery link, with no
+    // record of it, is the event an incident review most needs and can least reconstruct — the
+    // person who used the link is by definition not the one who was signed in.
+    await this.audit.record({
+      action: 'password.reset',
+      actor: {
+        userId: record.userId,
+        organizationId: record.organizationId,
+        ipAddress: undefined,
+      },
+      target: { type: 'user', id: record.userId },
+      after: { revokedFamilies, revokedResetTokens },
+      requestId: undefined,
+    });
 
     return { revokedFamilies, revokedResetTokens };
   }

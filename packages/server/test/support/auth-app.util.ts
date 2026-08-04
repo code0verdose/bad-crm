@@ -158,6 +158,7 @@ export const createAuthApp = (options: AuthAppOptions = {}): AuthApp => {
       { locale: 'en', timezone: 'UTC', currency: 'USD' },
       options.registrationOpen ?? true,
       rateLimit,
+      audit,
     ),
     login: new LoginUseCase(
       lookup,
@@ -205,8 +206,9 @@ export const createAuthApp = (options: AuthAppOptions = {}): AuthApp => {
       rateLimit,
       clock,
       logger,
+      audit,
     ),
-    endSession: new EndSessionUseCase(sessions, unitOfWork, clock, logger),
+    endSession: new EndSessionUseCase(sessions, unitOfWork, clock, logger, audit),
     changePassword: new ChangePasswordUseCase(
       users,
       sessions,
@@ -217,6 +219,7 @@ export const createAuthApp = (options: AuthAppOptions = {}): AuthApp => {
       dispatcher,
       clock,
       logger,
+      audit,
       APP_URL,
     ),
     listSessions: new ListSessionsQuery(sessions, unitOfWork, clock),

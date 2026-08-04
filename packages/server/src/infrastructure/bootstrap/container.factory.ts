@@ -387,6 +387,7 @@ const buildIdentity = (input: {
       { locale: 'en', timezone: 'UTC', currency: 'USD' },
       input.env.REGISTRATION_OPEN,
       input.rateLimit,
+      input.audit,
     ),
     login: new LoginUseCase(
       authLookup,
@@ -420,6 +421,7 @@ const buildIdentity = (input: {
       input.mailDispatcher,
       input.clock,
       input.logger,
+      input.audit,
       input.env.APP_URL,
     ),
     requestPasswordReset: new RequestPasswordResetUseCase(
@@ -446,8 +448,9 @@ const buildIdentity = (input: {
       input.rateLimit,
       input.clock,
       input.logger,
+      input.audit,
     ),
-    endSession: new EndSessionUseCase(sessions, unitOfWork, input.clock, input.logger),
+    endSession: new EndSessionUseCase(sessions, unitOfWork, input.clock, input.logger, input.audit),
     listSessions: new ListSessionsQuery(sessions, unitOfWork, input.clock),
     authenticate: new AuthenticateSessionQuery(accessTokens, sessions, unitOfWork, input.clock),
     authLookup,

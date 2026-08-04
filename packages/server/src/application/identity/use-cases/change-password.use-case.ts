@@ -1,3 +1,4 @@
+import { type AuditLoggerPort } from '@/application/platform/ports/audit-logger.port.js';
 import { type PasswordHasherPort } from '@/application/identity/ports/password-hasher.port.js';
 import { type PasswordResetTokenRepositoryPort } from '@/application/identity/ports/password-reset-token.port.js';
 import { type SessionRepositoryPort } from '@/application/identity/ports/session-repository.port.js';
@@ -126,6 +127,7 @@ export class ChangePasswordUseCase {
     private readonly dispatcher: MailDispatchPort,
     private readonly clock: ClockPort,
     private readonly logger: LoggerPort,
+    private readonly audit: AuditLoggerPort,
     /** `APP_URL`. Required rather than defaulted: a link built on a guess points at nobody. */
     private readonly appUrl: string,
   ) {}
@@ -259,6 +261,22 @@ export class ChangePasswordUseCase {
         'PASSWORD_CHANGED',
         now,
       );
+
+      // Inside the transaction, like every privileged action: a password changed with no record of
+      // it is exactly the event an incident review needs and cannot reconstruct. Nothing about the
+      // password itself goes into the trail — `after` says how many sessions the change closed,
+      // which is what a reader is trying to explain.
+      await this.audit.record({
+        action: 'password.changed',
+        actor: {
+          userId: input.actor.userId,
+          organizationId: input.actor.organizationId,
+          ipAddress: undefined,
+        },
+        target: { type: 'user', id: input.actor.userId },
+        after: { revokedFamilies, revokedResetTokens },
+        requestId: undefined,
+      });
 
       return { revokedFamilies, revokedResetTokens };
     });

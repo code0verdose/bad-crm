@@ -11,6 +11,7 @@ import {
   FakeIdGenerator,
   FakeOrganizations,
   FakePasswordHasher,
+  FakeAuditLogger,
   FakeRateLimit,
   type FakeRateLimitOptions,
   FakeRefreshTokens,
@@ -35,6 +36,7 @@ interface Harness {
   readonly sessions: FakeSessions;
   readonly hasher: FakePasswordHasher;
   readonly rateLimit: FakeRateLimit;
+  readonly audit: FakeAuditLogger;
   readonly journal: string[];
 }
 
@@ -49,6 +51,7 @@ const harness = (
   const journal: string[] = [];
   const hasher = new FakePasswordHasher(journal);
   const unitOfWork = new FakeUnitOfWork();
+  const audit = new FakeAuditLogger();
   const rateLimit = new FakeRateLimit({ ...rateLimitOptions, journal });
 
   const bootstrap = new BootstrapOrganizationUseCase(
@@ -68,6 +71,7 @@ const harness = (
   );
 
   return {
+    audit,
     register: new RegisterOrganizationUseCase(
       bootstrap,
       hasher,
@@ -76,6 +80,7 @@ const harness = (
       { locale: 'en', timezone: 'UTC', currency: 'USD' },
       registrationOpen,
       rateLimit,
+      audit,
     ),
     users,
     organizations,

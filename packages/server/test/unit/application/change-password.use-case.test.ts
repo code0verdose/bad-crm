@@ -16,6 +16,7 @@ import {
   FakeMailDispatcher,
   FakePasswordHasher,
   FakePasswordResetTokens,
+  FakeAuditLogger,
   FakeRateLimit,
   type FakeRateLimitOptions,
   FakeResetTokens,
@@ -86,6 +87,7 @@ const buildHarness = (options: { readonly rateLimit?: FakeRateLimitOptions } = {
   const hasher = new FakePasswordHasher(journal);
   const rateLimit = new FakeRateLimit({ journal, ...(options.rateLimit ?? {}) });
   const unitOfWork = new FakeUnitOfWork();
+  const audit = new FakeAuditLogger();
   const mail = new FakeMail();
   const dispatcher = new FakeMailDispatcher();
   const logger = new RecordingLogger();
@@ -103,6 +105,7 @@ const buildHarness = (options: { readonly rateLimit?: FakeRateLimitOptions } = {
       dispatcher,
       clock,
       logger,
+      audit,
       APP_URL,
     ),
     sessions,

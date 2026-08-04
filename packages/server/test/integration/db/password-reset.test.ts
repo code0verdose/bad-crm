@@ -31,7 +31,7 @@ import {
   truncateAll,
   type HarnessPools,
 } from './db-harness.util.js';
-import { FakeClock, FakeRateLimit } from '../../support/identity-doubles.util.js';
+import { FakeAuditLogger, FakeClock, FakeRateLimit } from '../../support/identity-doubles.util.js';
 
 /**
  * Password recovery against the two services it actually depends on: a real PostgreSQL and a real
@@ -112,6 +112,7 @@ interface Harness {
 const buildHarness = (options: { readonly mail?: 'smtp' | 'unconfigured' } = {}): Harness => {
   const clock = new FakeClock(new Date());
   const unitOfWork = new PrismaUnitOfWork(database.base);
+  const audit = new FakeAuditLogger();
   const lookup = new PrismaAuthLookup(authClient);
   const tokens = new PrismaPasswordResetTokenRepository();
   const users = new PrismaUserRepository();
@@ -155,6 +156,7 @@ const buildHarness = (options: { readonly mail?: 'smtp' | 'unconfigured' } = {})
       rateLimit,
       clock,
       silentLogger,
+      audit,
     ),
     changePassword: new ChangePasswordUseCase(
       users,
@@ -166,6 +168,7 @@ const buildHarness = (options: { readonly mail?: 'smtp' | 'unconfigured' } = {})
       dispatcher,
       clock,
       silentLogger,
+      audit,
       APP_URL,
     ),
     close: async (): Promise<void> => {
