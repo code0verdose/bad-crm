@@ -82,3 +82,8 @@ scratch/
 
 # Compose подхватывает override автоматически — в репозитории он открыл бы порты БД и на бою
 docker-compose.override.yml
+
+# Local Claude Code launch configuration: machine-specific ports and commands, not shared
+# state. `.claude/agents/**` and the rest of the directory stay tracked — the project agents
+# are part of the review gates.
+.claude/launch.json

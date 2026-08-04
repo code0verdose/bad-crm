@@ -4,6 +4,11 @@ project: bad-crm
 tags: [GitHub Actions, gitleaks, CodeQL, Dependabot, turborepo, Vitest, pnpm]
 ---
 
+> **Заменено в части `brace-expansion` 2026-08-04.** Датированное исключение на
+> `GHSA-mh99-v99m-4gvg`, заведённое здесь, снято: upstream выпустил бэкпорты, и обоснование
+> «фикса в 1.x нет» стало ложным. Ниже — как было 27 июля. См.
+> [[2026-08-04--the-excuse-that-expired]].
+
 # EPIC-002 — CI и гейты: пять workflow и урок про проверку самих проверок
 
 ## Простым языком
