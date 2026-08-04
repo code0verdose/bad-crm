@@ -26,11 +26,11 @@ Notion-подобные документы, Obsidian-подобная база �
 
 | Артефакт | Сколько | Где |
 |---|---|---|
-| Продуктовые и архитектурные документы | 46 файлов (включая 24 ADR) | `docs/` |
+| Продуктовые и архитектурные документы | 47 файлов (включая 25 ADR) | `docs/` |
 | Правила разработки | 34 файла `.mdc` | `rules/` |
 | Проектные агенты-ревьюеры | 9 | `.claude/agents/` |
-| Эпики | 47 (`epic.md`) | `epics/` |
-| Пользовательские истории | 122 (M1–M2 плюс EPIC-048) | `epics/*/stories/` |
+| Эпики | 48 (`epic.md`) | `epics/` |
+| Пользовательские истории | 129 (M1–M2 плюс EPIC-048 и EPIC-049) | `epics/*/stories/` |
 
 **Что уже работает:**
 
@@ -212,8 +212,8 @@ pnpm turbo run typecheck lint build test
 | [`docs/architecture/stack.md`](docs/architecture/stack.md) | Стек и версии, гексагональные слои, контракт API, БД, outbox, env, команды | любой серверной работе |
 | [`docs/architecture/data-model.md`](docs/architecture/data-model.md) | Сущности, таблицы, индексы, RLS-политики — **источник истины по именам** | любом изменении схемы или Prisma-модели |
 | [`docs/architecture/ux-architecture.md`](docs/architecture/ux-architecture.md) | Принципы UI, маршруты, экраны, дизайн-система, a11y, i18n, FSD клиента | любой клиентской работе |
-| [`docs/architecture/adr/`](docs/architecture/adr/) | 24 ADR: по одному решению на файл, с отвергнутыми альтернативами | попытке изменить принятое решение — сперва прочти ADR |
-| [`docs/security/threat-model.md`](docs/security/threat-model.md) | STRIDE по контекстам, нарушители N1–N9, топ-15 угроз и канал MCP, остаточные риски | работе с любым чувствительным потоком данных |
+| [`docs/architecture/adr/`](docs/architecture/adr/) | 25 ADR: по одному решению на файл, с отвергнутыми альтернативами | попытке изменить принятое решение — сперва прочти ADR |
+| [`docs/security/threat-model.md`](docs/security/threat-model.md) | STRIDE по контекстам, нарушители N1–N10, топ-15 угроз, каналы MCP и почты, остаточные риски | работе с любым чувствительным потоком данных |
 | [`docs/security/permission-model.md`](docs/security/permission-model.md) | Пять слоёв прав, `effectivePermission`, матрица роль × endpoint | добавлении endpoint'а, права или роли |
 | [`docs/security/rls-design.md`](docs/security/rls-design.md) | Роли БД, канонический шаблон политики, `withTenant`, isolation-тесты | добавлении таблицы, миграции, репозитория, job'а |
 | [`docs/security/e2ee-design.md`](docs/security/e2ee-design.md) | Иерархия ключей, примитивы, жизненный цикл, blind index, защищённые ссылки | любом касании vault, крипто, secure links |
@@ -324,7 +324,7 @@ pnpm turbo run typecheck lint build test
 
 **Борд эпиков** (`epics/README.md`) — генерируемый файл: таблица ID · эпик · статус · milestone ·
 прогресс. Собирается скриптом `~/.claude/skills/pm/sync-board.sh`; руками не правится. Сгенерирован,
-все 47 эпиков в таблице.
+все 48 эпиков в таблице.
 
 **Истории M3–M9 не написаны намеренно.** 114 историй существуют для M1–M2; исключение — EPIC-048 (MCP), спроектированный целиком по запросу 2026-08-05, его 8 историй пересматриваются на kickoff M8. Истории следующего
 майлстоуна создаются на его kickoff командой `/pm epic <тема>` — писать их за полгода до реализации

@@ -52,5 +52,6 @@
 | EPIC-046 | Self-host релиз 1.0 | ⚫ backlog | M9 | 0/0 |
 | EPIC-047 | Маркетинговый лендинг | 🔵 review | M1 | 0/2 |
 | EPIC-048 | MCP-сервер для внешних агентов | ⚫ backlog | M8 | 0/8 |
+| EPIC-049 | Корпоративная почта сотрудников | ⚫ backlog | M9 | 0/7 |
 
-_Эпиков: 48. Статусы: backlog → ready → in-progress → review → done; blocked — флаг._
+_Эпиков: 49. Статусы: backlog → ready → in-progress → review → done; blocked — флаг._
