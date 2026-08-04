@@ -78,11 +78,16 @@
       "cache": false
     },
     "db:seed": {
+      // Runs application code — the same use-case registration uses — so `@bad-crm/shared` has to
+      // be built first. Without this it works on a machine where a build happened to be lying
+      // around and fails on a clean checkout with `ERR_MODULE_NOT_FOUND`, which is what CI is.
+      "dependsOn": ["^build"],
       "cache": false
     },
     // Drops the schema, re-applies migrations and seeds — a developer command against a local
     // stack, never cached and never depended upon by anything that builds.
     "db:reset": {
+      "dependsOn": ["^build"],
       "cache": false
     },
     "api:gen": {

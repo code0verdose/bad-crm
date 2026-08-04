@@ -384,6 +384,11 @@ jobs:
       - name: Configure the installation from the template
         run: cp .env.example .env
 
+      # Before the database steps: the seed runs application code, so its dependencies have to
+      # exist as built output first.
+      - name: Build the client and the server
+        run: pnpm turbo run build
+
       - name: Start the backing services
         run: COMPOSE_PROFILES=minimal pnpm docker:up
 
@@ -398,9 +403,6 @@ jobs:
 
       - name: Install the browser the run uses
         run: pnpm --filter @bad-crm/e2e exec playwright install --with-deps chromium
-
-      - name: Build the client and the server
-        run: pnpm turbo run build
 
       # Started here rather than through Playwright's `webServer` because the suite drives two
       # processes, not one, and the readiness of the pair is what `global-setup.ts` already proves.
