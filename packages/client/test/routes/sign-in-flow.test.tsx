@@ -178,7 +178,9 @@ describe('signing in from a link to a protected page', () => {
 
     // The URL changes when the guard fires; the screen follows on the next commit, so the
     // assertion that matters is the one that waits for the content.
-    expect(await app.findByText('30d · org')).toBeInTheDocument();
+    expect(
+      await app.findByText('dashboard.range.last30Days · dashboard.scope.org'),
+    ).toBeInTheDocument();
     expect(window.location.pathname).toBe('/dashboard');
     expect(app.getByRole('heading', { level: 1 })).toHaveTextContent('nav.dashboard');
   });

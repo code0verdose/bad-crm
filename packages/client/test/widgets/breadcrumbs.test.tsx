@@ -33,7 +33,7 @@ describe('building the trail', () => {
   it('marks only the last crumb as the current page', () => {
     const crumbs = BreadcrumbsLib.routeCrumbs([
       { pathname: '/projects', staticData: { crumbKey: 'nav.projects' } },
-      { pathname: '/projects/42', staticData: { crumbKey: 'projects.detail' } },
+      { pathname: '/projects/42', staticData: { crumbKey: 'nav.dashboard' } },
     ]);
 
     expect(crumbs.map((crumb) => crumb.isCurrent)).toEqual([false, true]);
@@ -55,7 +55,7 @@ describe('building the trail', () => {
 
 const TWO_CRUMBS = [
   { labelKey: 'nav.projects', pathname: '/projects', isCurrent: false },
-  { labelKey: 'projects.detail', pathname: '/projects/42', isCurrent: true },
+  { labelKey: 'nav.dashboard', pathname: '/projects/42', isCurrent: true },
 ];
 
 /**
@@ -99,7 +99,7 @@ describe('rendering the trail', () => {
       </Standalone>,
     );
 
-    expect(screen.getByText('projects.detail')).toHaveAttribute('aria-current', 'page');
+    expect(screen.getByText('nav.dashboard')).toHaveAttribute('aria-current', 'page');
   });
 
   it('renders nothing at all for a single crumb', () => {

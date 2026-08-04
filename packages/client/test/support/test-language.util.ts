@@ -14,6 +14,10 @@ import { LANGUAGE_STORAGE_KEY } from '@shared/i18n';
  *
  * Call it after any `localStorage.clear()` and before mounting.
  */
+export const setTestLanguage = (tag: string): void => {
+  localStorage.setItem(LANGUAGE_STORAGE_KEY, JSON.stringify(tag));
+};
+
 export const setCimodeLanguage = (): void => {
-  localStorage.setItem(LANGUAGE_STORAGE_KEY, JSON.stringify('cimode'));
+  setTestLanguage('cimode');
 };

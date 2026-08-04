@@ -119,7 +119,9 @@ describe('search parameters', () => {
   it('keeps a valid combination and hands it to the page', async () => {
     renderApp({ path: '/dashboard?range=30d&scope=org' });
 
-    expect(await screen.findByText('30d · org')).toBeInTheDocument();
+    expect(
+      await screen.findByText('dashboard.range.last30Days · dashboard.scope.org'),
+    ).toBeInTheDocument();
   });
 });
 

@@ -77,7 +77,7 @@ await i18next.use(initReactI18next).init({
   // `auth.login.title` — and every assertion in this suite names the full key.
   appendNamespaceToCIMode: true,
   fallbackLng: 'cimode',
-  ns: ['common', 'validation', 'errors', 'nav', 'auth', 'filter', 'pagination'],
+  ns: ['common', 'validation', 'errors', 'nav', 'auth', 'filter', 'pagination', 'dashboard'],
   defaultNS: 'common',
   nsSeparator: '.',
   keySeparator: '.',

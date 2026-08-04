@@ -1,4 +1,5 @@
 import { Box, NavLink, Stack, Text, Tooltip } from '@mantine/core';
+import { useTranslation } from 'react-i18next';
 import { Link, useRouterState } from '@tanstack/react-router';
 
 import { type NavSection } from '@widgets/app-shell';
@@ -39,6 +40,8 @@ export interface SidebarNavProps {
  * only for whoever memorised the icons.
  */
 export function SidebarNav({ sections, isCollapsed = false, onNavigate }: SidebarNavProps) {
+  const { t } = useTranslation();
+
   const pathname = useRouterState({ select: (state) => state.location.pathname });
 
   return (
@@ -48,7 +51,7 @@ export function SidebarNav({ sections, isCollapsed = false, onNavigate }: Sideba
           <Stack gap={4} key={section.titleKey}>
             {!isCollapsed && (
               <Text c="var(--bc-text-muted)" className={classes['sectionTitle']} component="h2">
-                {section.titleKey}
+                {t(section.titleKey)}
               </Text>
             )}
             {section.items.map((item) => {
@@ -59,17 +62,17 @@ export function SidebarNav({ sections, isCollapsed = false, onNavigate }: Sideba
                 <Tooltip
                   disabled={!isCollapsed}
                   key={item.to}
-                  label={item.labelKey}
+                  label={t(item.labelKey)}
                   position="right"
                 >
                   <NavLink
                     active={isActive}
                     aria-current={isActive ? 'page' : undefined}
-                    aria-label={item.labelKey}
+                    aria-label={t(item.labelKey)}
                     component={Link}
                     leftSection={<Icon size={20} stroke={1.5} />}
                     to={item.to}
-                    {...(isCollapsed ? {} : { label: item.labelKey })}
+                    {...(isCollapsed ? {} : { label: t(item.labelKey) })}
                     {...(onNavigate === undefined ? {} : { onClick: onNavigate })}
                   />
                 </Tooltip>

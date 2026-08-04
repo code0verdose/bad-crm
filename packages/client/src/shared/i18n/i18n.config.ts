@@ -2,6 +2,7 @@ import i18next, { type i18n } from 'i18next';
 import { initReactI18next } from 'react-i18next';
 
 import enAuth from './locales/en/auth.json' with { type: 'json' };
+import enDashboard from './locales/en/dashboard.json' with { type: 'json' };
 import enFilter from './locales/en/filter.json' with { type: 'json' };
 import enCommon from './locales/en/common.json' with { type: 'json' };
 import enErrors from './locales/en/errors.json' with { type: 'json' };
@@ -9,6 +10,7 @@ import enNav from './locales/en/nav.json' with { type: 'json' };
 import enPagination from './locales/en/pagination.json' with { type: 'json' };
 import enValidation from './locales/en/validation.json' with { type: 'json' };
 import ruAuth from './locales/ru/auth.json' with { type: 'json' };
+import ruDashboard from './locales/ru/dashboard.json' with { type: 'json' };
 import ruFilter from './locales/ru/filter.json' with { type: 'json' };
 import ruCommon from './locales/ru/common.json' with { type: 'json' };
 import ruErrors from './locales/ru/errors.json' with { type: 'json' };
@@ -24,6 +26,7 @@ export type Language = (typeof LANGUAGES)[number];
 const RESOURCES = {
   en: {
     auth: enAuth,
+    dashboard: enDashboard,
     common: enCommon,
     errors: enErrors,
     filter: enFilter,
@@ -33,6 +36,7 @@ const RESOURCES = {
   },
   ru: {
     auth: ruAuth,
+    dashboard: ruDashboard,
     common: ruCommon,
     errors: ruErrors,
     filter: ruFilter,
@@ -66,7 +70,7 @@ export const createI18n = (language: Language = 'en'): i18n => {
   void instance.use(initReactI18next).init({
     lng: language,
     fallbackLng: 'en',
-    ns: ['common', 'validation', 'errors', 'nav', 'auth', 'filter', 'pagination'],
+    ns: ['common', 'validation', 'errors', 'nav', 'auth', 'filter', 'pagination', 'dashboard'],
     defaultNS: 'common',
     nsSeparator: '.',
     keySeparator: '.',

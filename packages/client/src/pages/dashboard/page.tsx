@@ -1,8 +1,10 @@
 import { Stack } from '@mantine/core';
 import { getRouteApi } from '@tanstack/react-router';
+import { useTranslation } from 'react-i18next';
 
 import { SharedUi } from '@shared';
 
+import { DashboardModel } from '@units/dashboard';
 import { AppStatus } from '@widgets/app-status';
 import { Breadcrumbs } from '@widgets/breadcrumbs';
 
@@ -22,6 +24,7 @@ const route = getRouteApi('/_authenticated/dashboard');
  * doing the work.
  */
 export function DashboardPage() {
+  const { t } = useTranslation();
   const { range, scope } = route.useSearch();
 
   return (
@@ -29,8 +32,12 @@ export function DashboardPage() {
       <SharedUi.PageHeader breadcrumbs={<Breadcrumbs />} titleKey="nav.dashboard" />
       <AppStatus />
       <output aria-live="polite">
-        {/* The selected window and scope, as the URL carries them — proof the schema round-trips. */}
-        {`${range} · ${scope}`}
+        {/*
+          The selected window and scope, as the URL carries them — proof the schema round-trips.
+          Through the catalogue, not as raw values: `7d · me` is a string assembled at runtime, which
+          is exactly what the lint rule cannot see and what the pseudo locale found.
+        */}
+        {`${t(DashboardModel.DASHBOARD_RANGE_LABEL_KEY[range])} · ${t(DashboardModel.DASHBOARD_SCOPE_LABEL_KEY[scope])}`}
       </output>
     </Stack>
   );

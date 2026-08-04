@@ -32,11 +32,11 @@ export function BreadcrumbTrail({ crumbs }: BreadcrumbTrailProps) {
       {crumbs.map((crumb) =>
         crumb.isCurrent ? (
           <Text aria-current="page" c="var(--bc-text-muted)" key={crumb.pathname} size="sm">
-            {crumb.labelKey}
+            {t(crumb.labelKey)}
           </Text>
         ) : (
           <Anchor component={Link} key={crumb.pathname} size="sm" to={crumb.pathname}>
-            {crumb.labelKey}
+            {t(crumb.labelKey)}
           </Anchor>
         ),
       )}

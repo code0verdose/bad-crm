@@ -1,0 +1,13 @@
+{
+  "range": {
+    "last30Days": "Last 30 days",
+    "last7Days": "Last 7 days",
+    "quarter": "This quarter",
+    "today": "Today"
+  },
+  "scope": {
+    "me": "My work",
+    "team": "My team",
+    "org": "Whole organization"
+  }
+}
