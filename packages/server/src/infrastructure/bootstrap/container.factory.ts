@@ -39,6 +39,8 @@ import { type DbRoleProbeClient } from '@/infrastructure/persistence/prisma/asse
 import { PrismaAuthLookup } from '@/infrastructure/persistence/prisma/auth-lookup.adapter.js';
 import { createAuthLookupClient } from '@/infrastructure/persistence/prisma/auth-lookup.client.js';
 import { databaseReadinessProbe } from '@/infrastructure/persistence/prisma/database-readiness.adapter.js';
+import { migrationReadinessProbe } from '@/infrastructure/persistence/prisma/migration-readiness.adapter.js';
+import { shippedMigrationNames } from '@/infrastructure/persistence/prisma/shipped-migrations.util.js';
 import { type DatabaseConnection } from '@/infrastructure/persistence/prisma/database.factory.js';
 import {
   detachedAuthLookup,
@@ -66,6 +68,16 @@ import {
 import { type ServerEnv } from '@/infrastructure/bootstrap/env.schema.js';
 import { API_VERSION } from '@/presentation/http/api-version.constant.js';
 import { type IdentityDependencies } from '@/presentation/http/http-server.types.js';
+
+/**
+ * Where the migration folders live, relative to the working directory of the process.
+ *
+ * The assumption is explicit because it is a deployment assumption: the API runs with its own
+ * package as the working directory — `tsx watch src/main.ts` under pnpm in development, `node
+ * dist/main.js` from the same directory in an image. It is read only when there is a database to
+ * check against, so the HTTP suite, which builds a container without one, never touches the disk.
+ */
+const MIGRATIONS_DIRECTORY = 'prisma/migrations';
 
 export interface ContainerInput {
   readonly env: ServerEnv;
@@ -184,7 +196,15 @@ export const buildContainer = (input: ContainerInput): AppContainer => {
     // its place in the rotation while every request inside it failed.
     [
       ...optionalServiceProbes(input.env),
-      ...(input.database === undefined ? [] : [databaseReadinessProbe(input.database.base)]),
+      ...(input.database === undefined
+        ? []
+        : [
+            databaseReadinessProbe(input.database.base),
+            migrationReadinessProbe(
+              input.database.base,
+              shippedMigrationNames(MIGRATIONS_DIRECTORY),
+            ),
+          ]),
       ...(input.redis === undefined ? [] : [redisReadinessProbe(input.redis.client)]),
       ...(authClient === undefined ? [] : [authDatabaseReadinessProbe(authClient)]),
     ] satisfies readonly ReadinessProbePort[],
