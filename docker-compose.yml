@@ -37,7 +37,7 @@ services:
   # PostgreSQL 16 with pgvector. Extensions and the app_migrator/app_user/app_auth roles are created
   # once, on first initialisation of an empty pgdata volume, from packages/server/prisma/sql/initdb.
   postgres:
-    image: pgvector/pgvector:0.8.5-pg16
+    image: pgvector/pgvector:0.8.6-pg16
     restart: unless-stopped
     environment:
       # Superuser of the local cluster — dev only; a self-host install never exposes this account.
@@ -150,7 +150,7 @@ services:
   # Meilisearch — optional by design. Absent in the minimal profile, where SearchPort falls back to
   # PostgreSQL FTS (ADR-0011). meili-data is never backed up: the index is replayed from the DB.
   meilisearch:
-    image: getmeili/meilisearch:v1.50.0
+    image: getmeili/meilisearch:v1.51.0
     profiles: ['default', 'full']
     restart: unless-stopped
     environment:
@@ -180,7 +180,7 @@ services:
   # which has been unmaintained since 2020 — Mailpit is actively released, ships its own readiness
   # probe, persists messages and supports the same "accept anything" SMTP behaviour.
   mailpit:
-    image: axllent/mailpit:v1.30.5
+    image: axllent/mailpit:v1.30.6
     profiles: ['default', 'full']
     restart: unless-stopped
     environment:
