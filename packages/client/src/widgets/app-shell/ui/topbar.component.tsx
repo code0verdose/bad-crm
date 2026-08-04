@@ -1,6 +1,8 @@
 import { ActionIcon, Burger, Group, Text, Tooltip } from '@mantine/core';
 import { IconLayoutSidebarLeftCollapse, IconLayoutSidebarLeftExpand } from '@tabler/icons-react';
 
+import { SharedUi } from '@shared';
+
 import { ColorSchemeControl } from './color-scheme-control.component.js';
 import { SignOutControl } from './sign-out-control.component.js';
 import classes from './topbar.module.css';
@@ -23,6 +25,11 @@ export interface TopbarProps {
  * The sign-out control is the third: it is the only way out of the shell until the avatar menu of
  * EPIC-007 exists, and a workspace with no way to leave it is not a workspace anybody should open
  * on a shared machine.
+ *
+ * The language switch sits beside the colour scheme because they answer the same kind of question —
+ * how this workspace should look and read — and because the public screens carry the same control
+ * (`widgets/public-screen`): somebody who set the language before signing in should find it in a
+ * place that feels like the same control, not a different feature.
  *
  * Global search (`Cmd+K`), the project switcher, the running timer, notifications and the AI drawer
  * belong here too; they arrive with the epics that build them, and an empty button that does
@@ -62,6 +69,7 @@ export function Topbar({
       </Group>
 
       <Group gap="sm" wrap="nowrap">
+        <SharedUi.LanguageControl />
         <ColorSchemeControl />
         <SignOutControl />
       </Group>

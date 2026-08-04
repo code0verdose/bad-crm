@@ -10,6 +10,7 @@ import { createAppRouter } from '@app/router.js';
 import { SharedApi, SharedUi } from '@shared';
 
 import { type SessionStatusFixture } from './session-status.types.js';
+import { setCimodeLanguage } from './test-language.util.js';
 
 export interface RenderAppOptions {
   /** Where the browser is when the tree mounts. */
@@ -39,6 +40,8 @@ export const renderApp = ({
   path = '/',
   status = 'unknown',
 }: RenderAppOptions = {}): RenderedApp => {
+  setCimodeLanguage();
+
   const queryClient = SharedApi.createAppQueryClient({
     notify: SharedUi.notify,
     logError: vi.fn(),

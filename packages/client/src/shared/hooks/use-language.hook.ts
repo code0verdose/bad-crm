@@ -9,7 +9,7 @@ export const LANGUAGE_LABEL_KEY: Record<Language, string> = {
   ru: 'common.appearance.language.ru',
 };
 
-export interface LanguageControl {
+export interface LanguageState {
   readonly language: Language;
   readonly setLanguage: (value: Language) => void;
 }
@@ -31,7 +31,7 @@ export interface LanguageControl {
  * a library instance; `<html lang>` is an attribute of a document React does not own. Neither is
  * derived state, and neither can be computed during render.
  */
-export const useLanguage = (): LanguageControl => {
+export const useLanguage = (): LanguageState => {
   const { i18n } = useTranslation();
   const [language, setLanguage] = useLocalStorage<Language>({
     key: LANGUAGE_STORAGE_KEY,

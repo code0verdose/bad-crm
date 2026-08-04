@@ -3,6 +3,7 @@ import { Link } from '@tanstack/react-router';
 
 import { SharedUi } from '@shared';
 
+import { PublicScreen } from '@widgets/public-screen';
 import { AuthService, AuthUi } from '@units/auth';
 
 /**
@@ -25,7 +26,7 @@ export function ForgotPasswordPage() {
   const request = AuthService.useRequestPasswordReset();
 
   return (
-    <SharedUi.CenteredScreen>
+    <PublicScreen>
       <SharedUi.PageHeader titleKey="auth.forgotPassword.title" />
 
       {request.isSent ? (
@@ -37,6 +38,6 @@ export function ForgotPasswordPage() {
       <Anchor component={Link} to="/login">
         auth.forgotPassword.backToLogin
       </Anchor>
-    </SharedUi.CenteredScreen>
+    </PublicScreen>
   );
 }

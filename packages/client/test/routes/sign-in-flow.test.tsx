@@ -3,6 +3,8 @@ import { render, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { setCimodeLanguage } from '../support/test-language.util.js';
+
 /**
  * The whole round trip, through the real entry point: a protected URL without a session, the login
  * screen, the sign-in, the return to the page that was asked for, and the way back out.
@@ -144,6 +146,7 @@ const startApplication = async (requests: string[]): Promise<StartedApplication>
 beforeEach(() => {
   vi.resetModules();
   localStorage.clear();
+  setCimodeLanguage();
   sessionRevoked = false;
 });
 

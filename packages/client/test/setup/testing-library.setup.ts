@@ -84,3 +84,13 @@ await i18next.use(initReactI18next).init({
   resources: {},
   interpolation: { escapeValue: false },
 });
+
+/**
+ * Back to `cimode` after every test, because the application changes the language for real: the
+ * switcher exists, and a case that clicks «Русский» leaves the shared instance in `ru`. Without
+ * this the next file to run asserts against a catalogue it never asked for — an order-dependent
+ * failure, the kind that gets debugged by rerunning rather than by reading.
+ */
+afterEach(async () => {
+  if (i18next.language !== 'cimode') await i18next.changeLanguage('cimode');
+});

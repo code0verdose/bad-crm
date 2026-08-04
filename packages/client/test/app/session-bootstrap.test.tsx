@@ -2,6 +2,8 @@ import i18next from 'i18next';
 import { render, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { setCimodeLanguage } from '../support/test-language.util.js';
+
 /**
  * The application from the first frame: what is on screen before the client knows who it is, and
  * where it lands once it does.
@@ -68,6 +70,7 @@ const renderApplication = async () => {
 beforeEach(() => {
   vi.resetModules();
   localStorage.clear();
+  setCimodeLanguage();
   startAt('/dashboard');
 });
 

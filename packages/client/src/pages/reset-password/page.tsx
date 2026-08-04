@@ -3,6 +3,7 @@ import { Link, getRouteApi, useNavigate } from '@tanstack/react-router';
 
 import { SharedUi } from '@shared';
 
+import { PublicScreen } from '@widgets/public-screen';
 import { AuthService, AuthUi } from '@units/auth';
 
 /**
@@ -43,7 +44,7 @@ export function ResetPasswordPage() {
   });
 
   return (
-    <SharedUi.CenteredScreen>
+    <PublicScreen>
       <SharedUi.PageHeader titleKey="auth.resetPassword.title" />
 
       <AuthUi.ResetPasswordForm isPending={reset.isPending} onSubmit={reset.submit} />
@@ -51,6 +52,6 @@ export function ResetPasswordPage() {
       <Anchor component={Link} to="/forgot-password">
         auth.resetPassword.requestNewLink
       </Anchor>
-    </SharedUi.CenteredScreen>
+    </PublicScreen>
   );
 }

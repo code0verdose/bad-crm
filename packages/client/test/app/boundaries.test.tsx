@@ -4,11 +4,13 @@ import { RouterProvider, createMemoryHistory } from '@tanstack/react-router';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { type ReactNode } from 'react';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { RouteError, RoutePending } from '@app/ui';
 import { createAppRouter } from '@app/router.js';
 import { SharedApi, SharedLib, SharedUi } from '@shared';
+
+import { setCimodeLanguage } from '../support/test-language.util.js';
 
 /**
  * The two boundaries a route falls back to, rendered on their own.
@@ -25,6 +27,11 @@ import { SharedApi, SharedLib, SharedUi } from '@shared';
  * fails the second at render time, which reads as a broken boundary rather than as a missing
  * provider.
  */
+// Each case here mounts the real application, which sets the language for itself; see the helper.
+beforeEach(() => {
+  setCimodeLanguage();
+});
+
 const harnessQueryClient = SharedApi.createAppQueryClient({
   notify: SharedLib.silentNotifications,
   logError: () => undefined,
