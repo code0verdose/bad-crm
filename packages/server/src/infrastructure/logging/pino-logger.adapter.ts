@@ -5,6 +5,7 @@ import {
   type DestinationStream,
   type Logger,
 } from 'pino';
+import { trace } from '@opentelemetry/api';
 
 import { type LogFields, type LoggerPort } from '@/application/platform/ports/logger.port.js';
 import { type RequestContextPort } from '@/application/platform/ports/request-context.port.js';
@@ -42,6 +43,24 @@ export interface RootLoggerOptions {
  * `destination` is a parameter so tests can read the real serialized output instead of trusting a
  * stubbed logger: the assertions about redaction are about bytes, not about calls.
  */
+/**
+ * The identifier that turns a log line into a link to a trace, and back.
+ *
+ * Nothing when tracing is off: `getActiveSpan()` answers `undefined` with no SDK registered, so an
+ * installation without a collector pays one property read per line and gains no field. That is the
+ * whole reason this is read here rather than threaded through the request context — the context is
+ * ours and always present, the span is OpenTelemetry's and usually is not.
+ */
+const activeTraceFields = (): { traceId?: string } => {
+  const span = trace.getActiveSpan();
+
+  if (span === undefined) return {};
+
+  const { traceId } = span.spanContext();
+
+  return { traceId };
+};
+
 export const createRootLogger = (
   options: RootLoggerOptions,
   // `pino.destination` rather than `process.stdout`: a SonicBoom stream writes with markedly less
@@ -54,7 +73,7 @@ export const createRootLogger = (
       base: { service: APP_INFO.name, role: APP_INFO.role, version: options.version },
       redact: { paths: [...REDACTED_PATHS], censor: REDACTED_PLACEHOLDER },
       serializers: { err: serializeLogError, error: serializeLogError },
-      mixin: () => ({ ...options.requestContext?.current() }),
+      mixin: () => ({ ...options.requestContext?.current(), ...activeTraceFields() }),
       timestamp: stdTimeFunctions.isoTime,
     },
     destination,

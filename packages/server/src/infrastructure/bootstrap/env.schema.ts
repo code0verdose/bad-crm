@@ -265,6 +265,14 @@ const fields = z.object({
   LOG_LEVEL: z
     .enum(LOG_LEVELS, { error: `LOG_LEVEL must be one of: ${LOG_LEVELS.join(', ')}` })
     .default('info'),
+  /**
+   * How much to sample, when tracing is on at all. Absent → everything in development, a tenth in
+   * production (`infrastructure/tracing/tracing.factory.ts`). A value outside `[0, 1]` is clamped
+   * rather than refused: `10` meaning «ten percent» is the typo somebody actually makes, and
+   * refusing to start over a sampling rate is a worse outcome than sampling everything for a while.
+   */
+  OTEL_TRACES_SAMPLER_ARG: z.coerce.number().optional(),
+
   /** Absent → traces are not exported; logs and metrics keep working. */
   OTEL_EXPORTER_OTLP_ENDPOINT: z
     .url({ error: 'OTEL_EXPORTER_OTLP_ENDPOINT must be a URL' })
