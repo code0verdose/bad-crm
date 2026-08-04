@@ -1,5 +1,6 @@
 import { Button } from '@mantine/core';
 import { Link } from '@tanstack/react-router';
+import { useTranslation } from 'react-i18next';
 
 import { SharedUi } from '@shared';
 
@@ -13,11 +14,13 @@ import { SharedUi } from '@shared';
  * screen keeps the shell around it, so the navigation is still there to leave by.
  */
 export function RouteNotFound() {
+  const { t } = useTranslation();
+
   return (
     <SharedUi.EmptyState
       action={
         <Button component={Link} to="/dashboard" variant="light">
-          errors.not_found.action
+          {t('errors.not_found.action')}
         </Button>
       }
       descriptionKey="errors.not_found.description"

@@ -1,5 +1,6 @@
 import { Stack, Text, Title } from '@mantine/core';
 import { type ReactNode } from 'react';
+import { useTranslation } from 'react-i18next';
 
 import classes from './empty-state.module.css';
 
@@ -19,14 +20,16 @@ export interface EmptyStateProps {
  * `shared/ui` is what stops fifteen screens from inventing fifteen different dead ends.
  */
 export function EmptyState({ titleKey, descriptionKey, action }: EmptyStateProps) {
+  const { t } = useTranslation();
+
   return (
     <Stack align="center" className={classes['root']} gap="sm" data-testid="empty-state">
       <Title order={2} size="h3">
-        {titleKey}
+        {t(titleKey)}
       </Title>
       {descriptionKey !== undefined && (
         <Text c="var(--bc-text-muted)" ta="center">
-          {descriptionKey}
+          {t(descriptionKey)}
         </Text>
       )}
       {action}

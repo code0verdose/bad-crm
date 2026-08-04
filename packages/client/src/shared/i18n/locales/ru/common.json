@@ -1,8 +1,7 @@
 {
-  "loading": "Загрузка…",
-  "retry": "Повторить",
   "appearance": {
     "colorScheme": {
+      "aria": "Цветовая схема",
       "auto": "Как в системе",
       "dark": "Тёмная",
       "light": "Светлая"
@@ -10,6 +9,12 @@
     "density": {
       "comfortable": "Свободная",
       "compact": "Плотная"
+    },
+    "language": {
+      "en": "English",
+      "ru": "Русский"
     }
-  }
+  },
+  "loading": "Загрузка…",
+  "retry": "Повторить"
 }

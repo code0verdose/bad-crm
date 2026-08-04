@@ -107,7 +107,7 @@ describe('DataState', () => {
     render(
       <Themed scheme="light">
         <SharedUi.DataState
-          empty={<SharedUi.EmptyState titleKey="tasks.empty.title" />}
+          empty={<SharedUi.EmptyState titleKey="common.loading" />}
           isEmpty
           skeleton={SKELETON}
           status="success"
@@ -141,21 +141,21 @@ describe('EmptyState', () => {
       <Themed scheme="light">
         <SharedUi.EmptyState
           action={<button type="button">tasks.empty.create</button>}
-          descriptionKey="tasks.empty.description"
-          titleKey="tasks.empty.title"
+          descriptionKey="common.retry"
+          titleKey="common.loading"
         />
       </Themed>,
     );
 
-    expect(screen.getByRole('heading', { level: 2 })).toHaveTextContent('tasks.empty.title');
-    expect(screen.getByText('tasks.empty.description')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 2 })).toHaveTextContent('common.loading');
+    expect(screen.getByText('common.retry')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'tasks.empty.create' })).toBeInTheDocument();
   });
 
   it('works as a bare statement when there is no next step', () => {
     render(
       <Themed scheme="light">
-        <SharedUi.EmptyState titleKey="tasks.empty.title" />
+        <SharedUi.EmptyState titleKey="common.loading" />
       </Themed>,
     );
 

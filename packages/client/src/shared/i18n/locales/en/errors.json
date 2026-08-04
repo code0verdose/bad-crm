@@ -1,3 +1,11 @@
 {
+  "not_found": {
+    "action": "Back to the dashboard",
+    "description": "This address does not lead anywhere in this installation.",
+    "title": "Nothing here"
+  },
+  "route": {
+    "failed": "This page could not be opened."
+  },
   "unexpected": "Something went wrong. Try again, and tell an administrator if it keeps happening."
 }

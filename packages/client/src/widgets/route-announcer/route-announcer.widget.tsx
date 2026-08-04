@@ -1,6 +1,7 @@
 import { useDocumentTitle } from '@mantine/hooks';
 import { useMatches } from '@tanstack/react-router';
 import { useEffect, useRef } from 'react';
+import { useTranslation } from 'react-i18next';
 
 import { SharedUi } from '@shared';
 
@@ -29,9 +30,11 @@ const PRODUCT_NAME = 'Bad CRM';
  * the control the user is operating.
  */
 export function RouteAnnouncer() {
+  const { t } = useTranslation();
+
   const titleKey = BreadcrumbsLib.currentCrumbKey(useMatches());
 
-  useDocumentTitle(titleKey === undefined ? PRODUCT_NAME : `${titleKey} · ${PRODUCT_NAME}`);
+  useDocumentTitle(titleKey === undefined ? PRODUCT_NAME : `${t(titleKey)} · ${PRODUCT_NAME}`);
 
   /**
    * The page this component last announced — initialised to the page it is mounting on, which is
@@ -58,7 +61,7 @@ export function RouteAnnouncer() {
 
   return (
     <div aria-live="polite" className={classes['announcer']} role="status">
-      {titleKey}
+      {titleKey === undefined ? null : t(titleKey)}
     </div>
   );
 }

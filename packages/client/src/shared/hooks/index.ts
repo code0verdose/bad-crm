@@ -8,4 +8,5 @@
  */
 export * from './use-color-scheme.hook.js';
 export * from './use-density.hook.js';
+export * from './use-language.hook.js';
 export * from './use-sidebar-collapse.hook.js';

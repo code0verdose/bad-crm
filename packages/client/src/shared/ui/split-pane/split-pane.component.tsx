@@ -1,6 +1,7 @@
 import { Box } from '@mantine/core';
 import { useLocalStorage } from '@mantine/hooks';
 import { useRef, type KeyboardEvent, type PointerEvent, type ReactNode } from 'react';
+import { useTranslation } from 'react-i18next';
 
 import classes from './split-pane.module.css';
 
@@ -46,6 +47,8 @@ const clamp = (value: number): number => Math.min(MAX, Math.max(MIN, Math.round(
  * needs nothing added is what `rules/design-system.mdc` §7 forbids.
  */
 export function SplitPane({ labelKey, storageKey, first, second }: SplitPaneProps) {
+  const { t } = useTranslation();
+
   const [size, setSize] = useLocalStorage<number>({
     key: storageKey,
     defaultValue: 50,
@@ -87,7 +90,7 @@ export function SplitPane({ labelKey, storageKey, first, second }: SplitPaneProp
     <Box className={classes['root']} ref={rootRef} __vars={{ '--bc-split-size': `${size}%` }}>
       <div className={classes['panel']}>{first}</div>
       <button
-        aria-label={labelKey}
+        aria-label={t(labelKey)}
         aria-valuemax={MAX}
         aria-valuemin={MIN}
         aria-valuenow={size}

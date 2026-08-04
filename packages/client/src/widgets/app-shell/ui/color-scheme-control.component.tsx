@@ -1,4 +1,5 @@
 import { SegmentedControl } from '@mantine/core';
+import { useTranslation } from 'react-i18next';
 
 import { SharedHooks } from '@shared';
 
@@ -14,14 +15,16 @@ import { SharedHooks } from '@shared';
  * chosen (`rules/frontend-fsd.mdc` — markup and handlers, no logic).
  */
 export function ColorSchemeControl() {
+  const { t } = useTranslation();
+
   const { colorScheme, setColorScheme } = SharedHooks.useColorScheme();
 
   return (
     <SegmentedControl
-      aria-label="common.appearance.colorScheme.aria"
+      aria-label={t('common.appearance.colorScheme.aria')}
       data={SharedHooks.COLOR_SCHEMES.map((scheme) => ({
         value: scheme,
-        label: SharedHooks.COLOR_SCHEME_LABEL_KEY[scheme],
+        label: t(SharedHooks.COLOR_SCHEME_LABEL_KEY[scheme]),
       }))}
       onChange={(value) => {
         setColorScheme(value);

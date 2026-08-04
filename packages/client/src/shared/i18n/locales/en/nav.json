@@ -1,4 +1,21 @@
 {
+  "breadcrumbs": {
+    "aria": "Breadcrumbs"
+  },
   "dashboard": "Dashboard",
-  "section": { "personal": "Personal" }
+  "drawer": {
+    "aria": "Navigation",
+    "title": "Menu",
+    "toggle": "Open the menu"
+  },
+  "primary": {
+    "aria": "Primary navigation"
+  },
+  "section": {
+    "personal": "Personal"
+  },
+  "sidebar": {
+    "toggle": "Fold the sidebar"
+  },
+  "signOut": "Sign out"
 }

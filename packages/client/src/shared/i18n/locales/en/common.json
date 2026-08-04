@@ -1,8 +1,7 @@
 {
-  "loading": "Loading…",
-  "retry": "Try again",
   "appearance": {
     "colorScheme": {
+      "aria": "Colour scheme",
       "auto": "Match system",
       "dark": "Dark",
       "light": "Light"
@@ -10,6 +9,12 @@
     "density": {
       "comfortable": "Comfortable",
       "compact": "Compact"
+    },
+    "language": {
+      "en": "English",
+      "ru": "Русский"
     }
-  }
+  },
+  "loading": "Loading…",
+  "retry": "Try again"
 }

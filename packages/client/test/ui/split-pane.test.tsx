@@ -25,7 +25,7 @@ const renderPane = (children?: ReactNode) =>
   render(
     <MantineProvider env="test">
       <SharedUi.SplitPane
-        labelKey="split.roster"
+        labelKey="common.loading"
         storageKey={KEY}
         first={<p>left</p>}
         second={children ?? <p>right</p>}
@@ -48,7 +48,7 @@ describe('SplitPane', () => {
   it('exposes the divider as a separator that reports where it is', () => {
     renderPane();
 
-    const separator = screen.getByRole('separator', { name: 'split.roster' });
+    const separator = screen.getByRole('separator', { name: 'common.loading' });
 
     expect(separator).toHaveAttribute('aria-valuenow', '50');
     expect(separator).toHaveAttribute('aria-valuemin', '20');
@@ -66,7 +66,7 @@ describe('SplitPane', () => {
   ])('moves with %s', async (key, expected) => {
     const user = userEvent.setup();
     renderPane();
-    const separator = screen.getByRole('separator', { name: 'split.roster' });
+    const separator = screen.getByRole('separator', { name: 'common.loading' });
 
     separator.focus();
     await user.keyboard(key);
@@ -77,7 +77,7 @@ describe('SplitPane', () => {
   it('jumps by a larger step with Page keys, and to the bounds with Home and End', async () => {
     const user = userEvent.setup();
     renderPane();
-    const separator = screen.getByRole('separator', { name: 'split.roster' });
+    const separator = screen.getByRole('separator', { name: 'common.loading' });
     separator.focus();
 
     await user.keyboard('{PageUp}');
@@ -98,7 +98,7 @@ describe('SplitPane', () => {
   it('refuses to go past its own bounds', async () => {
     const user = userEvent.setup();
     renderPane();
-    const separator = screen.getByRole('separator', { name: 'split.roster' });
+    const separator = screen.getByRole('separator', { name: 'common.loading' });
     separator.focus();
 
     await user.keyboard('{Home}{ArrowLeft}{ArrowLeft}');
@@ -111,7 +111,7 @@ describe('SplitPane', () => {
   it('remembers where it was left, and starts there next time', async () => {
     const user = userEvent.setup();
     const first = renderPane();
-    const separator = screen.getByRole('separator', { name: 'split.roster' });
+    const separator = screen.getByRole('separator', { name: 'common.loading' });
 
     separator.focus();
     await user.keyboard('{PageUp}');
@@ -119,7 +119,7 @@ describe('SplitPane', () => {
 
     renderPane();
 
-    expect(screen.getByRole('separator', { name: 'split.roster' })).toHaveAttribute(
+    expect(screen.getByRole('separator', { name: 'common.loading' })).toHaveAttribute(
       'aria-valuenow',
       '60',
     );
@@ -134,7 +134,7 @@ describe('SplitPane', () => {
    * them is the part worth asserting: a clientX two thirds across a 300-pixel container is 66 %.
    */
   const draggableRoot = (): { separator: HTMLElement; root: HTMLElement } => {
-    const separator = screen.getByRole('separator', { name: 'split.roster' });
+    const separator = screen.getByRole('separator', { name: 'common.loading' });
     const root = separator.parentElement as HTMLElement;
 
     root.getBoundingClientRect = () => ({ left: 0, width: 300 }) as DOMRect;
@@ -166,7 +166,7 @@ describe('SplitPane', () => {
 
   it('ignores a move that is not part of a drag it captured', () => {
     renderPane();
-    const separator = screen.getByRole('separator', { name: 'split.roster' });
+    const separator = screen.getByRole('separator', { name: 'common.loading' });
     (separator.parentElement as HTMLElement).getBoundingClientRect = () =>
       ({ left: 0, width: 300 }) as DOMRect;
     separator.hasPointerCapture = () => false;
@@ -183,7 +183,7 @@ describe('SplitPane', () => {
    */
   it('ignores a drag before the container has a width', () => {
     renderPane();
-    const separator = screen.getByRole('separator', { name: 'split.roster' });
+    const separator = screen.getByRole('separator', { name: 'common.loading' });
     separator.setPointerCapture = () => undefined;
     separator.hasPointerCapture = () => true;
 
@@ -216,7 +216,7 @@ describe('SplitPane', () => {
   it('leaves keys it does not own to the page, so focus can move on', async () => {
     const user = userEvent.setup();
     renderPane();
-    const separator = screen.getByRole('separator', { name: 'split.roster' });
+    const separator = screen.getByRole('separator', { name: 'common.loading' });
 
     separator.focus();
     await user.keyboard('{Tab}');

@@ -1,4 +1,21 @@
 {
+  "breadcrumbs": {
+    "aria": "Хлебные крошки"
+  },
   "dashboard": "Сводка",
-  "section": { "personal": "Личное" }
+  "drawer": {
+    "aria": "Навигация",
+    "title": "Меню",
+    "toggle": "Открыть меню"
+  },
+  "primary": {
+    "aria": "Основная навигация"
+  },
+  "section": {
+    "personal": "Личное"
+  },
+  "sidebar": {
+    "toggle": "Свернуть боковую панель"
+  },
+  "signOut": "Выйти"
 }

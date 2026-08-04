@@ -19,8 +19,17 @@ import { describe, expect, it } from 'vitest';
 const SRC = fileURLToPath(new URL('../../src', import.meta.url));
 const LOCALES = `${SRC}/shared/i18n/locales`;
 
-/** Anything that looks like `namespace.some.key` in a string literal of the client. */
-const KEY = /'([a-z][a-zA-Z]+(?:\.[a-zA-Z][a-zA-Z0-9_]*)+)'/g;
+/**
+ * Anything that looks like `namespace.some.key` in a string literal of the client — in **either**
+ * kind of quote.
+ *
+ * The double-quoted half was missing when this file was first written, and the omission was not
+ * academic: a JSX attribute is conventionally double-quoted, so every `aria-label="…"` and
+ * `placeholder="…"` in the tree was invisible to this gate. Those are exactly the strings ADR-0019
+ * singles out as the ones that get forgotten, and the gate that exists to find them was looking past
+ * them.
+ */
+const KEY = /['"]([a-z][a-zA-Z]+(?:\.[a-zA-Z][a-zA-Z0-9_]*)+)['"]/g;
 
 const sourceFiles = (directory: string): string[] =>
   readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {

@@ -1,4 +1,5 @@
 import { Alert, Button, Stack } from '@mantine/core';
+import { useTranslation } from 'react-i18next';
 
 import classes from './error-state.module.css';
 
@@ -28,12 +29,14 @@ export function ErrorState({
   onRetry,
   retryLabelKey = 'common.retry',
 }: ErrorStateProps) {
+  const { t } = useTranslation();
+
   return (
     <Alert
       className={classes['root']}
       color="red"
       role="alert"
-      title={messageKey}
+      title={t(messageKey)}
       variant="light"
       data-testid="error-state"
     >
