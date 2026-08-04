@@ -29,12 +29,22 @@ describe('RelativeTime', () => {
     expect(element).toHaveAttribute('datetime', '2026-07-26T09:55:00Z');
   });
 
+  /**
+   * The zone is named, but *which* zone is not pinned — the component asks the runtime, and the
+   * runtime differs: a CI runner is in UTC and a developer's machine is not. The first version of
+   * this case asserted `GMT` and passed locally for exactly that reason, then failed on the runner
+   * where the same correct code renders `UTC`.
+   *
+   * So the assertion is the property: the title carries the absolute time **and** a zone label,
+   * whichever one the reader is in. `GMT` covers every offset ICU renders (`GMT+3`), `UTC` covers
+   * the zero offset it renders by name.
+   */
   it('keeps the absolute time, with its zone, one hover away', () => {
     render(<SharedUi.RelativeTime iso="2026-07-26T09:55:00Z" now={NOW} />);
 
     const title = screen.getByText('5 minutes ago').getAttribute('title');
 
-    expect(title).toMatch(/GMT/);
+    expect(title).toMatch(/\b(GMT|UTC)\b/);
     expect(title).toContain('2026');
   });
 });
