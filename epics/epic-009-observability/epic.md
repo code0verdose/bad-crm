@@ -1,7 +1,7 @@
 ---
 id: EPIC-009
 title: Наблюдаемость
-status: backlog
+status: review
 blocked: false
 milestone: M1
 owner: unassigned
@@ -39,13 +39,13 @@ health-эндпоинты и, если он захочет, метрики. Эп
 
 ## Acceptance (эпик выполнен, когда)
 
-- [ ] Каждая строка лога содержит `requestId`, `organizationId`, `userId`, `route`, `statusCode`, `durationMs`; контекст протаскивается `AsyncLocalStorage`, а не аргументами.
-- [ ] Ни один секрет, токен, пароль, ключ провайдера или содержимое vault не попадает в логи — проверяется тестом на наборе чувствительных полей.
-- [ ] `/health` отвечает без обращений к зависимостям; `/ready` проверяет Postgres, Redis, S3, статус миграций и завершение shutdown, а отключённые опциональные сервисы отражаются как `disabled` и не влияют на HTTP-статус.
-- [ ] `GET /metrics` отдаёт RED-набор (`http_requests_total`, `http_request_duration_seconds`) c `route` из шаблона Express, а не из URL; endpoint закрыт от анонимного доступа.
-- [ ] Трейсы включаются только наличием `OTEL_EXPORTER_OTLP_ENDPOINT`; при выключенных трейсах накладных расходов нет; `traceId` присутствует в логах.
-- [ ] Необработанная ошибка React не оставляет белый экран: показывается экран восстановления, а отчёт уходит на сервер с ограничением частоты.
-- [ ] `AuditLoggerPort` вызывается в привилегированных сценариях M1 (регистрация, вход, отзыв сессий, смена пароля, обход RLS) и покрыт тестами через in-memory реализацию.
+- [x] Каждая строка лога содержит `requestId`, `organizationId`, `userId`, `route`, `statusCode`, `durationMs`; контекст протаскивается `AsyncLocalStorage`, а не аргументами.
+- [x] Ни один секрет, токен, пароль, ключ провайдера или содержимое vault не попадает в логи — проверяется тестом на наборе чувствительных полей.
+- [x] `/health` отвечает без обращений к зависимостям; `/ready` проверяет Postgres, Redis, S3, статус миграций и завершение shutdown, а отключённые опциональные сервисы отражаются как `disabled` и не влияют на HTTP-статус.
+- [x] `GET /metrics` отдаёт RED-набор (`http_requests_total`, `http_request_duration_seconds`) c `route` из шаблона Express, а не из URL; endpoint закрыт от анонимного доступа.
+- [x] Трейсы включаются только наличием `OTEL_EXPORTER_OTLP_ENDPOINT`; при выключенных трейсах накладных расходов нет; `traceId` присутствует в логах.
+- [x] Необработанная ошибка React не оставляет белый экран: показывается экран восстановления, а отчёт уходит на сервер с ограничением частоты.
+- [x] `AuditLoggerPort` вызывается в привилегированных сценариях M1 (регистрация, вход, отзыв сессий, смена пароля, сброс пароля) и покрыт тестами через in-memory реализацию; полнота закрыта гейтом `test/unit/audit/audit-coverage.test.ts`. Обход RLS вызывающего не имеет: явного обхода в коде нет — `guardedClient` отказывает вместо обхода, имя `rls.bypassed` зарезервировано за эпиком, который такой путь введёт.
 
 ## Зависимости / риски
 
@@ -60,9 +60,9 @@ health-эндпоинты и, если он захочет, метрики. Эп
 
 ## Истории
 
-- [ ] [STORY-009-01 — Логи со сквозным контекстом и редактированием секретов](stories/story-009-01-structured-logs-with-context-and-redaction.md)
-- [ ] [STORY-009-02 — /health и /ready с проверкой зависимостей](stories/story-009-02-health-and-ready-endpoints.md)
-- [ ] [STORY-009-03 — prom-client, /metrics и RED-метрики](stories/story-009-03-prometheus-metrics-red.md)
-- [ ] [STORY-009-04 — OpenTelemetry-трейсы](stories/story-009-04-opentelemetry-tracing.md)
-- [ ] [STORY-009-05 — Клиентский error boundary и отправка ошибок](stories/story-009-05-client-error-boundary-and-reporting.md)
-- [ ] [STORY-009-06 — AuditLoggerPort как заготовка под журнал аудита](stories/story-009-06-audit-logger-port-stub.md)
+- [x] [STORY-009-01 — Логи со сквозным контекстом и редактированием секретов](stories/story-009-01-structured-logs-with-context-and-redaction.md)
+- [x] [STORY-009-02 — /health и /ready с проверкой зависимостей](stories/story-009-02-health-and-ready-endpoints.md)
+- [x] [STORY-009-03 — prom-client, /metrics и RED-метрики](stories/story-009-03-prometheus-metrics-red.md)
+- [x] [STORY-009-04 — OpenTelemetry-трейсы](stories/story-009-04-opentelemetry-tracing.md)
+- [x] [STORY-009-05 — Клиентский error boundary и отправка ошибок](stories/story-009-05-client-error-boundary-and-reporting.md)
+- [x] [STORY-009-06 — AuditLoggerPort как заготовка под журнал аудита](stories/story-009-06-audit-logger-port-stub.md)
