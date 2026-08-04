@@ -1,0 +1,106 @@
+.section {
+  position: relative;
+  overflow: hidden;
+}
+
+/*
+ * The closing screen used to be one static halo on a flat background — the quietest thing on a page
+ * that spends twelve sections moving. Three layers now: a grid that recedes towards a horizon, two
+ * slow drifting auroras, and the type over both.
+ *
+ * All of it is CSS. The hero already pays for a WebGL context, and a second one at the bottom of the
+ * page would be the most expensive decoration on it. The drift is a keyframe animation, so the
+ * global `prefers-reduced-motion` block in `global.css` stops it without this file knowing.
+ */
+.backdrop {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+/* A perspective grid: the same 4rem lattice as the hero, laid back so it reads as a floor. */
+.grid {
+  position: absolute;
+  inset-block-start: 40%;
+  inset-inline: -20%;
+  block-size: 90%;
+  background-image:
+    linear-gradient(var(--bcl-border) 1px, transparent 1px),
+    linear-gradient(90deg, var(--bcl-border) 1px, transparent 1px);
+  background-size: 4rem 4rem;
+  transform: perspective(40rem) rotateX(62deg);
+  transform-origin: 50% 0;
+  mask-image: linear-gradient(var(--bcl-mask), transparent 65%);
+  opacity: 0.5;
+}
+
+.aurora,
+.auroraSecond {
+  position: absolute;
+  inline-size: 55rem;
+  block-size: 40rem;
+  border-radius: 50%;
+  filter: blur(3rem);
+  opacity: 0.55;
+  animation: drift 18s var(--bcl-ease-in-out) infinite alternate;
+}
+
+.aurora {
+  inset-block-start: -18%;
+  inset-inline-start: 8%;
+  background: radial-gradient(50% 50% at 50% 50%, var(--bcl-halo-accent), transparent 70%);
+}
+
+.auroraSecond {
+  inset-block-end: -30%;
+  inset-inline-end: 4%;
+  background: radial-gradient(50% 50% at 50% 50%, var(--bcl-halo-violet), transparent 70%);
+  animation-duration: 24s;
+  animation-direction: alternate-reverse;
+}
+
+@keyframes drift {
+  from {
+    transform: translate3d(-6%, -3%, 0) scale(1);
+  }
+
+  to {
+    transform: translate3d(6%, 4%, 0) scale(1.15);
+  }
+}
+
+.inner {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--bcl-space-md);
+  text-align: center;
+  padding-block: var(--bcl-space-3xl);
+}
+
+.title {
+  font-size: var(--bcl-display-md);
+  line-height: var(--bcl-leading-tight);
+  letter-spacing: var(--bcl-tracking-tight);
+  max-inline-size: 24ch;
+}
+
+.subtitle {
+  font-size: var(--bcl-text-lg);
+  color: var(--bcl-text-muted);
+  max-inline-size: var(--bcl-prose-max);
+}
+
+/* The wrapper the reveal animation needs. Without a width of its own it shrank to its content and
+   took the form off-centre — worse in Russian, where the content box is wider. */
+.formSlot {
+  inline-size: 100%;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--bcl-space-sm);
+  justify-content: center;
+}

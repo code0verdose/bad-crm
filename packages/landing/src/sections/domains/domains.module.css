@@ -1,0 +1,95 @@
+.layout {
+  display: grid;
+  grid-template-columns: minmax(0, 20rem) minmax(0, 1fr);
+  gap: var(--bcl-space-xl);
+  align-items: start;
+}
+
+/*
+ * The rail is pinned while the cards move past it. `align-items: start` on the grid is what lets it
+ * stick at all — a stretched grid item is as tall as the column and has nothing to stick within.
+ */
+.rail {
+  position: sticky;
+  inset-block-start: 12svh;
+  display: flex;
+  flex-direction: column;
+  gap: var(--bcl-space-md);
+}
+
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--bcl-space-3xs);
+  list-style: none;
+}
+
+.entry {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--bcl-space-2xs);
+  padding: var(--bcl-space-2xs) var(--bcl-space-sm);
+  border-radius: var(--bcl-radius-sm);
+  font-size: var(--bcl-text-sm);
+  /* Colour is animated by the browser, position by `motion`. Slower than the pill on purpose: the
+     highlight leads and the text follows it in, which reads as one movement rather than two. */
+  color: var(--bcl-text-faint);
+  transition: color var(--bcl-motion-base) var(--bcl-ease-out);
+}
+
+.entryActive {
+  color: var(--bcl-text);
+}
+
+/* The travelling highlight. `motion` moves it between entries with a shared layout id, so the pill
+   slides rather than blinking from one row to the next. */
+.pill {
+  position: absolute;
+  inset: 0;
+  border-radius: var(--bcl-radius-sm);
+  background: var(--bcl-surface-raised);
+  border: 1px solid var(--bcl-border);
+}
+
+.entryIcon {
+  position: relative;
+  inline-size: 1.1rem;
+  block-size: 1.1rem;
+  flex-shrink: 0;
+  color: var(--bcl-text-faint);
+  transition: color var(--bcl-motion-base) var(--bcl-ease-out);
+}
+
+.entryActive .entryIcon {
+  color: var(--bcl-accent-soft);
+}
+
+.entryLabel {
+  position: relative;
+}
+
+.panels {
+  display: flex;
+  flex-direction: column;
+  gap: var(--bcl-space-2xl);
+}
+
+@media (width <= 62em) {
+  .layout {
+    grid-template-columns: 1fr;
+    gap: var(--bcl-space-lg);
+  }
+
+  .rail {
+    position: static;
+  }
+
+  .list {
+    display: none;
+  }
+
+  .panels {
+    gap: var(--bcl-space-lg);
+  }
+}

@@ -1,0 +1,110 @@
+/*
+ * Reset and base layer. The second of the two files where a literal is legal (see `tokens.css`),
+ * for the same reason: this is where the defaults are declared rather than consumed.
+ */
+
+@import url('./styles/tokens.css');
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+}
+
+html {
+  /* The page is one long scroll story; the browser's own smooth scrolling would fight Lenis, so
+     anchor jumps are handled by the smooth-scroll provider instead. */
+  scroll-behavior: auto;
+  text-size-adjust: 100%;
+}
+
+body {
+  background: var(--bcl-bg);
+  color: var(--bcl-text);
+  font-family: var(--bcl-font);
+  font-size: var(--bcl-text-md);
+  line-height: var(--bcl-leading-normal);
+  font-synthesis-weight: none;
+  text-rendering: optimizelegibility;
+  -webkit-font-smoothing: antialiased;
+
+  /* Every section that pins or overlaps is a `position: sticky` box; a stray horizontal overflow
+     from a decorative layer would turn the whole page into a two-axis scroller. */
+  overflow-x: clip;
+}
+
+h1,
+h2,
+h3,
+h4 {
+  font-weight: 600;
+  line-height: var(--bcl-leading-snug);
+  letter-spacing: var(--bcl-tracking-tight);
+  text-wrap: balance;
+}
+
+p {
+  text-wrap: pretty;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+img,
+svg,
+canvas {
+  display: block;
+  max-inline-size: 100%;
+}
+
+button,
+input,
+textarea {
+  font: inherit;
+  color: inherit;
+}
+
+button {
+  border: 0;
+  background: none;
+  cursor: pointer;
+}
+
+/* One focus treatment for the whole page. `:focus-visible` rather than `:focus` so a pointer click
+   does not paint a ring, and the ring is drawn with `outline` so it never changes layout. */
+:focus-visible {
+  outline: 2px solid var(--bcl-accent);
+  outline-offset: 3px;
+  border-radius: var(--bcl-radius-sm);
+}
+
+::selection {
+  background: var(--bcl-accent);
+  color: var(--bcl-accent-contrast);
+}
+
+/*
+ * The motion kill switch, and the reason every animation on this page is decoration.
+ *
+ * The JavaScript half is `use-reduced-motion.hook.ts`: scroll-linked transforms resolve to their
+ * final state, Lenis never starts, shader backgrounds are never mounted. This block covers what
+ * JavaScript does not own — CSS transitions, keyframes and scroll-behaviour — so that a page which
+ * somehow renders before the hook has run is still static.
+ */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

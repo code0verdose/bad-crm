@@ -50,6 +50,7 @@
 | EPIC-044 | Созвоны и календарь | ⚫ backlog | M9 | 0/0 |
 | EPIC-045 | Финальное укрепление безопасности | ⚫ backlog | M9 | 0/0 |
 | EPIC-046 | Self-host релиз 1.0 | ⚫ backlog | M9 | 0/0 |
+| EPIC-047 | Маркетинговый лендинг | 🔵 review | M1 | 0/2 |
 | EPIC-048 | MCP-сервер для внешних агентов | ⚫ backlog | M8 | 0/8 |
 
-_Эпиков: 47 (+ EPIC-047, не закоммичен). Статусы: backlog → ready → in-progress → review → done; blocked — флаг._
+_Эпиков: 48. Статусы: backlog → ready → in-progress → review → done; blocked — флаг._

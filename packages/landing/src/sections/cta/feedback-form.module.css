@@ -1,0 +1,164 @@
+/*
+ * A border that travels around the form.
+ *
+ * A conic gradient rotated by an animated angle, painted **into the border box** and covered
+ * everywhere else by the card's own fill: two backgrounds, two clips, so only the one-pixel frame
+ * shows the sweep.
+ *
+ * It was a pseudo-element behind the card first, and that painted the gradient across the whole
+ * surface — a negative `z-index` child sits above the background of its own stacking context, not
+ * behind it, so `isolation: isolate` guaranteed exactly the wrong result. Measured on the page.
+ *
+ * The angle is a registered custom property: `@property` is what makes an angle interpolable at all,
+ * and without the registration the browser jumps from 0deg to 360deg instead of sweeping.
+ *
+ * It respects reduced motion through the global rule in `global.css`, which flattens every
+ * animation on the page — the gradient simply stops, and the border stays a gradient.
+ */
+@property --bcl-border-angle {
+  syntax: '<angle>';
+  initial-value: 0deg;
+  inherits: false;
+}
+
+.form {
+  position: relative;
+  inline-size: min(100%, 40rem);
+  margin-inline: auto;
+  margin-block-start: var(--bcl-space-lg);
+  display: flex;
+  flex-direction: column;
+  gap: var(--bcl-space-sm);
+  padding: var(--bcl-space-lg);
+  border-radius: var(--bcl-radius-lg);
+  border: 1px solid transparent;
+  background:
+    linear-gradient(160deg, var(--bcl-surface), var(--bcl-bg-deep)) padding-box,
+    conic-gradient(
+        from var(--bcl-border-angle),
+        var(--bcl-border) 0deg,
+        var(--bcl-accent-cyan) 70deg,
+        var(--bcl-accent-violet) 140deg,
+        var(--bcl-border) 220deg,
+        var(--bcl-border) 360deg
+      )
+      border-box;
+  animation: sweep 6s linear infinite;
+  text-align: start;
+}
+
+@keyframes sweep {
+  to {
+    --bcl-border-angle: 360deg;
+  }
+}
+
+.title {
+  font-size: var(--bcl-text-md);
+  color: var(--bcl-text);
+}
+
+.row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--bcl-space-sm);
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--bcl-space-3xs);
+}
+
+.label {
+  font-size: var(--bcl-text-xs);
+  letter-spacing: var(--bcl-tracking-wide);
+  text-transform: uppercase;
+  color: var(--bcl-text-faint);
+}
+
+/* Same control as the vault field: inset, rounded, ring on focus rather than a browser outline. */
+.control {
+  inline-size: 100%;
+  padding: var(--bcl-space-xs) var(--bcl-space-sm);
+  border: 1px solid var(--bcl-border);
+  border-radius: var(--bcl-radius-md);
+  background: var(--bcl-bg-deep);
+  box-shadow: var(--bcl-mac-inset);
+  font-size: var(--bcl-text-sm);
+  transition:
+    border-color var(--bcl-motion-base) var(--bcl-ease-out),
+    box-shadow var(--bcl-motion-base) var(--bcl-ease-out);
+}
+
+.control:focus-visible {
+  outline: none;
+  border-color: var(--bcl-accent);
+  box-shadow:
+    var(--bcl-mac-inset),
+    0 0 0 0.25rem var(--bcl-accent-wash);
+}
+
+.control::placeholder {
+  color: var(--bcl-text-faint);
+}
+
+.message {
+  min-block-size: 6rem;
+  resize: vertical;
+  font-family: inherit;
+}
+
+.footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--bcl-space-sm);
+  flex-wrap: wrap;
+}
+
+.hint {
+  flex: 1;
+  min-inline-size: 12rem;
+  font-size: var(--bcl-text-xs);
+  color: var(--bcl-text-faint);
+}
+
+.submit {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--bcl-space-2xs);
+  padding-inline: var(--bcl-space-lg);
+  padding-block: var(--bcl-space-xs);
+  border-radius: var(--bcl-radius-pill);
+  background: var(--bcl-accent);
+  color: var(--bcl-accent-contrast);
+  font-size: var(--bcl-text-sm);
+  font-weight: 500;
+  transition:
+    transform var(--bcl-motion-fast) var(--bcl-ease-out),
+    box-shadow var(--bcl-motion-fast) var(--bcl-ease-out);
+}
+
+.submit:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 0.75rem 2rem -0.5rem var(--bcl-glow);
+}
+
+.sent {
+  display: flex;
+  align-items: center;
+  gap: var(--bcl-space-2xs);
+  font-size: var(--bcl-text-sm);
+  color: var(--bcl-success);
+}
+
+@media (width <= 48em) {
+  .row {
+    grid-template-columns: 1fr;
+  }
+
+  .form {
+    padding: var(--bcl-space-md);
+  }
+}

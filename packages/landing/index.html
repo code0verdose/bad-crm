@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="dark light" />
+    <title>Bad CRM — one workspace for the whole team</title>
+    <meta
+      name="description"
+      content="Self-hosted, multi-tenant workspace for software teams. Projects, tasks, docs, knowledge base, files, time tracking, chat, an end-to-end encrypted vault and an AI assistant — one install, one data model, one permission model."
+    />
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Bad CRM — one workspace for the whole team" />
+    <meta
+      property="og:description"
+      content="Six subscriptions replaced by one graph you own. AGPL-3.0, docker compose up."
+    />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <!--
+      The stored language, before first paint.
+
+      It duplicates `detect-locale.util.ts` on purpose: a module cannot run before the bundle has
+      loaded, and `<html lang>` decides how a screen reader pronounces the page. The colour scheme
+      needs no bootstrap — the landing has one, and `tokens.css` declares it.
+    -->
+    <script>
+      (() => {
+        const locale = localStorage.getItem('bcl-locale');
+        if (locale === 'en' || locale === 'ru') document.documentElement.lang = locale;
+      })();
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/app/main.tsx"></script>
+  </body>
+</html>

@@ -1,0 +1,19 @@
+.section {
+  position: relative;
+  padding-block: var(--bcl-space-3xl);
+}
+
+.flush {
+  padding-block: 0;
+}
+
+.inner {
+  inline-size: min(100% - 2 * var(--bcl-space-md), var(--bcl-shell-max));
+  margin-inline: auto;
+}
+
+@media (width <= 48em) {
+  .section {
+    padding-block: var(--bcl-space-2xl);
+  }
+}

@@ -1,0 +1,73 @@
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--bcl-space-lg);
+}
+
+/*
+ * No rules above and below the band any more. The strike-through is the line this section is about;
+ * two more of them framing it made the whole block read as a table row.
+ *
+ * The mask does the framing instead — the band fades out at both edges, so it reads as something
+ * passing through rather than as something that ends.
+ */
+.marquee {
+  padding-block: var(--bcl-space-sm);
+  mask-image: linear-gradient(
+    90deg,
+    transparent,
+    var(--bcl-mask) 6%,
+    var(--bcl-mask) 94%,
+    transparent
+  );
+}
+
+.row {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--bcl-space-xl);
+  padding-inline-end: var(--bcl-space-xl);
+  font-size: var(--bcl-text-xl);
+  font-weight: 600;
+  letter-spacing: var(--bcl-tracking-tight);
+  color: var(--bcl-text-muted);
+}
+
+.item {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--bcl-space-2xs);
+  transition:
+    color var(--bcl-motion-slow) var(--bcl-ease-out),
+    opacity var(--bcl-motion-slow) var(--bcl-ease-out),
+    filter var(--bcl-motion-slow) var(--bcl-ease-out);
+  transition-delay: calc(var(--bcl-strike-index) * 90ms);
+}
+
+/* The mark is drawn at the size of the text beside it (`brand-mark.module.css` sizes in `em`). */
+.mark {
+  font-size: 1.4em;
+  opacity: 0.8;
+}
+
+.struck .item {
+  color: var(--bcl-text-faint);
+  opacity: 0.45;
+  filter: grayscale(1);
+}
+
+.footnote {
+  display: flex;
+  align-items: center;
+  gap: var(--bcl-space-2xs);
+  font-size: var(--bcl-text-sm);
+  color: var(--bcl-text-muted);
+}
+
+.arrow {
+  inline-size: 1rem;
+  block-size: 1rem;
+  flex-shrink: 0;
+  color: var(--bcl-accent);
+}

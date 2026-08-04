@@ -1,0 +1,138 @@
+.hero {
+  position: relative;
+  min-block-size: 100svh;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  /* The fold-away needs depth to read as a fold rather than as a shrink. */
+  perspective: 75rem;
+}
+
+.backdrop {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+/* The static half of the background: always painted, so a reader with reduced motion or a narrow
+   screen — who never gets the shader — still sees the same composition. */
+.glow {
+  position: absolute;
+  inset-block-start: -30%;
+  inset-inline-start: 50%;
+  inline-size: 90rem;
+  block-size: 60rem;
+  translate: -50% 0;
+  background: radial-gradient(50% 50% at 50% 50%, var(--bcl-halo-accent), transparent 70%);
+  filter: blur(2rem);
+}
+
+/*
+ * The shader sits behind everything and has to stay a *backdrop*. Full strength it reads as a
+ * desktop wallpaper somebody forgot to turn down: the text loses contrast and the page stops
+ * looking like a product. Faded and masked towards the bottom, it becomes the light the hero is
+ * lit by.
+ */
+.aurora {
+  position: absolute;
+  inset-block-start: -15%;
+  inset-inline: 0;
+  block-size: 85%;
+  opacity: 0.32;
+  mask-image: linear-gradient(180deg, var(--bcl-mask) 30%, transparent);
+}
+
+.grid {
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(var(--bcl-border) 1px, transparent 1px),
+    linear-gradient(90deg, var(--bcl-border) 1px, transparent 1px);
+  background-size: 4rem 4rem;
+  mask-image: radial-gradient(70% 60% at 50% 35%, var(--bcl-mask), transparent 75%);
+  opacity: 0.35;
+}
+
+.content {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--bcl-space-md);
+  text-align: center;
+  inline-size: min(100% - 2 * var(--bcl-space-md), var(--bcl-shell-max));
+  padding-block: var(--bcl-space-3xl);
+  transform-style: preserve-3d;
+}
+
+.title {
+  font-size: var(--bcl-display-lg);
+  line-height: var(--bcl-leading-tight);
+  letter-spacing: var(--bcl-tracking-tight);
+  font-weight: 600;
+}
+
+/*
+ * The last line is the promise, so it carries the accent.
+ *
+ * Deliberately a solid colour rather than the gradient-clipped-to-text that a hero like this
+ * usually gets. Measured, not preferred: the words inside are animated `inline-block` boxes with
+ * their own `filter` and `will-change`, so each of them paints in its own layer and the ancestor's
+ * `background-clip: text` clips to nothing — the whole line rendered invisible. Painting the
+ * gradient per word instead gives every word its own full spectrum, which looks like a mistake.
+ * The gradients on this page belong to the aurora and the surfaces; the headline stays legible.
+ */
+.accentLine {
+  display: block;
+  color: var(--bcl-accent-soft);
+}
+
+.subtitle {
+  max-inline-size: 46rem;
+  font-size: var(--bcl-text-lg);
+  color: var(--bcl-text-muted);
+}
+
+.lede {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--bcl-space-md);
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--bcl-space-sm);
+  justify-content: center;
+  margin-block-start: var(--bcl-space-sm);
+}
+
+.stat {
+  margin-block-start: var(--bcl-space-md);
+  font-size: var(--bcl-text-xs);
+  letter-spacing: var(--bcl-tracking-wide);
+  text-transform: uppercase;
+  color: var(--bcl-text-faint);
+}
+
+.scrollHint {
+  position: absolute;
+  inset-block-end: var(--bcl-space-lg);
+  inset-inline-start: 50%;
+  translate: -50% 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--bcl-space-2xs);
+  font-size: var(--bcl-text-xs);
+  letter-spacing: var(--bcl-tracking-wide);
+  text-transform: uppercase;
+  color: var(--bcl-text-faint);
+}
+
+.scrollLine {
+  inline-size: 1px;
+  block-size: 3rem;
+  background: linear-gradient(var(--bcl-border-strong), transparent);
+}

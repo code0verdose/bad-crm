@@ -11,7 +11,8 @@
     "pnpm": ">=10 <11"
   },
   "scripts": {
-    "dev": "tsx scripts/preflight.ts && turbo run dev",
+    "dev": "tsx scripts/preflight.ts && turbo run dev --filter=!@bad-crm/landing",
+    "dev:landing": "turbo run dev --filter=@bad-crm/landing",
     "check:services": "tsx scripts/check-services.ts",
     "check:rls": "pnpm --filter @bad-crm/server run check:rls",
     "coverage:baseline": "tsx scripts/ci/coverage-baseline.ts",

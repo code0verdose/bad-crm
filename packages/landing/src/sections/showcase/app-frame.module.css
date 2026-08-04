@@ -1,0 +1,372 @@
+.frame {
+  display: grid;
+  /* Title bar, then the window body. The body is the row that may shrink, which is what keeps the
+     frame inside the stage at every scale. */
+  grid-template-rows: auto minmax(0, 1fr);
+  /*
+   * A window has proportions, not a height.
+   *
+   * `block-size: 100%` made the frame as tall as whatever row it landed in, so at the end of the
+   * unfolding the body outgrew its own title bar — the interface painted over the chrome — and on a
+   * short viewport the leftover height showed as a gap under it. An aspect ratio plus a ceiling of
+   * the available height fixes both: the frame keeps the shape of a real window at every scale.
+   */
+  aspect-ratio: 16 / 10;
+  inline-size: 100%;
+  block-size: auto;
+  max-block-size: 100%;
+  overflow: hidden;
+  border: 1px solid var(--bcl-border);
+  border-radius: var(--bcl-radius-lg);
+  background: var(--bcl-surface);
+  box-shadow: var(--bcl-shadow-lift);
+  font-size: var(--bcl-text-xs);
+  text-align: start;
+}
+
+/*
+ * The window body. `overflow: hidden` stays even though nothing moves inside any more: the board
+ * can outgrow a short viewport, and a card sliding out over the title bar is exactly the defect the
+ * parallax used to produce.
+ */
+.body {
+  display: grid;
+  grid-template-columns: 13rem minmax(0, 1fr) 18rem;
+  min-block-size: 0;
+  overflow: hidden;
+}
+
+.sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: var(--bcl-space-xs);
+  padding: var(--bcl-space-sm);
+  border-inline-end: 1px solid var(--bcl-border);
+  background: var(--bcl-bg-deep);
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: var(--bcl-space-2xs);
+  font-weight: 600;
+  color: var(--bcl-text);
+}
+
+.mark {
+  inline-size: 1.25rem;
+  block-size: 1.25rem;
+  border-radius: var(--bcl-radius-sm);
+  background: linear-gradient(135deg, var(--bcl-accent-cyan), var(--bcl-accent-violet));
+}
+
+.navItem {
+  display: flex;
+  align-items: center;
+  gap: var(--bcl-space-2xs);
+  padding: var(--bcl-space-3xs) var(--bcl-space-2xs);
+  border-radius: var(--bcl-radius-sm);
+  color: var(--bcl-text-faint);
+}
+
+.navItemActive {
+  background: var(--bcl-surface-raised);
+  color: var(--bcl-text);
+}
+
+.navIcon {
+  inline-size: 0.95rem;
+  block-size: 0.95rem;
+  flex-shrink: 0;
+  opacity: 0.85;
+}
+
+.main {
+  display: flex;
+  flex-direction: column;
+  min-inline-size: 0;
+}
+
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--bcl-space-sm);
+  padding: var(--bcl-space-sm);
+  border-block-end: 1px solid var(--bcl-border);
+}
+
+.projectLabel {
+  color: var(--bcl-text-faint);
+}
+
+.projectName {
+  font-size: var(--bcl-text-sm);
+  font-weight: 600;
+  color: var(--bcl-text);
+}
+
+.timer {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--bcl-space-2xs);
+  padding: var(--bcl-space-3xs) var(--bcl-space-2xs);
+  border: 1px solid var(--bcl-border);
+  border-radius: var(--bcl-radius-pill);
+  font-family: var(--bcl-font-mono);
+  color: var(--bcl-text);
+}
+
+.timerPulse {
+  inline-size: 0.45rem;
+  block-size: 0.45rem;
+  border-radius: var(--bcl-radius-pill);
+  background: var(--bcl-success);
+}
+
+.board {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--bcl-space-sm);
+  padding: var(--bcl-space-sm);
+  overflow: hidden;
+}
+
+.column {
+  display: flex;
+  flex-direction: column;
+  gap: var(--bcl-space-2xs);
+}
+
+.columnTitle {
+  color: var(--bcl-text-faint);
+  text-transform: uppercase;
+  letter-spacing: var(--bcl-tracking-wide);
+}
+
+/* The stage the views cross-fade inside. It owns the height so a shorter view does not resize the
+   window mid-transition. */
+.stage {
+  position: relative;
+  flex: 1;
+  min-block-size: 0;
+}
+
+.view {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--bcl-space-2xs);
+  padding: var(--bcl-space-xs);
+  border: 1px solid var(--bcl-border);
+  border-radius: var(--bcl-radius-md);
+  background: linear-gradient(160deg, var(--bcl-surface-raised), var(--bcl-surface));
+  color: var(--bcl-text);
+  box-shadow: var(--bcl-shadow-soft);
+}
+
+.cardTitle {
+  font-size: var(--bcl-text-xs);
+  line-height: 1.35;
+}
+
+.cardMeta {
+  display: flex;
+  align-items: center;
+  gap: var(--bcl-space-2xs);
+}
+
+.tag {
+  padding: 0.05rem var(--bcl-space-2xs);
+  border-radius: var(--bcl-radius-pill);
+  background: var(--bcl-accent-wash);
+  color: var(--bcl-accent-soft);
+  white-space: nowrap;
+}
+
+.subtasks,
+.estimate {
+  font-family: var(--bcl-font-mono);
+  color: var(--bcl-text-faint);
+}
+
+.who {
+  margin-inline-start: auto;
+  display: grid;
+  place-items: center;
+  inline-size: 1.35rem;
+  block-size: 1.35rem;
+  flex-shrink: 0;
+  border-radius: var(--bcl-radius-pill);
+  background: linear-gradient(135deg, var(--bcl-accent), var(--bcl-accent-violet));
+  color: var(--bcl-accent-contrast);
+  font-size: 0.6rem;
+  font-weight: 600;
+}
+
+/* ── the document view ──────────────────────────────────────────────────────────────────────── */
+.doc {
+  display: flex;
+  flex-direction: column;
+  gap: var(--bcl-space-2xs);
+  padding: var(--bcl-space-md);
+  overflow: hidden;
+}
+
+.docHeading {
+  font-size: var(--bcl-text-sm);
+  color: var(--bcl-text);
+}
+
+.docParagraph {
+  color: var(--bcl-text-muted);
+  line-height: 1.6;
+}
+
+.docCallout {
+  align-self: flex-start;
+  margin-block-start: var(--bcl-space-2xs);
+  padding: var(--bcl-space-3xs) var(--bcl-space-2xs);
+  border-inline-start: 0.125rem solid var(--bcl-accent);
+  border-radius: var(--bcl-radius-sm);
+  background: var(--bcl-bg-deep);
+  color: var(--bcl-accent-soft);
+}
+
+/* ── the timesheet view ─────────────────────────────────────────────────────────────────────── */
+.sheet {
+  display: flex;
+  flex-direction: column;
+  gap: var(--bcl-space-3xs);
+  padding: var(--bcl-space-md);
+  overflow: hidden;
+}
+
+.sheetTitle {
+  font-size: var(--bcl-text-sm);
+  color: var(--bcl-text);
+  margin-block-end: var(--bcl-space-2xs);
+}
+
+.sheetHead,
+.sheetRow,
+.sheetTotal {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 2rem 3rem;
+  align-items: center;
+  gap: var(--bcl-space-2xs);
+}
+
+.sheetHead {
+  color: var(--bcl-text-faint);
+  text-transform: uppercase;
+  letter-spacing: var(--bcl-tracking-wide);
+  padding-block-end: var(--bcl-space-3xs);
+  border-block-end: 1px solid var(--bcl-border);
+}
+
+.sheetRow {
+  padding-block: var(--bcl-space-3xs);
+}
+
+.sheetTask {
+  color: var(--bcl-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sheetHours {
+  font-family: var(--bcl-font-mono);
+  text-align: end;
+  color: var(--bcl-text);
+}
+
+.sheetTotal {
+  margin-block-start: var(--bcl-space-2xs);
+  padding-block-start: var(--bcl-space-2xs);
+  border-block-start: 1px solid var(--bcl-border);
+  grid-template-columns: minmax(0, 1fr) 3rem;
+  color: var(--bcl-accent-soft);
+}
+
+.aside {
+  position: relative;
+  display: grid;
+  padding: var(--bcl-space-sm);
+  border-inline-start: 1px solid var(--bcl-border);
+  background: var(--bcl-bg-deep);
+}
+
+.asidePane {
+  grid-area: 1 / 1;
+  display: flex;
+  flex-direction: column;
+  gap: var(--bcl-space-2xs);
+  block-size: 100%;
+}
+
+.asideLine {
+  display: flex;
+  align-items: center;
+  gap: var(--bcl-space-2xs);
+  color: var(--bcl-text-muted);
+}
+
+.asideDot {
+  inline-size: 0.35rem;
+  block-size: 0.35rem;
+  flex-shrink: 0;
+  border-radius: var(--bcl-radius-pill);
+  background: var(--bcl-accent);
+}
+
+.docTitle {
+  font-weight: 600;
+  color: var(--bcl-text);
+}
+
+.chat {
+  margin-block-start: auto;
+  display: flex;
+  gap: var(--bcl-space-2xs);
+  align-items: flex-start;
+}
+
+.avatar {
+  inline-size: 1.5rem;
+  block-size: 1.5rem;
+  flex-shrink: 0;
+  border-radius: var(--bcl-radius-pill);
+  background: linear-gradient(135deg, var(--bcl-accent), var(--bcl-accent-violet));
+}
+
+.chatText {
+  color: var(--bcl-text-muted);
+}
+
+@media (width <= 62em) {
+  .frame {
+    block-size: auto;
+    max-block-size: none;
+  }
+
+  .body {
+    grid-template-columns: 1fr;
+  }
+
+  .sidebar,
+  .aside {
+    display: none;
+  }
+
+  .board {
+    grid-template-columns: 1fr;
+  }
+}

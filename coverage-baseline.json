@@ -16,6 +16,10 @@
     "packages/client": {
       "lines": 100,
       "branches": 100
+    },
+    "packages/landing": {
+      "lines": 94.23,
+      "branches": 89.74
     }
   }
 }

@@ -1,0 +1,66 @@
+.scene {
+  position: relative;
+  /* The scroll distance the unfolding is spread over. Shorter and it snaps; much longer and the
+     reader starts wondering whether the page is stuck. */
+  block-size: 260svh;
+}
+
+/*
+ * Three rows — heading, stage, caption — with the stage taking whatever is left and centring its
+ * contents.
+ *
+ * It used to be a centred flex column, and that is what produced the defect this layout exists to
+ * fix: the frame grows as it unfolds, a column lays out from the top, so the extra height was taken
+ * off the top of the viewport (heading clipped) and left as a gap at the bottom. A fixed grid with
+ * the stage in the middle row cannot move: whatever the frame's scale, it grows about its own
+ * centre inside a row whose height was decided before the animation started.
+ */
+.sticky {
+  position: sticky;
+  inset-block-start: 0;
+  block-size: 100svh;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  place-items: center center;
+  gap: var(--bcl-space-md);
+  padding-block: var(--bcl-space-lg);
+  overflow: hidden;
+  perspective: 100rem;
+}
+
+.heading {
+  inline-size: min(100% - 2 * var(--bcl-space-md), var(--bcl-shell-max));
+  text-align: center;
+}
+
+.stage {
+  inline-size: min(100% - 2 * var(--bcl-space-md), var(--bcl-shell-max));
+  /* The row is the box the frame must never leave; the frame itself fills it. */
+  block-size: 100%;
+  display: grid;
+  place-items: center;
+  transform-style: preserve-3d;
+}
+
+.caption {
+  inline-size: min(100% - 2 * var(--bcl-space-md), var(--bcl-prose-max));
+  text-align: center;
+  font-size: var(--bcl-text-sm);
+  color: var(--bcl-text-muted);
+}
+
+@media (width <= 62em) {
+  .scene {
+    block-size: auto;
+  }
+
+  .sticky {
+    position: static;
+    block-size: auto;
+    padding-block: var(--bcl-space-2xl);
+  }
+
+  .stage {
+    block-size: auto;
+  }
+}

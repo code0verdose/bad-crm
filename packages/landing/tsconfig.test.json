@@ -1,0 +1,19 @@
+{
+  // Same split as the client: the suite is typechecked but never bundled, so it gets a project of
+  // its own. `vite.config.ts` and `vitest.config.ts` are Node-side code and belong here too.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "incremental": false,
+    "types": ["node", "vite/client"]
+  },
+  "include": [
+    "test/**/*.ts",
+    "test/**/*.tsx",
+    "src/**/*.test.ts",
+    "src/**/*.test.tsx",
+    "src/vite-env.d.ts",
+    "vite.config.ts",
+    "vitest.config.ts"
+  ]
+}

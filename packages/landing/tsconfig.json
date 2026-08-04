@@ -1,0 +1,25 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "jsx": "react-jsx",
+    "useDefineForClassFields": true,
+    "noEmit": true,
+
+    // The landing is a leaf: it has no FSD layers to import across packages and no workspace
+    // references. One alias, anchored to `src`, is enough — and keeps `../../..` out of the tree
+    // exactly as `rules/naming-and-structure.mdc` asks.
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["./src/*"]
+    },
+
+    // CSS Modules are imported for their class map; without this the compiler sees an untyped
+    // module and `classes.hero` is `any` in a package that is otherwise strict.
+    "types": ["vite/client"]
+  },
+  "include": ["src/**/*.ts", "src/**/*.tsx"],
+  "exclude": ["src/**/*.test.ts", "src/**/*.test.tsx"]
+}

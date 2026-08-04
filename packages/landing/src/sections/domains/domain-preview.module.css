@@ -1,0 +1,345 @@
+/*
+ * The picture beside each domain. One frame, eight contents — see `domain-preview.component.tsx`
+ * for what each one draws and why it is drawn rather than iconified.
+ */
+.preview {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: var(--bcl-space-2xs);
+  padding: var(--bcl-space-md);
+  border: 1px solid var(--bcl-border);
+  border-radius: var(--bcl-radius-md);
+  background: var(--bcl-bg-deep);
+  block-size: 100%;
+  min-block-size: 13rem;
+  font-size: var(--bcl-text-xs);
+  overflow: hidden;
+}
+
+/* ── projects: milestones with progress ─────────────────────────────────────────────────────── */
+.rows {
+  display: flex;
+  flex-direction: column;
+  gap: var(--bcl-space-2xs);
+}
+
+.row {
+  display: grid;
+  grid-template-columns: 5.5rem minmax(0, 1fr) 2.5rem;
+  align-items: center;
+  gap: var(--bcl-space-2xs);
+}
+
+.rowName {
+  color: var(--bcl-text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.meter {
+  block-size: 0.4rem;
+  border-radius: var(--bcl-radius-pill);
+  background: var(--bcl-surface-raised);
+  overflow: hidden;
+}
+
+.meterFill {
+  display: block;
+  block-size: 100%;
+  border-radius: var(--bcl-radius-pill);
+  background: linear-gradient(90deg, var(--bcl-accent-cyan), var(--bcl-accent-violet));
+}
+
+.rowValue {
+  font-family: var(--bcl-font-mono);
+  text-align: end;
+  color: var(--bcl-text-faint);
+}
+
+/* ── tasks: a board with one card in flight ─────────────────────────────────────────────────── */
+.board {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--bcl-space-2xs);
+  block-size: 100%;
+}
+
+.column {
+  display: flex;
+  flex-direction: column;
+  gap: var(--bcl-space-3xs);
+  padding: var(--bcl-space-3xs);
+  border-radius: var(--bcl-radius-sm);
+  background: var(--bcl-surface);
+}
+
+.columnName {
+  color: var(--bcl-text-faint);
+  text-transform: uppercase;
+  letter-spacing: var(--bcl-tracking-wide);
+  font-size: 0.6rem;
+}
+
+.card {
+  block-size: 1.6rem;
+  border-radius: var(--bcl-radius-sm);
+  border: 1px solid var(--bcl-border);
+  background: var(--bcl-surface-raised);
+}
+
+/* The card being dragged: lifted, tilted, and following the pointer that is not drawn. */
+.cardMoving {
+  border-color: var(--bcl-accent);
+  background: linear-gradient(160deg, var(--bcl-accent-wash), var(--bcl-surface-raised));
+  transform: rotate(-2deg) translateY(-0.15rem);
+  box-shadow: var(--bcl-shadow-soft);
+}
+
+/* ── documents: a page with a comment on a line ─────────────────────────────────────────────── */
+.doc {
+  display: flex;
+  flex-direction: column;
+  gap: var(--bcl-space-2xs);
+}
+
+.docHeading {
+  block-size: 0.6rem;
+  inline-size: 55%;
+  border-radius: var(--bcl-radius-pill);
+  background: linear-gradient(90deg, var(--bcl-accent), var(--bcl-accent-violet));
+}
+
+.docLine {
+  block-size: 0.4rem;
+  border-radius: var(--bcl-radius-pill);
+  background: var(--bcl-surface-raised);
+}
+
+.docLineShort {
+  inline-size: 70%;
+}
+
+.docComment {
+  display: flex;
+  align-items: center;
+  gap: var(--bcl-space-2xs);
+  padding: var(--bcl-space-2xs);
+  border-inline-start: 0.125rem solid var(--bcl-accent);
+  border-radius: var(--bcl-radius-sm);
+  background: var(--bcl-surface);
+}
+
+.docCommentDot {
+  inline-size: 1rem;
+  block-size: 1rem;
+  flex-shrink: 0;
+  border-radius: var(--bcl-radius-pill);
+  background: linear-gradient(135deg, var(--bcl-accent-cyan), var(--bcl-accent-violet));
+}
+
+.docCommentBody {
+  block-size: 0.35rem;
+  flex: 1;
+  border-radius: var(--bcl-radius-pill);
+  background: var(--bcl-surface-raised);
+}
+
+/* ── knowledge base: a graph whose edges join its nodes ─────────────────────────────────────── */
+.graph {
+  inline-size: 100%;
+  block-size: 100%;
+  min-block-size: 8rem;
+}
+
+.edge {
+  stroke: var(--bcl-border-strong);
+  stroke-width: 0.6;
+  vector-effect: non-scaling-stroke;
+}
+
+.node {
+  fill: var(--bcl-accent-soft);
+}
+
+.nodeHub {
+  fill: var(--bcl-accent-cyan);
+}
+
+/* ── files ──────────────────────────────────────────────────────────────────────────────────── */
+.files {
+  display: flex;
+  flex-direction: column;
+  gap: var(--bcl-space-2xs);
+}
+
+.file {
+  display: grid;
+  grid-template-columns: 2.2rem minmax(0, 1fr) 3.5rem;
+  align-items: center;
+  gap: var(--bcl-space-2xs);
+  padding: var(--bcl-space-3xs) var(--bcl-space-2xs);
+  border-radius: var(--bcl-radius-sm);
+  background: var(--bcl-surface);
+}
+
+.fileType {
+  padding-block: 0.05rem;
+  border-radius: var(--bcl-radius-sm);
+  background: var(--bcl-accent-wash);
+  color: var(--bcl-accent-soft);
+  font-family: var(--bcl-font-mono);
+  font-size: 0.6rem;
+  text-align: center;
+}
+
+.fileName {
+  color: var(--bcl-text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fileSize {
+  font-family: var(--bcl-font-mono);
+  text-align: end;
+  color: var(--bcl-text-faint);
+}
+
+/* ── time: a week and its total ─────────────────────────────────────────────────────────────── */
+.week {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--bcl-space-2xs);
+  block-size: 100%;
+  min-block-size: 7rem;
+}
+
+.day {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--bcl-space-3xs);
+  block-size: 100%;
+  justify-content: flex-end;
+}
+
+.dayBar {
+  inline-size: 100%;
+  border-radius: var(--bcl-radius-sm) var(--bcl-radius-sm) 0 0;
+  background: linear-gradient(180deg, var(--bcl-accent), var(--bcl-accent-violet));
+  opacity: 0.85;
+}
+
+.dayLabel {
+  color: var(--bcl-text-faint);
+  font-family: var(--bcl-font-mono);
+  font-size: 0.6rem;
+}
+
+.weekTotal {
+  align-self: flex-end;
+  padding: var(--bcl-space-3xs) var(--bcl-space-2xs);
+  border-radius: var(--bcl-radius-sm);
+  background: var(--bcl-surface);
+  font-family: var(--bcl-font-mono);
+  color: var(--bcl-accent-soft);
+}
+
+/* ── chat ───────────────────────────────────────────────────────────────────────────────────── */
+.thread {
+  display: flex;
+  flex-direction: column;
+  gap: var(--bcl-space-2xs);
+}
+
+.message {
+  inline-size: 72%;
+  block-size: 1.6rem;
+  border-radius: var(--bcl-radius-md);
+  border: 1px solid var(--bcl-border);
+  background: var(--bcl-surface);
+}
+
+.messageOwn {
+  align-self: flex-end;
+  inline-size: 58%;
+  border-color: var(--bcl-accent);
+  background: var(--bcl-accent-wash);
+}
+
+.messageTyping {
+  display: flex;
+  align-items: center;
+  gap: var(--bcl-space-3xs);
+  padding: var(--bcl-space-2xs);
+  inline-size: 3.5rem;
+  border-radius: var(--bcl-radius-md);
+  border: 1px solid var(--bcl-border);
+  background: var(--bcl-surface);
+}
+
+.typingDot {
+  inline-size: 0.3rem;
+  block-size: 0.3rem;
+  border-radius: var(--bcl-radius-pill);
+  background: var(--bcl-accent);
+  animation: blink 1.2s var(--bcl-ease-in-out) infinite;
+}
+
+.typingDot:nth-child(2) {
+  animation-delay: 0.15s;
+}
+
+.typingDot:nth-child(3) {
+  animation-delay: 0.3s;
+}
+
+@keyframes blink {
+  0%,
+  100% {
+    opacity: 0.25;
+  }
+
+  50% {
+    opacity: 1;
+  }
+}
+
+/* ── vault ──────────────────────────────────────────────────────────────────────────────────── */
+.vault {
+  display: flex;
+  flex-direction: column;
+  gap: var(--bcl-space-2xs);
+}
+
+.secret {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: var(--bcl-space-2xs);
+  padding: var(--bcl-space-2xs);
+  border-radius: var(--bcl-radius-sm);
+  background: var(--bcl-surface);
+}
+
+.secretName {
+  color: var(--bcl-text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.secretValue {
+  font-family: var(--bcl-font-mono);
+  letter-spacing: 0.15em;
+  color: var(--bcl-text-faint);
+}
+
+.secretLock {
+  inline-size: 0.85rem;
+  block-size: 0.85rem;
+  color: var(--bcl-accent-soft);
+}

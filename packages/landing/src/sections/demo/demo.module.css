@@ -1,0 +1,346 @@
+/*
+ * The section has one height, declared here, and nothing inside may change it.
+ *
+ * Every previous attempt fixed a child — the column, then the thread — and the section still grew,
+ * because the row itself was content-sized: `block-size: 100%` on a child of an auto-sized row
+ * resolves against a height the child is deciding. Stating the height on the layout is the only
+ * place where the circle breaks.
+ */
+.layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.7fr) minmax(0, 1fr);
+  gap: var(--bcl-space-md);
+  margin-block-start: var(--bcl-space-xl);
+  block-size: 26rem;
+}
+
+.window {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  block-size: 100%;
+  min-block-size: 0;
+  overflow: hidden;
+  border: 1px solid var(--bcl-border);
+  border-radius: var(--bcl-radius-lg);
+  background: var(--bcl-surface);
+  box-shadow: var(--bcl-shadow-lift);
+}
+
+.board {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--bcl-space-sm);
+  padding: var(--bcl-space-md);
+  min-block-size: 0;
+  overflow: hidden;
+}
+
+.column {
+  display: flex;
+  flex-direction: column;
+  gap: var(--bcl-space-2xs);
+  /* The column fills whatever the board gives it and clips the rest; it never asks for more. */
+  block-size: 100%;
+  min-block-size: 0;
+  overflow: hidden;
+  padding: var(--bcl-space-2xs);
+  border-radius: var(--bcl-radius-md);
+  background: var(--bcl-bg-deep);
+}
+
+.columnHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-inline: var(--bcl-space-3xs);
+  font-size: var(--bcl-text-xs);
+  letter-spacing: var(--bcl-tracking-wide);
+  text-transform: uppercase;
+  color: var(--bcl-text-faint);
+}
+
+.count {
+  font-family: var(--bcl-font-mono);
+}
+
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--bcl-space-2xs);
+  padding: var(--bcl-space-xs);
+  border: 1px solid var(--bcl-border);
+  border-radius: var(--bcl-radius-md);
+  background: linear-gradient(160deg, var(--bcl-surface-raised), var(--bcl-surface));
+  font-size: var(--bcl-text-sm);
+  box-shadow: var(--bcl-shadow-soft);
+  cursor: grab;
+}
+
+.cardTitle {
+  color: var(--bcl-text);
+}
+
+.cardMeta {
+  display: flex;
+  align-items: center;
+  gap: var(--bcl-space-2xs);
+}
+
+.tag {
+  padding: 0.1rem var(--bcl-space-2xs);
+  border-radius: var(--bcl-radius-pill);
+  background: var(--bcl-accent-wash);
+  font-size: var(--bcl-text-xs);
+  color: var(--bcl-accent-soft);
+}
+
+.estimate {
+  font-family: var(--bcl-font-mono);
+  font-size: var(--bcl-text-xs);
+  color: var(--bcl-text-faint);
+}
+
+.who {
+  margin-inline-start: auto;
+  display: grid;
+  place-items: center;
+  inline-size: 1.5rem;
+  block-size: 1.5rem;
+  border-radius: var(--bcl-radius-pill);
+  background: linear-gradient(135deg, var(--bcl-accent), var(--bcl-accent-violet));
+  color: var(--bcl-accent-contrast);
+  font-size: 0.65rem;
+  font-weight: 600;
+}
+
+/*
+ * The chat has a fixed height and does not grow.
+ *
+ * A thread that adds a message and pushes the card taller resizes the section under the reader —
+ * the page jumped every few seconds. Now the panel is a fixed box, the thread is pinned to its
+ * bottom and older messages scroll off the top, which is what a chat window actually does.
+ */
+.chat {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto auto;
+  gap: var(--bcl-space-sm);
+  block-size: 100%;
+  min-block-size: 0;
+  padding: var(--bcl-space-md);
+  border: 1px solid var(--bcl-border);
+  border-radius: var(--bcl-radius-lg);
+  background: linear-gradient(180deg, var(--bcl-surface), var(--bcl-bg-deep));
+}
+
+.chatHead {
+  display: flex;
+  align-items: center;
+  gap: var(--bcl-space-2xs);
+  padding-block-end: var(--bcl-space-2xs);
+  border-block-end: 1px solid var(--bcl-border);
+  font-size: var(--bcl-text-xs);
+  color: var(--bcl-text-faint);
+}
+
+.presence {
+  display: flex;
+}
+
+/* Overlapping avatars, the way every chat header does it. */
+.presence > * + * {
+  margin-inline-start: -0.5rem;
+}
+
+.avatar {
+  display: grid;
+  place-items: center;
+  inline-size: 1.75rem;
+  block-size: 1.75rem;
+  flex-shrink: 0;
+  border: 1px solid var(--bcl-surface);
+  border-radius: var(--bcl-radius-pill);
+  background: linear-gradient(135deg, var(--bcl-accent-cyan), var(--bcl-accent-violet));
+  color: var(--bcl-accent-contrast);
+  font-size: 0.65rem;
+  font-weight: 600;
+}
+
+/*
+ * Two sides: what other people say arrives on the left, what you say sits on the right, in the
+ * accent. A one-sided thread reads as a log; two sides read as a conversation, which is what the
+ * section claims is happening.
+ */
+.message {
+  display: flex;
+  gap: var(--bcl-space-2xs);
+  align-items: flex-start;
+  max-inline-size: 92%;
+}
+
+.messageOwn {
+  align-self: flex-end;
+  flex-direction: row-reverse;
+  text-align: end;
+}
+
+.author {
+  font-size: var(--bcl-text-xs);
+  color: var(--bcl-text-faint);
+}
+
+.bubble {
+  display: inline-block;
+  padding: var(--bcl-space-2xs) var(--bcl-space-xs);
+  border: 1px solid var(--bcl-border);
+  border-radius: var(--bcl-radius-md);
+  background: var(--bcl-surface-raised);
+  font-size: var(--bcl-text-sm);
+  color: var(--bcl-text);
+}
+
+.messageOwn .bubble {
+  border-color: var(--bcl-accent);
+  background: var(--bcl-accent-wash);
+}
+
+/*
+ * The thread has a fixed box and never pushes it.
+ *
+ * Messages are laid out from the bottom, so a new one arrives at the bottom edge and the oldest is
+ * pushed past the top — where `overflow: hidden` cuts it and the mask fades it out. It reads as a
+ * chat that has scrolled, with no scrollbar and, more to the point, no growth: the panel and the
+ * whole section stay exactly the height they started at.
+ */
+.thread {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  gap: var(--bcl-space-sm);
+  min-block-size: 0;
+  overflow: hidden;
+  mask-image: linear-gradient(transparent, var(--bcl-mask) 18%);
+}
+
+/* Reserved space: the indicator appears and disappears without moving anything. */
+.typingSlot {
+  min-block-size: 1.1rem;
+}
+
+.typing {
+  display: flex;
+  align-items: center;
+  gap: var(--bcl-space-2xs);
+  font-size: var(--bcl-text-xs);
+  color: var(--bcl-text-faint);
+}
+
+/* Your own indicator leans to the accent, so the two sides of the thread stay distinguishable even
+   in the status line. */
+.typingOwn {
+  justify-content: flex-end;
+  color: var(--bcl-accent-soft);
+}
+
+.typingDots {
+  display: inline-flex;
+  gap: var(--bcl-space-3xs);
+}
+
+.typingDot {
+  inline-size: 0.35rem;
+  block-size: 0.35rem;
+  border-radius: var(--bcl-radius-pill);
+  background: var(--bcl-accent);
+  animation: pulse 1.2s var(--bcl-ease-in-out) infinite;
+}
+
+.typingOwn .typingDot {
+  background: var(--bcl-accent-cyan);
+}
+
+.typingDot:nth-child(2) {
+  animation-delay: 0.15s;
+}
+
+.typingDot:nth-child(3) {
+  animation-delay: 0.3s;
+}
+
+/* The composer. Inert, but built like the real one: inset field, send button, focus ring absent
+   because there is nothing to focus. */
+.composer {
+  display: flex;
+  align-items: center;
+  gap: var(--bcl-space-2xs);
+  padding: var(--bcl-space-3xs);
+  padding-inline-start: var(--bcl-space-sm);
+  border: 1px solid var(--bcl-border);
+  border-radius: var(--bcl-radius-pill);
+  background: var(--bcl-bg-deep);
+  box-shadow: var(--bcl-mac-inset);
+}
+
+.composerInput {
+  flex: 1;
+  min-inline-size: 0;
+  border: 0;
+  background: none;
+  font-size: var(--bcl-text-sm);
+  color: var(--bcl-text);
+  cursor: default;
+}
+
+.composerInput:focus-visible {
+  outline: none;
+}
+
+.composerInput::placeholder {
+  color: var(--bcl-text-faint);
+}
+
+.composerSend {
+  padding-inline: var(--bcl-space-sm);
+  padding-block: var(--bcl-space-3xs);
+  border-radius: var(--bcl-radius-pill);
+  background: var(--bcl-surface-raised);
+  color: var(--bcl-text-faint);
+  font-size: var(--bcl-text-xs);
+  font-weight: 500;
+  white-space: nowrap;
+  transition:
+    background-color var(--bcl-motion-base) var(--bcl-ease-out),
+    color var(--bcl-motion-base) var(--bcl-ease-out);
+}
+
+/* Lights up while there is something to send, the way a real one does. */
+.composerReady {
+  background: var(--bcl-accent);
+  color: var(--bcl-accent-contrast);
+}
+
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 0.25;
+  }
+
+  50% {
+    opacity: 1;
+  }
+}
+
+@media (width <= 62em) {
+  .layout {
+    grid-template-columns: 1fr;
+    block-size: auto;
+    grid-auto-rows: 22rem;
+  }
+
+  .board {
+    padding: var(--bcl-space-sm);
+  }
+
+  .column {
+    block-size: 100%;
+  }
+}

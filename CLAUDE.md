@@ -382,7 +382,8 @@ realtime, поиск, i18n, FSD или обновляемость, обязан�
 
 | Команда | Что делает |
 |---|---|
-| `pnpm dev` | Параллельно: сервер (tsx watch) + клиент (vite) |
+| `pnpm dev` | Параллельно: сервер (tsx watch) + клиент (vite); лендинг сюда не входит |
+| `pnpm dev:landing` | Маркетинговый лендинг (`packages/landing`) на 4321 |
 | `pnpm build` | `shared` → `server` + `client`, с кешем turbo |
 | `pnpm typecheck` | `tsc --noEmit` во всех пакетах |
 | `pnpm lint` | ESLint 9 flat config + проверка запретов (`prisma.*` вне persistence, raw `fetch` на клиенте) |

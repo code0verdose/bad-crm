@@ -1,0 +1,73 @@
+.page {
+  inline-size: min(100% - 2 * var(--bcl-space-md), 46rem);
+  margin-inline: auto;
+  padding-block: calc(var(--bcl-header-height) + var(--bcl-space-2xl)) var(--bcl-space-2xl);
+  display: flex;
+  flex-direction: column;
+  gap: var(--bcl-space-md);
+}
+
+.back {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--bcl-space-2xs);
+  font-size: var(--bcl-text-sm);
+  color: var(--bcl-text-muted);
+  transition: color var(--bcl-motion-fast) var(--bcl-ease-out);
+}
+
+.back:hover {
+  color: var(--bcl-text);
+}
+
+.backIcon {
+  inline-size: 0.9rem;
+  block-size: 0.9rem;
+}
+
+.title {
+  font-size: var(--bcl-display-sm);
+  letter-spacing: var(--bcl-tracking-tight);
+}
+
+.updated {
+  font-size: var(--bcl-text-xs);
+  letter-spacing: var(--bcl-tracking-wide);
+  text-transform: uppercase;
+  color: var(--bcl-text-faint);
+}
+
+/* The draft warning. It is the first thing on the page on purpose: these documents are templates
+   with placeholders in them, and publishing them as they stand would be worse than having none. */
+.notice {
+  padding: var(--bcl-space-sm) var(--bcl-space-md);
+  border: 1px solid var(--bcl-border-strong);
+  border-inline-start: 0.25rem solid var(--bcl-danger);
+  border-radius: var(--bcl-radius-md);
+  background: var(--bcl-surface);
+  font-size: var(--bcl-text-sm);
+  color: var(--bcl-text-muted);
+}
+
+.intro {
+  font-size: var(--bcl-text-lg);
+  color: var(--bcl-text-muted);
+}
+
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--bcl-space-2xs);
+  padding-block-start: var(--bcl-space-md);
+  border-block-start: 1px solid var(--bcl-border);
+}
+
+.heading {
+  font-size: var(--bcl-text-lg);
+}
+
+.paragraph {
+  color: var(--bcl-text-muted);
+  line-height: var(--bcl-leading-normal);
+}

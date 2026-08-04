@@ -1,0 +1,124 @@
+/*
+ * One small figure per invariant, built from the same three primitives the domain previews use —
+ * a row, a block, a dot. The cards carried three paragraphs and a code line and nothing to look at;
+ * these give each one a shape you recognise before you have read it.
+ */
+.visual {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: var(--bcl-space-2xs);
+  padding: var(--bcl-space-md);
+  border: 1px solid var(--bcl-border);
+  border-radius: var(--bcl-radius-md);
+  background: var(--bcl-bg-deep);
+  min-block-size: 11rem;
+  font-family: var(--bcl-font-mono);
+  font-size: var(--bcl-text-xs);
+  overflow: hidden;
+}
+
+/* ── tenancy: rows, one tenant's visible, the rest locked ───────────────────────────────────── */
+.row {
+  display: flex;
+  align-items: center;
+  gap: var(--bcl-space-2xs);
+  padding: var(--bcl-space-3xs) var(--bcl-space-2xs);
+  border-radius: var(--bcl-radius-sm);
+  background: var(--bcl-surface);
+  color: var(--bcl-text-faint);
+}
+
+.rowOwn {
+  background: var(--bcl-accent-wash);
+  color: var(--bcl-accent-soft);
+}
+
+.rowTag {
+  margin-inline-start: auto;
+  display: flex;
+}
+
+.rowIcon {
+  inline-size: 0.8rem;
+  block-size: 0.8rem;
+}
+
+.boxIcon {
+  inline-size: 1.5rem;
+  block-size: 1.5rem;
+}
+
+/* ── permissions: a role × action matrix ────────────────────────────────────────────────────── */
+.matrix {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: var(--bcl-space-3xs);
+}
+
+.cell {
+  aspect-ratio: 1.6;
+  border-radius: var(--bcl-radius-sm);
+  background: var(--bcl-surface);
+}
+
+.cellOn {
+  background: linear-gradient(160deg, var(--bcl-accent), var(--bcl-accent-violet));
+  opacity: 0.75;
+}
+
+/* ── e2ee: a key going in, ciphertext coming out ────────────────────────────────────────────── */
+.cipher {
+  color: var(--bcl-accent-soft);
+  word-break: break-all;
+  line-height: 1.6;
+}
+
+.arrow {
+  color: var(--bcl-text-faint);
+}
+
+/* ── self-host: one box, and it is yours ────────────────────────────────────────────────────── */
+.host {
+  display: flex;
+  align-items: center;
+  gap: var(--bcl-space-sm);
+}
+
+.box {
+  display: grid;
+  place-items: center;
+  inline-size: 4rem;
+  block-size: 4rem;
+  border: 1px solid var(--bcl-border-strong);
+  border-radius: var(--bcl-radius-md);
+  background: var(--bcl-surface);
+  color: var(--bcl-accent-soft);
+  font-size: var(--bcl-text-lg);
+}
+
+.hostLines {
+  display: flex;
+  flex-direction: column;
+  gap: var(--bcl-space-3xs);
+  color: var(--bcl-text-faint);
+}
+
+.pulse {
+  inline-size: 0.4rem;
+  block-size: 0.4rem;
+  border-radius: var(--bcl-radius-pill);
+  background: var(--bcl-success);
+  animation: blink 2s var(--bcl-ease-in-out) infinite;
+}
+
+@keyframes blink {
+  0%,
+  100% {
+    opacity: 0.3;
+  }
+
+  50% {
+    opacity: 1;
+  }
+}

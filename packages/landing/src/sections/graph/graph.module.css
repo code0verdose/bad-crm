@@ -1,0 +1,218 @@
+.scene {
+  position: relative;
+  block-size: 320svh;
+}
+
+/*
+ * The stage breaks out of the container and runs the full width of the window.
+ *
+ * That is what lets the chain start on the container's left edge, travel, and be cut at the edge of
+ * the *screen* rather than at the edge of the measure — clipping at the container turned the travel
+ * into cards being swallowed by an invisible box, and clipping nowhere let them spill over the rest
+ * of the page.
+ */
+.sticky {
+  position: sticky;
+  inset-block-start: 0;
+  block-size: 100svh;
+  inline-size: 100vw;
+  margin-inline: calc(50% - 50vw);
+  display: grid;
+  /*
+   * Chain first, words underneath — and both rows sized to their content, not stretched.
+   *
+   * With a `1fr` track row the cards were centred inside the leftover height and the heading ended
+   * up two hundred pixels below them; `auto auto` plus `align-content: center` centres the *pair*
+   * and leaves exactly the gap between them.
+   */
+  /*
+   * The column is stated because the track is `max-content` and wider than the window: an implicit
+   * column sizes itself to its widest item, so it became 1936px and the heading — centred inside
+   * *that* — sat 372px right of where the first card starts. Measured on the page, not deduced.
+   */
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: auto auto auto;
+  align-content: center;
+  /* The gap between the chain and the words under it. `xl` was a hole in the middle of the section
+     and `md` sat the heading right against the cards; `lg` is the one that reads as a caption
+     belonging to them. */
+  gap: var(--bcl-space-lg);
+  overflow: hidden;
+}
+
+/* Back inside the measure, since the stage around it is now full-bleed. */
+.heading {
+  inline-size: min(100% - 2 * var(--bcl-space-md), var(--bcl-shell-max));
+  margin-inline: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--bcl-space-sm);
+}
+
+.footnote {
+  font-size: var(--bcl-text-sm);
+  color: var(--bcl-text-faint);
+}
+
+/*
+ * The viewport the track slides inside — the section's own container and nothing wider.
+ *
+ * The container decides where the chain *starts* and how far it travels — the first card sits on
+ * its left edge and the last comes to rest on its right — but it does not clip: a card leaving to
+ * the left simply keeps going and is cut at the edge of the screen by the sticky stage instead.
+ * Clipping at the container turned the travel into cards being swallowed by an invisible box.
+ */
+.viewport {
+  align-self: center;
+  min-inline-size: 0;
+  overflow: visible;
+}
+
+/* The gutter the container starts at: the first card lines up with the heading under it. */
+.track {
+  display: flex;
+  align-items: stretch;
+  gap: var(--bcl-space-sm);
+  inline-size: max-content;
+  padding-inline-start: max(var(--bcl-space-md), calc((100vw - var(--bcl-shell-max)) / 2));
+  will-change: transform;
+}
+
+.node {
+  position: relative;
+  inline-size: 20rem;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--bcl-space-2xs);
+  padding: var(--bcl-space-md);
+  border-radius: var(--bcl-radius-lg);
+  border: 1px solid transparent;
+  background:
+    linear-gradient(165deg, var(--bcl-surface-raised), var(--bcl-surface)) padding-box,
+    linear-gradient(165deg, var(--bcl-border-strong), var(--bcl-border) 65%) border-box;
+  box-shadow: var(--bcl-shadow-soft);
+}
+
+.nodeHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--bcl-space-2xs);
+}
+
+.icon {
+  display: grid;
+  place-items: center;
+  inline-size: 2.5rem;
+  block-size: 2.5rem;
+  border-radius: var(--bcl-radius-md);
+  background: var(--bcl-accent-wash);
+  color: var(--bcl-accent-soft);
+}
+
+.glyph {
+  inline-size: 1.35rem;
+  block-size: 1.35rem;
+}
+
+.step {
+  font-family: var(--bcl-font-mono);
+  font-size: var(--bcl-text-xs);
+  color: var(--bcl-text-faint);
+}
+
+.nodeLabel {
+  font-size: var(--bcl-text-xl);
+  letter-spacing: var(--bcl-tracking-tight);
+}
+
+.nodeDetail {
+  font-size: var(--bcl-text-sm);
+  color: var(--bcl-text-muted);
+}
+
+/* The table the row would live in — the section's claim, in the product's own vocabulary. */
+.table {
+  align-self: flex-start;
+  margin-block-start: var(--bcl-space-2xs);
+  padding: var(--bcl-space-3xs) var(--bcl-space-2xs);
+  border-radius: var(--bcl-radius-sm);
+  background: var(--bcl-bg-deep);
+  font-family: var(--bcl-font-mono);
+  font-size: var(--bcl-text-xs);
+  color: var(--bcl-text-faint);
+}
+
+.connector {
+  position: relative;
+  align-self: center;
+  inline-size: 4.5rem;
+  block-size: 1px;
+  flex-shrink: 0;
+  background: linear-gradient(90deg, transparent, var(--bcl-accent), var(--bcl-accent-violet));
+  transform-origin: 0 50%;
+}
+
+.connector::after {
+  content: '';
+  position: absolute;
+  inset-inline-end: 0;
+  inset-block-start: 50%;
+  inline-size: 0.45rem;
+  block-size: 0.45rem;
+  translate: 0.1rem -50%;
+  border-radius: var(--bcl-radius-pill);
+  background: var(--bcl-accent-violet);
+}
+
+/* A pulse that runs the length of the connector, so the chain reads as carrying something. */
+.spark {
+  position: absolute;
+  inset-block-start: 50%;
+  inline-size: 0.4rem;
+  block-size: 0.4rem;
+  translate: 0 -50%;
+  border-radius: var(--bcl-radius-pill);
+  background: var(--bcl-accent-cyan);
+  box-shadow: 0 0 0.75rem var(--bcl-glow);
+}
+
+@media (width <= 62em) {
+  .scene {
+    block-size: auto;
+  }
+
+  .sticky {
+    position: static;
+    block-size: auto;
+    padding-block: var(--bcl-space-2xl);
+  }
+
+  .viewport {
+    inline-size: min(100% - 2 * var(--bcl-space-md), 30rem);
+  }
+
+  .track {
+    flex-direction: column;
+    align-items: stretch;
+    inline-size: auto;
+    transform: none !important;
+  }
+
+  .node {
+    inline-size: auto;
+  }
+
+  .connector {
+    inline-size: 0.125rem;
+    block-size: 3rem;
+    margin-inline: auto;
+    background: linear-gradient(180deg, var(--bcl-accent), var(--bcl-accent-violet));
+  }
+
+  .connector::after,
+  .spark {
+    display: none;
+  }
+}

@@ -1,0 +1,78 @@
+.panel {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr);
+  gap: var(--bcl-space-lg);
+  align-items: center;
+  block-size: 100%;
+  min-block-size: 25rem;
+  padding: var(--bcl-space-lg);
+  border-radius: var(--bcl-radius-xl);
+  /* Gradient hairline: the border is the gradient, the fill covers all but one pixel of it. Two
+     backgrounds and two clips, no pseudo-element and no second stacking context. */
+  border: 1px solid transparent;
+  background:
+    linear-gradient(160deg, var(--bcl-surface), var(--bcl-bg-deep)) padding-box,
+    linear-gradient(160deg, var(--bcl-border-strong), var(--bcl-border) 65%) border-box;
+  transition: box-shadow var(--bcl-motion-base) var(--bcl-ease-out);
+}
+
+.panel:hover {
+  box-shadow: var(--bcl-shadow-soft);
+}
+
+.text {
+  display: flex;
+  flex-direction: column;
+  gap: var(--bcl-space-sm);
+  min-inline-size: 0;
+}
+
+.name {
+  font-size: var(--bcl-text-xl);
+  letter-spacing: var(--bcl-tracking-tight);
+}
+
+.summary {
+  font-size: var(--bcl-text-lg);
+  color: var(--bcl-text-muted);
+}
+
+.points {
+  display: flex;
+  flex-direction: column;
+  gap: var(--bcl-space-2xs);
+  list-style: none;
+}
+
+.point {
+  display: flex;
+  align-items: center;
+  gap: var(--bcl-space-2xs);
+  font-size: var(--bcl-text-sm);
+  color: var(--bcl-text);
+}
+
+.check {
+  display: grid;
+  place-items: center;
+  inline-size: 1.25rem;
+  block-size: 1.25rem;
+  flex-shrink: 0;
+  border-radius: var(--bcl-radius-pill);
+  background: var(--bcl-accent-wash);
+  color: var(--bcl-accent-soft);
+}
+
+.checkIcon {
+  inline-size: 0.7rem;
+  block-size: 0.7rem;
+}
+
+@media (width <= 62em) {
+  .panel {
+    grid-template-columns: 1fr;
+    min-block-size: 0;
+    padding: var(--bcl-space-md);
+  }
+}

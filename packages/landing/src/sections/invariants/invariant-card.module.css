@@ -1,0 +1,122 @@
+.slot {
+  position: sticky;
+  /* Each card parks a little lower than the one before it, so the stack shows its own depth. */
+  inset-block-start: calc(14svh + var(--bcl-stack-index) * 1.75rem);
+  padding-block-end: var(--bcl-space-xl);
+}
+
+.card {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.5fr);
+  gap: var(--bcl-space-lg);
+  padding: var(--bcl-space-lg);
+  border-radius: var(--bcl-radius-xl);
+  border: 1px solid transparent;
+  /* Gradient hairline, like the domain cards: the fill covers all but one pixel of the border. */
+  background:
+    linear-gradient(150deg, var(--bcl-surface-raised), var(--bcl-bg-deep)) padding-box,
+    linear-gradient(150deg, var(--bcl-accent), var(--bcl-border-strong) 55%) border-box;
+  box-shadow: var(--bcl-shadow-lift);
+  min-block-size: 26rem;
+  align-items: center;
+  overflow: hidden;
+}
+
+/* A wash in the corner the gradient border starts from, so the card has a light source. */
+.card::before {
+  content: '';
+  position: absolute;
+  inset-block-start: -40%;
+  inset-inline-start: -10%;
+  inline-size: 30rem;
+  block-size: 30rem;
+  background: radial-gradient(50% 50% at 50% 50%, var(--bcl-halo-accent), transparent 70%);
+  opacity: 0.5;
+  pointer-events: none;
+}
+
+.side {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: var(--bcl-space-sm);
+}
+
+.tag {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--bcl-space-2xs);
+  padding: var(--bcl-space-3xs) var(--bcl-space-xs);
+  border-radius: var(--bcl-radius-pill);
+  background: var(--bcl-accent-wash);
+  font-size: var(--bcl-text-xs);
+  letter-spacing: var(--bcl-tracking-wide);
+  text-transform: uppercase;
+  color: var(--bcl-accent-soft);
+}
+
+.tagDot {
+  inline-size: 0.4rem;
+  block-size: 0.4rem;
+  border-radius: var(--bcl-radius-pill);
+  background: currentcolor;
+}
+
+/* The index as a watermark rather than a label: it orders the stack without asking to be read. */
+.number {
+  font-family: var(--bcl-font-mono);
+  font-size: var(--bcl-display-sm);
+  font-weight: 600;
+  line-height: 1;
+  color: transparent;
+  background: linear-gradient(160deg, var(--bcl-accent-soft), transparent 75%);
+  background-clip: text;
+}
+
+.title {
+  font-size: var(--bcl-text-xl);
+  letter-spacing: var(--bcl-tracking-tight);
+}
+
+.body {
+  font-size: var(--bcl-text-md);
+  color: var(--bcl-text-muted);
+}
+
+/* The proof line, as the terminal it would be typed into. */
+.proof {
+  display: flex;
+  align-items: center;
+  gap: var(--bcl-space-2xs);
+  margin-block-start: var(--bcl-space-sm);
+  padding: var(--bcl-space-xs) var(--bcl-space-sm);
+  border: 1px solid var(--bcl-border);
+  border-radius: var(--bcl-radius-md);
+  background: var(--bcl-bg-deep);
+  font-family: var(--bcl-font-mono);
+  font-size: var(--bcl-text-xs);
+  color: var(--bcl-accent-soft);
+  overflow-x: auto;
+}
+
+.prompt {
+  inline-size: 0.7rem;
+  block-size: 0.7rem;
+  flex-shrink: 0;
+  color: var(--bcl-success);
+}
+
+@media (width <= 62em) {
+  .slot {
+    position: static;
+    padding-block-end: var(--bcl-space-md);
+  }
+
+  .card {
+    grid-template-columns: 1fr;
+    padding: var(--bcl-space-md);
+    min-block-size: 0;
+  }
+}

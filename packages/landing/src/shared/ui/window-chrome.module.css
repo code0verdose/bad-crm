@@ -1,0 +1,49 @@
+.bar {
+  display: flex;
+  align-items: center;
+  gap: var(--bcl-space-sm);
+  padding-inline: var(--bcl-space-sm);
+  padding-block: var(--bcl-space-2xs);
+  border-block-end: 1px solid var(--bcl-border);
+  background: var(--bcl-mac-bar);
+  /* The light top edge of a real window. One pixel, and it is most of the illusion. */
+  box-shadow: inset 0 1px 0 0 var(--bcl-bevel);
+}
+
+.lights {
+  display: flex;
+  gap: var(--bcl-space-3xs);
+  flex-shrink: 0;
+}
+
+.light {
+  inline-size: 0.75rem;
+  block-size: 0.75rem;
+  border-radius: var(--bcl-radius-pill);
+  box-shadow: inset 0 0 0 1px var(--bcl-mac-ring);
+}
+
+.close {
+  background: var(--bcl-mac-close);
+}
+
+.minimise {
+  background: var(--bcl-mac-minimise);
+}
+
+.zoom {
+  background: var(--bcl-mac-zoom);
+}
+
+.title {
+  flex: 1;
+  text-align: center;
+  font-size: var(--bcl-text-xs);
+  color: var(--bcl-text-faint);
+  /* The traffic lights sit on the left, so the title is only optically centred if the same width
+     is reserved on the right. */
+  padding-inline-end: 3.5rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}

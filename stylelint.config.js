@@ -124,7 +124,23 @@ const PHYSICAL_PROPERTIES = [
 const TOKEN_DECLARATION_FILES = [
   'packages/client/src/app/styles/tokens.css',
   'packages/client/src/app/global.css',
+  'packages/landing/src/app/styles/tokens.css',
+  'packages/landing/src/app/global.css',
 ];
+
+/**
+ * The landing speaks a different token dialect, and is linted by the same config on purpose.
+ *
+ * `packages/landing` carries no Mantine (ADR-0006 does not reach it — it is not the product) and
+ * no `postcss-preset-mantine`, so three of the rules above are written against a vocabulary that
+ * does not exist there: the `--mantine-*` half of the custom-property pattern, and the breakpoint
+ * allow-list built around `$mantine-breakpoint-*`. Each is replaced with the landing's equivalent
+ * rather than switched off — a stylesheet with no rules is how the next hard-coded colour arrives.
+ *
+ * The breakpoint replacement keeps the property the original rule was defending: a media query in
+ * `px` ignores the reader's font size (`rules/a11y.mdc` §4), so the unit list allows `em` only.
+ */
+const LANDING_STYLESHEETS = ['packages/landing/src/**/*.css'];
 
 /** @type {import('stylelint').Config} */
 export default {
@@ -259,6 +275,26 @@ export default {
   },
 
   overrides: [
+    {
+      files: LANDING_STYLESHEETS,
+      rules: {
+        'custom-property-pattern': [
+          '^bcl-[a-z0-9]+(-[a-z0-9]+)*$',
+          {
+            message:
+              'The landing declares its own token namespace: name custom properties `--bcl-*` (declared in `packages/landing/src/app/styles/tokens.css`).',
+          },
+        ],
+        'media-feature-name-value-allowed-list': null,
+        'media-feature-name-unit-allowed-list': [
+          { '/^(?:(?:min|max)-)?(?:width|height|inline-size|block-size)$/': ['em'] },
+          {
+            message:
+              'Breakpoints are measured in `em`, never in `px`: a query in pixels ignores the reader’s font size (rules/a11y.mdc §4).',
+          },
+        ],
+      },
+    },
     {
       files: TOKEN_DECLARATION_FILES,
       rules: {

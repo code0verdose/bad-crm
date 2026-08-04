@@ -1,0 +1,180 @@
+/*
+ * One window, not two.
+ *
+ * The pair — an app beside a console — spent half the width on a second title bar and made the
+ * reader compare two boxes instead of following one flow. Here it is a single window with the field
+ * at the top and what the server receives directly underneath, which is the actual order of events:
+ * you type, and *then* that is what leaves.
+ */
+.layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(0, 0.85fr);
+  gap: var(--bcl-space-xl);
+  align-items: start;
+}
+
+/* Not sticky: the column is short enough to be read at a glance, and a heading that follows the
+   reader down a section this size draws more attention than the demo it is captioning. */
+.text {
+  display: flex;
+  flex-direction: column;
+  gap: var(--bcl-space-sm);
+}
+
+.window {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  overflow: hidden;
+  border: 1px solid var(--bcl-border);
+  border-radius: var(--bcl-radius-lg);
+  background: var(--bcl-surface);
+  box-shadow: var(--bcl-shadow-lift);
+}
+
+.pane {
+  display: flex;
+  flex-direction: column;
+  gap: var(--bcl-space-sm);
+  padding: var(--bcl-space-lg);
+}
+
+.label {
+  display: flex;
+  align-items: center;
+  gap: var(--bcl-space-2xs);
+  font-size: var(--bcl-text-xs);
+  letter-spacing: var(--bcl-tracking-wide);
+  text-transform: uppercase;
+  color: var(--bcl-text-faint);
+}
+
+.labelDot {
+  inline-size: 0.5rem;
+  block-size: 0.5rem;
+  border-radius: var(--bcl-radius-pill);
+  background: var(--bcl-success);
+  box-shadow: 0 0 0.5rem var(--bcl-glow);
+}
+
+.serverDot {
+  background: var(--bcl-accent-violet);
+}
+
+/* A macOS text field: inset, rounded, with the focus ring on the *field* rather than on the input
+   inside it — that is why the input's own outline is switched off below. */
+.field {
+  display: flex;
+  align-items: center;
+  gap: var(--bcl-space-2xs);
+  padding-inline: var(--bcl-space-sm);
+  border: 1px solid var(--bcl-border);
+  border-radius: var(--bcl-radius-md);
+  background: var(--bcl-bg-deep);
+  box-shadow: var(--bcl-mac-inset);
+  transition:
+    border-color var(--bcl-motion-base) var(--bcl-ease-out),
+    box-shadow var(--bcl-motion-base) var(--bcl-ease-out);
+}
+
+.field:focus-within {
+  border-color: var(--bcl-accent);
+  box-shadow:
+    var(--bcl-mac-inset),
+    0 0 0 0.25rem var(--bcl-accent-wash);
+}
+
+.fieldIcon {
+  color: var(--bcl-text-faint);
+  flex-shrink: 0;
+}
+
+.input {
+  inline-size: 100%;
+  padding-block: var(--bcl-space-sm);
+  border: 0;
+  background: none;
+  font-size: var(--bcl-text-lg);
+  font-family: var(--bcl-font-mono);
+}
+
+/*
+ * The page-wide focus ring is drawn with `outline` around the element it lands on; on an input
+ * inside a bordered field that is a second rectangle, offset outwards and clipped by the field —
+ * the "broken half-ring" this replaces. The ring above is the field's, and it is the whole control.
+ */
+.input:focus-visible {
+  outline: none;
+}
+
+.input::placeholder {
+  color: var(--bcl-text-faint);
+}
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--bcl-space-2xs);
+}
+
+.chip {
+  padding: var(--bcl-space-3xs) var(--bcl-space-2xs);
+  border: 1px solid var(--bcl-border);
+  border-radius: var(--bcl-radius-pill);
+  font-family: var(--bcl-font-mono);
+  font-size: var(--bcl-text-xs);
+  color: var(--bcl-text-faint);
+}
+
+/* The output half, sunk into the window like a console pane. */
+.output {
+  display: flex;
+  flex-direction: column;
+  gap: var(--bcl-space-2xs);
+  margin-block-start: var(--bcl-space-2xs);
+  padding: var(--bcl-space-md);
+  border: 1px solid var(--bcl-border);
+  border-radius: var(--bcl-radius-md);
+  background: var(--bcl-bg-deep);
+}
+
+.cipher {
+  min-block-size: 4.5rem;
+  font-family: var(--bcl-font-mono);
+  font-size: var(--bcl-text-sm);
+  line-height: 1.7;
+  color: var(--bcl-accent-soft);
+  word-break: break-all;
+}
+
+.empty {
+  color: var(--bcl-text-faint);
+  font-family: var(--bcl-font);
+}
+
+.status {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--bcl-space-2xs);
+  padding-block-start: var(--bcl-space-2xs);
+  border-block-start: 1px solid var(--bcl-border);
+  font-family: var(--bcl-font-mono);
+  font-size: var(--bcl-text-xs);
+  color: var(--bcl-text-faint);
+}
+
+.note {
+  font-size: var(--bcl-text-sm);
+  color: var(--bcl-text-muted);
+}
+
+@media (width <= 62em) {
+  .layout {
+    grid-template-columns: 1fr;
+    gap: var(--bcl-space-lg);
+  }
+
+  .pane {
+    padding: var(--bcl-space-md);
+  }
+}

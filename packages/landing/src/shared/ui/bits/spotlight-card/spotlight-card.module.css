@@ -1,0 +1,27 @@
+.card {
+  position: relative;
+  overflow: hidden;
+
+  /* Set by the pointer handler; the fallback keeps the highlight centred before the first move. */
+  --bcl-spotlight-x: 50%;
+  --bcl-spotlight-y: 50%;
+}
+
+.card::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(
+    circle at var(--bcl-spotlight-x) var(--bcl-spotlight-y),
+    var(--bcl-glow),
+    transparent 65%
+  );
+  opacity: 0;
+  transition: opacity var(--bcl-motion-base) var(--bcl-ease-out);
+  pointer-events: none;
+}
+
+.card:hover::before,
+.card:focus-within::before {
+  opacity: 0.55;
+}

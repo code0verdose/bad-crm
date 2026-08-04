@@ -1,0 +1,130 @@
+/*
+ * A bento that tiles exactly.
+ *
+ * Twelve columns, three rows, six tiles, and the spans add up to 36 cells with nothing left over —
+ * which is the whole trick the earlier attempts were missing. A two-row tile only works if the rest
+ * of the grid is arranged around it on purpose:
+ *
+ *   ┌───────────────┬───────────────┐
+ *   │               │   domains     │
+ *   │     price     ├───────┬───────┤
+ *   │               │ cmd   │ tele  │
+ *   ├───────────────┴───────┴───────┤
+ *   │    host       │    seats      │
+ *   └───────────────┴───────────────┘
+ *
+ * The order is the dictionary's order, so nothing here reorders content — each tile is simply told
+ * how much room it takes.
+ */
+.grid {
+  display: grid;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  grid-auto-rows: minmax(8.5rem, auto);
+  gap: var(--bcl-space-md);
+  margin-block-start: var(--bcl-space-xl);
+}
+
+.tile {
+  position: relative;
+  grid-column: span 6;
+  display: flex;
+  border-radius: var(--bcl-radius-lg);
+  border: 1px solid var(--bcl-border);
+  background: linear-gradient(165deg, var(--bcl-surface-raised), var(--bcl-surface));
+  overflow: hidden;
+
+  /* The one input every chart in the tile reads. It goes to 1 when the grid enters the viewport. */
+  --bcl-metric-progress: 0;
+
+  transition:
+    transform var(--bcl-motion-base) var(--bcl-ease-out),
+    border-color var(--bcl-motion-base) var(--bcl-ease-out),
+    box-shadow var(--bcl-motion-base) var(--bcl-ease-out);
+}
+
+/* The inner surface carries the padding and the pointer spotlight; the tile carries the frame. */
+.surface {
+  display: flex;
+  flex-direction: column;
+  gap: var(--bcl-space-3xs);
+  inline-size: 100%;
+  padding: var(--bcl-space-md);
+  border-radius: inherit;
+}
+
+/* The price: half the width, the full height of the first two rows. */
+.tile:nth-child(1) {
+  grid-row: span 2;
+  border-color: var(--bcl-border-strong);
+  background: linear-gradient(160deg, var(--bcl-surface-raised), var(--bcl-bg-deep));
+}
+
+/* The two narrow tiles that sit beside the price on the second row. */
+.tile:nth-child(3),
+.tile:nth-child(4) {
+  grid-column: span 3;
+}
+
+.tileVisible {
+  --bcl-metric-progress: 1;
+}
+
+.tile:hover {
+  transform: translateY(-0.3rem);
+  border-color: var(--bcl-accent-soft);
+  box-shadow: var(--bcl-shadow-soft);
+}
+
+.value {
+  display: flex;
+  align-items: baseline;
+  gap: 0.05em;
+  font-size: var(--bcl-text-lg);
+  font-weight: 600;
+  letter-spacing: var(--bcl-tracking-tight);
+  line-height: 1;
+  color: var(--bcl-text);
+}
+
+.tile:nth-child(1) .value {
+  font-size: var(--bcl-text-xl);
+  background: linear-gradient(140deg, var(--bcl-accent-cyan), var(--bcl-accent-violet));
+  background-clip: text;
+  color: transparent;
+}
+
+/* A tile whose claim is a phrase rather than a number: same weight, set to wrap. */
+.headline {
+  font-size: var(--bcl-text-lg);
+  font-weight: 600;
+  letter-spacing: var(--bcl-tracking-tight);
+  line-height: var(--bcl-leading-tight);
+  color: var(--bcl-text);
+}
+
+/* One line under the claim. The tiles used to carry a label and a detail, which read as two
+   headings stacked and made every tile taller than the figure inside it needed. */
+.caption {
+  font-size: var(--bcl-text-sm);
+  color: var(--bcl-text-muted);
+  line-height: var(--bcl-leading-normal);
+}
+
+@media (width <= 62em) {
+  .grid {
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+    gap: var(--bcl-space-sm);
+  }
+
+  .tile,
+  .tile:nth-child(1),
+  .tile:nth-child(3),
+  .tile:nth-child(4) {
+    grid-column: span 6;
+    grid-row: auto;
+  }
+
+  .surface {
+    padding: var(--bcl-space-md);
+  }
+}

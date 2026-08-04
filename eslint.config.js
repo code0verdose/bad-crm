@@ -130,6 +130,13 @@ const CLIENT_UI = [
   'packages/client/src/shared/ui/**/*.tsx',
 ];
 /**
+ * The marketing landing (EPIC-047). Not the product: no FSD layers, no Mantine, no data layer, and
+ * deliberately none of the client's bans — what it shares with the rest of the repository is the
+ * type-safety baseline, the naming dictionary and the package graph.
+ */
+const LANDING = 'packages/landing/src/**/*.{ts,tsx}';
+const LANDING_UI = 'packages/landing/src/**/*.tsx';
+/**
  * The end-to-end package, root files included.
  *
  * `playwright.config.ts` and `global-setup.ts` live at the package root and are real code — the
@@ -176,6 +183,11 @@ const CLIENT_STAYS_CLIENT = {
   group: workspace('server', 'e2e'),
   message:
     '`packages/client` may only depend on `@bad-crm/shared`. Server internals reach the client through the OpenAPI contract, never through an import (CLAUDE.md → «Раскладка пакетов и нейминг»).',
+};
+const LANDING_IS_LEAF = {
+  group: workspace('shared', 'server', 'client', 'e2e'),
+  message:
+    '`packages/landing` is a leaf of the package graph: a marketing page that could import the product would be a marketing page that can break it (EPIC-047, CLAUDE.md → «Раскладка пакетов и нейминг»).',
 };
 /**
  * A scenario waits for the state it needs, never for the clock.
@@ -994,6 +1006,107 @@ export default tseslint.config(
         'error',
         { button: ['separator'] },
       ],
+    },
+  },
+
+  // ── landing: the marketing page (EPIC-047) ───────────────────────────────────────────────────
+  {
+    files: [LANDING],
+    extends: [js.configs.recommended, ...tseslint.configs.recommendedTypeChecked, prettier],
+    languageOptions: {
+      ecmaVersion: 2023,
+      sourceType: 'module',
+      globals: globals.browser,
+      parserOptions: { ...TYPE_AWARE_LANGUAGE_OPTIONS.parserOptions, ecmaFeatures: { jsx: true } },
+    },
+    plugins: { unicorn, import: importPlugin, 'bad-crm': badCrmPlugin },
+    rules: {
+      ...TYPE_SAFETY_RULES,
+      'no-restricted-imports': ['error', { patterns: [LANDING_IS_LEAF, NO_PARENT_RELATIVE] }],
+      // The landing has one alias, `@/…`, and without a path group the import plugin cannot place
+      // it: an unresolved specifier is ranked last, so every file would be told to put its own
+      // stylesheet *above* the module it renders. The order this produces is the one the client
+      // already uses — packages, then the package's own modules, then the file's neighbours.
+      'import/order': [
+        'error',
+        {
+          groups: [['builtin', 'external'], 'internal', ['parent', 'sibling', 'index']],
+          pathGroups: [{ pattern: '@/**', group: 'internal', position: 'before' }],
+          pathGroupsExcludedImportTypes: ['builtin'],
+          'newlines-between': 'always',
+        },
+      ],
+      // The page is static by design: no forms, no analytics, no backend of its own. A network
+      // call here is a feature nobody decided to add.
+      'no-restricted-globals': [
+        'error',
+        {
+          name: 'fetch',
+          message:
+            'The landing ships as static files and talks to nothing at runtime (EPIC-047, scope). A request here is a dependency on an API the page does not have.',
+        },
+        {
+          name: 'XMLHttpRequest',
+          message: 'The landing ships as static files and talks to nothing at runtime (EPIC-047).',
+        },
+      ],
+      /**
+       * The same ban, for the ways round it. `no-restricted-globals` only sees a bare identifier,
+       * and this package writes `globalThis.location` and `globalThis.setTimeout` by convention —
+       * so `globalThis.fetch(…)` would have sailed through the rule that the page's central claim
+       * ("nothing you type here leaves the browser") is resting on.
+       */
+      'no-restricted-properties': [
+        'error',
+        ...['globalThis', 'window', 'self'].flatMap((object) =>
+          ['fetch', 'XMLHttpRequest', 'WebSocket', 'EventSource'].map((property) => ({
+            object,
+            property,
+            message:
+              'The landing ships as static files and talks to nothing at runtime (EPIC-047, scope).',
+          })),
+        ),
+        {
+          object: 'navigator',
+          property: 'sendBeacon',
+          message: 'Telemetry is the one thing this page promises not to have (EPIC-047, scope).',
+        },
+      ],
+      'no-restricted-syntax': [
+        'error',
+        {
+          selector: 'ImportExpression[source.value=/^https?:/]',
+          message: 'The landing loads no code from the network (EPIC-047, scope).',
+        },
+      ],
+    },
+  },
+  {
+    files: [LANDING_UI],
+    extends: [
+      react.configs.flat.recommended,
+      react.configs.flat['jsx-runtime'],
+      jsxA11y.flatConfigs.recommended,
+    ],
+    plugins: { 'react-hooks': reactHooks },
+    settings: { react: { version: '19.0' } },
+    rules: {
+      ...reactHooks.configs.recommended.rules,
+      'react/no-multi-comp': ['error', { ignoreStateless: false }],
+      'react/jsx-no-useless-fragment': 'error',
+      'react/no-danger': 'error',
+      /**
+       * `forbid-dom-props`/`forbid-component-props` for `style` are deliberately absent, and this
+       * is the one place in the repository where that is true.
+       *
+       * The client bans inline styles because a value written there is a value outside the token
+       * system. Here the `style` prop is the *API*: a `motion` value — the object `useTransform`
+       * returns — is subscribed to through `style`, and it never re-renders React. Banning it
+       * would leave scroll-linked animation to be written with `useState` and a scroll listener,
+       * which is the slow, janky version of the same effect. Colours and spacing still come from
+       * `--bcl-*` tokens in the CSS modules; what goes through `style` is motion.
+       */
+      'jsx-a11y/no-autofocus': 'error',
     },
   },
 

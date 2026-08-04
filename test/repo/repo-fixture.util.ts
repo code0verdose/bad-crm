@@ -12,6 +12,7 @@ export const PACKAGE_DIRS = {
   server: 'packages/server',
   client: 'packages/client',
   e2e: 'packages/e2e',
+  landing: 'packages/landing',
 } as const;
 
 export const PACKAGE_NAMES = {
@@ -19,6 +20,7 @@ export const PACKAGE_NAMES = {
   server: '@bad-crm/server',
   client: '@bad-crm/client',
   e2e: '@bad-crm/e2e',
+  landing: '@bad-crm/landing',
 } as const;
 
 /**

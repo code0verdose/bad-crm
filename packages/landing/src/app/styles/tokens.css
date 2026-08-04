@@ -1,0 +1,123 @@
+/*
+ * The landing's token vocabulary. Together with `global.css` this is the only file in the package
+ * where a literal value is legal — stylelint enforces that (`stylelint.config.js`, the
+ * `TOKEN_DECLARATION_FILES` override), so every stylesheet beside it names a role instead of a
+ * colour.
+ *
+ * These are `--bcl-*`, not the product's `--bc-*`, and the two sets are deliberately unrelated. The
+ * client's palette is measured for WCAG contrast on dense working surfaces; a landing page has one
+ * long column of large type and is allowed a louder accent. Sharing the prefix would invite exactly
+ * the drift where somebody "fixes" a product token to make a hero look better.
+ *
+ * **One scheme, and it is dark.** The page was built in it — the auroras, the glass header, the
+ * mock windows and every gradient are tuned against a near-black background — and a light variant
+ * of that is a second design, not a second palette. `color-scheme: dark` tells the browser to match
+ * its own form controls and scrollbars to it.
+ */
+
+:root {
+  /* ── palette ─────────────────────────────────────────────────────────────────────────────── */
+  --bcl-bg: #07080c;
+  --bcl-bg-deep: #030407;
+  --bcl-surface: #0e1018;
+  --bcl-surface-raised: #161a25;
+  --bcl-border: #232838;
+  --bcl-border-strong: #333a50;
+  --bcl-text: #e9ecf5;
+  --bcl-text-muted: #99a1ba;
+  --bcl-text-faint: #656d85;
+
+  /* The accent triad. `accent` carries interactive surfaces, the other two exist to make gradients
+     and glows read as one family rather than as three unrelated hues. */
+  --bcl-accent: #6d8bff;
+  --bcl-accent-soft: #9db0ff;
+  --bcl-accent-cyan: #22d3ee;
+  --bcl-accent-violet: #c084fc;
+  --bcl-accent-contrast: #05060a;
+  --bcl-danger: #ff6b6b;
+  --bcl-success: #4ade80;
+
+  /* The opaque end of a mask gradient. Only its alpha is ever read, so it is scheme-independent —
+     it exists as a token because a bare `black` is a literal colour everywhere else in the page. */
+  --bcl-mask: #000;
+  --bcl-glow: color-mix(in oklab, var(--bcl-accent) 45%, transparent);
+  --bcl-veil: color-mix(in oklab, var(--bcl-bg) 72%, transparent);
+
+  /* The two large background haloes — behind the hero and behind the closing call to action. They
+     live here rather than in the sections because a `color-mix()` at a call site is a colour spelled
+     out, which is the thing the stylesheets are linted against. */
+  /* A translucent accent fill: chips, checkmarks, the wash behind a highlighted row. */
+  --bcl-accent-wash: color-mix(in oklab, var(--bcl-accent) 20%, transparent);
+  --bcl-accent-wash-strong: color-mix(in oklab, var(--bcl-accent) 34%, transparent);
+  --bcl-halo-accent: color-mix(in oklab, var(--bcl-accent) 28%, transparent);
+  --bcl-halo-violet: color-mix(in oklab, var(--bcl-accent-violet) 22%, transparent);
+
+  /* The three window buttons of a macOS title bar, in Apple's own order and hues. Declared once
+     because every mock window on the page wears the same chrome (`window-chrome.component.tsx`). */
+  --bcl-mac-close: #ff5f57;
+  --bcl-mac-minimise: #febc2e;
+  --bcl-mac-zoom: #28c840;
+  --bcl-mac-bar: color-mix(in oklab, var(--bcl-surface-raised) 80%, var(--bcl-bg));
+  /* The inner ring on each button. Without it the dots read as flat stickers. */
+  --bcl-mac-ring: rgb(0 0 0 / 14%);
+  /* The inset a macOS text field is sunk by — one declaration, so no stylesheet spells `2px`. */
+  --bcl-mac-inset: inset 0 1px 2px rgb(0 0 0 / 22%);
+
+  /* Hairline that reads as a light edge on a raised surface — the top bevel of a mac window. */
+  --bcl-bevel: color-mix(in oklab, var(--bcl-text) 10%, transparent);
+
+  /* ── type ────────────────────────────────────────────────────────────────────────────────── */
+  --bcl-font:
+    ui-sans-serif, system-ui, -apple-system, 'Segoe UI', roboto, 'Helvetica Neue', arial,
+    'Noto Sans', sans-serif;
+  --bcl-font-mono: ui-monospace, sfmono-regular, 'SF Mono', menlo, consolas, monospace;
+
+  /* Fluid steps. `clamp()` over `vi` rather than breakpoint jumps: the page is one column of large
+     type, and a heading that snaps two sizes at 48em is the thing readers notice. */
+  --bcl-text-xs: 0.8125rem;
+  --bcl-text-sm: 0.9375rem;
+  --bcl-text-md: clamp(1rem, 0.96rem + 0.2vi, 1.125rem);
+  --bcl-text-lg: clamp(1.125rem, 1rem + 0.6vi, 1.375rem);
+  --bcl-text-xl: clamp(1.5rem, 1.2rem + 1.4vi, 2.25rem);
+  --bcl-display-sm: clamp(2rem, 1.4rem + 3vi, 3.5rem);
+  --bcl-display-md: clamp(2.5rem, 1.6rem + 4.6vi, 5rem);
+  /* Measured against the hero rather than chosen: three lines plus the eyebrow, the subtitle and
+     two buttons have to fit one 100svh screen at 1280×800, which is where the upper bound comes
+     from. A headline that needs the reader to scroll to find the button is a headline that lost. */
+  --bcl-display-lg: clamp(2.25rem, 1.2rem + 3.6vi, 5rem);
+  --bcl-leading-tight: 1.04;
+  --bcl-leading-snug: 1.2;
+  --bcl-leading-normal: 1.6;
+  --bcl-tracking-tight: -0.03em;
+  --bcl-tracking-wide: 0.12em;
+
+  /* ── space and geometry ──────────────────────────────────────────────────────────────────── */
+  --bcl-space-3xs: 0.25rem;
+  --bcl-space-2xs: 0.5rem;
+  --bcl-space-xs: 0.75rem;
+  --bcl-space-sm: 1rem;
+  --bcl-space-md: 1.5rem;
+  --bcl-space-lg: 2.5rem;
+  --bcl-space-xl: 4rem;
+  --bcl-space-2xl: 6rem;
+  --bcl-space-3xl: 9rem;
+  --bcl-radius-sm: 0.5rem;
+  --bcl-radius-md: 0.875rem;
+  --bcl-radius-lg: 1.25rem;
+  --bcl-radius-xl: 2rem;
+  --bcl-radius-pill: 999rem;
+  --bcl-shell-max: 78rem;
+  --bcl-prose-max: 44rem;
+  --bcl-header-height: 4.5rem;
+  --bcl-shadow-soft: 0 1.5rem 4rem -1.5rem rgb(0 0 0 / 65%);
+  --bcl-shadow-lift: 0 2.5rem 6rem -2rem rgb(0 0 0 / 75%);
+
+  /* ── motion ──────────────────────────────────────────────────────────────────────────────── */
+  --bcl-motion-fast: 140ms;
+  --bcl-motion-base: 280ms;
+  --bcl-motion-slow: 700ms;
+  --bcl-ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --bcl-ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+
+  color-scheme: dark;
+}

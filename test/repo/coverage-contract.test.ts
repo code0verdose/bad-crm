@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import clientConfig from '../../packages/client/vitest.config.js';
+import landingConfig from '../../packages/landing/vitest.config.js';
 import serverConfig from '../../packages/server/vitest.config.js';
 import sharedConfig from '../../packages/shared/vitest.config.js';
 import rootConfig from '../../vitest.config.js';
@@ -33,6 +34,7 @@ const CONFIGS: Record<string, unknown> = {
   shared: sharedConfig,
   server: serverConfig,
   client: clientConfig,
+  landing: landingConfig,
 };
 
 /**
@@ -54,6 +56,22 @@ describe('coverage is measured, not just declared', () => {
     // Without an explicit `include`, a source file that no test imports is simply absent from the
     // report, and an untested module raises the percentage instead of lowering it.
     expect(coverageOf(CONFIGS[name]).include).toEqual(['src/**']);
+  });
+
+  /**
+   * The landing is the one package that measures a subset, and the subset is written down here so
+   * that it stays a decision rather than a drift. Its sections are scroll-linked scenes whose
+   * correctness is a screenshot, not a percentage; what it does own — the language dictionaries,
+   * routing, consent, the scroll and reduced-motion hooks — is logic, and that is what is measured.
+   */
+  it('landing measures its logic, not its scenery', () => {
+    expect(coverageOf(landingConfig).include).toEqual([
+      'src/shared/lib/**',
+      'src/app/i18n/**',
+      'src/widgets/cookie-banner.widget.tsx',
+      'src/sections/cta/feedback-form.component.tsx',
+      'src/pages/**',
+    ]);
   });
 
   it.each(Object.values(PACKAGE_DIRS).filter((dir) => dir !== PACKAGE_DIRS.e2e))(

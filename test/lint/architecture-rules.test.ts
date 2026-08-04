@@ -35,6 +35,21 @@ const PACKAGE_BOUNDARIES: ForbiddenCase[] = [
     rule: 'no-restricted-imports',
     hint: 'e2e',
   },
+  // The landing is a leaf: it advertises the product and never imports it, or the whole point of
+  // keeping it in the monorepo — that it cannot drift into being part of the application — is lost.
+  {
+    fixture: 'packages/landing/src/sections/demo/product-import.component.tsx',
+    rule: 'no-restricted-imports',
+    hint: 'landing',
+  },
+  // "Nothing you type here leaves the browser" is a claim the page makes to its reader, and this is
+  // the rule that keeps it true. `globalThis.fetch` rather than a bare `fetch`, because that is the
+  // spelling the package uses everywhere and the one a plain global ban does not see.
+  {
+    fixture: 'packages/landing/src/sections/demo/network.component.tsx',
+    rule: 'no-restricted-properties',
+    hint: 'EPIC-047',
+  },
 ];
 
 const HEXAGONAL_LAYERS: ForbiddenCase[] = [
@@ -304,6 +319,7 @@ const CLEAN_FIXTURES = [
   // An effect that is a real side effect, carries its cleanup and says why it exists. The negative
   // controls above cannot prove the rule distinguishes the two.
   'packages/client/src/units/task/service/hooks/use-subscription.hook.ts',
+  'packages/landing/src/shared/lib/clean.util.ts',
   'test/recorded-read.util.ts',
 ];
 

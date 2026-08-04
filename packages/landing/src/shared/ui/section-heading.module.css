@@ -1,0 +1,23 @@
+.heading {
+  display: flex;
+  flex-direction: column;
+  gap: var(--bcl-space-sm);
+  max-inline-size: 52rem;
+}
+
+.centered {
+  margin-inline: auto;
+  text-align: center;
+  align-items: center;
+}
+
+.title {
+  font-size: var(--bcl-display-sm);
+  line-height: var(--bcl-leading-snug);
+}
+
+.subtitle {
+  font-size: var(--bcl-text-lg);
+  color: var(--bcl-text-muted);
+  max-inline-size: var(--bcl-prose-max);
+}

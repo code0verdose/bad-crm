@@ -173,12 +173,24 @@ describe('logical properties are required', () => {
 
 describe('the token declaration files are the only place a literal is legal', () => {
   const LITERAL = ':root { --bc-probe: #1971c2; }';
+  /**
+   * The same probe in the landing's token namespace. The two packages do not share a custom-property
+   * prefix — `--bc-*` in the product, `--bcl-*` on the landing — so a single probe would trip
+   * `custom-property-pattern` in one of them and the case would pass or fail for the wrong reason.
+   */
+  const LANDING_LITERAL = ':root { --bcl-probe: #1971c2; }';
 
   it.each([
-    ['packages/client/src/app/styles/tokens.css', 'the tokens are declared here'],
-    ['packages/client/src/app/global.css', 'the reset is declared here'],
-  ])('exempts %s, because %s', async (path) => {
-    expect(await rulesFiredFor(LITERAL, join(repoRoot, path))).toEqual([]);
+    ['packages/client/src/app/styles/tokens.css', 'the tokens are declared here', LITERAL],
+    ['packages/client/src/app/global.css', 'the reset is declared here', LITERAL],
+    [
+      'packages/landing/src/app/styles/tokens.css',
+      'the landing declares its own tokens here',
+      LANDING_LITERAL,
+    ],
+    ['packages/landing/src/app/global.css', 'the landing reset is declared here', LANDING_LITERAL],
+  ])('exempts %s, because %s', async (path, _reason, probe) => {
+    expect(await rulesFiredFor(probe, join(repoRoot, path))).toEqual([]);
   });
 
   /**
@@ -189,11 +201,13 @@ describe('the token declaration files are the only place a literal is legal', ()
   it.each([
     'packages/client/src/app/styles/elevation.css',
     'packages/client/src/app/app-shell.module.css',
+    'packages/landing/src/app/styles/elevation.css',
+    'packages/landing/src/sections/hero/hero.module.css',
   ])('does not extend the exemption to %s', async (path) => {
     expect(await rulesFiredFor(LITERAL, join(repoRoot, path))).toContain('color-no-hex');
   });
 
-  it('names both exempt files in the config, and no third one', () => {
+  it('names every exempt file in the config, and no other', () => {
     const config = readRepoFile('stylelint.config.js');
     const [, block] = /const TOKEN_DECLARATION_FILES = \[([^\]]*)\]/.exec(config) ?? [];
 
@@ -201,6 +215,8 @@ describe('the token declaration files are the only place a literal is legal', ()
     expect([...(block ?? '').matchAll(/'([^']+)'/g)].map(([, path]) => path)).toEqual([
       'packages/client/src/app/styles/tokens.css',
       'packages/client/src/app/global.css',
+      'packages/landing/src/app/styles/tokens.css',
+      'packages/landing/src/app/global.css',
     ]);
   });
 });

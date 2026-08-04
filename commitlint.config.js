@@ -12,6 +12,7 @@ const SCOPES = [
   'server',
   'client',
   'e2e',
+  'landing',
   // cross-cutting
   'api',
   'auth',

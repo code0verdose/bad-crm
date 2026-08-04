@@ -1,0 +1,205 @@
+.connect {
+  display: flex;
+  flex-direction: column;
+  gap: var(--bcl-space-sm);
+  margin-block-start: var(--bcl-space-md);
+  max-inline-size: var(--bcl-prose-max);
+}
+
+.connectText {
+  font-size: var(--bcl-text-md);
+  color: var(--bcl-text-muted);
+  line-height: var(--bcl-leading-normal);
+}
+
+.clients {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--bcl-space-2xs);
+}
+
+.clientsLabel {
+  font-size: var(--bcl-text-xs);
+  letter-spacing: var(--bcl-tracking-wide);
+  text-transform: uppercase;
+  color: var(--bcl-text-faint);
+}
+
+.client {
+  padding: var(--bcl-space-3xs) var(--bcl-space-sm);
+  border: 1px solid var(--bcl-border);
+  border-radius: var(--bcl-radius-pill);
+  background: var(--bcl-surface);
+  font-size: var(--bcl-text-sm);
+}
+
+.layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr);
+  gap: var(--bcl-space-xl);
+  margin-block-start: var(--bcl-space-xl);
+  align-items: start;
+}
+
+/* ── the conversation, in a window like every other mock on the page ────────────────────────── */
+.window {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  overflow: hidden;
+  border: 1px solid var(--bcl-border);
+  border-radius: var(--bcl-radius-lg);
+  background: var(--bcl-surface);
+  box-shadow: var(--bcl-shadow-lift);
+}
+
+.thread {
+  display: flex;
+  flex-direction: column;
+  gap: var(--bcl-space-sm);
+  padding: var(--bcl-space-lg);
+}
+
+.turn {
+  display: flex;
+  gap: var(--bcl-space-2xs);
+  align-items: flex-start;
+  max-inline-size: 94%;
+}
+
+.turnOwn {
+  align-self: flex-end;
+  flex-direction: row-reverse;
+  text-align: end;
+}
+
+.avatar {
+  display: grid;
+  place-items: center;
+  inline-size: 1.75rem;
+  block-size: 1.75rem;
+  flex-shrink: 0;
+  border-radius: var(--bcl-radius-pill);
+  background: linear-gradient(135deg, var(--bcl-accent-cyan), var(--bcl-accent-violet));
+  color: var(--bcl-accent-contrast);
+  font-size: 0.65rem;
+  font-weight: 600;
+}
+
+.avatarOwn {
+  background: linear-gradient(135deg, var(--bcl-accent), var(--bcl-accent-violet));
+}
+
+/* The body of a turn: bubble on top, tool calls under it, both full width of the turn. */
+.body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--bcl-space-2xs);
+  min-inline-size: 0;
+}
+
+.bubble {
+  display: block;
+  padding: var(--bcl-space-2xs) var(--bcl-space-xs);
+  border: 1px solid var(--bcl-border);
+  border-radius: var(--bcl-radius-md);
+  background: var(--bcl-surface-raised);
+  font-size: var(--bcl-text-sm);
+  color: var(--bcl-text);
+  line-height: var(--bcl-leading-normal);
+}
+
+.turnOwn .bubble {
+  border-color: var(--bcl-accent);
+  background: var(--bcl-accent-wash);
+}
+
+/* ── the tool calls the answer was built from ───────────────────────────────────────────────── */
+.calls {
+  display: block;
+  padding: var(--bcl-space-sm);
+  border: 1px solid var(--bcl-border);
+  border-radius: var(--bcl-radius-md);
+  background: var(--bcl-bg-deep);
+}
+
+.callsLabel {
+  display: block;
+  margin-block-end: var(--bcl-space-2xs);
+  font-size: var(--bcl-text-xs);
+  letter-spacing: var(--bcl-tracking-wide);
+  text-transform: uppercase;
+  color: var(--bcl-text-faint);
+}
+
+.call {
+  display: flex;
+  align-items: baseline;
+  gap: var(--bcl-space-2xs);
+  padding-block: var(--bcl-space-3xs);
+  font-family: var(--bcl-font-mono);
+  font-size: var(--bcl-text-xs);
+}
+
+.callTool {
+  color: var(--bcl-accent-soft);
+  white-space: nowrap;
+}
+
+.callDetail {
+  color: var(--bcl-text-faint);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.callCheck {
+  margin-inline-start: auto;
+  inline-size: 0.8rem;
+  block-size: 0.8rem;
+  flex-shrink: 0;
+  color: var(--bcl-success);
+}
+
+/* ── the four guarantees ────────────────────────────────────────────────────────────────────── */
+.points {
+  display: flex;
+  flex-direction: column;
+  gap: var(--bcl-space-md);
+  list-style: none;
+}
+
+.point {
+  display: flex;
+  flex-direction: column;
+  gap: var(--bcl-space-3xs);
+  padding-inline-start: var(--bcl-space-md);
+  border-inline-start: 0.125rem solid var(--bcl-border);
+  transition: border-color var(--bcl-motion-base) var(--bcl-ease-out);
+}
+
+.point:hover {
+  border-inline-start-color: var(--bcl-accent);
+}
+
+.pointTitle {
+  font-size: var(--bcl-text-md);
+  font-weight: 600;
+}
+
+.pointBody {
+  font-size: var(--bcl-text-sm);
+  color: var(--bcl-text-muted);
+  line-height: var(--bcl-leading-normal);
+}
+
+@media (width <= 62em) {
+  .layout {
+    grid-template-columns: 1fr;
+    gap: var(--bcl-space-lg);
+  }
+
+  .thread {
+    padding: var(--bcl-space-md);
+  }
+}

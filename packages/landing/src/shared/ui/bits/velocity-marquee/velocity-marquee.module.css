@@ -1,0 +1,17 @@
+.viewport {
+  position: relative;
+  overflow: hidden;
+  /* The row is decorative repetition; nothing inside it should be a tab stop or a drag target. */
+  user-select: none;
+}
+
+.row {
+  display: flex;
+  inline-size: max-content;
+  white-space: nowrap;
+  will-change: transform;
+}
+
+.copy {
+  flex-shrink: 0;
+}

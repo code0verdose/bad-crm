@@ -1,0 +1,223 @@
+/*
+ * A chart per number, sized to fill the tile rather than to sit politely at the bottom of it.
+ *
+ * Everything runs off one custom property — `--bcl-metric-progress`, which the tile flips from 0 to
+ * 1 when the grid enters the viewport. One switch, six figures, no observer per chart.
+ */
+.visual {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  margin-block-start: var(--bcl-space-sm);
+  flex: 1;
+  min-block-size: 4.5rem;
+}
+
+/* ── the price: what you pay elsewhere, and what you pay here ───────────────────────────────── */
+.bars {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--bcl-space-md);
+  inline-size: 100%;
+  block-size: 100%;
+}
+
+.bar {
+  flex: 1;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  gap: var(--bcl-space-3xs);
+  block-size: 100%;
+}
+
+.barValue {
+  font-family: var(--bcl-font-mono);
+  font-size: var(--bcl-text-sm);
+  color: var(--bcl-text);
+  text-align: center;
+}
+
+.barTrack {
+  display: flex;
+  align-items: flex-end;
+  block-size: 100%;
+  border-radius: var(--bcl-radius-sm);
+  background: var(--bcl-bg-deep);
+}
+
+.barFill {
+  inline-size: 100%;
+  border-radius: var(--bcl-radius-sm);
+  background: var(--bcl-border-strong);
+  block-size: calc(var(--bcl-metric-progress) * var(--bcl-bar-height, 100%));
+  transition: block-size 1.2s var(--bcl-ease-out);
+}
+
+.barFillAccent {
+  background: linear-gradient(180deg, var(--bcl-accent-cyan), var(--bcl-accent-violet));
+}
+
+.barLabel {
+  font-size: 0.65rem;
+  color: var(--bcl-text-faint);
+  text-align: center;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ── the areas, named ───────────────────────────────────────────────────────────────────────── */
+.areas {
+  display: flex;
+  flex-wrap: wrap;
+  align-content: flex-end;
+  gap: var(--bcl-space-3xs);
+}
+
+.area {
+  padding: var(--bcl-space-3xs) var(--bcl-space-2xs);
+  border: 1px solid var(--bcl-border);
+  border-radius: var(--bcl-radius-sm);
+  background: var(--bcl-bg-deep);
+  font-size: 0.7rem;
+  color: var(--bcl-text-muted);
+  opacity: calc(0.35 + 0.65 * var(--bcl-metric-progress));
+  transition: opacity 0.8s var(--bcl-ease-out);
+}
+
+.areaMore {
+  border-color: var(--bcl-accent);
+  color: var(--bcl-accent-soft);
+  font-family: var(--bcl-font-mono);
+}
+
+/* ── one command ────────────────────────────────────────────────────────────────────────────── */
+.command {
+  align-self: stretch;
+  margin-block-start: auto;
+  padding: var(--bcl-space-sm);
+  border: 1px solid var(--bcl-border);
+  border-radius: var(--bcl-radius-sm);
+  background: var(--bcl-bg-deep);
+  font-family: var(--bcl-font-mono);
+  font-size: var(--bcl-text-xs);
+  color: var(--bcl-text);
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.commandPrompt {
+  color: var(--bcl-success);
+}
+
+/* ── telemetry: the switches other products ship on, all off ───────────────────────────────── */
+.switches {
+  display: flex;
+  flex-direction: column;
+  gap: var(--bcl-space-3xs);
+  margin-block-start: auto;
+}
+
+.switchRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--bcl-space-2xs);
+  padding: var(--bcl-space-3xs) var(--bcl-space-2xs);
+  border-radius: var(--bcl-radius-sm);
+  background: var(--bcl-bg-deep);
+  opacity: calc(0.3 + 0.7 * var(--bcl-metric-progress));
+  transition: opacity 0.8s var(--bcl-ease-out);
+}
+
+.switchName {
+  font-size: 0.7rem;
+  color: var(--bcl-text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.switchState {
+  font-family: var(--bcl-font-mono);
+  font-size: 0.65rem;
+  letter-spacing: var(--bcl-tracking-wide);
+  text-transform: uppercase;
+  color: var(--bcl-text-faint);
+}
+
+/* ── host: a bar that fills all the way ─────────────────────────────────────────────────────── */
+.host {
+  display: flex;
+  flex-direction: column;
+  gap: var(--bcl-space-2xs);
+  margin-block-start: auto;
+}
+
+.hostTrack {
+  block-size: 0.75rem;
+  border-radius: var(--bcl-radius-pill);
+  background: var(--bcl-bg-deep);
+  overflow: hidden;
+}
+
+.hostFill {
+  display: block;
+  block-size: 100%;
+  inline-size: calc(var(--bcl-metric-progress) * 100%);
+  border-radius: var(--bcl-radius-pill);
+  background: linear-gradient(90deg, var(--bcl-accent-cyan), var(--bcl-accent-violet));
+  transition: inline-size 1.4s var(--bcl-ease-out);
+}
+
+.hostName {
+  font-family: var(--bcl-font-mono);
+  font-size: 0.65rem;
+  color: var(--bcl-text-faint);
+}
+
+.hostParts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--bcl-space-3xs);
+}
+
+.hostPart {
+  padding: 0.05rem var(--bcl-space-2xs);
+  border-radius: var(--bcl-radius-sm);
+  background: var(--bcl-bg-deep);
+  font-size: 0.65rem;
+  color: var(--bcl-text-muted);
+}
+
+/* ── seats: people keep arriving, the price does not move ───────────────────────────────────── */
+.seats {
+  display: flex;
+  flex-direction: column;
+  gap: var(--bcl-space-2xs);
+  margin-block-start: auto;
+}
+
+.people {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--bcl-space-3xs);
+  align-items: center;
+}
+
+/* Each figure fades in after the one before it, so the row reads as people arriving. */
+.person {
+  inline-size: 1rem;
+  block-size: 1rem;
+  color: var(--bcl-accent-soft);
+  opacity: calc(0.2 + 0.8 * var(--bcl-metric-progress));
+  transition: opacity 0.5s var(--bcl-ease-out);
+  transition-delay: calc(var(--bcl-person-index) * 40ms);
+}
+
+.seatsNote {
+  font-family: var(--bcl-font-mono);
+  font-size: 0.65rem;
+  color: var(--bcl-text-faint);
+}

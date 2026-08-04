@@ -159,6 +159,7 @@ jobs:
             'package.json',
             'packages/client/package.json',
             'packages/e2e/package.json',
+            'packages/landing/package.json',
             'packages/server/package.json',
             'packages/shared/package.json',
           ];

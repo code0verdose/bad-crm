@@ -85,6 +85,20 @@ and are the authoritative source.
   Playwright                         Apache-2.0                 End-to-end tests (dev dependency)
   Vitest                             MIT                        Unit tests (dev dependency)
 
+VENDORED SOURCE
+---------------
+
+Some third-party source is copied into this repository rather than installed as
+a dependency, so its licence does not travel with a package directory. It is
+listed here because distributing it means distributing the notices with it.
+
+  React Bits                MIT, (c) David Haz       Scroll and text effects ported into
+    (reactbits.dev)                                  `packages/landing/src/shared/ui/bits/**`;
+                                                     each port keeps a `SOURCE.md` naming the
+                                                     component it came from.
+  Simple Icons              CC0-1.0                  Brand glyph path data used by
+    (simpleicons.org)                                `packages/landing/src/shared/ui/brand-mark.component.tsx`.
+
 Apache-2.0 components: this product includes software developed by their
 respective authors; see the `NOTICE` file shipped inside each such package for
 attributions required by Apache License 2.0 section 4(d).

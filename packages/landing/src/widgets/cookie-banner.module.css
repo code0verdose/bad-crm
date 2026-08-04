@@ -1,0 +1,85 @@
+.banner {
+  position: fixed;
+  inset-block-end: var(--bcl-space-sm);
+  inset-inline: var(--bcl-space-sm);
+  z-index: 95;
+  display: flex;
+  align-items: center;
+  gap: var(--bcl-space-md);
+  inline-size: min(100% - 2 * var(--bcl-space-sm), 52rem);
+  margin-inline: auto;
+  padding: var(--bcl-space-md);
+  border: 1px solid var(--bcl-border);
+  border-radius: var(--bcl-radius-lg);
+  background: var(--bcl-veil);
+  backdrop-filter: blur(1rem) saturate(140%);
+  box-shadow: var(--bcl-shadow-lift);
+}
+
+.text {
+  display: flex;
+  flex-direction: column;
+  gap: var(--bcl-space-3xs);
+}
+
+.title {
+  font-size: var(--bcl-text-sm);
+  font-weight: 600;
+}
+
+.body {
+  font-size: var(--bcl-text-xs);
+  color: var(--bcl-text-muted);
+}
+
+.more {
+  color: var(--bcl-accent-soft);
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
+}
+
+.actions {
+  display: flex;
+  gap: var(--bcl-space-2xs);
+  flex-shrink: 0;
+}
+
+/*
+ * Both buttons carry the same weight on purpose. A grey “reject” next to a bright “accept” is the
+ * pattern regulators call out by name, and the whole point of this banner is that there is nothing
+ * to nudge anybody towards.
+ */
+.choice {
+  padding-inline: var(--bcl-space-md);
+  padding-block: var(--bcl-space-2xs);
+  border: 1px solid var(--bcl-border-strong);
+  border-radius: var(--bcl-radius-pill);
+  font-size: var(--bcl-text-xs);
+  font-weight: 500;
+  color: var(--bcl-text);
+  white-space: nowrap;
+  transition:
+    border-color var(--bcl-motion-fast) var(--bcl-ease-out),
+    background-color var(--bcl-motion-fast) var(--bcl-ease-out);
+}
+
+.choice:hover {
+  border-color: var(--bcl-accent);
+  background: var(--bcl-accent-wash);
+}
+
+@media (width <= 48em) {
+  .banner {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .actions {
+    justify-content: stretch;
+  }
+
+  .choice {
+    flex: 1;
+    text-align: center;
+  }
+}
