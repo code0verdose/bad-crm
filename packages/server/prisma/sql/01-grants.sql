@@ -213,6 +213,22 @@ BEGIN
       EXECUTE format('GRANT SELECT, INSERT, UPDATE ON TABLE public.%I TO app_user', rel.relname);
       EXECUTE format('REVOKE DELETE, TRUNCATE ON TABLE public.%I FROM app_user', rel.relname);
 
+    ELSIF rel.relname = '_prisma_migrations' THEN
+      -- 4b. Prisma's own bookkeeping, and the one non-tenant table the application reads.
+      --
+      --     The readiness probe runs as app_user and asks whether the shape this build expects is
+      --     applied (`migration-readiness.adapter.ts`). Without this GRANT the query fails with
+      --     `permission denied`, so a correctly installed, fully migrated installation answered
+      --     `/ready` with `migrations: down` for ever and never entered the load balancer's
+      --     rotation. The unit tests could not see it: they pass a fake client that answers with
+      --     rows, and the failure is in the privilege of the connection, not in the comparison.
+      --
+      --     SELECT and nothing else. An application that could write this table could mark a failed
+      --     migration as finished — hiding the state from the probe whose whole job is to notice it.
+      EXECUTE format('GRANT SELECT ON TABLE public.%I TO app_user', rel.relname);
+      EXECUTE format('REVOKE INSERT, UPDATE, DELETE, TRUNCATE ON TABLE public.%I FROM app_user',
+                     rel.relname);
+
     ELSIF rel.is_tenant_table OR rel.relname = ANY (global_read) THEN
       -- 5. Ordinary tenant table. TRUNCATE is never granted: it ignores row-level security, so one
       --    TRUNCATE would empty the table for every organization at once.
@@ -220,9 +236,9 @@ BEGIN
                      rel.relname);
       EXECUTE format('REVOKE TRUNCATE ON TABLE public.%I FROM app_user', rel.relname);
     END IF;
-    -- Anything else (a table with row-level security disabled and no entry in global_read — today
-    -- only Prisma's own _prisma_migrations) is readable by the backup and invisible to the
-    -- application.
+    -- Anything else (a table with row-level security disabled and no entry in global_read) is
+    -- readable by the backup and invisible to the application. Since 2026-08-05 there is no such
+    -- table: `_prisma_migrations` is handled by 4b above, and it was the only one.
   END LOOP;
 
   -- 6. Sequences, and they follow the table they belong to.

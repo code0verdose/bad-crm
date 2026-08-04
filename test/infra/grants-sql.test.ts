@@ -43,6 +43,24 @@ describe('01-grants.sql — the single source of truth for grants', () => {
     expect(executable).toMatch(/REVOKE ALL ON TABLE[^;']*FROM app_user/);
   });
 
+  /**
+   * The readiness probe runs as `app_user` and reads `_prisma_migrations`; without the grant a
+   * fully migrated installation answers `/ready` with `migrations: down` for ever and never enters
+   * the load balancer's rotation. Read-only, because an application that could write this table
+   * could mark a failed migration as finished — hiding the state from the probe that exists to
+   * notice it.
+   *
+   * Covered end to end by `packages/server/test/integration/db/readiness-probes.test.ts`; this is
+   * the cheap half that fails in the fast loop when the branch is edited away.
+   */
+  it('lets app_user read the migrations table, and only read it', () => {
+    expect(executable).toMatch(/_prisma_migrations/);
+    expect(executable).toMatch(/GRANT SELECT ON TABLE[^;']*TO app_user/);
+    expect(executable).toMatch(
+      /REVOKE INSERT, UPDATE, DELETE, TRUNCATE ON TABLE[^;']*FROM app_user/,
+    );
+  });
+
   it('never grants TRUNCATE to app_user', () => {
     // TRUNCATE ignores row-level security: one statement empties the table for every organization.
     expect(executable).not.toMatch(/GRANT[^;']*TRUNCATE[^;']*TO app_user/);

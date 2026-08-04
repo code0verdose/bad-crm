@@ -20,19 +20,32 @@ import { closePools, createPools, reapplyGrants, type HarnessPools } from './db-
  */
 
 const APP_VISIBLE_TABLE = 'teams';
-/** Prisma's own bookkeeping: no row-level security, and `app_user` is granted nothing on it. */
-const APP_INVISIBLE_TABLE = '_prisma_migrations';
+/**
+ * A table of this suite's own making, without row-level security — the shape `01-grants.sql` leaves
+ * invisible to `app_user`.
+ *
+ * It used to be `_prisma_migrations`, and that stopped being true on 2026-08-05: the readiness
+ * probe runs as `app_user` and needs to read it, so the file now grants `SELECT` on it. Borrowing a
+ * real table as the example of «invisible» tied this suite to a decision made elsewhere; a table
+ * created here cannot be taken away by one.
+ */
+const APP_INVISIBLE_TABLE = 'test_table_invisible_to_app';
 
 const SEQUENCE_ON_VISIBLE = 'test_seq_on_teams';
-const SEQUENCE_ON_INVISIBLE = 'test_seq_on_migrations';
+const SEQUENCE_ON_INVISIBLE = 'test_seq_on_invisible';
 
 let pools: HarnessPools;
 
-beforeAll(() => {
+beforeAll(async () => {
   pools = createPools();
+  // No row-level security and no entry in `global_read`: the classifier grants `app_user` nothing.
+  await pools.owner.query(
+    `CREATE TABLE IF NOT EXISTS public.${APP_INVISIBLE_TABLE} (id uuid PRIMARY KEY)`,
+  );
 });
 
 afterAll(async () => {
+  await pools.owner.query(`DROP TABLE IF EXISTS public.${APP_INVISIBLE_TABLE} CASCADE`);
   await closePools(pools);
 });
 
@@ -47,7 +60,7 @@ afterEach(async () => {
  */
 const createSequenceOwnedBy = async (sequence: string, table: string): Promise<void> => {
   await pools.owner.query(`CREATE SEQUENCE public.${sequence}`);
-  // Both tables happen to have an `id`; ownership is what `pg_depend` records, not the column type.
+  // Both tables have an `id`; ownership is what `pg_depend` records, not the column type.
   await pools.owner.query(`ALTER SEQUENCE public.${sequence} OWNED BY public.${table}.id`);
 };
 

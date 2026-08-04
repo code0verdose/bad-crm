@@ -1,3 +1,5 @@
+import { fileURLToPath } from 'node:url';
+
 import { BootstrapOrganizationUseCase } from '../src/application/organization/use-cases/bootstrap-organization.use-case.js';
 import { loadEnv } from '../src/infrastructure/bootstrap/load-env.util.js';
 import { Argon2PasswordHasher } from '../src/infrastructure/crypto/argon2-password-hasher.adapter.js';
@@ -21,6 +23,21 @@ import { renderSeedSummary, seedInstallation, seedRefusalReason } from './seed.u
  * the environment guard, 2 could not run. A wrapper that reads «refused because this is production»
  * as a database failure would retry it.
  */
+
+/**
+ * The repository `.env`, the same file `pnpm dev` reads.
+ *
+ * Without this the documented command does not work on a developer machine: nothing loads the file
+ * into the environment of a `tsx` process, so `loadEnv` refuses on a missing `DATABASE_URL` and the
+ * runbook's first step fails on a stack that is running perfectly. `loadEnvFile` leaves variables
+ * that are already set alone, so the shell still wins over the file — the precedence
+ * `scripts/lib/check-env.util.ts` documents.
+ */
+try {
+  process.loadEnvFile(fileURLToPath(new URL('../../../.env', import.meta.url)));
+} catch {
+  // No file: a container run passes the environment directly, and that is the normal case there.
+}
 
 /** `scripts/**` is tooling, not the app runtime: the ban on reading `process.env` guards
  * `src/**`, where a stray read would bypass the schema and `.env.example`. */
