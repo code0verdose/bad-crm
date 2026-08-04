@@ -184,12 +184,26 @@ jobs:
           const matchesForbidden = (name, pattern) =>
             pattern.endsWith('/') ? name.startsWith(pattern) : name === pattern;
 
-          const grouped = JSON.parse(await readStdin());
+          const raw = await readStdin();
+          const grouped = JSON.parse(raw);
           const violations = [];
           const counts = [];
           let packageCount = 0;
 
           for (const [license, packages] of Object.entries(grouped)) {
+            // `pnpm licenses list --json` groups by licence and every value is an array — until one
+            // is not, which happened on CI and produced `TypeError: packages is not iterable`, a
+            // message that says nothing about which key or what shape. A gate that crashes is a gate
+            // nobody can fix, so the shape is checked and named.
+            if (!Array.isArray(packages)) {
+              console.error(
+                `\nlicense check could not read the listing: the entry for \`${license}\` is ` +
+                  `${typeof packages}, not an array. First 300 characters of the raw output:\n` +
+                  raw.slice(0, 300),
+              );
+              process.exit(1);
+            }
+
             counts.push([license, packages.length]);
             packageCount += packages.length;
 
