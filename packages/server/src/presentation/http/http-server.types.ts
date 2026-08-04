@@ -11,6 +11,7 @@ import { type LoginUseCase } from '@/application/identity/use-cases/login.use-ca
 import { type RefreshSessionUseCase } from '@/application/identity/use-cases/refresh-session.use-case.js';
 import { type RegisterOrganizationUseCase } from '@/application/identity/use-cases/register-organization.use-case.js';
 import { type RequestPasswordResetUseCase } from '@/application/identity/use-cases/request-password-reset.use-case.js';
+import { type MetricsPort } from '@/application/platform/ports/metrics.port.js';
 import { type IdGeneratorPort } from '@/application/platform/ports/id-generator.port.js';
 import { type LoggerPort } from '@/application/platform/ports/logger.port.js';
 import { type RequestContextPort } from '@/application/platform/ports/request-context.port.js';
@@ -77,6 +78,20 @@ export interface HttpServerDependencies {
   readonly idGenerator: IdGeneratorPort;
   /** The `pino-http` completion-line middleware, built in `infrastructure/logging`. */
   readonly httpLogger: RequestHandler;
+  /**
+   * What the process publishes about itself, and the token that guards it.
+   *
+   * `undefined` when `METRICS_ENABLED` is off — the endpoint is then not mounted at all rather than
+   * mounted and empty, so an installation that switched metrics off has no exposition surface to
+   * find. The token is not optional beside it: the env schema refuses «enabled without a token»,
+   * and this shape makes that refusal impossible to route around.
+   */
+  readonly metrics?: {
+    /** Built in the container, like `httpLogger`: presentation receives adapters, never imports them. */
+    readonly collector: RequestHandler;
+    readonly port: MetricsPort;
+    readonly token: string;
+  };
   readonly checkHealth: CheckHealthUseCase;
   readonly checkReadiness: CheckReadinessUseCase;
   readonly describeApi: DescribeApiUseCase;

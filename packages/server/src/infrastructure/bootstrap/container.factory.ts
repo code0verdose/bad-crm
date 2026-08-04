@@ -21,6 +21,9 @@ import { CheckReadinessUseCase } from '@/application/platform/use-cases/check-re
 import { DescribeApiUseCase } from '@/application/platform/use-cases/describe-api.use-case.js';
 import { APP_INFO } from '@/app-info.constant.js';
 import { AsyncRequestContextAdapter } from '@/infrastructure/logging/async-request-context.adapter.js';
+import { createHttpMetrics } from '@/infrastructure/metrics/http-metrics.middleware.js';
+import { noopMetrics } from '@/infrastructure/metrics/noop-metrics.adapter.js';
+import { createPromMetrics } from '@/infrastructure/metrics/prom-client.adapter.js';
 import { createHttpLogger } from '@/infrastructure/logging/http-logger.middleware.js';
 import { PinoLoggerAdapter } from '@/infrastructure/logging/pino-logger.adapter.js';
 import { createMailer } from '@/infrastructure/mail/mail.factory.js';
@@ -184,6 +187,15 @@ export const buildContainer = (input: ContainerInput): AppContainer => {
       ? []
       : [{ name: 'auth-database-role', run: () => assertAuthDatabaseRole(authClient) }];
 
+  /**
+   * A registry with default collectors, or nothing at all.
+   *
+   * `noopMetrics` rather than a flag at each call site: `collectDefaultMetrics` starts timers that
+   * sample the event loop and the heap, and an installation that switched metrics off asked for
+   * none of that. «The counter exists but nobody scrapes it» is not the same as off.
+   */
+  const metrics = input.env.METRICS_ENABLED ? createPromMetrics() : noopMetrics;
+
   const checkReadiness = new CheckReadinessUseCase(
     // `optionalServiceProbes` describes what this installation deliberately does not run; the live
     // probes sit beside it and are contributed by the clients that exist. Redis is live rather than
@@ -263,6 +275,18 @@ export const buildContainer = (input: ContainerInput): AppContainer => {
       requestContext,
       idGenerator,
       httpLogger: createHttpLogger({ logger: input.logger, requestContext }),
+      // Present only when this installation asked for metrics. `METRICS_TOKEN` is non-optional
+      // beside the port because the env schema refuses «enabled without a token» — the pair either
+      // exists whole or not at all, so no route can be mounted unprotected.
+      ...(input.env.METRICS_ENABLED && input.env.METRICS_TOKEN !== undefined
+        ? {
+            metrics: {
+              collector: createHttpMetrics(metrics),
+              port: metrics,
+              token: input.env.METRICS_TOKEN,
+            },
+          }
+        : {}),
       checkHealth,
       checkReadiness,
       describeApi,

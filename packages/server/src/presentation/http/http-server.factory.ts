@@ -70,6 +70,10 @@ export const createHttpServer = (dependencies: HttpServerDependencies): Express 
     }),
   );
   app.use(dependencies.httpLogger);
+  // Beside the logger and after the request context, so a counted request is a request the log line
+  // also describes. Absent entirely when metrics are off — the `finish` listener it installs is the
+  // per-request cost an installation that switched them off asked not to pay.
+  if (dependencies.metrics !== undefined) app.use(dependencies.metrics.collector);
 
   app.use(
     helmet({

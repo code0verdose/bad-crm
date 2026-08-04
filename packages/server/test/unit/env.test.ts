@@ -8,7 +8,9 @@ import {
 } from '../../src/infrastructure/bootstrap/env-features.util.js';
 import { loadEnv } from '../../src/infrastructure/bootstrap/load-env.util.js';
 import {
+  crossFieldEnvIssues,
   REQUIRED_ENV_KEYS,
+  SECRET_BEARING_ENV_KEYS,
   serverEnvSchema,
 } from '../../src/infrastructure/bootstrap/env.schema.js';
 
@@ -539,5 +541,35 @@ describe('MAIL_FROM', () => {
     expect(
       issuePathsOf(withEnv({ SMTP_URL: 'smtp://localhost:1025', MAIL_FROM: 'Bad CRM' })),
     ).toContain('MAIL_FROM');
+  });
+});
+
+/**
+ * `/metrics` describes the process to anything that can reach it. «Enabled and unprotected» must not
+ * be a state this configuration can express — asserted here rather than trusted to the route,
+ * because a route can be mounted from more than one place and the schema is mounted once.
+ */
+describe('metrics exposure', () => {
+  it('is off unless an installation asks for it', () => {
+    expect(serverEnvSchema.parse({ ...VALID_ENV }).METRICS_ENABLED).toBe(false);
+  });
+
+  it('refuses to enable metrics without a token', () => {
+    expect(crossFieldEnvIssues({ METRICS_ENABLED: true })).toEqual([
+      {
+        variable: 'METRICS_TOKEN',
+        message: 'METRICS_TOKEN is required when METRICS_ENABLED is true',
+      },
+    ]);
+  });
+
+  it('CONTROL: says nothing when the token is there', () => {
+    expect(crossFieldEnvIssues({ METRICS_ENABLED: true, METRICS_TOKEN: 'x'.repeat(32) })).toEqual(
+      [],
+    );
+  });
+
+  it('counts the token among the variables that carry a secret', () => {
+    expect(SECRET_BEARING_ENV_KEYS).toContain('METRICS_TOKEN');
   });
 });

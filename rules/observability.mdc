@@ -124,6 +124,28 @@ await this.roles.save(role);
 await this.audit.record({ ... });   // вне withTransaction
 ```
 
+## Каталог метрик
+
+Имена — часть контракта с оператором: дашборд и алерт ссылаются на них, а переименование метрики
+ломает обе стороны молча. Поэтому имена будущих метрик зарезервированы здесь, а не придумываются
+в момент, когда подсистема появится.
+
+| Метрика | Тип | Метки | Где регистрируется |
+|---|---|---|---|
+| `http_requests_total` | counter | `method`, `route`, `status` | EPIC-009 — есть |
+| `http_request_duration_seconds` | histogram | `method`, `route` | EPIC-009 — есть |
+| `auth_rate_limited_total` | counter | `endpoint` | EPIC-009 — есть |
+| `db_pool_active` / `db_pool_idle` | gauge | — | требует preview-фичу `metrics` в `prisma/schema.prisma`; правка схемы со своим гейтом (`db-reviewer`) |
+| `bullmq_jobs_total` | counter | `queue`, `status` | эпик очередей |
+| `bullmq_job_duration_seconds` | histogram | `queue` | эпик очередей |
+| `bullmq_queue_depth` | gauge | `queue` | эпик очередей |
+| `outbox_lag_seconds` | gauge | — | эпик outbox |
+
+**Метка `route` — всегда шаблон** (`/api/v1/tasks/:id`), никогда путь. Метка с идентификатором даёт
+Prometheus по временно́му ряду на сущность, ряд не забывается никогда, и инстанс умирает от утечки
+памяти с интервалом опроса. В метках нет ПДн, email, идентификаторов пользователей и организаций:
+`/metrics` читает всё, что дотянется до порта.
+
 ## Как проверяется
 
 | Механизм | Что ловит |

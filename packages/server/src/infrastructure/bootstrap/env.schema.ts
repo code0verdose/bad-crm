@@ -28,6 +28,12 @@ export const JWT_SECRET_MIN_LENGTH = 32;
  */
 export const INSECURE_VALUE_MARKERS = ['CHANGE_ME', 'dev_'] as const;
 
+/**
+ * Long enough that a scraping token is not guessable in the time an unprotected endpoint would be
+ * found. Not a password anybody types, so the bar is length rather than composition.
+ */
+export const METRICS_TOKEN_MIN_LENGTH = 32;
+
 /** Variables that carry a secret, or a connection string containing one. */
 export const SECRET_BEARING_ENV_KEYS = [
   'DATABASE_URL',
@@ -38,6 +44,7 @@ export const SECRET_BEARING_ENV_KEYS = [
   'APP_ENCRYPTION_KEY',
   'S3_ACCESS_KEY',
   'S3_SECRET_KEY',
+  'METRICS_TOKEN',
   'SMTP_URL',
   'MEILI_MASTER_KEY',
 ] as const;
@@ -238,6 +245,23 @@ const fields = z.object({
    */
   AI_ENABLED: envBoolean('AI_ENABLED', false),
 
+  /**
+   * Off by default, and that is the security decision rather than a taste one.
+   *
+   * `/metrics` describes the process to anything that can reach it, and an installation that never
+   * asked for it should not be publishing one. Turning it on requires `METRICS_TOKEN` — enforced
+   * below in `crossFieldEnvIssues`, so «exposed without protection» is not a state this
+   * configuration can express.
+   */
+  METRICS_ENABLED: envBoolean('METRICS_ENABLED', false),
+  METRICS_TOKEN: z
+    .string()
+    .min(
+      METRICS_TOKEN_MIN_LENGTH,
+      `METRICS_TOKEN must be at least ${String(METRICS_TOKEN_MIN_LENGTH)} characters`,
+    )
+    .optional(),
+
   LOG_LEVEL: z
     .enum(LOG_LEVELS, { error: `LOG_LEVEL must be one of: ${LOG_LEVELS.join(', ')}` })
     .default('info'),
@@ -317,6 +341,13 @@ export const crossFieldEnvIssues = (env: Partial<EnvFields>): EnvIssue[] => {
     issues.push({
       variable: 'MEILI_MASTER_KEY',
       message: 'MEILI_MASTER_KEY is required when MEILI_HOST is set',
+    });
+  }
+
+  if (env.METRICS_ENABLED === true && env.METRICS_TOKEN === undefined) {
+    issues.push({
+      variable: 'METRICS_TOKEN',
+      message: 'METRICS_TOKEN is required when METRICS_ENABLED is true',
     });
   }
 

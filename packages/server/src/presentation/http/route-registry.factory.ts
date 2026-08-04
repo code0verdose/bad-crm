@@ -1,5 +1,6 @@
 import { API_PREFIX } from '@/presentation/http/api-version.constant.js';
 import { createAuthController } from '@/presentation/http/controllers/auth.controller.js';
+import { createMetricsController } from '@/presentation/http/controllers/metrics.controller.js';
 import { createHealthController } from '@/presentation/http/controllers/health.controller.js';
 import { createMetaController } from '@/presentation/http/controllers/meta.controller.js';
 import { createSessionController } from '@/presentation/http/controllers/session.controller.js';
@@ -48,6 +49,13 @@ export const createRouteRegistry = (
   dependencies: HttpServerDependencies,
 ): readonly RouteDeclaration[] => {
   const health = createHealthController(dependencies);
+  const metrics =
+    dependencies.metrics === undefined
+      ? undefined
+      : createMetricsController({
+          metrics: dependencies.metrics.port,
+          token: dependencies.metrics.token,
+        });
   const meta = createMetaController(dependencies);
   const metaQuery = validate({ query: metaQuerySchema });
 
@@ -103,6 +111,21 @@ export const createRouteRegistry = (
       publicReason:
         'readiness probe of the load balancer; gating it on a session would take the instance out of rotation whenever auth is degraded',
     },
+    // Mounted only when this installation asked for metrics: an endpoint that answers 404 to
+    // everybody is still an endpoint somebody can find, and `METRICS_ENABLED=false` is a request
+    // for none.
+    ...(metrics === undefined
+      ? []
+      : ([
+          {
+            method: 'get',
+            path: '/metrics',
+            handlers: [metrics.render],
+            public: true,
+            publicReason:
+              'scraped by a monitoring agent that holds no session; guarded by METRICS_TOKEN inside the handler, which answers 404 without it',
+          },
+        ] satisfies readonly RouteDeclaration[])),
     {
       method: 'get',
       path: `${API_PREFIX}/meta`,
