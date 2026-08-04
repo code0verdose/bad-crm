@@ -7,7 +7,7 @@
   "main": "./dist/main.js",
   "scripts": {
     "build": "prisma generate && tsc -b && tsc-alias",
-    "dev": "tsx watch src/main.ts | pino-pretty",
+    "dev": "tsx watch --env-file-if-exists=../../.env src/main.ts | pino-pretty",
     "start": "node dist/main.js",
     "typecheck": "prisma generate && tsc --noEmit && tsc -p tsconfig.test.json",
     "lint": "prisma generate && eslint . --max-warnings 0",

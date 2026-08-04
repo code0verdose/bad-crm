@@ -40,7 +40,22 @@ export const openStateDirectory = (): string => {
   return directory;
 };
 
+/**
+ * Why no session could be established, when that is the case.
+ *
+ * Set by the setup process and read by the workers, like the directory above. It exists so the
+ * failure lands **where it matters**: a suite whose sessions could not be created still contains
+ * scenarios that need none — the sign-in form, the anonymous guard, the accessibility audit — and
+ * aborting the whole run would hide their result behind an environment problem they do not have.
+ * A scenario that does ask for a session fails immediately, with this reason instead of a redirect.
+ */
+const UNAVAILABLE_VARIABLE = 'E2E_SESSIONS_UNAVAILABLE';
+
 const stateDirectory = (): string => {
+  const unavailable = process.env[UNAVAILABLE_VARIABLE];
+
+  if (unavailable !== undefined && unavailable !== '') throw new Error(unavailable);
+
   const directory = process.env[STATE_DIRECTORY_VARIABLE];
 
   if (directory === undefined) {
@@ -72,6 +87,20 @@ export const sessionOf = (organization: SeedOrganization): string =>
  * mean saving a credential that is stale before the second scenario starts.
  */
 export const createSessions = async (): Promise<void> => {
+  try {
+    await establishSessions();
+  } catch (error) {
+    // Recorded rather than thrown: see `UNAVAILABLE_VARIABLE`. The message is the one the scenario
+    // that needs a session will fail with, and it is printed here too so a run that has no such
+    // scenario still says out loud what did not happen.
+    const reason = error instanceof Error ? error.message : String(error);
+
+    process.env[UNAVAILABLE_VARIABLE] = reason;
+    process.stderr.write(`\ne2e: no session was established.\n${reason}\n\n`);
+  }
+};
+
+const establishSessions = async (): Promise<void> => {
   openStateDirectory();
 
   for (const organization of SEED_ORGANIZATIONS) {

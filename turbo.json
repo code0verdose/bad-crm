@@ -161,6 +161,7 @@
         // the copy `packages/e2e` uses against the one `pnpm db:seed` applies. Cached over an edit
         // to either, the gate that keeps the two in step reports a PASS over the previous pair.
         "packages/e2e/fixtures/**",
+        "packages/e2e/pages/**",
         "packages/*/scripts/**",
         // The end-to-end harness lives at the root of its package, not under `src`:
         // `test/e2e/playwright-config.test.ts` asserts retries, the browser matrix and the
