@@ -63,6 +63,30 @@ const CLIENT = 'packages/client/src/**/*.{ts,tsx}';
  * every Mantine prop that takes a token are literals by design, and an exclude list would have to
  * grow every time one of them appeared. Naming the four that carry prose says what the rule is for.
  */
+/**
+ * Formatting goes through `shared/lib/format`, never through `Intl` or `toLocale*` at a call site.
+ *
+ * Two failures, one rule. A locale passed by hand stops following the switcher the moment somebody
+ * writes `'ru-RU'` into a component — the string is right today and frozen forever. And a formatter
+ * built per render in a table cell is three hundred `Intl` constructions on a hundred-row list,
+ * which is why the wrappers cache them.
+ *
+ * The wrappers themselves are the exception, declared below by path: a ban with nowhere to do the
+ * work is a ban somebody disables.
+ */
+const INTL_OUTSIDE_FORMAT = [
+  {
+    selector: "MemberExpression[object.name='Intl']",
+    message:
+      '`Intl` belongs to `shared/lib/format` (`rules/i18n.mdc` §10): the wrappers carry the current locale and cache the formatter.',
+  },
+  {
+    selector: 'CallExpression[callee.property.name=/^toLocale(String|DateString|TimeString)$/]',
+    message:
+      '`toLocale*` formats with whatever locale the runtime happens to have. Use `SharedLib.format*` (`rules/i18n.mdc` §10).',
+  },
+];
+
 const I18N_NO_LITERAL_STRING = {
   mode: 'jsx-only',
   'jsx-attributes': {
@@ -698,7 +722,7 @@ export default tseslint.config(
         },
       ],
       'no-restricted-globals': ['error', ...NO_FETCH_GLOBALS],
-      'no-restricted-syntax': ['error', IMPORT_META_ENV_OUTSIDE_CONFIG],
+      'no-restricted-syntax': ['error', IMPORT_META_ENV_OUTSIDE_CONFIG, ...INTL_OUTSIDE_FORMAT],
       'no-restricted-properties': PROCESS_ENV_OUTSIDE_BOOTSTRAP,
       // Declared on the whole client rather than on components only: a hook file under
       // `service/hooks` is exactly where an effect that should have been a query gets written.
@@ -843,6 +867,18 @@ export default tseslint.config(
       ],
     },
   },
+  {
+    /**
+     * Where the `Intl` ban does not apply, because this is the place the work is done. Narrowed to
+     * `no-restricted-syntax` rather than switched off wholesale: every other restriction in the
+     * client — `import.meta.env` outside config, the layer bans — still holds here.
+     */
+    files: ['packages/client/src/shared/lib/format/**/*.ts'],
+    rules: {
+      'no-restricted-syntax': ['error', IMPORT_META_ENV_OUTSIDE_CONFIG],
+    },
+  },
+
   {
     /**
      * The one module allowed to speak to the notification vendor — it *is* the wrapper.

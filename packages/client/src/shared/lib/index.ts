@@ -4,5 +4,6 @@
  * about a domain — that is what `units/**` is for (`rules/frontend-fsd.mdc`, rule 8).
  */
 export * from './enums/index.js';
+export * from './format/index.js';
 export * from './notifications/index.js';
 export * from './validation/index.js';

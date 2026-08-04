@@ -6,6 +6,7 @@
  * `units/<unit>/model/validation` on the client.
  */
 export * from './date.schema.js';
+export * from './duration.schema.js';
 export * from './email.schema.js';
 export * from './entity-id.schema.js';
 export * from './locale.schema.js';
