@@ -12,7 +12,7 @@
 | EPIC-006 | Ядро аутентификации | 🔵 review | M1 | 0/9 |
 | EPIC-007 | Дизайн-система | 🔵 review | M1 | 0/5 |
 | EPIC-008 | Двуязычность EN/RU | 🔵 review | M1 | 0/6 |
-| EPIC-009 | Наблюдаемость | ⚫ backlog | M1 | 0/6 |
+| EPIC-009 | Наблюдаемость | 🔵 review | M1 | 0/6 |
 | EPIC-010 | E2E-харнесс | ⚫ backlog | M1 | 0/6 |
 | EPIC-011 | Роли, права и ACL | ⚫ backlog | M2 | 0/11 |
 | EPIC-012 | Сотрудники, приглашения и офбординг | ⚫ backlog | M2 | 0/7 |
@@ -50,5 +50,6 @@
 | EPIC-044 | Созвоны и календарь | ⚫ backlog | M9 | 0/0 |
 | EPIC-045 | Финальное укрепление безопасности | ⚫ backlog | M9 | 0/0 |
 | EPIC-046 | Self-host релиз 1.0 | ⚫ backlog | M9 | 0/0 |
+| EPIC-048 | MCP-сервер для внешних агентов | ⚫ backlog | M8 | 0/8 |
 
-_Эпиков: 46. Статусы: backlog → ready → in-progress → review → done; blocked — флаг._
+_Эпиков: 47 (+ EPIC-047, не закоммичен). Статусы: backlog → ready → in-progress → review → done; blocked — флаг._

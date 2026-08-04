@@ -37,7 +37,7 @@ updated: 2026-07-26
 | [`architecture/data-model.md`](architecture/data-model.md) | Сущности, таблицы, поля, индексы, RLS-политики | **При любом изменении схемы или Prisma-модели**; при сомнении, как называется таблица или поле |
 | [`architecture/backend-context-template.md`](architecture/backend-context-template.md) | Шаблон нового backend-контекста: обязательные каталоги слоёв, порядок работы domain → application → infrastructure → presentation, чем каждое правило проверяется автоматически, чек-лист перед коммитом | **Перед добавлением нового домена на сервере**; при сомнении, куда положить файл |
 | [`architecture/ux-architecture.md`](architecture/ux-architecture.md) | Принципы интерфейса, информационная архитектура, карта маршрутов, ключевые экраны, дизайн-система и токены, паттерны взаимодействия, права в UI, доступность WCAG 2.1 AA, локализация EN/RU, адаптивность и производительность | **При любой клиентской работе**; при добавлении экрана или маршрута |
-| [`architecture/adr/`](architecture/adr/) | 23 Architecture Decision Record — по одному решению на файл, с контекстом, решением и отвергнутыми альтернативами | **Перед попыткой изменить принятое решение**: сначала читаем ADR, потом спорим |
+| [`architecture/adr/`](architecture/adr/) | 24 Architecture Decision Record — по одному решению на файл, с контекстом, решением и отвергнутыми альтернативами | **Перед попыткой изменить принятое решение**: сначала читаем ADR, потом спорим |
 
 **Каталог ADR:**
 
@@ -66,6 +66,7 @@ updated: 2026-07-26
 | [0021](architecture/adr/0021-transactional-outbox.md) | Транзакционный outbox |
 | [0022](architecture/adr/0022-typescript-version-policy.md) | Одна версия TypeScript на весь воркспейс (5.9.3) |
 | [0023](architecture/adr/0023-csp-for-wasm-crypto.md) | CSP для WASM-криптографии и отказ от COEP |
+| [0024](architecture/adr/0024-mcp-server.md) | Bad CRM как MCP-сервер для внешних агентов |
 
 ### Безопасность (`security/`)
 

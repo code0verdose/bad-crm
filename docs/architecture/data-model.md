@@ -3235,6 +3235,33 @@ erDiagram
     }
 ```
 
+### 16. MCP — доступ внешних агентов
+
+*Добавлена 2026-08-05 вместе с [ADR-0024](adr/0024-mcp-server.md) и
+[EPIC-048](../../epics/epic-048-mcp-server/epic.md).* Все шесть таблиц — **[T]**.
+
+| Сущность | Метка | Ключевые поля | Особенности |
+|---|---|---|---|
+| `ApiToken` | [T] | `userId`, `name`, `tokenHash` (SHA-256), `tokenTail` (последние 4 символа для узнавания в списке), `toolScopes String[]`, `expiresAt`, `lastUsedAt?`, `revokedAt?`, `createdAt` | персональный токен; используется stdio-мостом. **Пробел модели, обнаруженный при этом проектировании:** права `api_token:*` существуют в каталоге с 2026-07-26, а таблицы под ними не было |
+| `McpClient` | [T] | `name`, `clientIdPublic`, `clientSecretHash?`, `redirectUris String[]`, `registrationMode MANUAL\|DYNAMIC`, `isEnabled`, `createdById`, `createdAt` | зарегистрированный OAuth-клиент; `DYNAMIC` доступен только при включённой DCR (`mcp:manage_clients`) |
+| `McpConsent` | [T] | `userId`, `clientId`, `toolScopes String[]`, `grantedAt`, `revokedAt?`, `lastUsedAt?` | согласие конкретного человека конкретному клиенту; область — закрытый список инструментов, не «весь API» |
+| `McpSession` | [T] | `userId`, `clientId`, `consentId`, `refreshTokenHash` (SHA-256), `familyId`, `resource`, `expiresAt`, `revokedAt?`, `lastSeenAt`, `ipHash`, `userAgent` | ротация refresh и обнаружение повторного использования — тот же механизм, что у `Session` (EPIC-006), а не второй самописный |
+| `McpToolPolicy` | [T] | `toolName`, `isEnabled`, `allowedRoleIds String[]`, `maxCallsPerDay?`, `requiresConfirmation Bool`, `scope ORG\|PROJECT` | политика организации поверх прав: сузить можно, расширить — нет |
+| `McpConfirmation` | [T] | `userId`, `sessionId`, `toolName`, `argumentsHash`, `createdAt`, `expiresAt`, `confirmedAt?`, `usedAt?` | одноразовое подтверждение разрушающей операции, выдаваемое **в интерфейсе продукта**; `argumentsHash` привязывает подтверждение к конкретным аргументам, иначе подтверждают одно, а исполняют другое |
+
+**Почему `McpToolPolicy` — отдельная таблица, а не `AIToolPolicy`.** Пространства имён разные
+(инструменты ассистента и инструменты MCP описываются разными манифестами и живут в разных
+адаптерах), а общая таблица означала бы, что запрет инструмента в одном канале молча меняет
+поведение другого. Форма таблиц намеренно одинаковая — это позволяет переиспользовать UI и
+проверки, не смешивая данные.
+
+**Чего в этой группе нет намеренно.** Таблицы «журнал вызовов инструментов» нет: вызов пишется в
+`AuditLog` действием `mcp.tool_called`. Второй журнал означал бы второе место, где нужно помнить про
+append-only, ретеншн и партиционирование, — и первый же вопрос «а где посмотреть, что сделал агент»
+получил бы два ответа.
+
+---
+
 ---
 
 ## Мульти-тенантность и RLS

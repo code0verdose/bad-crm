@@ -33,6 +33,8 @@ Bad CRM — **self-hosted** CRM/workspace для команд разработк
 - даёт командный чат и нотификации в реальном времени;
 - подтягивает статусы GitHub Actions и связывает их с задачами;
 - даёт AI-ассистента (чат + поиск по своим данным) на провайдере, который выбирает администратор;
+- выступает **MCP-сервером** для внешних агентов пользователя: агент работает с задачами, документами
+  и временем от имени конкретного человека и строго в пределах его прав ([ADR-0024](adr/0024-mcp-server.md));
 - ведёт проектное лидерство: клиенты, контракты, инвойсы, звонки;
 - ведёт онбординг новых участников организации.
 
@@ -45,7 +47,7 @@ Bad CRM — **self-hosted** CRM/workspace для команд разработк
 | Не является платёжным процессором | Инвойс — документ и статус, а не транзакция; интеграции с эквайрингом вне скоупа. |
 | Не заменяет git-хостинг и CI | GitHub — внешняя система; мы читаем её состояние, но не исполняем пайплайны. |
 | Не даёт офлайн-режим и одновременное посимвольное соредактирование | См. раздел «Что осознанно НЕ делаем сейчас». |
-| Не выступает identity-провайдером для сторонних приложений | Аутентификация — только внутренняя, OIDC-провайдером наружу не работаем. |
+| Не выступает identity-провайдером для сторонних приложений | Аутентификация — только внутренняя; OIDC-провайдером наружу не работаем — `id_token`, которым чужое приложение авторизует у себя нашего пользователя, не выпускается. **Уточнено 2026-08-05 ([ADR-0024](adr/0024-mcp-server.md)):** для MCP установка выступает **сервером авторизации OAuth 2.1 для самой себя** — токен выпускается на её собственный ресурс `/mcp` (`resource` по RFC 8707) и нигде больше не принимается. Это доступ к нашим данным по нашему решению, а не утверждение о личности пользователя для третьей стороны; прежняя формулировка не различала эти два случая. |
 
 ---
 
@@ -61,6 +63,8 @@ flowchart TB
 
     system["Bad CRM<br/>self-hosted multi-tenant CRM/workspace"]
 
+    agent["Внешний LLM-агент<br/>Claude Desktop, Cursor, свой скрипт<br/>подключается по MCP от имени пользователя"]
+
     browser["Браузер пользователя<br/>единственное место, где vault расшифрован"]
     github["GitHub API<br/>репозитории, Actions, webhooks"]
     llm["LLM-провайдеры<br/>anthropic / openai / openai_compat / openrouter"]
@@ -73,6 +77,8 @@ flowchart TB
     dev --> browser
     admin --> browser
     browser -->|"HTTPS, WebSocket"| system
+    dev -->|"настраивает у себя"| agent
+    agent -->|"MCP: Streamable HTTP + OAuth 2.1/PKCE<br/>или stdio через мост"| system
 
     system -->|"REST, webhooks"| github
     system -->|"HTTPS, streaming"| llm
@@ -109,6 +115,7 @@ flowchart TB
 
     spa -->|"HTTPS/JSON по openapi.yaml"| api
     spa -->|"WebSocket (Socket.IO)"| api
+    mcpclient["Внешний MCP-агент"] -->|"POST /mcp (JSON-RPC), OAuth 2.1"| api
     spa -->|"HTTPS presigned PUT/GET"| minio
 
     api -->|"SQL через Prisma, SET LOCAL app.organization_id"| pg
@@ -148,13 +155,14 @@ Express; `application` знает только собственные порты
 
 ```mermaid
 flowchart TB
-    subgraph presentation["src/presentation/http — driving adapters"]
-        routes["routes/*.routes.ts"]
-        ctrl["controllers/*.controller.ts"]
-        mw["middleware: auth, tenant, requestId, rate-limit"]
-        val["validators/*.schema.ts (Zod)"]
-        ser["serializers/*.serializer.ts"]
-        err["error-handler.ts"]
+    subgraph presentation["src/presentation — driving adapters"]
+        routes["http/routes/*.routes.ts"]
+        ctrl["http/controllers/*.controller.ts"]
+        mw["http/middleware: auth, tenant, requestId, rate-limit"]
+        val["http/validators/*.schema.ts (Zod)"]
+        ser["http/serializers/*.serializer.ts"]
+        err["http/error-handler.ts"]
+        mcp["mcp/tools/*.tool.ts + mcp/mcp-server.factory.ts<br/>второй driving-адаптер, те же use-case'ы"]
     end
 
     subgraph application["src/application — use cases + ports"]
@@ -190,6 +198,8 @@ flowchart TB
     ctrl --> ser
     mw --> ctrl
     err --> ser
+    mcp --> uc
+    mw --> mcp
 
     uc --> ports
     uc --> ent
@@ -222,6 +232,11 @@ flowchart TB
 4. Контроллер не обращается к репозиторию напрямую — только к use-case.
 5. Каждый route из `routes/**` присутствует в `docs/api/openapi.yaml`, и наоборот
    ([ADR-0003](adr/0003-openapi-as-source-of-truth.md)) — это контрактный тест, а не соглашение.
+6. **Обработчик MCP-инструмента подчиняется тем же четырём правилам, что и контроллер**: он не
+   импортирует `infrastructure`, не трогает Prisma, не решает про доступ и вызывает только
+   use-case. Каждый инструмент из `presentation/mcp/tools/**` присутствует в
+   `docs/api/mcp-tools.yaml`, и наоборот ([ADR-0024](adr/0024-mcp-server.md)) — тот же двусторонний
+   гейт, что у HTTP-контракта, потому что канал доступа второй, а модель прав должна остаться одна.
 
 ---
 
@@ -251,7 +266,7 @@ Prisma-моделями своего контекста; кросс-контек
 | integration | GitHub: связь репозиториев, статусы Actions, деплои, webhooks | `GithubInstallation`, `RepoLink`, `WorkflowRun`, `WorkflowJob`, `Deployment`, `CommitRef` | project, task, platform | EPIC-037 |
 | ai | Конфигурация провайдеров, треды ассистента, эмбеддинги и RAG | `AIProvider`, `AIThread`, `AIMessage`, `Embedding`, `AIToolPolicy` | knowledge, task, platform | EPIC-038, EPIC-039 |
 | delivery | Клиенты, контракты, инвойсы, спринты, вехи приёмки, звонки, риски | `Client`, `ClientContact`, `Contract`, `ContractRate`, `Invoice`, `InvoiceLine`, `InvoiceNumberSequence`, `Payment`, `Budget`, `BudgetPlanPoint`, `Sprint`, `Milestone`, `Call`, `CallParticipant`, `CallSummary`, `ActionItem`, `ProjectRisk`, `Stakeholder` | project, time | EPIC-041, EPIC-042, EPIC-043, EPIC-044 |
-| platform | Outbox, аудит, поисковый индекс и его состояние, observability, планировщик | `OutboxEvent`, `AuditLog`, `SearchIndexState` | — | EPIC-003, EPIC-009, EPIC-016, EPIC-024 |
+| platform | Outbox, аудит, поисковый индекс и его состояние, observability, планировщик, доступ внешних агентов по MCP | `OutboxEvent`, `AuditLog`, `SearchIndexState`, `ApiToken`, `McpClient`, `McpSession`, `McpConsent`, `McpConfirmation` | — | EPIC-003, EPIC-009, EPIC-016, EPIC-024, EPIC-048 |
 
 Имена сущностей совпадают с [`data-model.md`](data-model.md) — он источник правды. Прежний пробел
 модели по доменам ТЗ 12/13 (дашборды, drill-down) и 17 (материалы и онбординг) **закрыт**: группа 15
@@ -541,6 +556,56 @@ flowchart LR
 Правило: секреты, тела vault-элементов, содержимое сообщений и AI-промпты в логи не попадают — логируются
 идентификаторы и размеры, но не полезная нагрузка.
 
+### (и) MCP — установка как сервер для внешних агентов
+
+Направление вызова здесь **противоположно** механизму (ж): в (ж) установка ходит к провайдеру, в (и)
+внешний агент — Claude Desktop, Cursor, собственный скрипт — приходит к установке и работает с ней
+**от имени конкретного пользователя**. AI-провайдер установки в этом сценарии не нужен: MCP-сервер
+не делает ни одного исходящего вызова.
+
+```mermaid
+flowchart LR
+    agent["внешний агент<br/>(Claude Desktop, Cursor, свой скрипт)"]
+    bridge["@bad-crm/mcp-stdio<br/>мост stdio ⇄ HTTP, без инструментов"]
+    mcp["presentation/mcp<br/>tools/*.tool.ts"]
+    uc["application/&lt;context&gt;/use-cases"]
+    pol["domain/**/access/*.policy.ts"]
+    db["withTenant → RLS"]
+
+    agent -->|"stdio"| bridge
+    bridge -->|"POST /mcp"| mcp
+    agent -->|"Streamable HTTP + OAuth 2.1/PKCE"| mcp
+    mcp --> uc
+    uc --> pol
+    uc --> db
+```
+
+- **Один адаптер, два способа подключиться.** Реализация инструментов существует в единственном
+  экземпляре; stdio-мост — клиент того же `/mcp`, он не имеет доступа ни к БД, ни к портам.
+- **MCP-адаптер — driving-адаптер, а не слой данных.** Обработчик инструмента вызывает use-case;
+  прямой `prisma.*` запрещён так же, как в HTTP-контроллере.
+- **Права:** инструмент **объявляет** ключ из каталога, **проверяет** его use-case. Итог —
+  конъюнкция: `mcp:connect` (и `mcp:use_write_tools` для пишущих) ∧ право домена ∧ ACL ресурса.
+  Сессия агента не получает ни одного права, которого нет у пользователя; область действия токена
+  может только сужать набор.
+- **`tools/list` фильтруется правами** пользователя и областью токена: инструмент, отсутствующий в
+  списке, модель не вызывает, а присутствующий и отвечающий отказом — вызывает снова другими
+  аргументами.
+- **Каждый `tools/call` — запись в аудит** (`mcp.tool_called`: пользователь, клиент, инструмент,
+  аргументы по allow-list схемы, результат, `requestId`), для пишущих инструментов — внутри той же
+  транзакции.
+- **Разрушающие операции подтверждаются в интерфейсе Bad CRM**, а не в диалоге с агентом: канал
+  подтверждения не должен совпадать с каналом, который может быть скомпрометирован инъекцией.
+- **Vault недостижим по построению:** `presentation/mcp/**` не имеет права импортировать
+  `application/vault/**` и `domain/vault/**` — тот же архитектурный тест, что стережёт
+  `application/ai/**`.
+- Выключено по умолчанию (`MCP_ENABLED=false`): установка, которой это не нужно, не открывает
+  эндпоинт наружу.
+
+Подробности и отвергнутые альтернативы — [ADR-0024](adr/0024-mcp-server.md); угрозы —
+[`threat-model.md` → `T-MCP-01…T-MCP-08`](../security/threat-model.md); эпик —
+[EPIC-048](../../epics/epic-048-mcp-server/epic.md).
+
 ---
 
 ## Границы доверия и потоки данных
@@ -716,6 +781,7 @@ flowchart TB
 | Отдельная векторная БД (Qdrant/Weaviate/Pinecone) | pgvector в уже существующем Postgres даёт транзакционную консистентность эмбеддингов с данными и не добавляет контейнер в compose. |
 | Kubernetes как основной путь установки | Основная аудитория ставит на один VPS; манифесты/чарт возможны как community-дополнение, но не определяют архитектуру. |
 | Мобильное приложение | Стоимость второго клиента не окупается до стабилизации API; адаптивный веб покрывает мобильные сценарии просмотра и комментирования. |
+| Bad CRM как MCP-**клиент** (продукт ходит к чужим MCP-серверам) | [ADR-0024](adr/0024-mcp-server.md) описывает только обратное направление — установка как сервер. Клиентская роль означала бы исходящие вызовы к серверам, которые настраивает пользователь, то есть новый канал эксфильтрации поверх уже существующего `T-AI-05`; сначала должен устояться внутренний ассистент (EPIC-039). |
 | SSO (SAML/OIDC/LDAP) | Внутренняя аутентификация проще аудируется на старте, а корпоративный SSO востребован только при внедрениях, которых у проекта пока нет; порт аутентификации оставляет место для адаптера. |
 
 Каждый пункт — отложенное, а не запрещённое решение: точки расширения (порты, разделяемые роли одного
