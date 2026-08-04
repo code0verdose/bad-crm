@@ -119,6 +119,10 @@
       "inputs": [
         "test/**",
         "package.json",
+        // `test/deps/quarantined-versions.test.ts` asks what this lockfile may install. Cached over
+        // a regenerated lockfile — which is exactly what a dependabot PR produces — the quarantine
+        // reports a PASS over resolutions it never looked at.
+        "pnpm-lock.yaml",
         "pnpm-workspace.yaml",
         "turbo.json",
         "tsconfig.base.json",

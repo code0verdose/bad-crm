@@ -11,6 +11,10 @@ overrides:
   fast-uri@<3.1.5: '>=3.1.5 <4'
   fast-uri@>=4.0.0 <4.1.2: '>=4.1.2'
   js-yaml@<4.3.0: '>=4.3.0'
+  keyv@>=6.0.0: <6.0.0
+  cacheable@>=2.5.1: <2.5.1
+  flat-cache@>=6.1.24: <6.1.24
+  file-entry-cache@>=11.1.6: <11.1.6
 
 importers:
 
