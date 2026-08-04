@@ -61,4 +61,14 @@ export const RATE_LIMIT_POLICY: Readonly<Record<RateLimitPolicy, RateLimitPolicy
     windowSeconds: 1 * MINUTE,
     blockSeconds: 1 * MINUTE,
   },
+  /**
+   * Ten a minute, and no escalation. A tab in a render loop is a defect to be told about once, not
+   * an attacker: the first refusals already stop the flood, and locking the reporter out for longer
+   * would hide the *next*, different failure behind the one already known.
+   */
+  client_error_report: {
+    points: 10,
+    windowSeconds: 1 * MINUTE,
+    blockSeconds: 1 * MINUTE,
+  },
 };

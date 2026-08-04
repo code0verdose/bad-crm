@@ -1,5 +1,7 @@
 import { API_PREFIX } from '@/presentation/http/api-version.constant.js';
 import { createAuthController } from '@/presentation/http/controllers/auth.controller.js';
+import { createTelemetryController } from '@/presentation/http/controllers/telemetry.controller.js';
+import { clientErrorBodySchema } from '@/presentation/http/validators/telemetry.validator.js';
 import { createMetricsController } from '@/presentation/http/controllers/metrics.controller.js';
 import { createHealthController } from '@/presentation/http/controllers/health.controller.js';
 import { createMetaController } from '@/presentation/http/controllers/meta.controller.js';
@@ -58,6 +60,8 @@ export const createRouteRegistry = (
         });
   const meta = createMetaController(dependencies);
   const metaQuery = validate({ query: metaQuerySchema });
+  const telemetry = createTelemetryController(dependencies);
+  const clientErrorValidator = validate({ body: clientErrorBodySchema });
 
   const registerValidator = validate({ body: registerBodySchema });
   const loginValidator = validate({ body: loginBodySchema });
@@ -126,6 +130,14 @@ export const createRouteRegistry = (
               'scraped by a monitoring agent that holds no session; guarded by METRICS_TOKEN inside the handler, which answers 404 without it',
           },
         ] satisfies readonly RouteDeclaration[])),
+    {
+      method: 'post',
+      path: `${API_PREFIX}/telemetry/client-error`,
+      handlers: [clientErrorValidator.handler, telemetry.reportClientError],
+      public: true,
+      publicReason:
+        'a failure that prevents signing in is the one most worth reporting, and requiring a session would drop exactly those; the limiter counts per user when there is one and per address otherwise',
+    },
     {
       method: 'get',
       path: `${API_PREFIX}/meta`,

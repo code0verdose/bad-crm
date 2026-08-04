@@ -665,6 +665,56 @@ paths:
         '500':
           $ref: '#/components/responses/InternalError'
 
+  /telemetry/client-error:
+    post:
+      operationId: reportClientError
+      summary: Record a failure that happened in the browser.
+      description: |
+        The other half of the log. A stack trace that never leaves the tab is a failure the team
+        learns about only if somebody writes in, and «the screen went white» is not a bug report.
+
+        **Unauthenticated on purpose.** The failures worth hearing about include the ones that stop a
+        person signing in — a broken sign-in screen is exactly the case where no session exists — so
+        requiring one would silence the reports that matter most. The limiter is per user when there
+        is a session and per address otherwise.
+
+        **The report carries no user content.** Message, stack, application version, route template
+        and a reference; never field values, never a token, never an identifier of a person or an
+        organization. The client is what strips it (`shared/lib/telemetry`), because the client is
+        where the data is; the server bounds the sizes it accepts so that a compromised or
+        malfunctioning tab cannot write an unbounded string into the log.
+
+        It answers 204 and never a body: a caller has nothing to do with the answer, and a body
+        would be one more thing to keep in step with the log format.
+      tags: [telemetry]
+      security: []
+      x-public-reason: >-
+        A failure that prevents signing in is the one most worth reporting; a session requirement
+        would drop exactly those. Carries no tenant data in and none out.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ClientErrorReport'
+            examples:
+              rendered:
+                value:
+                  message: "Cannot read properties of undefined (reading 'id')"
+                  stack: "TypeError: Cannot read properties of undefined\n    at TaskCard (index-4f2a.js:1:2843)"
+                  appVersion: 0.0.0
+                  route: /_authenticated/dashboard
+                  reference: 4f2a91cd
+      responses:
+        '204':
+          description: Recorded.
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
   /meta:
     get:
       operationId: getApiMeta
@@ -966,6 +1016,40 @@ components:
           description: |
             Subject to the same policy as registration, and additionally refused when it equals
             `currentPassword` — both are `422 validation_failed` pointing at this field.
+
+    ClientErrorReport:
+      type: object
+      additionalProperties: false
+      required: [message, appVersion, route, reference]
+      description: |
+        Bounded by construction. Every length below is a limit the server enforces: a report is a
+        line in a log, and a log line an attacker chooses the length of is a disk an attacker fills.
+      properties:
+        message:
+          type: string
+          minLength: 1
+          maxLength: 512
+        stack:
+          type: string
+          maxLength: 8192
+          description: Already mapped through the source map by the browser; absent when there is none.
+        appVersion:
+          type: string
+          minLength: 1
+          maxLength: 32
+        route:
+          type: string
+          maxLength: 256
+          description: The route **template**, never the address bar — a path can carry a token.
+        reference:
+          type: string
+          minLength: 4
+          maxLength: 64
+          description: Shown to the person on the recovery screen, so a support call has one word in common.
+        requestId:
+          type: string
+          maxLength: 64
+          description: The last request this tab made, when there was one — the join to the server log.
 
     ForgotPasswordRequest:
       type: object

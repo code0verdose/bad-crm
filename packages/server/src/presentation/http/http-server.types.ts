@@ -17,6 +17,7 @@ import { type LoggerPort } from '@/application/platform/ports/logger.port.js';
 import { type RequestContextPort } from '@/application/platform/ports/request-context.port.js';
 import { type CheckHealthUseCase } from '@/application/platform/use-cases/check-health.use-case.js';
 import { type CheckReadinessUseCase } from '@/application/platform/use-cases/check-readiness.use-case.js';
+import { type RecordClientErrorUseCase } from '@/application/platform/use-cases/record-client-error.use-case.js';
 import { type DescribeApiUseCase } from '@/application/platform/use-cases/describe-api.use-case.js';
 
 /**
@@ -95,5 +96,6 @@ export interface HttpServerDependencies {
   readonly checkHealth: CheckHealthUseCase;
   readonly checkReadiness: CheckReadinessUseCase;
   readonly describeApi: DescribeApiUseCase;
+  readonly recordClientError: RecordClientErrorUseCase;
   readonly identity: IdentityDependencies;
 }

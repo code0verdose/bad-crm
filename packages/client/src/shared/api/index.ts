@@ -9,6 +9,7 @@ export type * from './schemas/api-schema.js';
 
 export * from './abort.util.js';
 export * from './api-result.util.js';
+export * from './client-error-report.api.js';
 export * from './auth-middleware.util.js';
 export * from './error-message-key.util.js';
 export * from './http.client.js';

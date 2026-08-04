@@ -14,6 +14,15 @@ export const RATE_LIMIT_POLICIES = [
   'api_request',
   /** Export, AI and search. Keyed on the user; 10 / minute. */
   'heavy_operation',
+  /**
+   * Browser failure reports. Keyed on the user when there is a session and on the address otherwise;
+   * 10 / minute.
+   *
+   * Its own policy rather than a share of `api_request`, because the failure mode is specific: a
+   * render loop reports the same error on every frame, and a budget of 300 would let one broken tab
+   * write three hundred lines a minute into the log of an installation that has no idea why.
+   */
+  'client_error_report',
 ] as const;
 
 export type RateLimitPolicy = (typeof RATE_LIMIT_POLICIES)[number];
@@ -68,6 +77,7 @@ export interface RateLimitSubjects {
   readonly organization_registration: IpSubject;
   readonly api_request: ActorSubject;
   readonly heavy_operation: UserSubject;
+  readonly client_error_report: ActorSubject;
 }
 
 /**

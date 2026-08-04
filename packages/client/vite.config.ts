@@ -2,6 +2,8 @@ import { fileURLToPath } from 'node:url';
 
 import { tanstackRouter } from '@tanstack/router-plugin/vite';
 import react from '@vitejs/plugin-react';
+import { readFileSync } from 'node:fs';
+
 import { defineConfig } from 'vite';
 
 import { FSD_ALIASES } from './src/shared/config/fsd-aliases.constant.js';
@@ -35,7 +37,19 @@ const alias = Object.entries(FSD_ALIASES)
   }))
   .sort((left, right) => right.find.length - left.find.length);
 
+/**
+ * The version the bundle reports about itself.
+ *
+ * Injected at build rather than read from an environment variable: a report that says which build
+ * failed is only useful if the value cannot be forgotten, and an operator has no way to know what to
+ * put in `VITE_APP_VERSION`. Read from the package manifest, which is what a release bumps.
+ */
+const appVersion = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8')) as {
+  version: string;
+};
+
 export default defineConfig({
+  define: { APP_VERSION: JSON.stringify(appVersion.version) },
   plugins: [
     /**
      * Generates `src/app/route-tree.gen.ts` from the files in `src/app/routes/**`, and splits every

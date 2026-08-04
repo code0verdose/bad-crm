@@ -366,6 +366,41 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/telemetry/client-error": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Record a failure that happened in the browser.
+         * @description The other half of the log. A stack trace that never leaves the tab is a failure the team
+         *     learns about only if somebody writes in, and «the screen went white» is not a bug report.
+         *
+         *     **Unauthenticated on purpose.** The failures worth hearing about include the ones that stop a
+         *     person signing in — a broken sign-in screen is exactly the case where no session exists — so
+         *     requiring one would silence the reports that matter most. The limiter is per user when there
+         *     is a session and per address otherwise.
+         *
+         *     **The report carries no user content.** Message, stack, application version, route template
+         *     and a reference; never field values, never a token, never an identifier of a person or an
+         *     organization. The client is what strips it (`shared/lib/telemetry`), because the client is
+         *     where the data is; the server bounds the sizes it accepts so that a compromised or
+         *     malfunctioning tab cannot write an unbounded string into the log.
+         *
+         *     It answers 204 and never a body: a caller has nothing to do with the answer, and a body
+         *     would be one more thing to keep in step with the log format.
+         */
+        post: operations["reportClientError"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/meta": {
         parameters: {
             query?: never;
@@ -569,6 +604,22 @@ export interface components {
              *     `currentPassword` — both are `422 validation_failed` pointing at this field.
              */
             newPassword: components["schemas"]["Password"];
+        };
+        /**
+         * @description Bounded by construction. Every length below is a limit the server enforces: a report is a
+         *     line in a log, and a log line an attacker chooses the length of is a disk an attacker fills.
+         */
+        ClientErrorReport: {
+            message: string;
+            /** @description Already mapped through the source map by the browser; absent when there is none. */
+            stack?: string;
+            appVersion: string;
+            /** @description The route **template**, never the address bar — a path can carry a token. */
+            route: string;
+            /** @description Shown to the person on the recovery screen, so a support call has one word in common. */
+            reference: string;
+            /** @description The last request this tab made, when there was one — the join to the server log. */
+            requestId?: string;
         };
         ForgotPasswordRequest: {
             email: components["schemas"]["EmailAddress"];
@@ -1368,6 +1419,31 @@ export interface operations {
                 content?: never;
             };
             400: components["responses"]["PasswordResetTokenInvalid"];
+            422: components["responses"]["ValidationFailed"];
+            429: components["responses"]["RateLimited"];
+            500: components["responses"]["InternalError"];
+        };
+    };
+    reportClientError: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ClientErrorReport"];
+            };
+        };
+        responses: {
+            /** @description Recorded. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
             422: components["responses"]["ValidationFailed"];
             429: components["responses"]["RateLimited"];
             500: components["responses"]["InternalError"];

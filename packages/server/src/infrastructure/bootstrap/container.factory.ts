@@ -23,6 +23,7 @@ import { APP_INFO } from '@/app-info.constant.js';
 import { AsyncRequestContextAdapter } from '@/infrastructure/logging/async-request-context.adapter.js';
 import { createHttpMetrics } from '@/infrastructure/metrics/http-metrics.middleware.js';
 import { noopMetrics } from '@/infrastructure/metrics/noop-metrics.adapter.js';
+import { RecordClientErrorUseCase } from '@/application/platform/use-cases/record-client-error.use-case.js';
 import { createPromMetrics } from '@/infrastructure/metrics/prom-client.adapter.js';
 import { createHttpLogger } from '@/infrastructure/logging/http-logger.middleware.js';
 import { PinoLoggerAdapter } from '@/infrastructure/logging/pino-logger.adapter.js';
@@ -196,6 +197,8 @@ export const buildContainer = (input: ContainerInput): AppContainer => {
    */
   const metrics = input.env.METRICS_ENABLED ? createPromMetrics() : noopMetrics;
 
+  const recordClientError = new RecordClientErrorUseCase(rateLimit, logger);
+
   const checkReadiness = new CheckReadinessUseCase(
     // `optionalServiceProbes` describes what this installation deliberately does not run; the live
     // probes sit beside it and are contributed by the clients that exist. Redis is live rather than
@@ -290,6 +293,7 @@ export const buildContainer = (input: ContainerInput): AppContainer => {
       checkHealth,
       checkReadiness,
       describeApi,
+      recordClientError,
       identity: identity.dependencies,
     },
   };

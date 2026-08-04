@@ -36,6 +36,7 @@ const harness = (): Harness => {
     organization_registration: policy,
     api_request: policy,
     heavy_operation: policy,
+    client_error_report: policy,
   } satisfies WindowLimiters;
 
   return { adapter: new RedisRateLimiterAdapter(limiters, logger), attempts, penalties, lines };
