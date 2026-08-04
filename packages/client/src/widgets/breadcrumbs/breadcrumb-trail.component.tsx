@@ -1,4 +1,5 @@
 import { Anchor, Breadcrumbs as MantineBreadcrumbs, Text } from '@mantine/core';
+import { useTranslation } from 'react-i18next';
 import { Link } from '@tanstack/react-router';
 
 import { type RouteCrumb } from './lib/route-crumbs.util.js';
@@ -22,10 +23,12 @@ export interface BreadcrumbTrailProps {
  * the alias that would replace it is a deep import into this same widget.
  */
 export function BreadcrumbTrail({ crumbs }: BreadcrumbTrailProps) {
+  const { t } = useTranslation();
+
   if (crumbs.length < 2) return null;
 
   return (
-    <MantineBreadcrumbs aria-label="nav.breadcrumbs.aria" separator="/">
+    <MantineBreadcrumbs aria-label={t('nav.breadcrumbs.aria')} separator="/">
       {crumbs.map((crumb) =>
         crumb.isCurrent ? (
           <Text aria-current="page" c="var(--bc-text-muted)" key={crumb.pathname} size="sm">

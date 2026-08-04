@@ -1,3 +1,5 @@
+import { useTranslation } from 'react-i18next';
+
 import classes from './skip-link.module.css';
 
 /** The id `AppShell.Main` carries; the two have to agree or the link goes nowhere. */
@@ -14,9 +16,11 @@ export const MAIN_CONTENT_ID = 'main';
  * and routing it would be a navigation that lands in the same place having lost the focus target.
  */
 export function SkipLink() {
+  const { t } = useTranslation();
+
   return (
     <a className={classes['link']} href={`#${MAIN_CONTENT_ID}`}>
-      common.a11y.skipToContent
+      {t('common.a11y.skipToContent')}
     </a>
   );
 }

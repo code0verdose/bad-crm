@@ -1,4 +1,5 @@
 import { AppShell as MantineAppShell, Box, Drawer } from '@mantine/core';
+import { useTranslation } from 'react-i18next';
 import { useDisclosure } from '@mantine/hooks';
 import { type ReactNode } from 'react';
 
@@ -44,6 +45,8 @@ export interface AppShellProps {
  * failure `axe` reports and a screen reader acts on.
  */
 export function AppShell({ children }: AppShellProps) {
+  const { t } = useTranslation();
+
   const [isDrawerOpen, drawer] = useDisclosure(false);
   const { isCollapsed, toggle: toggleCollapse } = SharedHooks.useSidebarCollapse();
   const { density } = SharedHooks.useDensity();
@@ -73,7 +76,7 @@ export function AppShell({ children }: AppShellProps) {
 
       {/* `AppShell.Navbar` *is* the `<nav>` landmark; naming it here is what keeps it from being
           an anonymous one, and stops the list inside from declaring a second. */}
-      <MantineAppShell.Navbar aria-label="nav.primary.aria">
+      <MantineAppShell.Navbar aria-label={t('nav.primary.aria')}>
         <SidebarNav isCollapsed={isCollapsed} sections={NAV_SECTIONS} />
       </MantineAppShell.Navbar>
 
@@ -83,9 +86,9 @@ export function AppShell({ children }: AppShellProps) {
         opened={isDrawerOpen}
         padding="sm"
         size="80%"
-        title="nav.drawer.title"
+        title={t('nav.drawer.title')}
       >
-        <Box aria-label="nav.drawer.aria" component="nav">
+        <Box aria-label={t('nav.drawer.aria')} component="nav">
           <SidebarNav onNavigate={drawer.close} sections={NAV_SECTIONS} />
         </Box>
       </Drawer>

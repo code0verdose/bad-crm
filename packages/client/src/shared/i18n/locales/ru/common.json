@@ -1,4 +1,7 @@
 {
+  "a11y": {
+    "skipToContent": "Перейти к содержимому"
+  },
   "appearance": {
     "colorScheme": {
       "aria": "Цветовая схема",

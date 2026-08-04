@@ -1,4 +1,5 @@
 import { Button, PasswordInput, Stack } from '@mantine/core';
+import { useTranslation } from 'react-i18next';
 import { schemaResolver, useForm } from '@mantine/form';
 
 import { firstInvalidField } from '@units/auth/lib';
@@ -30,6 +31,8 @@ export interface ResetPasswordFormProps {
  * It shares the sign-in form's stylesheet: same object, same width, one place for it to change.
  */
 export function ResetPasswordForm({ isPending, onSubmit }: ResetPasswordFormProps) {
+  const { t } = useTranslation();
+
   const form = useForm<ResetPasswordFormValues>({
     mode: 'uncontrolled',
     initialValues: { newPassword: '', confirmPassword: '' },
@@ -63,7 +66,7 @@ export function ResetPasswordForm({ isPending, onSubmit }: ResetPasswordFormProp
           aria-invalid={form.errors['newPassword'] !== undefined}
           autoComplete="new-password"
           key={form.key('newPassword')}
-          label="auth.resetPassword.newPassword.label"
+          label={t('auth.resetPassword.newPassword.label')}
           required
           {...form.getInputProps('newPassword')}
         />
@@ -72,13 +75,13 @@ export function ResetPasswordForm({ isPending, onSubmit }: ResetPasswordFormProp
           aria-invalid={form.errors['confirmPassword'] !== undefined}
           autoComplete="new-password"
           key={form.key('confirmPassword')}
-          label="auth.resetPassword.confirmPassword.label"
+          label={t('auth.resetPassword.confirmPassword.label')}
           required
           {...form.getInputProps('confirmPassword')}
         />
 
         <Button fullWidth loading={isPending} type="submit">
-          auth.resetPassword.submit
+          {t('auth.resetPassword.submit')}
         </Button>
       </Stack>
     </form>

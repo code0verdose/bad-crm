@@ -144,6 +144,13 @@ jobs:
             exit 1
           fi
 
+      - name: Check the translation catalogues
+        # The parity gates already ran inside `test` above; this re-runs the two i18n files on their
+        # own to get a clean exit for the summary step, then prints the table. The one thing it adds
+        # is a key that exists in both languages and says nothing — present to every set comparison,
+        # blank to every reader. `--silent` keeps pnpm's own banner out of the summary.
+        run: pnpm --silent i18n:check >> "$GITHUB_STEP_SUMMARY"
+
       - name: Check coverage against the baseline
         # `--silent` so that pnpm's own `> bad-crm@0.0.0 …` banner does not land in the summary;
         # the table is written before the non-zero exit, so a regression is both visible and red.

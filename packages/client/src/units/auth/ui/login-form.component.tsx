@@ -1,4 +1,5 @@
 import { Alert, Button, PasswordInput, Stack, TextInput } from '@mantine/core';
+import { useTranslation } from 'react-i18next';
 import { schemaResolver, useForm } from '@mantine/form';
 
 import { firstInvalidField } from '@units/auth/lib';
@@ -38,6 +39,8 @@ export interface LoginFormProps {
  * the answer that is neither success nor failure — an address that belongs to two organizations.
  */
 export function LoginForm({ isPending, noticeKey, onSubmit }: LoginFormProps) {
+  const { t } = useTranslation();
+
   const form = useForm<LoginFormValues>({
     mode: 'uncontrolled',
     initialValues: { email: '', password: '' },
@@ -68,7 +71,7 @@ export function LoginForm({ isPending, noticeKey, onSubmit }: LoginFormProps) {
         <TextInput
           autoComplete="email"
           key={form.key('email')}
-          label="auth.login.email.label"
+          label={t('auth.login.email.label')}
           required
           type="email"
           {...form.getInputProps('email')}
@@ -87,13 +90,13 @@ export function LoginForm({ isPending, noticeKey, onSubmit }: LoginFormProps) {
           aria-invalid={form.errors['password'] !== undefined}
           autoComplete="current-password"
           key={form.key('password')}
-          label="auth.login.password.label"
+          label={t('auth.login.password.label')}
           required
           {...form.getInputProps('password')}
         />
 
         <Button fullWidth loading={isPending} type="submit">
-          auth.login.submit
+          {t('auth.login.submit')}
         </Button>
       </Stack>
     </form>

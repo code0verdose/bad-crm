@@ -1,4 +1,5 @@
 import { Anchor } from '@mantine/core';
+import { useTranslation } from 'react-i18next';
 import { Link } from '@tanstack/react-router';
 
 import { SharedUi } from '@shared';
@@ -25,6 +26,8 @@ import { AuthService, AuthUi } from '@units/auth';
  * (`rules/a11y.mdc` §20).
  */
 export function LoginPage() {
+  const { t } = useTranslation();
+
   const login = AuthService.useLogin();
 
   return (
@@ -38,7 +41,7 @@ export function LoginPage() {
       />
 
       <Anchor component={Link} to="/forgot-password">
-        auth.login.forgotPassword
+        {t('auth.login.forgotPassword')}
       </Anchor>
     </PublicScreen>
   );

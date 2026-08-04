@@ -18,6 +18,7 @@ import js from '@eslint/js';
 import vitest from '@vitest/eslint-plugin';
 import prettier from 'eslint-config-prettier';
 import importPlugin from 'eslint-plugin-import';
+import i18next from 'eslint-plugin-i18next';
 import jsxA11y from 'eslint-plugin-jsx-a11y';
 import react from 'eslint-plugin-react';
 import reactHooks from 'eslint-plugin-react-hooks';
@@ -49,6 +50,27 @@ const SERVER_DB_CLIENT_OWNER =
 const SERVER_REPOSITORIES = 'packages/server/src/**/*.repository.ts';
 const SERVER_LOGGING = 'packages/server/src/infrastructure/logging/**/*.ts';
 const CLIENT = 'packages/client/src/**/*.{ts,tsx}';
+
+/**
+ * What counts as a user-visible string, and what is allowed to stay a literal.
+ *
+ * `mode: 'jsx-only'` rather than the plugin's `jsx-text-only` default, because the strings that get
+ * forgotten are not the ones between tags — those are visible in a screenshot. `aria-label`,
+ * `placeholder`, `alt` and `title` are invisible to everybody who is not using the thing they were
+ * written for, which is exactly why `rules/i18n.mdc` names them.
+ *
+ * The attribute list is an **include** rather than an exclude: `to`, `href`, `name`, `data-*` and
+ * every Mantine prop that takes a token are literals by design, and an exclude list would have to
+ * grow every time one of them appeared. Naming the four that carry prose says what the rule is for.
+ */
+const I18N_NO_LITERAL_STRING = {
+  mode: 'jsx-only',
+  'jsx-attributes': {
+    include: ['alt', 'aria-label', 'description', 'label', 'placeholder', 'title'],
+  },
+  message:
+    'User-visible text goes through `t(key)`; the catalogue is `locales/{en,ru}` (rules/i18n.mdc §1).',
+};
 /**
  * Layers that consume the data layer without owning it. `app/**` used to be listed here and is not
  * any more: `rules/frontend-fsd.mdc` → «Исключения» grants the composition root the right to import
@@ -646,9 +668,10 @@ export default tseslint.config(
       globals: globals.browser,
       parserOptions: { ...TYPE_AWARE_LANGUAGE_OPTIONS.parserOptions, ecmaFeatures: { jsx: true } },
     },
-    plugins: { unicorn, import: importPlugin, 'bad-crm': badCrmPlugin },
+    plugins: { unicorn, import: importPlugin, 'bad-crm': badCrmPlugin, i18next },
     rules: {
       ...TYPE_SAFETY_RULES,
+      'i18next/no-literal-string': ['error', I18N_NO_LITERAL_STRING],
       'import/order': CLIENT_IMPORT_ORDER,
       // Promised by `rules/frontend-fsd.mdc` and, until now, promised only there. Layer direction
       // (`app → pages → widgets → units → shared`) forbids a cycle *between* layers, and the

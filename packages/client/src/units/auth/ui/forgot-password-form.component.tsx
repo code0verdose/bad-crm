@@ -1,4 +1,5 @@
 import { Button, Stack, TextInput } from '@mantine/core';
+import { useTranslation } from 'react-i18next';
 import { schemaResolver, useForm } from '@mantine/form';
 
 import { firstInvalidField } from '@units/auth/lib';
@@ -30,6 +31,8 @@ export interface ForgotPasswordFormProps {
  * declarations is a second place for that width to drift (`rules/design-system.mdc`).
  */
 export function ForgotPasswordForm({ isPending, onSubmit }: ForgotPasswordFormProps) {
+  const { t } = useTranslation();
+
   const form = useForm<ForgotPasswordFormValues>({
     mode: 'uncontrolled',
     initialValues: { email: '' },
@@ -56,14 +59,14 @@ export function ForgotPasswordForm({ isPending, onSubmit }: ForgotPasswordFormPr
         <TextInput
           autoComplete="email"
           key={form.key('email')}
-          label="auth.forgotPassword.email.label"
+          label={t('auth.forgotPassword.email.label')}
           required
           type="email"
           {...form.getInputProps('email')}
         />
 
         <Button fullWidth loading={isPending} type="submit">
-          auth.forgotPassword.submit
+          {t('auth.forgotPassword.submit')}
         </Button>
       </Stack>
     </form>

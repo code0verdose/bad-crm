@@ -1,4 +1,5 @@
 import { ActionIcon, Tooltip } from '@mantine/core';
+import { useTranslation } from 'react-i18next';
 import { IconLogout } from '@tabler/icons-react';
 
 import { AuthService } from '@units/auth';
@@ -15,11 +16,18 @@ import { AuthService } from '@units/auth';
  * than on a page-wide spinner (`rules/errors-and-toasts.mdc` §7).
  */
 export function SignOutControl() {
+  const { t } = useTranslation();
+
   const { isPending, signOut } = AuthService.useLogout();
 
   return (
-    <Tooltip label="nav.signOut">
-      <ActionIcon aria-label="nav.signOut" loading={isPending} onClick={signOut} variant="subtle">
+    <Tooltip label={t('nav.signOut')}>
+      <ActionIcon
+        aria-label={t('nav.signOut')}
+        loading={isPending}
+        onClick={signOut}
+        variant="subtle"
+      >
         <IconLogout size={20} stroke={1.5} />
       </ActionIcon>
     </Tooltip>

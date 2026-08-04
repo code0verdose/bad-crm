@@ -1,4 +1,5 @@
 import { Anchor } from '@mantine/core';
+import { useTranslation } from 'react-i18next';
 import { Link, getRouteApi, useNavigate } from '@tanstack/react-router';
 
 import { SharedUi } from '@shared';
@@ -33,6 +34,8 @@ const route = getRouteApi('/reset-password/$token');
  * way to start again, and that is useful whether or not anything has failed yet.
  */
 export function ResetPasswordPage() {
+  const { t } = useTranslation();
+
   const { token } = route.useParams();
   const navigate = useNavigate();
 
@@ -50,7 +53,7 @@ export function ResetPasswordPage() {
       <AuthUi.ResetPasswordForm isPending={reset.isPending} onSubmit={reset.submit} />
 
       <Anchor component={Link} to="/forgot-password">
-        auth.resetPassword.requestNewLink
+        {t('auth.resetPassword.requestNewLink')}
       </Anchor>
     </PublicScreen>
   );

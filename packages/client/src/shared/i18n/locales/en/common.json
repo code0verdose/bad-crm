@@ -1,4 +1,7 @@
 {
+  "a11y": {
+    "skipToContent": "Skip to content"
+  },
   "appearance": {
     "colorScheme": {
       "aria": "Colour scheme",

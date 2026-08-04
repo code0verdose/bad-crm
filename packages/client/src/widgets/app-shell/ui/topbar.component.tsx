@@ -1,4 +1,5 @@
 import { ActionIcon, Burger, Group, Text, Tooltip } from '@mantine/core';
+import { useTranslation } from 'react-i18next';
 import { IconLayoutSidebarLeftCollapse, IconLayoutSidebarLeftExpand } from '@tabler/icons-react';
 
 import { SharedUi } from '@shared';
@@ -41,21 +42,23 @@ export function Topbar({
   isCollapsed,
   onToggleCollapse,
 }: TopbarProps) {
+  const { t } = useTranslation();
+
   const CollapseIcon = isCollapsed ? IconLayoutSidebarLeftExpand : IconLayoutSidebarLeftCollapse;
 
   return (
     <Group className={classes['root']} h="100%" justify="space-between" px="md" wrap="nowrap">
       <Group gap="sm" wrap="nowrap">
         <Burger
-          aria-label="nav.drawer.toggle"
+          aria-label={t('nav.drawer.toggle')}
           hiddenFrom="sm"
           opened={isDrawerOpen}
           onClick={onToggleDrawer}
           size="sm"
         />
-        <Tooltip label="nav.sidebar.toggle">
+        <Tooltip label={t('nav.sidebar.toggle')}>
           <ActionIcon
-            aria-label="nav.sidebar.toggle"
+            aria-label={t('nav.sidebar.toggle')}
             aria-pressed={isCollapsed}
             onClick={onToggleCollapse}
             variant="subtle"
@@ -64,7 +67,12 @@ export function Topbar({
             <CollapseIcon size={20} stroke={1.5} />
           </ActionIcon>
         </Tooltip>
-        {/* Product name, not a translatable string — the same rule `index.html` follows. */}
+        {/*
+          Product name, not a translatable string — the same rule `index.html` follows, and the
+          reason the disable is here rather than a word added to the rule's allow-list: an allow-list
+          entry would silence «Bad CRM» wherever it appeared, including somewhere it was a mistake.
+        */}
+        {/* eslint-disable-next-line i18next/no-literal-string -- a proper noun */}
         <Text fw={600}>Bad CRM</Text>
       </Group>
 

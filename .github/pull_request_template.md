@@ -37,6 +37,7 @@ Every pull request:
 - [ ] `pnpm turbo run typecheck lint build test` is green locally (`rules/ci-before-push.mdc`).
 - [ ] The commit gate is green — all six checks in `CONTRIBUTING.md` §4 ("The commit gate").
 - [ ] The project agents triggered by this diff pass (RLS, permissions, crypto, API contract, FSD, realtime, search, i18n, upgrade safety).
+- [ ] Every user-visible string this diff adds exists in **both** `en` and `ru`. Translation is part of the story that introduces the string, never a follow-up: a key shipped in one language is a screen that renders its own key at half the people who open it.
 - [ ] Commits follow Conventional Commits and are signed off (`git commit -s`, DCO 1.1).
 - [ ] `docs/` is accurate for this change; a new architectural decision has an ADR.
 - [ ] A journal entry exists in `docs/brain/`.
