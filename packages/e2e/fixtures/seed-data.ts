@@ -46,5 +46,23 @@ export const SEED_ORGANIZATIONS: readonly SeedOrganization[] = [
   },
 ];
 
-/** The two tenants an isolation scenario compares; named so the assertion reads as the property. */
-export const [SEED_ORGANIZATION_A, SEED_ORGANIZATION_B] = SEED_ORGANIZATIONS;
+/**
+ * The two tenants an isolation scenario compares, named so the assertion reads as the property.
+ *
+ * Indexed rather than destructured: under `noUncheckedIndexedAccess` a destructured element is
+ * `SeedOrganization | undefined`, and every scenario would carry a `?? throw` for a value the
+ * fixture guarantees. `at(0)!` would say the same with less noise and no check at all; the throw
+ * below is the check, and it runs once at import.
+ */
+const required = (index: number): SeedOrganization => {
+  const organization = SEED_ORGANIZATIONS[index];
+
+  if (organization === undefined) {
+    throw new Error(`seed fixture has no organization at index ${String(index)}`);
+  }
+
+  return organization;
+};
+
+export const SEED_ORGANIZATION_A = required(0);
+export const SEED_ORGANIZATION_B = required(1);

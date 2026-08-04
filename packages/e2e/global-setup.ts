@@ -1,3 +1,4 @@
+import { createSessions } from './fixtures/auth.fixture.js';
 import { apiURL } from './playwright.config.js';
 
 /**
@@ -39,7 +40,8 @@ const globalSetup = async (): Promise<void> => {
   while (Date.now() < deadline) {
     const { ok, detail } = await probe(url);
 
-    if (ok) return;
+    // Ready: establish the sessions every scenario reuses, and only then let the run start.
+    if (ok) return createSessions();
 
     last = detail;
     await pause(PROBE_INTERVAL_MS);
