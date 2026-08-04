@@ -25,6 +25,7 @@ import {
   FakeOrganizations,
   FakePasswordResetTokens,
   FakePasswordHasher,
+  FakeAuditLogger,
   FakeRateLimit,
   type FakeRateLimitOptions,
   FakeRefreshTokens,
@@ -105,6 +106,7 @@ export const createAuthApp = (options: AuthAppOptions = {}): AuthApp => {
   const hasher = new FakePasswordHasher();
   const unitOfWork = new FakeUnitOfWork();
   const rateLimit = new FakeRateLimit(options.rateLimit ?? {});
+  const audit = new FakeAuditLogger();
   const refreshTokens = new FakeRefreshTokens();
   const logger = new RecordingLogger();
   const mail = new FakeMail();
@@ -157,7 +159,16 @@ export const createAuthApp = (options: AuthAppOptions = {}): AuthApp => {
       options.registrationOpen ?? true,
       rateLimit,
     ),
-    login: new LoginUseCase(lookup, hasher, users, unitOfWork, issueSession, rateLimit, logger),
+    login: new LoginUseCase(
+      lookup,
+      hasher,
+      users,
+      unitOfWork,
+      issueSession,
+      rateLimit,
+      logger,
+      audit,
+    ),
     refresh: new RefreshSessionUseCase(
       lookup,
       refreshTokens,

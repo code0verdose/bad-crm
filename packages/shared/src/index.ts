@@ -11,6 +11,7 @@
 export * as SharedValidation from './validation/index.js';
 export * as SharedPermissions from './permissions/index.js';
 export * as SharedErrors from './errors/index.js';
+export * as SharedAudit from './audit/index.js';
 export * as SharedResult from './result/index.js';
 
 /** Branded ids are types only — they carry no runtime value to put behind a namespace. */

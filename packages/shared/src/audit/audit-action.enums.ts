@@ -1,0 +1,39 @@
+/**
+ * What a privileged action is called in the audit trail.
+ *
+ * A closed list rather than free-form strings, for the same reason the permission catalogue is one:
+ * an action named at a call site is an action nobody reviewed, and a typo opens a second name for
+ * the same event — which a filter over the trail then silently misses. A new kind of privileged
+ * action is added here deliberately, in the pull request that introduces it.
+ *
+ * The names are `<subject>.<verb>` in the past tense: the trail records what **happened**, not what
+ * was attempted. An attempt that failed is a different record, and today it is not one this list
+ * carries.
+ */
+export const AUDIT_ACTIONS = [
+  /** An organization and its first owner were created (STORY-006-01). */
+  'organization.registered',
+  /** A credential was accepted and a session issued. */
+  'session.signed_in',
+  /** A session was ended by its owner, or revoked from the session list. */
+  'session.revoked',
+  /** A password was changed by the person who knew the old one. */
+  'password.changed',
+  /** A password was set through a recovery link. */
+  'password.reset',
+  /**
+   * Row level security was bypassed on purpose — a migration path, a support action, a background
+   * job that must see every tenant.
+   *
+   * The one entry here that records a *capability* rather than a change to data, and the reason the
+   * trail exists at all for an installation whose operator can reach the database: an untraced
+   * bypass is indistinguishable from an intrusion.
+   */
+  'rls.bypassed',
+] as const;
+
+export type AuditAction = (typeof AUDIT_ACTIONS)[number];
+
+const AUDIT_ACTION_SET: ReadonlySet<string> = new Set<string>(AUDIT_ACTIONS);
+
+export const isAuditAction = (value: string): value is AuditAction => AUDIT_ACTION_SET.has(value);

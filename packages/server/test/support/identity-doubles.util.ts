@@ -1,3 +1,7 @@
+import {
+  type AuditEvent,
+  type AuditLoggerPort,
+} from '@/application/platform/ports/audit-logger.port.js';
 import { createHash, randomUUID } from 'node:crypto';
 
 import {
@@ -827,5 +831,29 @@ export class FakeAuthLookup implements AuthLookupPort {
       revokedReason: row.revokedReason,
       expiresAt: row.expiresAt,
     });
+  }
+}
+
+/**
+ * The audit trail, in memory.
+ *
+ * Records rather than counts: a test asserts *what* was written, not merely that something was —
+ * «exactly one event, of this action, naming this target» is the property the trail has to have, and
+ * a spy that only counts calls would pass on an event with the wrong action in it.
+ *
+ * `failing` exists for the fail-closed case: a privileged action whose audit write is rejected must
+ * roll back, and that cannot be asserted without a writer that rejects.
+ */
+export class FakeAuditLogger implements AuditLoggerPort {
+  readonly events: AuditEvent[] = [];
+
+  constructor(private readonly failing = false) {}
+
+  record(event: AuditEvent): Promise<void> {
+    if (this.failing) return Promise.reject(new Error('audit sink unavailable'));
+
+    this.events.push(event);
+
+    return Promise.resolve();
   }
 }

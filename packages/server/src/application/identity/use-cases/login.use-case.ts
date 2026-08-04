@@ -1,3 +1,4 @@
+import { type AuditLoggerPort } from '@/application/platform/ports/audit-logger.port.js';
 import {
   type AuthLookupPort,
   type AuthUserRecord,
@@ -126,6 +127,7 @@ export class LoginUseCase {
     private readonly issueSession: IssueSessionUseCase,
     private readonly rateLimit: RateLimitPort,
     private readonly logger: LoggerPort,
+    private readonly audit: AuditLoggerPort,
   ) {}
 
   async execute(input: LoginInput): Promise<LoginResult> {
@@ -303,11 +305,27 @@ export class LoginUseCase {
           await this.users.updatePasswordHash(user.userId, await this.hasher.hash(input.password));
         }
 
-        return this.issueSession.execute({
+        const issued = await this.issueSession.execute({
           userId: user.userId,
           permissionsVersion: user.permissionsVersion,
           client: input.client,
         });
+
+        // Inside the transaction on purpose: an action nobody could write down did not happen. A
+        // rejected audit write rolls the session back rather than leaving a sign-in with no record
+        // of it — which is the difference between a trail and a best effort.
+        await this.audit.record({
+          action: 'session.signed_in',
+          actor: {
+            userId: user.userId,
+            organizationId: user.organizationId,
+            ipAddress: input.client.ipAddress,
+          },
+          target: { type: 'session', id: issued.sessionId },
+          requestId: undefined,
+        });
+
+        return issued;
       },
     );
 

@@ -24,6 +24,7 @@ import { AsyncRequestContextAdapter } from '@/infrastructure/logging/async-reque
 import { createHttpMetrics } from '@/infrastructure/metrics/http-metrics.middleware.js';
 import { noopMetrics } from '@/infrastructure/metrics/noop-metrics.adapter.js';
 import { RecordClientErrorUseCase } from '@/application/platform/use-cases/record-client-error.use-case.js';
+import { pinoAuditLogger } from '@/infrastructure/logging/pino-audit.adapter.js';
 import { createPromMetrics } from '@/infrastructure/metrics/prom-client.adapter.js';
 import { createHttpLogger } from '@/infrastructure/logging/http-logger.middleware.js';
 import { PinoLoggerAdapter } from '@/infrastructure/logging/pino-logger.adapter.js';
@@ -45,6 +46,7 @@ import { createAuthLookupClient } from '@/infrastructure/persistence/prisma/auth
 import { databaseReadinessProbe } from '@/infrastructure/persistence/prisma/database-readiness.adapter.js';
 import { migrationReadinessProbe } from '@/infrastructure/persistence/prisma/migration-readiness.adapter.js';
 import { shippedMigrationNames } from '@/infrastructure/persistence/prisma/shipped-migrations.util.js';
+import { type AuditLoggerPort } from '@/application/platform/ports/audit-logger.port.js';
 import { type DatabaseConnection } from '@/infrastructure/persistence/prisma/database.factory.js';
 import {
   detachedAuthLookup,
@@ -165,6 +167,12 @@ export const buildContainer = (input: ContainerInput): AppContainer => {
   });
   const mailDispatcher = new ImmediateMailDispatcher(mailer, logger);
 
+  /**
+   * The audit trail. Log lines until EPIC-016 gives it a table; the port exists from the first day
+   * so that the call sites do not have to be found in a grown codebase later.
+   */
+  const audit = pinoAuditLogger(logger, clock);
+
   const identity = buildIdentity({
     env: input.env,
     clock,
@@ -174,6 +182,7 @@ export const buildContainer = (input: ContainerInput): AppContainer => {
     rateLimit,
     mail: mailer,
     mailDispatcher,
+    audit,
   });
 
   const authClient = identity.authClient;
@@ -329,6 +338,7 @@ const buildIdentity = (input: {
   readonly rateLimit: RateLimitPort;
   readonly mail: MailPort;
   readonly mailDispatcher: MailDispatchPort;
+  readonly audit: AuditLoggerPort;
 }): IdentityWiring => {
   const unitOfWork =
     input.database === undefined ? detachedUnitOfWork() : new PrismaUnitOfWork(input.database.base);
@@ -386,6 +396,7 @@ const buildIdentity = (input: {
       issueSession,
       input.rateLimit,
       input.logger,
+      input.audit,
     ),
     refresh: new RefreshSessionUseCase(
       authLookup,

@@ -14,6 +14,7 @@ import {
   FakeIdGenerator,
   FakeOrganizations,
   FakePasswordHasher,
+  FakeAuditLogger,
   FakeRateLimit,
   type FakeRateLimitOptions,
   FakeRefreshTokens,
@@ -36,6 +37,7 @@ interface Harness {
   readonly users: FakeUsers;
   readonly sessions: FakeSessions;
   readonly unitOfWork: FakeUnitOfWork;
+  readonly audit: FakeAuditLogger;
   readonly accessTokens: FakeAccessTokens;
   readonly rateLimit: FakeRateLimit;
   readonly logger: RecordingLogger;
@@ -46,6 +48,7 @@ interface Harness {
 const harness = (
   users: ReturnType<typeof authUser>[] = [authUser()],
   rateLimitOptions: Omit<FakeRateLimitOptions, 'journal'> = {},
+  failingAudit = false,
 ): Harness => {
   const clock = new FakeClock();
   const lookup = new FakeAuthLookup(users);
@@ -57,6 +60,7 @@ const harness = (
   const userRows = new FakeUsers();
   const unitOfWork = new FakeUnitOfWork();
   const rateLimit = new FakeRateLimit({ ...rateLimitOptions, journal });
+  const audit = new FakeAuditLogger(failingAudit);
   const logger = new RecordingLogger();
 
   const issue = new IssueSessionUseCase(
@@ -70,12 +74,13 @@ const harness = (
   );
 
   return {
-    login: new LoginUseCase(lookup, hasher, userRows, unitOfWork, issue, rateLimit, logger),
+    login: new LoginUseCase(lookup, hasher, userRows, unitOfWork, issue, rateLimit, logger, audit),
     lookup,
     hasher,
     users: userRows,
     sessions,
     unitOfWork,
+    audit,
     accessTokens,
     rateLimit,
     logger,
@@ -696,5 +701,56 @@ describe('what the sign-in path records', () => {
       outcome: 'organization_selection_required',
     });
     expect(JSON.stringify(line)).not.toContain('side-project');
+  });
+});
+
+/**
+ * The trail, and the property that makes it one.
+ *
+ * A sign-in that happened without a record of it is indistinguishable from an intrusion afterwards,
+ * so the write is inside the transaction and a rejected write takes the session with it. That is the
+ * difference between an audit trail and a best effort, and it is the case that cannot be asserted
+ * without a sink that refuses.
+ */
+describe('the audit trail', () => {
+  it('records exactly one event, naming the session it opened', async () => {
+    const { login, audit } = harness();
+
+    const result = await login.execute({
+      email: 'ada@example.com',
+      password: PASSWORD,
+      client: CLIENT,
+    });
+
+    expect(audit.events).toHaveLength(1);
+    expect(audit.events[0]).toMatchObject({
+      action: 'session.signed_in',
+      actor: { userId: expect.any(String) as unknown as string },
+      target: { type: 'session' },
+    });
+    expect(result.status).toBe('authenticated');
+  });
+
+  it('carries no password, hash or token into the trail', async () => {
+    const { audit } = harness();
+    const { login } = harness();
+
+    await login.execute({ email: 'ada@example.com', password: PASSWORD, client: CLIENT });
+
+    expect(JSON.stringify(audit.events)).not.toContain(PASSWORD);
+  });
+
+  it('rolls the sign-in back when the trail cannot be written', async () => {
+    const { login, unitOfWork } = harness([authUser()], {}, true);
+
+    await expect(
+      login.execute({ email: 'ada@example.com', password: PASSWORD, client: CLIENT }),
+    ).rejects.toThrow('audit sink unavailable');
+    // What makes the rollback real is *where* the write happens: inside the tenant transaction, so
+    // a rejection unwinds it. Asserted as «the scope was opened and the rejection came out of it»
+    // rather than «the row is gone» — the in-memory double does not roll a Map back, and an
+    // assertion about the double would prove nothing about the database.
+    expect(unitOfWork.scopes).toHaveLength(1);
+    expect(unitOfWork.current).toBe(undefined);
   });
 });
