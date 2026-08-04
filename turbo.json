@@ -152,6 +152,11 @@
         // two declarations of the FSD aliases and a build that resolves `@units/...` differently
         // from the editor — cached over an edited `vite.config.ts`, it would prove nothing.
         "packages/*/vite.config.ts",
+        // The end-to-end harness lives at the root of its package, not under `src`:
+        // `test/e2e/playwright-config.test.ts` asserts retries, the browser matrix and the
+        // artifact policy against `playwright.config.ts`, and reads `global-setup.ts` for the
+        // readiness probe. Cached over an edited config, it reports a PASS over the previous one.
+        "packages/e2e/*.ts",
         // `packages/*/tsconfig.json` is a literal glob and does NOT match `tsconfig.test.json`.
         // `test/repo/tsconfig-contract.test.ts` reads it: dropping `test/**` from its `include`
         // makes every @ts-expect-error in that package vacuous — and would be cached as a pass.

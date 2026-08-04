@@ -199,6 +199,21 @@ const NAMING: ForbiddenCase[] = [
   },
 ];
 
+/**
+ * The end-to-end suite waits for state, never for the clock.
+ *
+ * A fixed wait is the one instrument that turns a suite into a coin flip: too short and it fails on
+ * a loaded runner, too long and every run pays for the worst case. Playwright retries its
+ * assertions until the state arrives, so there is a correct alternative for every use.
+ */
+const E2E_HARNESS: ForbiddenCase[] = [
+  {
+    fixture: 'packages/e2e/tests/fixed-wait.spec.ts',
+    rule: 'no-restricted-syntax',
+    hint: 'waitForTimeout',
+  },
+];
+
 const GENERAL: ForbiddenCase[] = [
   {
     fixture: 'packages/server/src/application/task/use-cases/console.use-case.ts',
@@ -323,6 +338,7 @@ describeForbidden('client FSD layers', CLIENT_FSD);
 describeForbidden('effect discipline', EFFECT_DISCIPLINE);
 describeForbidden('naming and file structure', NAMING);
 describeForbidden('general hygiene', GENERAL);
+describeForbidden('the end-to-end harness waits for state', E2E_HARNESS);
 describeForbidden('environment access', ENVIRONMENT_ACCESS);
 describeForbidden('layer exceptions stay narrow', NARROW_LAYER_EXCEPTIONS);
 describeForbidden('repository suite reads', REPOSITORY_SUITE_READS);
@@ -393,6 +409,32 @@ describe('the shipped client tree is really covered, not only the fixtures', () 
         'no-restricted-imports',
       ),
     ).not.toContain('TanStack Query or axios');
+  });
+});
+
+/**
+ * The harness root files are linted at all.
+ *
+ * `playwright.config.ts` and `global-setup.ts` sit at the package root, outside the `src`/`tests`
+ * glob the e2e block was originally written with — so both shipped with no rule ever applied to
+ * them, including the ban on importing the application. Nothing noticed, because a file no
+ * configuration matches is not an error to ESLint: it is simply not linted.
+ */
+describe('the end-to-end harness is covered outside src and tests', () => {
+  const severity = (rules: object, rule: string): unknown => {
+    const entry = (rules as Record<string, unknown>)[rule];
+    return Array.isArray(entry) ? entry[0] : (entry ?? 0);
+  };
+
+  it.each([
+    ['packages/e2e/playwright.config.ts', 'no-restricted-imports'],
+    ['packages/e2e/playwright.config.ts', 'no-restricted-syntax'],
+    ['packages/e2e/global-setup.ts', 'no-restricted-imports'],
+    ['packages/e2e/global-setup.ts', '@typescript-eslint/no-floating-promises'],
+  ])('%s has %s enabled', async (path, rule) => {
+    const { rules } = await configForRepoFile(path);
+
+    expect(severity(rules, rule), `${rule} is not applied to ${path}`).toBe(2);
   });
 });
 

@@ -6,12 +6,16 @@
   "type": "module",
   "scripts": {
     "typecheck": "tsc --noEmit",
+    "test:e2e": "playwright test",
+    "test:e2e:ui": "playwright test --ui",
+    "test:e2e:debug": "playwright test --debug",
     "lint": "eslint . --max-warnings 0",
     "lint:fix": "eslint . --fix",
     "format": "prettier --write --ignore-path ../../.prettierignore .",
     "format:check": "prettier --check --ignore-path ../../.prettierignore ."
   },
   "devDependencies": {
+    "@playwright/test": "1.62.1",
     "@types/node": "26.1.2",
     "typescript": "5.9.3"
   }

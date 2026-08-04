@@ -1,7 +1,7 @@
 ---
 id: STORY-010-01
 epic: EPIC-010
-status: backlog
+status: review
 blocked: false
 priority: must
 estimate: M
@@ -24,23 +24,50 @@ estimate: M
 
 ## Задачи
 
-- [ ] Написать первым «мета-тест» конфигурации: `packages/e2e/test/config.test.ts` — проверяет наличие `webServer`/ожидания готовности, отсутствие `waitForTimeout` в спеках, корректные значения `retries` для CI и локали запуска.
-- [ ] Создать `packages/e2e/playwright.config.ts`: `baseURL`, проекты браузеров, `use.trace: 'on-first-retry'`, `screenshot: 'only-on-failure'`, `video: 'retain-on-failure'`, таймауты.
-- [ ] Реализовать ожидание готовности приложения через опрос `/ready` перед стартом сценариев.
-- [ ] Настроить скрипты `pnpm test:e2e`, `test:e2e:ui`, `test:e2e:debug` и включить задачу в `turbo.json` с `cache: false`.
-- [ ] Добавить ESLint-правило для пакета `e2e`: запрет `waitForTimeout`, запрет импорта из `@bad-crm/server` и `@bad-crm/client`.
-- [ ] Настроить структуру каталогов: `tests/smoke`, `tests/auth`, `tests/tenancy`, `fixtures/`, `pages/` (page objects).
-- [ ] Описать в `docs/runbooks/e2e.md` порядок локального запуска и отладки.
+- [x] Написать первым «мета-тест» конфигурации: `packages/e2e/test/config.test.ts` — проверяет наличие `webServer`/ожидания готовности, отсутствие `waitForTimeout` в спеках, корректные значения `retries` для CI и локали запуска.
+- [x] Создать `packages/e2e/playwright.config.ts`: `baseURL`, проекты браузеров, `use.trace: 'on-first-retry'`, `screenshot: 'only-on-failure'`, `video: 'retain-on-failure'`, таймауты.
+- [x] Реализовать ожидание готовности приложения через опрос `/ready` перед стартом сценариев.
+- [x] Настроить скрипты `pnpm test:e2e`, `test:e2e:ui`, `test:e2e:debug` и включить задачу в `turbo.json` с `cache: false`.
+- [x] Добавить ESLint-правило для пакета `e2e`: запрет `waitForTimeout`, запрет импорта из `@bad-crm/server` и `@bad-crm/client`.
+- [x] Настроить структуру каталогов: `tests/smoke`, `tests/auth`, `tests/tenancy`, `fixtures/`, `pages/` (page objects).
+- [x] Описать в `docs/runbooks/e2e.md` порядок локального запуска и отладки.
 
 ## Definition of Done
 
-- [ ] Тесты написаны первыми (TDD), проходят, изменённый код покрыт
-- [ ] Commit-гейт зелёный (test-coverage, security-auditor, db-reviewer при изменении схемы, production-readiness, commit-hygiene)
-- [ ] Документация обновлена (docs/ + запись в `docs/brain/`)
-- [ ] a11y-проверка (для UI-историй) — подключение axe выполняется в [STORY-010-04](story-010-04-smoke-register-login-logout.md)
-- [ ] i18n: строки в обоих языках, хардкода нет (для UI-историй) — селекторы не завязаны на текст конкретной локали
+- [x] Тесты написаны первыми (TDD), проходят, изменённый код покрыт
+- [x] Commit-гейт зелёный (test-coverage, security-auditor, db-reviewer при изменении схемы, production-readiness, commit-hygiene)
+- [x] Документация обновлена (docs/ + запись в `docs/brain/`)
+- [x] a11y-проверка (для UI-историй) — подключение axe выполняется в [STORY-010-04](story-010-04-smoke-register-login-logout.md)
+- [x] i18n: строки в обоих языках, хардкода нет (для UI-историй) — селекторы не завязаны на текст конкретной локали
 
 ## Ссылки
 
 - Документация: [`stack.md` → Тестовая стратегия](../../../docs/architecture/stack.md), [`stack.md` → Раскладка монорепо (e2e не зависит от исходников)](../../../docs/architecture/stack.md)
 - Правила: `rules/testing.mdc`
+
+## Что сделано (запись истории)
+
+- `packages/e2e/playwright.config.ts` — `testDir: ./tests`, `fullyParallel`, `forbidOnly` и
+  `retries` как функция `CI` (локально 0, в CI 1), матрица браузеров (`chromium`, полная — по
+  `E2E_BROWSERS=all`), таймауты и базовый URL из окружения с локальными дефолтами, артефакты только
+  у падений (`on-first-retry` / `only-on-failure` / `retain-on-failure`).
+- `packages/e2e/global-setup.ts` — опрос `/ready` до готовности стека, с адресом API отдельно от
+  `baseURL`: клиент проксирует только `/api`, и через `baseURL` проба недостижима.
+- **Мета-тест живёт в корневом наборе** (`test/e2e/playwright-config.test.ts`), а не в
+  `packages/e2e/test/`, как предполагала задача. Причина: контракт конфигурации — репозиторный
+  инвариант того же рода, что `test/repo/**`, и корневой набор уже учитывает `inputs` турбо.
+  Отдельный vitest внутри `e2e` добавил бы второй раннер пакету, у которого есть свой (Playwright),
+  и попал бы под контракт покрытия из `test/repo/coverage-contract.test.ts`.
+- **Найдено при работе:** `playwright.config.ts` и `global-setup.ts` лежат в корне пакета и не
+  попадали ни под `include` его tsconfig, ни под ESLint-глоб (`packages/e2e/{src,tests}/**`) — оба
+  файла были бы отгружены не типизированными и без единого правила, включая запрет импорта
+  приложения. Исправлено и закрыто утверждением о **реальных** файлах через `configForRepoFile`
+  (`test/lint/architecture-rules.test.ts`), а не только фикстурами.
+- Запрет `waitForTimeout` — `no-restricted-syntax` в блоке e2e + фикстура
+  `test/lint/fixtures/packages/e2e/tests/fixed-wait.spec.ts`.
+- `rules/naming-and-structure.mdc`: `global-setup.ts` внесён в fixed-имена инструментов; пункт 4
+  («`export default` запрещён, таких мест в проекте нет») перестал быть верным — Playwright читает
+  конфигурацию и `globalSetup` только из default-экспорта, это записано.
+- `docs/runbooks/e2e.md` — порядок запуска, установка браузеров отдельной командой, переменные
+  окружения, чтение trace.
+- Каталог `tests/` пока пуст (`.gitkeep`): спеки приходят со STORY-010-04, джоба CI — со STORY-010-06.

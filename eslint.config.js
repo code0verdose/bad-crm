@@ -129,7 +129,14 @@ const CLIENT_UI = [
   // live, and it was the one directory full of components that no a11y rule was looking at.
   'packages/client/src/shared/ui/**/*.tsx',
 ];
-const E2E = 'packages/e2e/{src,tests}/**/*.ts';
+/**
+ * The end-to-end package, root files included.
+ *
+ * `playwright.config.ts` and `global-setup.ts` live at the package root and are real code — the
+ * setup performs I/O and decides whether the run starts at all. Matched only under `src`/`tests`,
+ * they were the two files of the package that no rule ever looked at.
+ */
+const E2E = ['packages/e2e/*.ts', 'packages/e2e/{src,tests}/**/*.ts'];
 const TESTS = [
   'packages/*/test/**/*.ts',
   'packages/**/*.{test,spec}.{ts,tsx}',
@@ -170,6 +177,21 @@ const CLIENT_STAYS_CLIENT = {
   message:
     '`packages/client` may only depend on `@bad-crm/shared`. Server internals reach the client through the OpenAPI contract, never through an import (CLAUDE.md → «Раскладка пакетов и нейминг»).',
 };
+/**
+ * A scenario waits for the state it needs, never for the clock.
+ *
+ * `waitForTimeout` is the one instrument that turns an end-to-end suite into a coin flip: too short
+ * and it fails on a loaded runner, too long and every run pays for the worst case — and it fails
+ * with «element not visible», which points at the application rather than at the wait. Playwright
+ * retries web assertions and locator actions until the state arrives, so there is a correct
+ * alternative for every use (`rules/testing.mdc`).
+ */
+const NO_FIXED_WAIT = {
+  selector: "CallExpression > MemberExpression[property.name='waitForTimeout']",
+  message:
+    'Do not wait by the clock: `waitForTimeout` makes the run depend on the machine it runs on. Wait for the state — `await expect(locator).toBeVisible()`, `page.waitForURL(...)`, `waitForResponse(...)` (rules/testing.mdc).',
+};
+
 const E2E_IS_BLACK_BOX = {
   group: workspace('shared', 'server', 'client'),
   message:
@@ -977,7 +999,7 @@ export default tseslint.config(
 
   // ── e2e: black-box suite ─────────────────────────────────────────────────────────────────────
   {
-    files: [E2E],
+    files: E2E,
     extends: [js.configs.recommended, ...tseslint.configs.recommendedTypeChecked, prettier],
     languageOptions: {
       ecmaVersion: 2023,
@@ -993,6 +1015,7 @@ export default tseslint.config(
       'unicorn/filename-case': ['error', { case: 'kebabCase' }],
       'bad-crm/require-role-suffix': 'error',
       'no-restricted-imports': ['error', { patterns: [E2E_IS_BLACK_BOX] }],
+      'no-restricted-syntax': ['error', NO_FIXED_WAIT],
     },
   },
 

@@ -67,8 +67,10 @@ alwaysApply: true
 3. **Fixed-имена без описательного префикса** в `app/` и `pages/`: `page.tsx`, `layout.tsx`,
    `index.ts`, `main.tsx`, `providers.tsx`, `router.tsx`, `global.css`. Под-страницы внутри одной
    папки — `<kebab>-page.tsx`.
-4. **Только named-экспорты. `export default` запрещён** (кроме мест, где этого требует фреймворк —
-   таких в проекте нет).
+4. **Только named-экспорты. `export default` запрещён**, кроме мест, где его требует фреймворк.
+   Такое место в проекте одно: Playwright читает конфигурацию и `globalSetup` **только** из
+   `export default` (`packages/e2e/playwright.config.ts`, `packages/e2e/global-setup.ts`). Именованный
+   экспорт там не «строже», а нерабочий.
 5. **Имена символов:** компоненты, классы, типы, enum — `PascalCase`; хуки, функции, переменные —
    `camelCase`; константы-литералы — `SCREAMING_SNAKE_CASE`. kebab-имя файла соответствует
    PascalCase-экспорту: `task-card.component.tsx` → `export function TaskCard`.
@@ -174,6 +176,9 @@ export default function TaskCard({ task }: Props) {                     // ❌ d
   (`bad-crm/require-role-suffix`, `unicorn/filename-case`) и ровно в этом каталоге; всё остальное,
   включая a11y- и React-правила, продолжает действовать. Границу исключения проверяет
   `test/architecture/structure.test.ts`.
-- **Конфиги в корне пакета** (`vite.config.ts`, `eslint.config.js`, `vitest.config.ts`) —
-  фиксированные имена инструментов.
+- **Конфиги в корне пакета** (`vite.config.ts`, `eslint.config.js`, `vitest.config.ts`,
+  `playwright.config.ts`) — фиксированные имена инструментов. Сюда же `global-setup.ts`
+  (добавлено STORY-010-01): Playwright резолвит его по пути из `globalSetup`, и это имя — словарь
+  инструмента для «выполняется один раз, до всего», как `main` или `providers`. Переименование ради
+  суффикса скрыло бы назначение файла от всех, кто знает Playwright.
 - **Fixed-имена** из п. 3 не требуют role-suffix.

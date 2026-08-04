@@ -8,5 +8,7 @@
     "noEmit": true
   },
   // No `references`: e2e drives the running stack over HTTP and UI, never its sources.
-  "include": ["src/**/*.ts", "tests/**/*.ts"]
+  // `*.ts` covers the package root: `playwright.config.ts` decides how the suite runs and
+  // `global-setup.ts` performs I/O. Left out of the include, both were shipped untypechecked.
+  "include": ["*.ts", "src/**/*.ts", "tests/**/*.ts"]
 }
