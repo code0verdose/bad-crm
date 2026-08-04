@@ -38,6 +38,7 @@ import { Sha256ResetTokenAdapter } from '@/infrastructure/crypto/reset-token.ada
 import { type DbRoleProbeClient } from '@/infrastructure/persistence/prisma/assert-db-role.util.js';
 import { PrismaAuthLookup } from '@/infrastructure/persistence/prisma/auth-lookup.adapter.js';
 import { createAuthLookupClient } from '@/infrastructure/persistence/prisma/auth-lookup.client.js';
+import { databaseReadinessProbe } from '@/infrastructure/persistence/prisma/database-readiness.adapter.js';
 import { type DatabaseConnection } from '@/infrastructure/persistence/prisma/database.factory.js';
 import {
   detachedAuthLookup,
@@ -176,10 +177,14 @@ export const buildContainer = (input: ContainerInput): AppContainer => {
     // probes sit beside it and are contributed by the clients that exist. Redis is live rather than
     // optional: with it unreachable the limiter refuses every sign-in, so an instance that cannot
     // reach it has to leave the load balancer's rotation. The `app_auth` pool is live for exactly
-    // the same reason, and appears as `disabled` instead when there is none. Postgres joins here in
-    // STORY-003-06.
+    // the same reason, and appears as `disabled` instead when there is none.
+    //
+    // Postgres is the pool every request works through, and until STORY-009-02 it was the one
+    // dependency `/ready` never asked about: with it unreachable the process answered 200 and kept
+    // its place in the rotation while every request inside it failed.
     [
       ...optionalServiceProbes(input.env),
+      ...(input.database === undefined ? [] : [databaseReadinessProbe(input.database.base)]),
       ...(input.redis === undefined ? [] : [redisReadinessProbe(input.redis.client)]),
       ...(authClient === undefined ? [] : [authDatabaseReadinessProbe(authClient)]),
     ] satisfies readonly ReadinessProbePort[],
