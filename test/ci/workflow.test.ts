@@ -118,6 +118,10 @@ describe('CI runs exactly the CI-before-push task set', () => {
     'test:integration':
       'needs a real PostgreSQL through Testcontainers; requiring a running Docker daemon before ' +
       'every push would be a worse trade than running it in CI',
+    'test:e2e':
+      'needs the whole stack up — database, server, built client, seeded data — and a browser ' +
+      'binary; asking that of every push would make the pre-push gate something people skip, and ' +
+      'the origin parity the saved-session scenarios depend on only holds in a stack CI assembles',
   };
 
   it('runs every task the rule requires before a push', () => {
@@ -425,5 +429,84 @@ describe('a gate that fires actually fails the job', () => {
 
     const owner = steps().find((candidate) => pattern.test(candidate.run ?? ''));
     expect(owner?.['continue-on-error']).toBeUndefined();
+  });
+});
+
+/**
+ * The end-to-end job, and the two properties that decide whether its artifacts are worth having.
+ *
+ * A run that keeps everything drowns the reader and fills the store; a run that keeps nothing leaves
+ * a red build and a guess. And an artifact bundle carrying a session file or an `.env` is a
+ * credential published to whoever can read the build — which is why the scrub runs **before** the
+ * upload rather than being a note in a runbook.
+ */
+describe('the end-to-end job', () => {
+  const e2e = (): WorkflowJob | undefined => workflow().jobs?.['e2e'];
+  const e2eSteps = (): WorkflowStep[] => e2e()?.steps ?? [];
+
+  it('exists and has its own timeout', () => {
+    expect(e2e()).toBeDefined();
+    expect(e2e()?.['timeout-minutes']).toBeGreaterThan(0);
+  });
+
+  it('seeds the installation it is about to drive', () => {
+    const run = e2eSteps()
+      .map((step) => step.run ?? '')
+      .join('\n');
+
+    expect(run).toContain('db:seed');
+  });
+
+  it('installs the browser it runs, rather than hoping the image has one', () => {
+    const run = e2eSteps()
+      .map((step) => step.run ?? '')
+      .join('\n');
+
+    expect(run).toMatch(/playwright install/);
+  });
+
+  /**
+   * Heavy artifacts only when something failed; the report always. The asymmetry is the point — a
+   * trace of a passing run is tens of megabytes nobody opens.
+   */
+  it('uploads the heavy artifacts only on failure, and the report always', () => {
+    const uploads = e2eSteps().filter(
+      (step) => step.uses?.startsWith('actions/upload-artifact') === true,
+    );
+
+    expect(uploads.length).toBeGreaterThanOrEqual(2);
+    expect(uploads.some((step) => (step.if ?? '').includes('failure'))).toBe(true);
+    expect(uploads.some((step) => (step.if ?? '').includes('always'))).toBe(true);
+  });
+
+  it('gives every upload a retention period, so the store does not grow without end', () => {
+    const uploads = e2eSteps().filter(
+      (step) => step.uses?.startsWith('actions/upload-artifact') === true,
+    );
+
+    for (const step of uploads) {
+      expect(step.with?.['retention-days'], JSON.stringify(step)).toBeDefined();
+    }
+  });
+
+  /**
+   * The scrub is a step of its own and it runs before the upload: an artifact carrying a session
+   * file is a live refresh cookie handed to everyone who can read the build.
+   */
+  it('scrubs the artifacts before uploading them', () => {
+    const names = e2eSteps().map((step) => step.name ?? '');
+    const scrubIndex = names.findIndex((name) => /scrub|secret/i.test(name));
+    const firstUpload = e2eSteps().findIndex(
+      (step) => step.uses?.startsWith('actions/upload-artifact') === true,
+    );
+
+    expect(scrubIndex).toBeGreaterThanOrEqual(0);
+    expect(firstUpload).toBeGreaterThan(scrubIndex);
+  });
+
+  it('collects the container logs when the run failed', () => {
+    const failureSteps = e2eSteps().filter((step) => (step.if ?? '').includes('failure'));
+
+    expect(failureSteps.some((step) => (step.run ?? '').includes('compose logs'))).toBe(true);
   });
 });

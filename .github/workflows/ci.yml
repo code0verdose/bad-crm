@@ -345,6 +345,103 @@ jobs:
       - name: Run the integration suite against a real PostgreSQL
         run: pnpm turbo run test:integration
 
+  # The end-to-end run: the only job that drives the product the way a person does — a browser, a
+  # real server, a real database, seeded data.
+  #
+  # Its own job rather than a step in `checks`, and for the same reason `integration` is one: it
+  # costs a stack, and a failure here means something different from a failing unit test. It is also
+  # the only place where the origin the client is served from matches `APP_URL` by construction,
+  # which is what makes the saved-session scenarios meaningful (see `docs/runbooks/e2e.md`).
+  #
+  # Artifacts are asymmetric on purpose: the report always, the heavy things only when something
+  # failed. A trace of a passing run is tens of megabytes nobody opens; a failure without one is a
+  # screenshot and a guess.
+  e2e:
+    name: end-to-end
+    if: github.event_name != 'schedule'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+
+      - name: Activate pnpm through Corepack
+        run: corepack enable
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # The template is the source of truth for what an installation needs; the run uses it as is,
+      # so a variable added to the schema and forgotten in the template fails here rather than on
+      # somebody's first install.
+      - name: Configure the installation from the template
+        run: cp .env.example .env
+
+      - name: Start the backing services
+        run: COMPOSE_PROFILES=minimal pnpm docker:up
+
+      - name: Bootstrap the database roles, migrate and apply the grants
+        run: |
+          pnpm db:bootstrap
+          pnpm db:migrate
+          pnpm db:grants
+
+      - name: Seed the two organizations the scenarios sign in as
+        run: pnpm db:seed
+
+      - name: Install the browser the run uses
+        run: pnpm --filter @bad-crm/e2e exec playwright install --with-deps chromium
+
+      - name: Build the client and the server
+        run: pnpm turbo run build
+
+      # Started here rather than through Playwright's `webServer` because the suite drives two
+      # processes, not one, and the readiness of the pair is what `global-setup.ts` already proves.
+      - name: Start the installation
+        run: |
+          pnpm --filter @bad-crm/server exec node dist/main.js &
+          pnpm --filter @bad-crm/client exec vite preview --port 5173 --strictPort &
+
+      - name: Run the end-to-end scenarios
+        run: pnpm turbo run test:e2e
+
+      - name: Collect the container logs
+        if: failure()
+        run: docker compose logs --no-color --tail 500 > packages/e2e/test-results/containers.log
+
+      # Before the upload, never after: an artifact bundle carrying a session file is a live refresh
+      # cookie handed to whoever can read the build.
+      - name: Scrub secrets from the artifacts
+        if: always()
+        run: |
+          pnpm tsx scripts/ci/scrub-e2e-artifacts.ts packages/e2e/test-results --ephemeral
+          pnpm tsx scripts/ci/scrub-e2e-artifacts.ts packages/e2e/playwright-report --ephemeral
+
+      - name: Upload the report
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: e2e-report-${{ github.run_id }}
+          path: packages/e2e/playwright-report
+          if-no-files-found: ignore
+          retention-days: 7
+
+      - name: Upload the traces, screenshots, videos and container logs
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: e2e-failure-${{ github.run_id }}
+          path: packages/e2e/test-results
+          if-no-files-found: ignore
+          retention-days: 7
+
   # `engines.node` declares a floor and no ceiling. That is a claim about every Node above the
   # floor, and an untested claim is how the previous ceiling got there: it was written by hand,
   # never measured, and quietly disabled the project's dependency updates — Dependabot runs its npm
