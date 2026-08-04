@@ -18,7 +18,9 @@
     "test:integration": "prisma generate && vitest run --config vitest.integration.config.ts",
     "check:rls": "prisma generate && tsx scripts/check-rls.ts",
     "db:generate": "prisma generate",
-    "db:migrate": "prisma migrate deploy"
+    "db:migrate": "prisma migrate deploy",
+    "db:seed": "tsx scripts/seed.ts",
+    "db:reset": "prisma migrate reset --force --skip-seed && tsx scripts/seed.ts"
   },
   "dependencies": {
     "@bad-crm/shared": "workspace:*",

@@ -80,6 +80,11 @@
     "db:seed": {
       "cache": false
     },
+    // Drops the schema, re-applies migrations and seeds — a developer command against a local
+    // stack, never cached and never depended upon by anything that builds.
+    "db:reset": {
+      "cache": false
+    },
     "api:gen": {
       // `$TURBO_DEFAULT$` first, and it is the entry that was missing.
       //
@@ -152,6 +157,11 @@
         // two declarations of the FSD aliases and a build that resolves `@units/...` differently
         // from the editor — cached over an edited `vite.config.ts`, it would prove nothing.
         "packages/*/vite.config.ts",
+        // Both declarations of the seed fixture: `test/e2e/seed-fixture-parity.test.ts` compares
+        // the copy `packages/e2e` uses against the one `pnpm db:seed` applies. Cached over an edit
+        // to either, the gate that keeps the two in step reports a PASS over the previous pair.
+        "packages/e2e/fixtures/**",
+        "packages/*/scripts/**",
         // The end-to-end harness lives at the root of its package, not under `src`:
         // `test/e2e/playwright-config.test.ts` asserts retries, the browser matrix and the
         // artifact policy against `playwright.config.ts`, and reads `global-setup.ts` for the

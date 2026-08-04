@@ -33,6 +33,7 @@
     "db:grants": "docker compose exec -T postgres sh -c 'psql -v ON_ERROR_STOP=1 -U app_migrator -d \"$POSTGRES_DB\" -f /opt/bad-crm/sql/01-grants.sql'",
     "db:migrate": "turbo run db:migrate",
     "db:seed": "turbo run db:seed",
+    "db:reset": "turbo run db:reset",
     "api:gen": "turbo run api:gen",
     "docker:up": "bash scripts/docker/up.sh",
     "docker:up:minimal": "COMPOSE_PROFILES=minimal bash scripts/docker/up.sh",

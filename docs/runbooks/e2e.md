@@ -26,6 +26,46 @@ pnpm dev
 pnpm --filter @bad-crm/e2e exec playwright install chromium
 ```
 
+Данные — отдельной командой. Сценарии не создают себе организации сами: регистрация закрыта на
+инсталляции с уже созданной организацией, и сценарий, который зависел бы от порядка запуска, ловил
+бы это как «форма входа не работает».
+
+```bash
+pnpm db:seed
+```
+
+## Что создаёт сид
+
+Идемпотентно: повторный запуск ничего не дублирует и ничего не перезаписывает. Источник правды —
+[`packages/server/scripts/seed-data.constant.ts`](../../packages/server/scripts/seed-data.constant.ts),
+копия для сценариев — `packages/e2e/fixtures/seed-data.ts`; расхождение между ними валит
+`test/e2e/seed-fixture-parity.test.ts`.
+
+| Организация | slug | Владелец | Язык | Валюта | Таймзона |
+|---|---|---|---|---|---|
+| Seed Organization A | `seed-org-a` | `owner@org-a.local` | en | EUR | Europe/Berlin |
+| Seed Organization B | `seed-org-b` | `owner@org-b.local` | ru | USD | UTC |
+
+Пароль обоих — `seed-only-not-a-real-password`, он же в константе. Две организации различаются
+**всем**, чем могут: сценарий изоляции сравнивает A и B, и фикстура, где они совпадают хотя бы
+в одном поле, не докажет ничего. Разные язык и валюта заодно делают дефект форматирования видимым
+в самой фикстуре.
+
+**Ролей в сиде нет, и это состояние продукта, а не упущение.** Роли приходят с EPIC-011; сегодня у
+`users` нет колонки роли, и единственная различимая учётная запись — владелец организации.
+`admin@`/`lead@`/`dev@` с правами, равными владельцу, но названные иначе, — фикстура, которая врёт;
+они появятся вместе с ролями (STORY-010-03).
+
+**Сид отказывается работать не в `development`/`test`.** Он создаёт учётные записи с паролем,
+опубликованным в этом репозитории; на инсталляции, обслуживающей живую команду, это чёрный ход,
+выглядящий как обычный аккаунт. Проверяется `NODE_ENV`; осознанный обход — `SEED_ALLOW_PRODUCTION=true`.
+
+Сброс к чистому состоянию (drop → migrate → seed):
+
+```bash
+pnpm db:reset
+```
+
 ## Запуск
 
 ```bash
@@ -82,8 +122,8 @@ pnpm test:e2e
 
 ## Что появится в следующих историях
 
-Сид двух организаций и фикстуры ролей — [STORY-010-02](../../epics/epic-010-e2e-harness/stories/story-010-02-seed-script-and-fixtures.md);
-вход через `storageState` — [STORY-010-03](../../epics/epic-010-e2e-harness/stories/story-010-03-storage-state-auth-fixtures.md);
+Фикстуры ролей (сид двух организаций — уже здесь, [STORY-010-02](../../epics/epic-010-e2e-harness/stories/story-010-02-seed-script-and-fixtures.md))
+и вход через `storageState` — [STORY-010-03](../../epics/epic-010-e2e-harness/stories/story-010-03-storage-state-auth-fixtures.md);
 smoke-сценарий и axe — [STORY-010-04](../../epics/epic-010-e2e-harness/stories/story-010-04-smoke-register-login-logout.md);
 проверка изоляции арендаторов — [STORY-010-05](../../epics/epic-010-e2e-harness/stories/story-010-05-tenant-isolation-e2e.md);
 артефакты и джоба в CI — [STORY-010-06](../../epics/epic-010-e2e-harness/stories/story-010-06-ci-artifacts-on-failure.md).
