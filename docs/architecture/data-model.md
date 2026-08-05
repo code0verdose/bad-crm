@@ -693,7 +693,10 @@ salt (`saltB`), а сервер хранит `argon2id(authVerifier, serverSalt)
   нему, а уникальный индекс поверх первичного был бы вторым индексом того же столбца.
 - `uq_roles_org_key (organization_id, key)`, `idx_roles_org_default (organization_id) WHERE is_default`.
 - `uq_role_permissions (role_id, permission_key)`, `idx_role_permissions_org_role (organization_id, role_id)`
-  — покрывающий для сборки эффективных прав одним чтением.
+  — сборка эффективных прав одним чтением. *Уточнено 2026-08-05 при реализации:* индекс **обычный, а
+  не покрывающий**. `INCLUDE (permission_key)` был замыслом, но datamodel Prisma его не выражает —
+  схема и миграции разошлись бы навсегда, и каждый следующий `prisma migrate dev` предлагал бы
+  пересоздать индекс. Постоянное расхождение двух источников схемы дороже одного index-only scan.
 - `uq_user_roles (user_id, role_id)`, `idx_user_roles_org_user (organization_id, user_id)`.
 - `uq_user_permission_overrides (user_id, permission_key)`,
   `idx_upo_expires (expires_at) WHERE expires_at IS NOT NULL` — джоб-чистильщик.

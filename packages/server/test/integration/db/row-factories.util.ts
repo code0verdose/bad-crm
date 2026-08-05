@@ -39,6 +39,15 @@ const insert = async (
  * need a user of their own organization: a factory referring to `ROW_FACTORIES` from within the
  * object's own initialiser has no inferable type.
  */
+const createRole = (client: PoolClient, organizationId: string): Promise<{ id: string }> =>
+  insert(
+    client,
+    `INSERT INTO roles (organization_id, key, name, updated_at)
+       VALUES ($1, $2, $3, now())
+       RETURNING id`,
+    [organizationId, `role-${randomUUID().slice(0, 8)}`, 'Fixture role'],
+  );
+
 const createUser: RowFactory = (client, organizationId) =>
   insert(
     client,
@@ -88,6 +97,40 @@ export const ROW_FACTORIES = {
   },
 
   users: createUser,
+
+  /**
+   * A role of one organization. `key` is unique per organization, so it is randomised: the isolation
+   * suite creates rows for two tenants and a fixed key would fail on the second for a reason that
+   * has nothing to do with isolation.
+   */
+  roles: (client, organizationId) =>
+    insert(
+      client,
+      `INSERT INTO roles (organization_id, key, name, updated_at)
+         VALUES ($1, $2, $3, now())
+         RETURNING id`,
+      [organizationId, `role-${randomUUID().slice(0, 8)}`, 'Fixture role'],
+    ),
+
+  /**
+   * A grant needs a role of the same organization **and** a permission that exists in the catalogue.
+   *
+   * The catalogue is seeded by the container setup, the way `pnpm db:seed:permissions` seeds an
+   * installation — not here. The fixture used to insert the key itself and failed the moment it ran
+   * as the tenant: `app_user` may read the catalogue and never write it, which is the whole point of
+   * the table being global.
+   */
+  role_permissions: async (client, organizationId) => {
+    const role = await createRole(client, organizationId);
+
+    return insert(
+      client,
+      `INSERT INTO role_permissions (organization_id, role_id, permission_key, updated_at)
+         VALUES ($1, $2, 'task:read', now())
+         RETURNING id`,
+      [organizationId, role.id],
+    );
+  },
 
   /**
    * A session needs a user of the same organization, so the factory makes one: the composite

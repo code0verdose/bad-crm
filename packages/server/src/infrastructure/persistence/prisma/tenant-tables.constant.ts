@@ -53,6 +53,20 @@ export const TENANT_TABLES = {
     appUserPrivileges: ['SELECT', 'INSERT', 'UPDATE', 'DELETE'],
     softDeleted: false,
   },
+  role_permissions: {
+    model: 'RolePermission',
+    tenantColumn: 'organization_id',
+    // Carries its own tenant column rather than reaching it through the role: a policy that had to
+    // join would be a policy a join can defeat.
+    appUserPrivileges: ['SELECT', 'INSERT', 'UPDATE', 'DELETE'],
+    softDeleted: false,
+  },
+  roles: {
+    model: 'Role',
+    tenantColumn: 'organization_id',
+    appUserPrivileges: ['SELECT', 'INSERT', 'UPDATE', 'DELETE'],
+    softDeleted: false,
+  },
   sessions: {
     model: 'Session',
     tenantColumn: 'organization_id',

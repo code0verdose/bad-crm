@@ -2,6 +2,8 @@ import { execFile } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 
+import { SharedPermissions } from '@bad-crm/shared';
+
 import { PostgreSqlContainer, type StartedPostgreSqlContainer } from '@testcontainers/postgresql';
 import { type TestProject } from 'vitest/node';
 
@@ -111,6 +113,7 @@ export default async function setup(project: TestProject): Promise<void> {
   });
 
   await applyGrants(container);
+  await seedPermissionCatalog(container);
 
   project.provide('databaseUrls', urls);
 }
@@ -142,6 +145,48 @@ export const applyGrants = async (started: StartedPostgreSqlContainer): Promise<
 
   if (result.exitCode !== 0) {
     throw new Error(`01-grants.sql failed with exit code ${result.exitCode}:\n${result.output}`);
+  }
+};
+
+/**
+ * Seeds the permission catalogue, the way `pnpm db:seed:permissions` seeds an installation.
+ *
+ * The container should look like an installed installation, not like a freshly migrated schema: the
+ * catalogue is a deploy step (`docs/runbooks/upgrade.md` §7c), rows elsewhere reference it by name,
+ * and a suite that seeded it from a fixture would be a suite where `app_user` writes the catalogue —
+ * which is exactly what the privileges forbid.
+ *
+ * Written through psql for the same reason the grants are: one statement, no second artefact.
+ */
+export const seedPermissionCatalog = async (
+  started: StartedPostgreSqlContainer,
+): Promise<void> => {
+  const values = SharedPermissions.PERMISSIONS.map((key) => {
+    const meta = SharedPermissions.PERMISSION_META[key];
+
+    return `('${key}', '${meta.resource}', '${meta.action}', '${meta.domain}', ${String(meta.dangerous)}, now())`;
+  }).join(',');
+
+  const result = await started.exec(
+    [
+      'psql',
+      '-v',
+      'ON_ERROR_STOP=1',
+      '--no-psqlrc',
+      '-U',
+      'app_migrator',
+      '-d',
+      DATABASE,
+      '-c',
+      `INSERT INTO permissions (key, resource, action, category, is_dangerous, updated_at)
+       VALUES ${values}
+       ON CONFLICT (key) DO NOTHING`,
+    ],
+    { env: { PGPASSWORD: PASSWORDS.migrator } },
+  );
+
+  if (result.exitCode !== 0) {
+    throw new Error(`seeding the permission catalogue failed:\n${result.output}`);
   }
 };
 

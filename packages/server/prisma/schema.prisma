@@ -83,6 +83,8 @@ model Organization {
   deletedAt DateTime? @map("deleted_at") @db.Timestamptz(6)
 
   teams               Team[]
+  roles               Role[]
+  rolePermissions     RolePermission[]
   users               User[]
   sessions            Session[]
   passwordResetTokens PasswordResetToken[]
@@ -352,12 +354,70 @@ model Permission {
   /// resolves to «no permission» in the policy layer (`docs/architecture/data-model.md`, group 2).
   deprecatedAt DateTime? @map("deprecated_at") @db.Timestamptz(6)
 
-  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+  createdAt  DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt  DateTime         @updatedAt @map("updated_at") @db.Timestamptz(6)
+  roleGrants RolePermission[]
 
   @@index([resource, action], map: "idx_permissions_resource")
   /// `idx_permissions_active` is not declared here: it is partial (`WHERE deprecated_at IS NULL`,
   /// because the role-matrix screen lists only the live catalogue), which Prisma cannot express — so
   /// it lives in the migration, exactly like `uq_users_org_email`.
   @@map("permissions")
+}
+
+/// Tenant-scoped table [T]: a role of one organization (layer 2 of the permission model).
+///
+/// A role is a **starting point**, not a straitjacket: what one person needs beyond it is expressed
+/// by a per-user override or a resource ACL, never by inventing a fortieth role
+/// (`docs/security/permission-model.md`, «Слой 2 — роли»).
+model Role {
+  id             String @id(map: "pk_roles") @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String @map("organization_id") @db.Uuid
+
+  /// `owner` | `admin` | … for system roles; chosen by the organization for its own.
+  key         String
+  name        String
+  description String?
+
+  /// System roles are code: their composition comes from `SYSTEM_ROLE_PERMISSIONS` and is
+  /// re-applied on upgrade, and the interface refuses to edit or delete one.
+  isSystem  Boolean @default(false) @map("is_system")
+  /// The role a new member gets when nobody chooses one; at most one per organization.
+  isDefault Boolean @default(false) @map("is_default")
+  priority  Int     @default(0)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  organization Organization     @relation(fields: [organizationId], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "fk_roles_organization_id")
+  permissions  RolePermission[]
+
+  /// The target every composite foreign key into this table points at: a child referencing `id`
+  /// alone could name a role of another organization, because foreign key checks bypass RLS.
+  @@unique([organizationId, id], map: "uq_roles_org_id")
+  @@unique([organizationId, key], map: "uq_roles_org_key")
+  /// `idx_roles_org_default` is not declared here: it is partial (`WHERE is_default`), which Prisma
+  /// cannot express, so it lives in the migration.
+  @@map("roles")
+}
+
+/// Tenant-scoped table [T]: one permission granted by one role. **ALLOW only** — a role that could
+/// deny would make «which role wins» unanswerable the moment a person holds two of them.
+model RolePermission {
+  id             String @id(map: "pk_role_permissions") @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String @map("organization_id") @db.Uuid
+  roleId         String @map("role_id") @db.Uuid
+  /// References `Permission.key`: a name, not a uuid, so the row survives a rebuilt catalogue.
+  permissionKey  String @map("permission_key")
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  role         Role         @relation(fields: [organizationId, roleId], references: [organizationId, id], onDelete: Cascade, onUpdate: NoAction, map: "fk_role_permissions_role_id")
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "fk_role_permissions_organization_id")
+  permission   Permission   @relation(fields: [permissionKey], references: [key], onDelete: NoAction, onUpdate: NoAction, map: "fk_role_permissions_permission_key")
+
+  @@unique([roleId, permissionKey], map: "uq_role_permissions")
+  @@index([organizationId, roleId], map: "idx_role_permissions_org_role")
+  @@map("role_permissions")
 }
