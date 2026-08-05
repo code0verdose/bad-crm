@@ -3,8 +3,9 @@
  *
  * Source of truth: `docs/security/permission-model.md` §«Слой 5 — итоговое решение».
  *
- * Not decoration. The reason travels into `AuditLog`, into the `type` URI of the `problem+json`
- * response (RFC 9457) and into the interface, where «you are missing permission X» and «you have no
+ * Not decoration. The reason travels into `AuditLog`, into the `reason` member of the `problem+json`
+ * response (an extension member, which RFC 9457 allows — **not** the `type` URI, which is derived
+ * from the error code) and into the interface, where «you are missing permission X» and «you have no
  * access to this object» are different sentences with different remedies. A refusal without a reason
  * is a refusal that can only be debugged by reading the code — and 403s that look alike are how
  * support tickets become archaeology.

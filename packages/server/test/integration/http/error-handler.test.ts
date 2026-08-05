@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
 
 import { AsyncRequestContextAdapter } from '../../../src/infrastructure/logging/async-request-context.adapter.js';
+import { accessErrorFor } from '../../../src/domain/access/access.errors.js';
 import { NotFoundError, ValidationError } from '../../../src/domain/shared/errors/app.errors.js';
 import { createErrorHandler } from '../../../src/presentation/http/error-handler.middleware.js';
 import { createRequestContextMiddleware } from '../../../src/presentation/http/middleware/request-context.middleware.js';
@@ -57,6 +58,41 @@ describe('domain errors', () => {
       code: 'task_not_found',
       requestId: '01J8Z2F5Q3K9V6N0R4T7YB3XQD',
     });
+  });
+
+  /**
+   * Two refusals of the same operation, distinguishable by a machine.
+   *
+   * Both answer `project_forbidden`, because that is what the client translates; what separates
+   * «you are missing the permission» from «your level on this object is too low» is the `reason`
+   * extension member, and the screen that explains a denial offers a different remedy for each.
+   * Without it, every 403 in this product would be one sentence and every support ticket about one
+   * would start with reading the source.
+   */
+  it('carries the refusal reason of an access denial, and only of one', async () => {
+    const { app } = appThrowing(() => {
+      throw accessErrorFor('insufficient_acl_level', 'project');
+    });
+
+    const denial = await request(app).get('/boom');
+
+    expect(denial.status).toBe(403);
+    expect(denial.body).toMatchObject({
+      code: 'project_forbidden',
+      reason: 'insufficient_acl_level',
+    });
+
+    const { app: plain } = appThrowing(() => {
+      throw new NotFoundError('task_not_found');
+    });
+
+    // Not every refusal comes from the permission layer, and one that does not must not pretend to:
+    // an unparsed body or a rate limit has no reason to give. Asserted together with the code that
+    // must be there, so an empty body for some unrelated reason cannot pass for the property.
+    const plainBody = (await request(plain).get('/boom')).body as Record<string, unknown>;
+
+    expect(plainBody).toMatchObject({ code: 'task_not_found' });
+    expect(plainBody).not.toHaveProperty('reason');
   });
 
   /**

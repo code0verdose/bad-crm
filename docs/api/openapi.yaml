@@ -1214,6 +1214,9 @@ components:
         - stale_version
         - idempotency_key_reuse
         - last_owner_required
+        - period_locked
+        - self_lockout
+        - system_role_immutable
         - rate_limited
         - feature_disabled
         - service_unavailable
@@ -1298,6 +1301,35 @@ components:
         - invalid_value
         - custom
 
+    DenyReason:
+      type: string
+      description: |
+        Why the permission layer refused, when it is the permission layer that refused. The same
+        closed list as `packages/shared/src/permissions/deny-reason.enums.ts` and
+        `docs/security/permission-model.md` §«Слой 5».
+
+        An extension member of the problem document (RFC 9457 allows them), **not** part of `type`:
+        `type` is derived from `code`, and fifteen reasons are not fifteen codes — the client
+        translates by `code` and explains by `reason`. Present only on a refusal the access layer
+        produced; absent everywhere else, including on refusals decided before any permission was
+        consulted (an unparsed body, a rate limit).
+      enum:
+        - not_authenticated
+        - unknown_permission
+        - permission_not_granted
+        - denied_by_override
+        - resource_required
+        - resource_not_found
+        - acl_explicit_none
+        - insufficient_acl_level
+        - acl_resolution_failed
+        - tenant_mismatch
+        - vault_locked
+        - period_locked
+        - last_owner_required
+        - self_lockout
+        - system_role_immutable
+
     ValidationIssue:
       type: object
       additionalProperties: false
@@ -1357,6 +1389,8 @@ components:
           type: string
           description: Correlates this response with the server log. Also returned as `x-request-id`.
           examples: ['01J8Z2F5Q3K9V6N0R4T7YB3XQD']
+        reason:
+          $ref: '#/components/schemas/DenyReason'
         errors:
           type: array
           description: Present on `validation_failed` only — one entry per rejected field.

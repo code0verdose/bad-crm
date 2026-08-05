@@ -3,6 +3,7 @@ import { ZodError } from 'zod';
 
 import { type LoggerPort } from '@/application/platform/ports/logger.port.js';
 import { type RequestContextPort } from '@/application/platform/ports/request-context.port.js';
+import { AccessRefusedError } from '@/domain/access/access.errors.js';
 import {
   AppError,
   PayloadTooLargeError,
@@ -115,6 +116,7 @@ export const createErrorHandler = (dependencies: ErrorHandlerDependencies): Erro
           status,
           detail: appError?.message,
           requestId,
+          reason: appError instanceof AccessRefusedError ? appError.reason : undefined,
           errors: appError instanceof ValidationError ? appError.issues : undefined,
         }),
       );

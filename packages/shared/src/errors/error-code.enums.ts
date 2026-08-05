@@ -124,6 +124,21 @@ const GENERIC_ERROR_CODE_STATUS = {
    * it — transfer ownership first (`domain/identity/access/owner-offboarding.policy.ts`).
    */
   last_owner_required: 409,
+  /**
+   * The three states a permission cannot argue with, raised by the access layer
+   * (`domain/access/access.errors.ts`).
+   *
+   * Conflicts rather than denials, for the same reason `last_owner_required` above is one: the
+   * caller may perform the action, the object exists, and the *current state* refuses. Answering
+   * 403 would tell them to ask for a right they already hold.
+   *
+   * - `period_locked` — approved time and invoiced work are closed; a right does not reopen them.
+   * - `self_lockout` — the change would remove the actor's own last way back in.
+   * - `system_role_immutable` — the composition of a system role is code, not data.
+   */
+  period_locked: 409,
+  self_lockout: 409,
+  system_role_immutable: 409,
   rate_limited: 429,
   /**
    * An optional subsystem is switched off in this installation, and the honest answer is "this

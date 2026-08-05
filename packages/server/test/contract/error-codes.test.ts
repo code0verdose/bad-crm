@@ -1,3 +1,4 @@
+import { DENY_REASONS } from '@bad-crm/shared/permissions';
 import { ERROR_CODES, VALIDATION_ISSUE_CODES } from '@bad-crm/shared/errors';
 import { describe, expect, it } from 'vitest';
 
@@ -16,21 +17,29 @@ describe('the error catalog and the published enum are the same list', () => {
   it.each([
     ['ErrorCode', () => [...ERROR_CODES]],
     ['ValidationIssueCode', () => [...VALIDATION_ISSUE_CODES]],
+    // The refusal reasons are published too, as an extension member of the problem document, and
+    // they drift the same way: a reason added in the domain that the specification never learns
+    // about is a value a client meets and cannot explain.
+    ['DenyReason', () => [...DENY_REASONS]],
   ])('%s matches packages/shared exactly', (schema, catalog) => {
     const published = schemaEnum(readOpenApiDocument(), schema);
 
     expect([...published].sort()).toEqual([...catalog()].sort());
   });
 
-  it.each(['ErrorCode', 'ValidationIssueCode'])('publishes %s without duplicates', (schema) => {
-    const published = schemaEnum(readOpenApiDocument(), schema);
+  it.each(['ErrorCode', 'ValidationIssueCode', 'DenyReason'])(
+    'publishes %s without duplicates',
+    (schema) => {
+      const published = schemaEnum(readOpenApiDocument(), schema);
 
-    expect(new Set(published).size).toBe(published.length);
-  });
+      expect(new Set(published).size).toBe(published.length);
+    },
+  );
 
   it('has a non-trivial catalog, so the comparison is not two empty lists', () => {
     expect(ERROR_CODES.length).toBeGreaterThan(10);
     expect(VALIDATION_ISSUE_CODES.length).toBeGreaterThan(5);
+    expect(DENY_REASONS.length).toBeGreaterThan(10);
   });
 
   /**
@@ -44,6 +53,7 @@ describe('the error catalog and the published enum are the same list', () => {
 
     expect(problem?.required?.sort()).toEqual(['code', 'requestId', 'status', 'title', 'type']);
     expect(Object.keys(problem?.properties ?? {})).toContain('errors');
+    expect(Object.keys(problem?.properties ?? {})).toContain('reason');
     expect(problem?.properties).not.toHaveProperty('instance');
   });
 });

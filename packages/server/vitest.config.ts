@@ -46,6 +46,10 @@ export default defineConfig({
         branches: 80,
         'src/domain/**': { lines: 95, branches: 90 },
         'src/domain/**/access/*.policy.ts': { lines: 100, branches: 100 },
+        // The decision kernel itself, at the same bar as the policies that call it. Its files are
+        // `*.util.ts` and `*.errors.ts`, so the glob above never matched them and the 100 % they
+        // have today would have been a fact of one run rather than a gate (STORY-011-07, п. 1).
+        'src/domain/access/**': { lines: 100, branches: 100 },
         'src/application/**': { lines: 90, branches: 85 },
         'src/infrastructure/**': { lines: 75, branches: 70 },
         'src/presentation/**': { lines: 75, branches: 70 },

@@ -1,3 +1,4 @@
+import { type SharedPermissions } from '@bad-crm/shared';
 import { problemTypeUrl, type ErrorCode, type ValidationIssue } from '@bad-crm/shared/errors';
 
 /** Media type of RFC 9457 problem documents. Never `application/json`: the shape is a contract. */
@@ -20,6 +21,16 @@ export interface ProblemDocument {
   readonly code: ErrorCode;
   readonly detail?: string;
   readonly requestId: string;
+  /**
+   * Why the permission layer refused — present only when it is the one that refused.
+   *
+   * An extension member, which RFC 9457 allows, rather than a part of `type`: `type` is derived from
+   * `code`, and the fifteen refusal reasons are not fifteen codes — `permission_not_granted` and
+   * `insufficient_acl_level` are both `role_forbidden` to a client choosing a translation. The
+   * client translates by `code` and *explains* by `reason` (`docs/security/permission-model.md`,
+   * §«Слой 5»).
+   */
+  readonly reason?: SharedPermissions.DenyReason;
   /** Present on `validation_failed` only: one entry per rejected field. */
   readonly errors?: readonly ValidationIssue[];
 }
@@ -30,6 +41,7 @@ export interface ProblemInput {
   /** Included only for statuses below 500; see the note about 5xx below. */
   readonly detail?: string | undefined;
   readonly requestId: string;
+  readonly reason?: SharedPermissions.DenyReason | undefined;
   readonly errors?: readonly ValidationIssue[] | undefined;
 }
 
@@ -63,5 +75,6 @@ export const serializeProblem = (input: ProblemInput): ProblemDocument => ({
   code: input.code,
   ...(input.status < 500 && input.detail !== undefined ? { detail: input.detail } : {}),
   requestId: input.requestId,
+  ...(input.reason === undefined ? {} : { reason: input.reason }),
   ...(input.errors === undefined || input.errors.length === 0 ? {} : { errors: input.errors }),
 });

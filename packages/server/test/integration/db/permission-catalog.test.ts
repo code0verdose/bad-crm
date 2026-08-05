@@ -67,6 +67,12 @@ afterAll(async () => {
 
 beforeEach(async () => {
   await asMaintenance(pools.owner, async (client) => {
+    // The grants first, and not because this file writes any: the catalogue is referenced **by
+    // name** from `role_permissions`, and every organization seeded by an earlier file in this
+    // shared database left a few hundred of those rows behind. Wiping the catalogue under them is
+    // a foreign-key violation, which is how this suite went red in CI while passing on a laptop
+    // where the integration files had run in a different order (run 30974845572).
+    await client.query('DELETE FROM role_permissions');
     await client.query('DELETE FROM permissions');
   });
 });

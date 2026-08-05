@@ -1250,9 +1250,19 @@ export const DENY_REASONS = [
 export type DenyReason = (typeof DENY_REASONS)[number];
 ```
 
-`DenyReason` — не украшение: он попадает в `AuditLog`, в `problem+json` (`type`-URI ошибки,
-см. `stack.md`, RFC 9457) и в UI («не хватает права X» против «нет доступа к этому объекту»).
-Отказ без причины отлаживается только чтением кода.
+`DenyReason` — не украшение: он попадает в `AuditLog`, в `problem+json` и в UI («не хватает права X»
+против «нет доступа к этому объекту»). Отказ без причины отлаживается только чтением кода.
+
+**Как именно причина попадает в `problem+json`.** Отдельным полем `reason` — расширением документа
+RFC 9457 (спецификация их прямо разрешает), а не через `type`-URI. Раньше здесь было написано
+«`type`-URI ошибки»; это расходилось с уже реализованным контрактом и было исправлено в пользу кода
+2026-08-05. Причина: `type` в этом проекте выводится из `code`, а `code` — закрытый каталог, по
+которому клиент выбирает i18n-сообщение (`docs/api/openapi.yaml`, `ErrorCode`). Пятнадцать причин
+отказа не образуют пятнадцать кодов: `permission_not_granted` и `insufficient_acl_level` — это один
+и тот же `role_forbidden` с точки зрения того, что клиент показывает и как переводит. Сделать `type`
+зависимым от причины означало бы, что `type` и `code` в одном документе опознают разные вещи, — а
+поле `reason` даёт машинную различимость там, где она нужна (объяснение отказа, фильтр по журналу),
+не трогая контракт перевода.
 
 ### Краевые случаи
 
@@ -1486,8 +1496,13 @@ export type Decision =
 export const allow = (): Decision => ({ allowed: true, reason: null });
 export const deny  = (reason: DenyReason): Decision => ({ allowed: false, reason });
 
-export function assertAllowed(d: Decision): asserts d is { allowed: true; reason: null } {
-  if (!d.allowed) throw AccessError.from(d.reason);   // → 401/403/404/503 в error-handler
+// `resource` обязателен: 403 и 404 в этом проекте кодируются per-resource
+// (`role_forbidden`, `role_not_found`), общего кода `forbidden` не существует.
+export function assertAllowed(
+  d: Decision,
+  resource: ErrorResource,
+): asserts d is { allowed: true; reason: null } {
+  if (!d.allowed) throw accessErrorFor(d.reason, resource); // → 401/403/404/409/423/503
 }
 ```
 

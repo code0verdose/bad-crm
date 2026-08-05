@@ -1,7 +1,7 @@
 ---
 id: STORY-011-07
 epic: EPIC-011
-status: backlog
+status: in-progress
 blocked: false
 priority: must
 estimate: L
@@ -26,8 +26,10 @@ estimate: L
    Given актор без права `project:update` и актор с правом, но уровнем `VIEWER`;
    When вызывается `canUpdateProject`;
    Then в первом случае `{ allowed: false, reason: 'permission_not_granted' }`, во втором —
-   `'insufficient_acl_level'`; `assertAllowed` превращает их в 403 с разными `type`-URI
-   `problem+json` (RFC 9457) и в разные записи `AuditLog`.
+   `'insufficient_acl_level'`; `assertAllowed` превращает их в 403 с разным полем `reason` в
+   `problem+json` (расширение RFC 9457) и в разные записи `AuditLog`. Формулировка исправлена
+   2026-08-05: было «с разными `type`-URI», но `type` выводится из `code`, а `code` — закрытый
+   каталог, по которому клиент выбирает перевод; обоснование — `permission-model.md`, §«Слой 5».
 
 3. **Порядок проверок: capability → ресурс.**
    Given актор без capability и несуществующий `resourceId`;
@@ -104,6 +106,23 @@ estimate: L
       `require-permission.middleware.spec.ts`, `sql-query-count.spec.ts` (п. 3).
 - [ ] Агент `permission-matrix-auditor` в `.claude/agents/` + подключение в commit-гейт
       ([EPIC-002](../../epic-002-ci-and-commit-gate/epic.md)).
+
+## Что уже сделано (2026-08-05)
+
+Ядро решения — чистая часть истории, у которой нет зависимостей от ещё не существующих таблиц:
+
+- [x] `domain/access/{actor.types,decision.types,decision.util,access.errors,authorize.util}.ts` —
+      `Decision`, `allow`/`deny`/`assertAllowed`, исчерпывающая таблица `DenyReason` → HTTP,
+      `authorizeWith` с ленивым резолвером ACL (acceptance 1–5, 11 в части кодов).
+- [x] `reason` в `problem+json` (сериализатор, error-handler, схема `DenyReason` в спеке),
+      три недостающих кода ошибок с переводами (acceptance 2 — с исправленной формулировкой выше).
+- [x] Табличные тесты §5 целиком + проверка порядка «capability → ресурс» через невызванный резолвер.
+
+Осталось, и осознанно не сделано сейчас: `require-permission.middleware`, монтирование гварда из
+реестра и `acl-coverage.spec.ts` — в реестре **нет ни одного `GuardedRoute`**, и тест на покрытие
+ACL сегодня утверждал бы свойство пустого множества. Они приходят вместе с первым правом на
+маршруте (STORY-011-04). Эталонная policy перенесена туда же: `project-access.policy.ts` из списка
+задач требует проектов, которых не будет до EPIC-014, — её место занимает policy домена iam.
 
 ## Ссылки
 

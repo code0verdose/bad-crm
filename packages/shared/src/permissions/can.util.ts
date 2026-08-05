@@ -33,8 +33,12 @@ export const effectivePermission = (view: CapabilityView, key: PermissionKey): b
  *
  * - an unknown key denies, so a typo never opens access;
  * - a resource-scoped key with no level supplied denies, because "not passed" is not "allowed";
- * - ownership skips the capability layers but not the ACL — the object still has to be one the
- *   owner has a level on.
+ * - ownership skips the capability layers, and the ACL level it is given already accounts for
+ *   ownership: `resolveAcl` answers MANAGER for the owner on everything but the vault
+ *   (`docs/security/permission-model.md`, «Про `isOwner` и ACL»). This function is therefore
+ *   deliberately naive about it — it compares the level it was handed. The rule itself is enforced
+ *   server-side in `domain/access/authorize.util.ts`, where forgetting it would be a way to lock an
+ *   organization's owner out of its own projects.
  */
 export const can = (view: CapabilityView, key: string, aclLevel?: AccessLevel): boolean => {
   if (!isPermissionKey(key)) return false;
