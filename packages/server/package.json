@@ -21,6 +21,7 @@
     "db:migrate": "node --env-file-if-exists=../../.env node_modules/prisma/build/index.js migrate deploy",
     "db:seed": "tsx scripts/seed.ts",
     "db:seed:permissions": "tsx scripts/seed-permissions.ts",
+    "db:audit-partitions": "tsx scripts/ensure-audit-partitions.ts",
     "db:reset": "node --env-file-if-exists=../../.env node_modules/prisma/build/index.js migrate reset --force --skip-seed && tsx scripts/seed.ts"
   },
   "dependencies": {

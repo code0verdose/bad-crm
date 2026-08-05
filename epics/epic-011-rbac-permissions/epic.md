@@ -97,6 +97,13 @@ created: 2026-07-26
 
 ## Зависимости / риски
 
+> **Порядок с EPIC-016 (решено 2026-08-05).** Пишущие истории этого эпика (011-03…011-06) требуют
+> записи в `AuditLog` в той же транзакции (§10 модели прав), поэтому инфраструктурная фаза
+> [EPIC-016](../epic-016-audit-log/epic.md) — STORY-016-01 и STORY-016-02 — выполняется **до** них.
+> Обоснование и отвергнутые альтернативы —
+> [`roadmap.md`](../../docs/product/roadmap.md#порядок-внутри-m2-журнал-раньше-остальной-модели-прав).
+
+
 - **Зависит от:** [EPIC-003](../epic-003-server-skeleton-and-api-contract/epic.md) (гексагональные
   слои, `problem+json`, реестр маршрутов), [EPIC-004](../epic-004-client-shell-fsd/epic.md) (FSD,
   TanStack Router/Query), [EPIC-005](../epic-005-multi-tenancy-rls/epic.md) (RLS, tenant-контекст,

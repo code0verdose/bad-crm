@@ -65,6 +65,21 @@ describe('01-grants.sql agrees with the tenant table registry', () => {
     expect(inSql).toEqual(registryTablesWithout('DELETE'));
   });
 
+  /**
+   * The same comparison for `UPDATE`, which had nothing checking it until an append-only table
+   * existed. `append_only` is the only list that withholds it, so the two sides must name the same
+   * tables — a journal that kept `UPDATE` in one place and not the other is a journal whose whole
+   * security property depends on which of the two a reader believed.
+   */
+  it('withholds UPDATE in SQL from exactly the tables the registry withholds it from', () => {
+    const known = new Set(Object.keys(TENANT_TABLES));
+    const inSql = sqlList('append_only')
+      .filter((table) => known.has(table))
+      .sort();
+
+    expect(inSql).toEqual(registryTablesWithout('UPDATE'));
+  });
+
   it('names only tables that exist in the registry', () => {
     const known = new Set(Object.keys(TENANT_TABLES));
 

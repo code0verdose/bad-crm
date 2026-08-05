@@ -103,6 +103,13 @@ pnpm db:grants
 #     из кода, помечается deprecated (docs/architecture/data-model.md, группа 2).
 pnpm db:seed:permissions
 
+# 7d. убедиться, что у журнала действий есть куда писать — текущий месяц и два следующих.
+#     Идемпотентно. Партиция создаётся ролью-владельцем (app_user не может CREATE TABLE), поэтому
+#     это шаг обновления, а не фоновая задача приложения. Пропущенный запуск не ломает вставку
+#     сразу: горизонт в два месяца и партиция DEFAULT — страховка, а не место, где данные должны
+#     жить (docs/runbooks/audit-log.md).
+pnpm db:audit-partitions
+
 # 8. поднять новую версию
 docker compose up -d
 
@@ -448,6 +455,8 @@ Mailpit на `localhost` — тоже.
 - [ ] `pnpm db:seed:permissions` выполнен после миграций: справочник прав соответствует сборке
 - [ ] `pnpm db:grants` выполнен **после** миграций (последовательности и партиции своих прав от
       миграции не получают).
+- [ ] `pnpm db:audit-partitions` выполнен: у `audit_logs` есть партиции на текущий месяц и два
+      следующих (`docs/runbooks/audit-log.md`).
 - [ ] Невалидных индексов не осталось:
       `SELECT c.relname FROM pg_index i JOIN pg_class c ON c.oid = i.indexrelid WHERE NOT i.indisvalid;`
       — пусто. Сорванная конкурентная сборка не мешает миграции «пройти» повторно, поэтому зелёный

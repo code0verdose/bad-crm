@@ -18,7 +18,6 @@ import {
 } from './db-harness.util.js';
 import { ROW_FACTORIES } from './row-factories.util.js';
 
-
 /**
  * Tenant isolation, table by table, against a real PostgreSQL.
  *
@@ -101,17 +100,20 @@ describe.each(entries)('RLS · $table', ({ table, spec }) => {
     expect(rows).toHaveLength(1);
   });
 
-  it('CONTROL: the tenant may write its own row', async () => {
-    const changed = await asTenant(
-      pools.app,
-      ORG_A,
-      async (client) =>
-        (await client.query(`UPDATE ${table} SET updated_at = now() WHERE id = $1`, [idA]))
-          .rowCount,
-    );
+  it.runIf(spec.appUserPrivileges.includes('UPDATE'))(
+    'CONTROL: the tenant may write its own row',
+    async () => {
+      const changed = await asTenant(
+        pools.app,
+        ORG_A,
+        async (client) =>
+          (await client.query(`UPDATE ${table} SET updated_at = now() WHERE id = $1`, [idA]))
+            .rowCount,
+      );
 
-    expect(changed).toBe(1);
-  });
+      expect(changed).toBe(1);
+    },
+  );
 
   it('CONTROL: the owner sees both rows, so the fixtures really exist', async () => {
     const rows = await asMaintenance(
@@ -259,27 +261,49 @@ describe.each(entries)('RLS · $table', ({ table, spec }) => {
     await expect(attempt).rejects.toMatchObject({ code: RLS_VIOLATION });
   });
 
-  it('UPDATE: the other tenant’s row is not reachable', async () => {
-    const changed = await asTenant(
-      pools.app,
-      ORG_A,
-      async (client) =>
-        (await client.query(`UPDATE ${table} SET updated_at = now() WHERE id = $1`, [idB]))
-          .rowCount,
-    );
+  it.runIf(spec.appUserPrivileges.includes('UPDATE'))(
+    'UPDATE: the other tenant’s row is not reachable',
+    async () => {
+      const changed = await asTenant(
+        pools.app,
+        ORG_A,
+        async (client) =>
+          (await client.query(`UPDATE ${table} SET updated_at = now() WHERE id = $1`, [idB]))
+            .rowCount,
+      );
 
-    expect(changed).toBe(0);
+      expect(changed).toBe(0);
 
-    const stillThere = await asMaintenance(
-      pools.owner,
-      async (client) =>
-        (await client.query(`SELECT id FROM ${table} WHERE id = $1`, [idB])).rowCount,
-    );
+      const stillThere = await asMaintenance(
+        pools.owner,
+        async (client) =>
+          (await client.query(`SELECT id FROM ${table} WHERE id = $1`, [idB])).rowCount,
+      );
 
-    expect(stillThere).toBe(1);
-  });
+      expect(stillThere).toBe(1);
+    },
+  );
 
-  it.runIf(spec.tenantColumn === 'organization_id')(
+  /**
+   * The other half of the pair below, for a table the application may only append to.
+   *
+   * Isolation is not what stops this one — the row belongs to the caller's own organization, so the
+   * policy would let it through. The privilege is what refuses, which is exactly the property an
+   * append-only journal rests on: `T-PLAT-05` is about an attacker who already owns the process, and
+   * a rule they could ignore would be no protection at all.
+   */
+  it.runIf(!spec.appUserPrivileges.includes('UPDATE'))(
+    'UPDATE: the application is not allowed to update at all',
+    async () => {
+      const attempt = asTenant(pools.app, ORG_A, (client) =>
+        client.query(`UPDATE ${table} SET action = 'tampered' WHERE id = $1`, [idA]),
+      );
+
+      await expect(attempt).rejects.toMatchObject({ code: RLS_VIOLATION });
+    },
+  );
+
+  it.runIf(spec.tenantColumn === 'organization_id' && spec.appUserPrivileges.includes('UPDATE'))(
     'UPDATE: a row cannot be moved into another tenant',
     async () => {
       const attempt = asTenant(pools.app, ORG_A, (client) =>

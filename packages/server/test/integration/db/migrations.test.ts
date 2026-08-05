@@ -135,7 +135,7 @@ describe('prisma migrate deploy', () => {
       `SELECT table_name, column_name, data_type
          FROM information_schema.columns
         WHERE table_schema = 'public'
-          AND column_name IN ('id', 'created_at', 'updated_at', 'deleted_at')`,
+          AND column_name IN ('id', 'created_at', 'updated_at', 'deleted_at', 'occurred_at')`,
     );
 
     for (const [table, spec] of Object.entries(TENANT_TABLES)) {
@@ -144,9 +144,20 @@ describe('prisma migrate deploy', () => {
         columns.find((candidate) => candidate.column_name === column)?.data_type;
 
       expect(typeOf('id'), table).toBe('uuid');
+
+      // A journal has `occurred_at` and no pair of row stamps — asserted in both directions, so the
+      // flag cannot become a way to excuse a table that simply forgot them.
       for (const column of ['created_at', 'updated_at']) {
-        expect(typeOf(column), `${table}.${column}`).toBe('timestamp with time zone');
+        expect(typeOf(column), `${table}.${column}`).toBe(
+          spec.rowTimestamps ? 'timestamp with time zone' : undefined,
+        );
       }
+
+      // A journal has `occurred_at` instead; asserted as `undefined` for a stamped table, so the
+      // flag cannot be a way to say «this one has neither».
+      expect(typeOf('occurred_at'), `${table}.occurred_at`).toBe(
+        spec.rowTimestamps ? undefined : 'timestamp with time zone',
+      );
 
       expect(typeOf('deleted_at'), `${table}.deleted_at`).toBe(
         spec.softDeleted ? 'timestamp with time zone' : undefined,
@@ -219,7 +230,15 @@ describe('prisma migrate deploy', () => {
  * passing run means the database overrode the client rather than that two `now()` calls differed.
  */
 describe('updated_at is kept by the database', () => {
-  it.each(Object.keys(TENANT_TABLES))('survives a raw write to %s', async (table) => {
+  const stamped = Object.entries(TENANT_TABLES)
+    .filter(([, spec]) => spec.rowTimestamps)
+    .map(([table]) => table);
+
+  it('CONTROL: there are stamped tables to check', () => {
+    expect(stamped.length).toBeGreaterThan(1);
+  });
+
+  it.each(stamped)('survives a raw write to %s', async (table) => {
     await truncateAll(pools.owner);
 
     const organizationId = randomUUID();

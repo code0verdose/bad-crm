@@ -35,6 +35,7 @@
     "db:migrate": "turbo run db:migrate",
     "db:seed": "turbo run db:seed",
     "db:seed:permissions": "turbo run db:seed:permissions",
+    "db:audit-partitions": "turbo run db:audit-partitions",
     "db:reset": "turbo run db:reset",
     "api:gen": "turbo run api:gen",
     "docker:up": "bash scripts/docker/up.sh",
@@ -45,7 +46,9 @@
     "prepare": "husky"
   },
   "pnpm": {
-    "onlyBuiltDependencies": ["esbuild"],
+    "onlyBuiltDependencies": [
+      "esbuild"
+    ],
     "overrides": {
       "brace-expansion@<1.1.18": ">=1.1.18 <2",
       "brace-expansion@>=2.0.0 <2.1.4": ">=2.1.4 <3",

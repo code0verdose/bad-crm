@@ -85,6 +85,7 @@ model Organization {
   teams               Team[]
   roles               Role[]
   rolePermissions     RolePermission[]
+  auditLogs           AuditLog[]
   users               User[]
   sessions            Session[]
   passwordResetTokens PasswordResetToken[]
@@ -420,4 +421,70 @@ model RolePermission {
   @@unique([roleId, permissionKey], map: "uq_role_permissions")
   @@index([organizationId, roleId], map: "idx_role_permissions_org_role")
   @@map("role_permissions")
+}
+
+/// How an action reached the system, for the entry in the trail.
+enum AuditActorType {
+  USER
+  SYSTEM
+  API_KEY
+  INTEGRATION
+}
+
+/// How loudly an entry should read. `CRITICAL` is what a review starts from — ownership transfer,
+/// impersonation, escrow, export of the trail itself (`docs/security/permission-model.md` §10).
+enum AuditSeverity {
+  INFO
+  WARNING
+  CRITICAL
+}
+
+/// Tenant-scoped table [T]: the audit trail. **Append-only, and partitioned by month.**
+///
+/// Two things about this model are not visible in it, and both are deliberate:
+///
+///   * **The application holds no `UPDATE` or `DELETE` privilege on the table.** Prisma will happily
+///     generate `auditLog.update`; the database answers `permission denied`. That is the point — a
+///     journal the code can rewrite records what the code chose to admit
+///     (`prisma/sql/01-grants.sql`, and `docs/architecture/data-model.md`, «Про `AuditLog` как
+///     append-only»).
+///   * **`PARTITION BY RANGE (occurred_at)` cannot be declared here.** Prisma has no syntax for it,
+///     so the table is created by hand in `20260805110000_audit_logs`, and this model describes the
+///     result. The composite id below is the visible half of that: a partitioned table's primary key
+///     has to contain the partition key.
+model AuditLog {
+  id             String @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String @map("organization_id") @db.Uuid
+
+  /// No relation to `User` on purpose: `SYSTEM` events have no actor, and an entry has to outlive
+  /// the account it names — a trail that loses its actor answers «somebody» to the one question it
+  /// exists for.
+  actorId   String?        @map("actor_id") @db.Uuid
+  actorType AuditActorType @map("actor_type")
+
+  /// `role.assigned`, `audit.exported` — the vocabulary of §10 of the permission model. Text rather
+  /// than an enum: every domain adds actions, and an enum value cannot be removed.
+  action       String
+  resourceType String  @map("resource_type")
+  resourceId   String? @map("resource_id") @db.Uuid
+
+  /// Whitelisted fields, never a whole row: what goes here is shown to whoever may read the trail.
+  before Json?
+  after  Json?
+
+  /// The address itself is never stored — the hash answers «the same one again» without keeping it.
+  ipHash    String? @map("ip_hash")
+  userAgent String? @map("user_agent")
+  requestId String  @map("request_id")
+
+  severity   AuditSeverity @default(INFO)
+  occurredAt DateTime      @default(now()) @map("occurred_at") @db.Timestamptz(6)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "fk_audit_logs_organization_id")
+
+  @@id([id, occurredAt], map: "pk_audit_logs")
+  @@index([organizationId, occurredAt(sort: Desc)], map: "idx_audit_logs_org_occurred")
+  @@index([organizationId, resourceType, resourceId, occurredAt(sort: Desc)], map: "idx_audit_logs_resource")
+  @@index([organizationId, actorId, occurredAt(sort: Desc)], map: "idx_audit_logs_actor")
+  @@map("audit_logs")
 }

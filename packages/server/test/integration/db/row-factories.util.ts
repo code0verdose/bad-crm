@@ -63,6 +63,27 @@ const createUser: RowFactory = (client, organizationId) =>
 
 export const ROW_FACTORIES = {
   /**
+   * One audit entry, written the way the application writes them — through the **parent** table.
+   *
+   * That is not a shortcut: `app_user` holds no privilege on any partition leaf, and a query against
+   * the parent applies the parent's policy to every partition it touches while checking privileges
+   * on the parent alone. A fixture that addressed a leaf directly would be testing something the
+   * product never does, and would fail on a privilege rather than on isolation.
+   *
+   * `occurred_at` is left to its default so the row lands in the partition for the current month —
+   * the one the migration created and the one the job keeps ahead.
+   */
+  audit_logs: (client, organizationId) =>
+    insert(
+      client,
+      `INSERT INTO audit_logs
+         (organization_id, actor_type, action, resource_type, request_id, severity)
+       VALUES ($1, 'SYSTEM', 'fixture.created', 'FIXTURE', $2, 'INFO')
+       RETURNING id`,
+      [organizationId, `fixture-${randomUUID()}`],
+    ),
+
+  /**
    * The tenant root: its id *is* the tenant, so the row is created with the organization id the
    * caller is acting as. Anything else could not pass `WITH CHECK` — which is exactly why the
    * application generates the id of a new organization and creates it inside `withTenant`

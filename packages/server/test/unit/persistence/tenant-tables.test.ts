@@ -45,6 +45,27 @@ describe('the tenant table registry', () => {
     expect(flags).toContain(false);
   });
 
+  /**
+   * The same, for the pair of row stamps. A journal has `occurred_at` and no `updated_at` — it is
+   * never updated, so a column saying when it last was would have one possible value. The flag is
+   * what the migration suite reads to decide whether to require the pair, so it has to describe the
+   * schema rather than somebody's memory of it.
+   */
+  it('agrees with the schema about which tables carry created_at/updated_at', () => {
+    for (const { table, rowTimestamps } of tenantTablesFromSchema()) {
+      expect(TENANT_TABLES[table as keyof typeof TENANT_TABLES]?.rowTimestamps, table).toBe(
+        rowTimestamps,
+      );
+    }
+  });
+
+  it('marks at least one table each way there too', () => {
+    const flags = Object.values(TENANT_TABLES).map((spec) => spec.rowTimestamps);
+
+    expect(flags).toContain(true);
+    expect(flags).toContain(false);
+  });
+
   it('reads the tenant root off its own primary key', () => {
     expect(TENANT_TABLES.organizations.tenantColumn).toBe('id');
   });

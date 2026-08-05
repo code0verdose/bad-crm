@@ -73,6 +73,25 @@ export const ROW_SECURITY_SQL = `
    ORDER BY c.relname`;
 
 /**
+ * The partitions of one partitioned table, with what row level security says about each.
+ *
+ * Separate from `ROW_SECURITY_SQL`, which excludes partitions on purpose — a leaf is not a table the
+ * registry knows, and listing them beside the tables would make every audit report as many missing
+ * registry entries as there are months. They still have to be checked, because policies and
+ * privileges are not inherited: `$1` is the parent, and the caller asks about one family at a time.
+ */
+export const PARTITION_ROW_SECURITY_SQL = `
+  SELECT c.relname             AS table_name,
+         c.relrowsecurity      AS rls_enabled,
+         c.relforcerowsecurity AS rls_forced
+    FROM pg_inherits i
+    JOIN pg_class c ON c.oid = i.inhrelid
+    JOIN pg_class p ON p.oid = i.inhparent
+    JOIN pg_namespace n ON n.oid = p.relnamespace
+   WHERE n.nspname = 'public' AND p.relname = $1
+   ORDER BY c.relname`;
+
+/**
  * Tables that carry a tenant column, straight from the catalog rather than from the schema.
  *
  * This is the half of the cross-check the code cannot answer: a table created by hand on the

@@ -34,9 +34,34 @@ export interface TenantTableSpec {
    * cannot drift into decoration.
    */
   readonly softDeleted: boolean;
+  /**
+   * The table carries `created_at` **and** `updated_at`, kept by the `set_updated_at` trigger.
+   *
+   * True of every table but a journal. An append-only log records *when the event happened*
+   * (`occurred_at`) and is never modified, so a second stamp saying when the row last changed would
+   * be a column with one possible value — `docs/architecture/data-model.md` («Timestamps и аудит
+   * строки») excludes logs by name.
+   *
+   * Declared rather than derived because the migration suite asserts the pair on every registry
+   * table, and «every table has them» became false the moment the first journal existed. Held
+   * against the Prisma schema by `tenant-tables.test.ts`, and the suite additionally proves the
+   * column is genuinely absent where the flag is false — so the flag cannot be used to excuse a
+   * table that simply forgot them.
+   */
+  readonly rowTimestamps: boolean;
 }
 
 export const TENANT_TABLES = {
+  audit_logs: {
+    model: 'AuditLog',
+    tenantColumn: 'organization_id',
+    // Insert and read, and that is the entire security property of the table: a journal the
+    // application can rewrite records what the application chose to admit (`T-PLAT-05`). Removing
+    // old entries is `DETACH PARTITION` by `app_migrator`, not a statement a request can issue.
+    appUserPrivileges: ['SELECT', 'INSERT'],
+    softDeleted: false,
+    rowTimestamps: false,
+  },
   organizations: {
     model: 'Organization',
     tenantColumn: 'id',
@@ -44,6 +69,7 @@ export const TENANT_TABLES = {
     // maintenance mode, not something a request can trigger (docs/security/rls-design.md).
     appUserPrivileges: ['SELECT', 'INSERT', 'UPDATE'],
     softDeleted: true,
+    rowTimestamps: true,
   },
   password_reset_tokens: {
     model: 'PasswordResetToken',
@@ -52,6 +78,7 @@ export const TENANT_TABLES = {
     // application, per organization, inside `withTenant` (rules/tenancy-rls.mdc, 12).
     appUserPrivileges: ['SELECT', 'INSERT', 'UPDATE', 'DELETE'],
     softDeleted: false,
+    rowTimestamps: true,
   },
   role_permissions: {
     model: 'RolePermission',
@@ -60,30 +87,35 @@ export const TENANT_TABLES = {
     // join would be a policy a join can defeat.
     appUserPrivileges: ['SELECT', 'INSERT', 'UPDATE', 'DELETE'],
     softDeleted: false,
+    rowTimestamps: true,
   },
   roles: {
     model: 'Role',
     tenantColumn: 'organization_id',
     appUserPrivileges: ['SELECT', 'INSERT', 'UPDATE', 'DELETE'],
     softDeleted: false,
+    rowTimestamps: true,
   },
   sessions: {
     model: 'Session',
     tenantColumn: 'organization_id',
     appUserPrivileges: ['SELECT', 'INSERT', 'UPDATE', 'DELETE'],
     softDeleted: false,
+    rowTimestamps: true,
   },
   teams: {
     model: 'Team',
     tenantColumn: 'organization_id',
     appUserPrivileges: ['SELECT', 'INSERT', 'UPDATE', 'DELETE'],
     softDeleted: true,
+    rowTimestamps: true,
   },
   users: {
     model: 'User',
     tenantColumn: 'organization_id',
     appUserPrivileges: ['SELECT', 'INSERT', 'UPDATE', 'DELETE'],
     softDeleted: true,
+    rowTimestamps: true,
   },
 } as const satisfies Record<string, TenantTableSpec>;
 
@@ -101,6 +133,7 @@ export const tenantTablesFromSchema = (): {
   model: string;
   table: string;
   softDeleted: boolean;
+  rowTimestamps: boolean;
 }[] =>
   Prisma.dmmf.datamodel.models
     .filter(
@@ -112,4 +145,5 @@ export const tenantTablesFromSchema = (): {
       model: model.name,
       table: model.dbName ?? model.name,
       softDeleted: model.fields.some((field) => field.name === 'deletedAt'),
+      rowTimestamps: model.fields.some((field) => field.name === 'updatedAt'),
     }));

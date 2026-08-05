@@ -96,6 +96,10 @@
       "dependsOn": ["^build"],
       "cache": false
     },
+    "db:audit-partitions": {
+      "dependsOn": ["^build"],
+      "cache": false
+    },
     "api:gen": {
       // `$TURBO_DEFAULT$` first, and it is the entry that was missing.
       //

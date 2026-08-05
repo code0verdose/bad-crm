@@ -43,12 +43,14 @@ const REGISTRY: Record<string, TenantTableSpec> = {
     tenantColumn: 'id',
     appUserPrivileges: ['SELECT', 'INSERT', 'UPDATE'],
     softDeleted: true,
+    rowTimestamps: true,
   },
   teams: {
     model: 'Team',
     tenantColumn: 'organization_id',
     appUserPrivileges: ['SELECT', 'INSERT', 'UPDATE', 'DELETE'],
     softDeleted: true,
+    rowTimestamps: true,
   },
 };
 
