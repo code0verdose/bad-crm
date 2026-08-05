@@ -389,17 +389,20 @@ jobs:
       - name: Configure the installation from the template
         run: |
           cp .env.example .env
+          # The two with a required shape, by name: the schema wants exactly 32 base64 bytes for
+          # one and a long string for the other (`docs/runbooks/install.md` §2.2).
           sed -i "s|^APP_ENCRYPTION_KEY=.*|APP_ENCRYPTION_KEY=$(openssl rand -base64 32)|" .env
           sed -i "s|^JWT_SECRET=.*|JWT_SECRET=$(openssl rand -base64 48)|" .env
-          for name in POSTGRES_PASSWORD APP_MIGRATOR_PASSWORD APP_USER_PASSWORD \
-                      APP_AUTH_PASSWORD BACKUP_ROLE_PASSWORD MINIO_ROOT_USER \
-                      MINIO_ROOT_PASSWORD MEILI_MASTER_KEY; do
-            sed -i "s|^$name=.*|$name=$(openssl rand -hex 24)|" .env
+          # Everything else by **value**, not by line: the placeholders are coupled — the app_user
+          # password appears in DATABASE_URL, the MinIO credentials in S3_ACCESS_KEY/S3_SECRET_KEY —
+          # so substituting per line would leave a URL pointing at a password nobody set. Replacing
+          # each placeholder string everywhere keeps the pairs consistent by construction.
+          for placeholder in $(grep -E '^[A-Z_]+=' .env | grep -oE 'CHANGE_ME[A-Za-z0-9_]*' | sort -u); do
+            sed -i "s|$placeholder|$(openssl rand -hex 24)|g" .env
           done
-          ! grep -q CHANGE_ME .env
+          # Assignments only: the file explains the placeholders in its comments, and those stay.
+          ! grep -qE '^[A-Z_]+=.*CHANGE_ME' .env
 
-      # Before the database steps: the seed runs application code, so its dependencies have to
-      # exist as built output first.
       - name: Build the client and the server
         run: pnpm turbo run build
 
