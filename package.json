@@ -28,6 +28,7 @@
     "test": "turbo run test",
     "test:repo": "tsc -p tsconfig.scripts.json && vitest run",
     "test:integration": "turbo run test:integration",
+    "test:integration:local": "scripts/docker/testcontainers-env.sh turbo run test:integration",
     "test:e2e": "turbo run test:e2e",
     "i18n:check": "pnpm --filter @bad-crm/client exec vitest run test/i18n --coverage.enabled=false && tsx scripts/ci/i18n-summary.ts",
     "db:bootstrap": "docker compose run --rm --no-deps -e PGHOST=postgres --entrypoint sh postgres /opt/bad-crm/sql/initdb/00-bootstrap-roles.sh",

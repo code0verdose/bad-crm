@@ -190,10 +190,19 @@ EPIC-010).
 
 ```bash
 pnpm turbo run typecheck lint build test
+pnpm coverage:baseline
 ```
 
 Все задачи на всех пакетах должны быть зелёные. Красный или непрогнанный пайплайн — push запрещён.
 `build` ≠ `typecheck`: они расходятся (проектные ссылки и emit), прогоняй оба явно.
+`coverage:baseline` — вторая обязательная команда: она сравнивает покрытие с
+`coverage-baseline.json` и падает на просадке больше 0.5 п.п. Зелёный `test` этого не ловит —
+пороги в конфигах задают нижнюю границу по слою, а базовая линия означает «не хуже, чем было»
+(типовая причина просадки — код, покрытый только интеграционным набором, которого в замере нет).
+
+Интеграционный набор локально — `pnpm test:integration:local`: он спрашивает у Docker его endpoint
+и выставляет `DOCKER_HOST`/`TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE`. Без этого на Colima и любом
+rootless-демоне Testcontainers отвечает «Could not find a working container runtime strategy».
 Норматив — [`rules/ci-before-push.mdc`](rules/ci-before-push.mdc).
 
 Команда существует начиная с EPIC-001.

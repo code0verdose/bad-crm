@@ -370,7 +370,18 @@ error while creating mount source path
 
 Читается это как «сломан Testcontainers», хотя сломано только то, что демон лежит в другом месте.
 
-Две переменные закрывают вопрос — подставь путь своего рантайма (`docker context inspect` покажет):
+**Короткий ответ — одна команда:**
+
+```bash
+pnpm test:integration:local
+```
+
+Она спрашивает endpoint у самого Docker (`docker context inspect`) и выставляет обе переменные
+(`scripts/docker/testcontainers-env.sh`). На Docker Desktop это разрешается в стандартный сокет и
+ничего не меняет, на colima/rancher/podman — подставляет их путь. Ошибка «нет контекста» отвечает
+подсказкой «запусти демон», а не молчанием.
+
+Что она делает под капотом — те же две переменные, если понадобится выставить их вручную:
 
 ```bash
 export DOCKER_HOST="unix://$HOME/.colima/default/docker.sock"

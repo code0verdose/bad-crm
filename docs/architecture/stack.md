@@ -996,6 +996,7 @@ describe.each(TENANT_SCOPED_TABLES)('RLS isolation: %s', (table) => {
 | `pnpm test` | Vitest: unit + application во всех пакетах |
 | `pnpm test:repo` | Контрактные тесты репозитория: раскладка воркспейса, tsconfig, compose, `.env.example` |
 | `pnpm test:integration` | Vitest integration-проект: поднимает Testcontainers, гоняет RLS и репозитории |
+| `pnpm test:integration:local` | То же самое, но с `DOCKER_HOST` и `TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE` из текущего docker-контекста — нужен на Colima и любом rootless-демоне |
 | `pnpm test:e2e` | Playwright из `packages/e2e` поверх поднятого стека |
 | `pnpm db:migrate` | `prisma migrate dev` (dev) / `prisma migrate deploy` (prod-образ) — *планируется, EPIC-003* |
 | `pnpm db:seed` | Наполняет БД демо-данными, идемпотентно — *планируется, EPIC-003* |
