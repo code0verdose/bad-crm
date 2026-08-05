@@ -56,6 +56,9 @@ const CODE_FOR: Readonly<
   period_locked: () => 'period_locked',
   last_owner_required: () => 'last_owner_required',
   self_lockout: () => 'self_lockout',
+  // A denial rather than a conflict: the state is fine, the caller is simply not allowed to be both
+  // sides of this grant.
+  self_assignment_forbidden: (resource) => `${resource}_forbidden`,
   system_role_immutable: () => 'system_role_immutable',
 };
 

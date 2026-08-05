@@ -765,7 +765,7 @@ export interface components {
          *     consulted (an unparsed body, a rate limit).
          * @enum {string}
          */
-        DenyReason: "not_authenticated" | "unknown_permission" | "permission_not_granted" | "denied_by_override" | "resource_required" | "resource_not_found" | "acl_explicit_none" | "insufficient_acl_level" | "acl_resolution_failed" | "tenant_mismatch" | "vault_locked" | "period_locked" | "last_owner_required" | "self_lockout" | "system_role_immutable";
+        DenyReason: "not_authenticated" | "unknown_permission" | "permission_not_granted" | "denied_by_override" | "resource_required" | "resource_not_found" | "acl_explicit_none" | "insufficient_acl_level" | "acl_resolution_failed" | "tenant_mismatch" | "vault_locked" | "period_locked" | "last_owner_required" | "self_lockout" | "self_assignment_forbidden" | "system_role_immutable";
         ValidationIssue: {
             /**
              * @description The rejected field in dot notation over the request value — `title`,

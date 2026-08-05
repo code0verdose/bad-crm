@@ -42,6 +42,12 @@ export const DENY_REASONS = [
   'last_owner_required',
   /** The change would remove the actor's own access — refused, so nobody locks themselves out. */
   'self_lockout',
+  /**
+   * Granting oneself a role. Refused separately from `self_lockout`, because the two are different
+   * sentences with different remedies: one says «this would take away your own access», the other
+   * «somebody else has to do this» — the second pair of eyes `T-IAM-09` exists to keep.
+   */
+  'self_assignment_forbidden',
   /** System roles are code, not data: their permission set is not editable from the interface. */
   'system_role_immutable',
 ] as const;

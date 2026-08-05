@@ -110,6 +110,15 @@ export const TENANT_TABLES = {
     softDeleted: true,
     rowTimestamps: true,
   },
+  user_roles: {
+    model: 'UserRole',
+    tenantColumn: 'organization_id',
+    // DELETE, because revoking a role removes the row: an assignment that ended is not an
+    // assignment with a flag — a filter everybody has to remember is a filter somebody forgets.
+    appUserPrivileges: ['SELECT', 'INSERT', 'UPDATE', 'DELETE'],
+    softDeleted: false,
+    rowTimestamps: true,
+  },
   users: {
     model: 'User',
     tenantColumn: 'organization_id',

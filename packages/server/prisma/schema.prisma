@@ -85,6 +85,7 @@ model Organization {
   teams               Team[]
   roles               Role[]
   rolePermissions     RolePermission[]
+  userRoles           UserRole[]
   auditLogs           AuditLog[]
   users               User[]
   sessions            Session[]
@@ -180,6 +181,8 @@ model User {
   ownedOrganizations  Organization[]       @relation("OrganizationOwner")
   sessions            Session[]
   passwordResetTokens PasswordResetToken[]
+  roles               UserRole[]           @relation("UserRoleHolder")
+  rolesGranted        UserRole[]           @relation("UserRoleGrantor")
 
   /// The target every composite foreign key into this table points at. A child referencing
   /// `users (id)` alone would be allowed to name a user of another organization: foreign key checks
@@ -392,6 +395,7 @@ model Role {
 
   organization Organization     @relation(fields: [organizationId], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "fk_roles_organization_id")
   permissions  RolePermission[]
+  holders      UserRole[]
 
   /// The target every composite foreign key into this table points at: a child referencing `id`
   /// alone could name a role of another organization, because foreign key checks bypass RLS.
@@ -487,4 +491,41 @@ model AuditLog {
   @@index([organizationId, resourceType, resourceId, occurredAt(sort: Desc)], map: "idx_audit_logs_resource")
   @@index([organizationId, actorId, occurredAt(sort: Desc)], map: "idx_audit_logs_actor")
   @@map("audit_logs")
+}
+
+/// Tenant-scoped table [T]: one person holding one role, possibly until a date.
+///
+/// A join table with a surrogate key, like `RolePermission` and for the same reason: the isolation
+/// proofs are generated from the registry and address a row by `id`, so a join table without one is
+/// a tenant table nothing proves anything about.
+///
+/// **`expiresAt` is enforced where permissions are assembled**, not only by the cleanup job: the
+/// query that builds an actor filters `expiresAt IS NULL OR expiresAt > now()`, so a job that has
+/// not run yet cannot mean an expired role that still works.
+model UserRole {
+  id             String @id(map: "pk_user_roles") @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String @map("organization_id") @db.Uuid
+  userId         String @map("user_id") @db.Uuid
+  roleId         String @map("role_id") @db.Uuid
+
+  /// Who granted it. `null` where there was no actor — the owner's role comes from registration
+  /// itself — and on the day the grantor's account is deleted, because the record of the assignment
+  /// must outlive the person who made it.
+  grantedById String?   @map("granted_by_id") @db.Uuid
+  grantedAt   DateTime  @default(now()) @map("granted_at") @db.Timestamptz(6)
+  expiresAt   DateTime? @map("expires_at") @db.Timestamptz(6)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  user         User         @relation("UserRoleHolder", fields: [organizationId, userId], references: [organizationId, id], onDelete: Cascade, onUpdate: NoAction, map: "fk_user_roles_user_id")
+  role         Role         @relation(fields: [organizationId, roleId], references: [organizationId, id], onDelete: Cascade, onUpdate: NoAction, map: "fk_user_roles_role_id")
+  grantedBy    User?        @relation("UserRoleGrantor", fields: [organizationId, grantedById], references: [organizationId, id], onDelete: SetNull, onUpdate: NoAction, map: "fk_user_roles_granted_by_id")
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "fk_user_roles_organization_id")
+
+  /// Assigning a role twice is the same assignment: the uniqueness is what makes the operation
+  /// idempotent without the use-case reading first.
+  @@unique([userId, roleId], map: "uq_user_roles")
+  @@index([organizationId, userId], map: "idx_user_roles_org_user")
+  @@map("user_roles")
 }

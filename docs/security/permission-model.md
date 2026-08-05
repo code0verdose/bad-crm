@@ -1245,13 +1245,19 @@ export const DENY_REASONS = [
   'denied_by_override', 'resource_required', 'resource_not_found',
   'acl_explicit_none', 'insufficient_acl_level', 'acl_resolution_failed',
   'tenant_mismatch', 'vault_locked', 'period_locked', 'last_owner_required',
-  'self_lockout', 'system_role_immutable',
+  'self_lockout', 'self_assignment_forbidden', 'system_role_immutable',
 ] as const;
 export type DenyReason = (typeof DENY_REASONS)[number];
 ```
 
 `DenyReason` — не украшение: он попадает в `AuditLog`, в `problem+json` и в UI («не хватает права X»
 против «нет доступа к этому объекту»). Отказ без причины отлаживается только чтением кода.
+
+`self_assignment_forbidden` добавлена 2026-08-05 при реализации STORY-011-04: правило «нельзя
+назначить роль себе» (митигация `T-IAM-09`) — отдельный отказ, а не разновидность `self_lockout`.
+Причины разные и по смыслу, и по тому, что делать дальше: `self_lockout` — «операция отобрала бы
+доступ у вас самих», `self_assignment_forbidden` — «повышать себя нельзя, пусть это сделает
+кто-то другой». Слить их означало бы показать администратору предложение, которое ему не поможет.
 
 **Как именно причина попадает в `problem+json`.** Отдельным полем `reason` — расширением документа
 RFC 9457 (спецификация их прямо разрешает), а не через `type`-URI. Раньше здесь было написано

@@ -1328,6 +1328,7 @@ components:
         - period_locked
         - last_owner_required
         - self_lockout
+        - self_assignment_forbidden
         - system_role_immutable
 
     ValidationIssue:

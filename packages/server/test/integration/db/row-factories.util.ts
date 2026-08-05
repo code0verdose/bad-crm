@@ -154,6 +154,24 @@ export const ROW_FACTORIES = {
   },
 
   /**
+   * An assignment needs a user **and** a role of the same organization; both composite foreign keys
+   * refuse anything from elsewhere, which is the point of them and the reason a shared fixture would
+   * weaken the test.
+   */
+  user_roles: async (client, organizationId) => {
+    const user = await createUser(client, organizationId);
+    const role = await createRole(client, organizationId);
+
+    return insert(
+      client,
+      `INSERT INTO user_roles (organization_id, user_id, role_id, updated_at)
+         VALUES ($1, $2, $3, now())
+         RETURNING id`,
+      [organizationId, user.id, role.id],
+    );
+  },
+
+  /**
    * A session needs a user of the same organization, so the factory makes one: the composite
    * foreign key `(organization_id, user_id)` refuses a user from anywhere else, which is the point
    * of the key and the reason a shared fixture user would weaken the test.

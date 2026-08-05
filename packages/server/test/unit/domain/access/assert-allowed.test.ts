@@ -29,6 +29,7 @@ const EXPECTED: Readonly<Record<SharedPermissions.DenyReason, { code: string; st
   period_locked: { code: 'period_locked', status: 409 },
   last_owner_required: { code: 'last_owner_required', status: 409 },
   self_lockout: { code: 'self_lockout', status: 409 },
+  self_assignment_forbidden: { code: 'role_forbidden', status: 403 },
   system_role_immutable: { code: 'system_role_immutable', status: 409 },
 };
 
