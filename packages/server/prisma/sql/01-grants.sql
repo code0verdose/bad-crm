@@ -86,10 +86,18 @@ DECLARE
     'audit_logs', 'activity_events', 'vault_access_logs', 'secure_link_views'
   ];
 
-  -- Tables without organization_id that the application still has to read (reference data shared by
-  -- every organization). Deliberately empty: today no such table exists, and a migration that adds
-  -- one adds it here, in the open, rather than hiding a cross-tenant read behind a bare GRANT.
-  global_read  CONSTANT text[] := ARRAY[]::text[];
+  -- Tables without row-level security that the application **reads and must never write**. A
+  -- migration that adds one adds it here, in the open, rather than hiding a read behind a bare
+  -- GRANT — and read-only is the whole point, so they get their own branch below rather than the
+  -- tenant one.
+  --
+  --   * `permissions` — the catalogue of permission keys. Defined by the code, seeded from it,
+  --     identical for every organization (`docs/architecture/data-model.md`, group 2). An
+  --     application that could write it could grant itself a permission.
+  --   * `_prisma_migrations` — Prisma's bookkeeping, read by the readiness probe to answer whether
+  --     the shape this build expects is applied. An application that could write it could mark a
+  --     failed migration as finished and hide the state from the probe that exists to notice it.
+  global_read  CONSTANT text[] := ARRAY['permissions', '_prisma_migrations'];
 
   -- Tenant tables the application may never DELETE from. Removing an organization is an offboarding
   -- procedure with its own path — export, key revocation, retention — not a statement the request
@@ -213,23 +221,22 @@ BEGIN
       EXECUTE format('GRANT SELECT, INSERT, UPDATE ON TABLE public.%I TO app_user', rel.relname);
       EXECUTE format('REVOKE DELETE, TRUNCATE ON TABLE public.%I FROM app_user', rel.relname);
 
-    ELSIF rel.relname = '_prisma_migrations' THEN
-      -- 4b. Prisma's own bookkeeping, and the one non-tenant table the application reads.
+    ELSIF rel.relname = ANY (global_read) THEN
+      -- 4b. Read-only for the application: reference data and bookkeeping without row-level
+      --     security (the list above says which and why).
       --
-      --     The readiness probe runs as app_user and asks whether the shape this build expects is
-      --     applied (`migration-readiness.adapter.ts`). Without this GRANT the query fails with
-      --     `permission denied`, so a correctly installed, fully migrated installation answered
-      --     `/ready` with `migrations: down` for ever and never entered the load balancer's
+      --     The reason this branch exists rather than an entry in the tenant branch: that one grants
+      --     INSERT, UPDATE and DELETE, and every table here is one the application must not change.
+      --     `_prisma_migrations` earned it the hard way — the readiness probe runs as app_user, the
+      --     table was granted to nobody, and a correctly installed, fully migrated installation
+      --     answered `/ready` with `migrations: down` for ever, never entering the load balancer's
       --     rotation. The unit tests could not see it: they pass a fake client that answers with
-      --     rows, and the failure is in the privilege of the connection, not in the comparison.
-      --
-      --     SELECT and nothing else. An application that could write this table could mark a failed
-      --     migration as finished — hiding the state from the probe whose whole job is to notice it.
+      --     rows, and the failure was in the privilege of the connection, not in the comparison.
       EXECUTE format('GRANT SELECT ON TABLE public.%I TO app_user', rel.relname);
       EXECUTE format('REVOKE INSERT, UPDATE, DELETE, TRUNCATE ON TABLE public.%I FROM app_user',
                      rel.relname);
 
-    ELSIF rel.is_tenant_table OR rel.relname = ANY (global_read) THEN
+    ELSIF rel.is_tenant_table THEN
       -- 5. Ordinary tenant table. TRUNCATE is never granted: it ignores row-level security, so one
       --    TRUNCATE would empty the table for every organization at once.
       EXECUTE format('GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.%I TO app_user',

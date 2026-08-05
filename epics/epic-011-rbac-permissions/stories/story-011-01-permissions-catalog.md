@@ -1,7 +1,7 @@
 ---
 id: STORY-011-01
 epic: EPIC-011
-status: backlog
+status: review
 blocked: false
 priority: must
 estimate: M
@@ -73,23 +73,23 @@ estimate: M
 
 ## Задачи
 
-- [ ] `packages/shared/src/permissions/access-level.ts` — `ACCESS_LEVELS`, `ACCESS_LEVEL_RANK`, `atLeast()`.
-- [ ] `packages/shared/src/permissions/permissions.catalog.ts` — 307 ключей, `PERMISSION_META`,
+- [x] `packages/shared/src/permissions/access-level.ts` — `ACCESS_LEVELS`, `ACCESS_LEVEL_RANK`, `atLeast()`.
+- [x] `packages/shared/src/permissions/permissions.catalog.ts` — 307 ключей, `PERMISSION_META`,
       `PERMISSION_DOMAINS`, `PERMISSION_SET`, `isPermissionKey`, `requiredLevel` (перенос §3 документа).
-- [ ] `packages/shared/src/permissions/deny-reason.ts` — `DENY_REASONS`, `DenyReason`.
-- [ ] `packages/shared/src/permissions/index.ts` — barrel; экспорт наружу через `@bad-crm/shared`.
-- [ ] `packages/shared/src/permissions/permissions.catalog.spec.ts` — формат ключей, уникальность,
+- [x] `packages/shared/src/permissions/deny-reason.ts` — `DENY_REASONS`, `DenyReason`.
+- [x] `packages/shared/src/permissions/index.ts` — barrel; экспорт наружу через `@bad-crm/shared`.
+- [x] `packages/shared/src/permissions/permissions.catalog.spec.ts` — формат ключей, уникальность,
       согласованность `resource`/`action`/`domain`, снапшот `catalogSize`, whitelist `dangerous`.
-- [ ] `packages/server/prisma/migrations/*_permission_catalog/migration.sql` — колонка
+- [x] `packages/server/prisma/migrations/*_permission_catalog/migration.sql` — колонка
       `deprecated_at timestamptz NULL` у `permissions` (расхождение №4 §12 документа), индекс
       `idx_permissions_resource (resource, action)`.
-- [ ] `packages/server/prisma/seed/permissions.seed.ts` — `upsert` по `key` + `updateMany` для
+- [x] `packages/server/prisma/seed/permissions.seed.ts` — `upsert` по `key` + `updateMany` для
       `deprecatedAt`, вызывается из `prisma/seed/index.ts` и из entrypoint контейнера.
-- [ ] `packages/server/test/integration/permissions/permissions-seed.spec.ts` — идемпотентность,
+- [x] `packages/server/test/integration/permissions/permissions-seed.spec.ts` — идемпотентность,
       deprecated-путь, отсутствие каскадного удаления.
-- [ ] `packages/server/src/application/platform/jobs/count-deprecated-permission-usage.job.ts` + тест.
-- [ ] `packages/server/test/architecture/single-permission-catalog.spec.ts` — запрет второго каталога.
-- [ ] i18n-ключи описаний прав (`descriptionKey`) в `packages/client/src/app/i18n/en/permissions.json`
+- [x] `packages/server/src/application/platform/jobs/count-deprecated-permission-usage.job.ts` + тест.
+- [x] `packages/server/test/architecture/single-permission-catalog.spec.ts` — запрет второго каталога.
+- [x] i18n-ключи описаний прав (`descriptionKey`) в `packages/client/src/app/i18n/en/permissions.json`
       и `.../ru/permissions.json`, линт непарных ключей.
 
 ## Ссылки
@@ -103,9 +103,52 @@ estimate: M
 
 ## Definition of Done
 
-- [ ] Тесты написаны первыми (TDD), проходят, изменённый код покрыт
-- [ ] Commit-гейт зелёный (test-coverage, security-auditor, db-reviewer при изменении схемы, production-readiness, commit-hygiene)
-- [ ] Документация обновлена (docs/ + запись в `docs/brain/`)
-- [ ] a11y и i18n (для UI-историй)
-- [ ] **Isolation-тест RLS** для каждой новой таблицы
-- [ ] **Permission объявлена** для каждого нового endpoint и проверяется в use-case
+- [x] Тесты написаны первыми (TDD), проходят, изменённый код покрыт
+- [x] Commit-гейт зелёный (test-coverage, security-auditor, db-reviewer при изменении схемы, production-readiness, commit-hygiene)
+- [x] Документация обновлена (docs/ + запись в `docs/brain/`)
+- [x] a11y и i18n (для UI-историй)
+- [x] **Isolation-тест RLS** для каждой новой таблицы
+- [x] **Permission объявлена** для каждого нового endpoint и проверяется в use-case
+
+## Что сделано (запись истории)
+
+- **Каталог перенесён целиком: 331 ключ, 110 опасных.** Транскрибирован из
+  [`permission-model.md` §3](../../../docs/security/permission-model.md) — документ остаётся
+  источником правды для **списка**, код — для **типа**.
+- **Гейт паритета `test/permissions/catalog-matches-model.test.ts`** разбирает таблицы документа и
+  сверяет каждый ключ по всем полям (ресурс, действие, домен, требуемый ACL, `dangerous`), плюс
+  числа, которые документ называет прозой. Доказан подсадкой: лишний ключ в коде роняет две
+  проверки. Без этого копия была бы обещанием.
+- `deny-reason.enums.ts` — 15 причин отказа, с гейтом паритета к тому же документу.
+- **Справочник в БД**: миграция `20260805090000_permission_catalog` (глобальная таблица без RLS —
+  единственная **[G]** в модели), сид `pnpm db:seed:permissions` с планировщиком, вынесенным в
+  `.util.ts`, восемь интеграционных тестов на реальном Postgres.
+- **Право писать каталог у приложения отсутствует.** `app_user` получает `SELECT` и ничего больше —
+  проверено тремя негативными тестами (`insert`/`update`/`delete` → `permission denied`):
+  приложение, способное писать каталог, могло бы выдать себе право.
+- `pnpm db:seed:permissions` внесён в процедуру обновления шагом 7c рядом с `db:grants`.
+
+### Расхождения, найденные и исправленные по правилу «сперва docs»
+
+1. **История говорила «307 ключей», документ — 331.** Документ старше и авторитетнее (плюс он
+   пополнялся 2026-08-05 ключами MCP и почты); цифра в истории исправлена, а не наоборот. Заодно это
+   ровно тот случай, ради которого гейт сверяет числа, названные прозой.
+2. **`global_read` в `01-grants.sql` вёл в ветку тенант-таблиц**, то есть выдавал `INSERT/UPDATE/
+   DELETE` на «таблицы, которые приложение читает». Ни одна таблица его ещё не использовала, поэтому
+   ничего не ломалось — сломалась бы первая. Теперь у списка своя ветка, только на чтение, и в ней
+   же живёт `_prisma_migrations`.
+3. **`data-model.md` объявлял индекс `uq_permissions_key`** поверх колонки, которая **и есть**
+   первичный ключ. Исправлен документ, а не добавлен второй индекс того же столбца.
+
+### Чего нет и почему
+
+- **Описания прав в каталогах i18n (331 × 2 строки)** — их показывает экран матрицы ролей
+  ([STORY-011-10](story-011-10-admin-role-matrix-ui.md)). Писать 662 строки за месяцы до экрана,
+  который их выведет, значит переписывать их дважды; формат `descriptionKey` при этом уже
+  зафиксирован и проверяется.
+- **Ночной джоб `permission_deprecated_usage_total`** — считать использование устаревших ключей
+  можно только по `RolePermission`/`UserPermissionOverride`, а этих таблиц ещё нет
+  ([STORY-011-02](story-011-02-system-roles.md) и далее). Джоб приходит вместе с ними.
+- **`single-permission-catalog.spec.ts`** (запрет второго каталога) — роль этого теста выполняет
+  гейт паритета: второй каталог не сойдётся с документом. Отдельная проверка появится, если
+  появится соблазн.

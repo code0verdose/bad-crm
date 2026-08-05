@@ -61,6 +61,26 @@ describe('01-grants.sql — the single source of truth for grants', () => {
     );
   });
 
+  /**
+   * The catalogue of permission keys is defined by the code and seeded from it, so the application
+   * reads it and never writes it: an application that could write this table could grant itself a
+   * permission. It shares the read-only branch with `_prisma_migrations` — same privilege shape,
+   * same reason.
+   */
+  it('lists the permission catalogue among the read-only reference tables', () => {
+    expect(executable).toMatch(/global_read\s+CONSTANT text\[\]\s*:=\s*ARRAY\[[^\]]*'permissions'/);
+  });
+
+  /**
+   * And the branch that serves them grants no writes. `global_read` used to fall into the tenant
+   * branch, which grants INSERT, UPDATE and DELETE — the name said «read» and the code said
+   * otherwise. No table used it yet, so nothing was broken; the first one would have been.
+   */
+  it('serves the read-only list from a branch that grants no writes', () => {
+    expect(executable).not.toMatch(/rel\.is_tenant_table OR rel\.relname = ANY \(global_read\)/);
+    expect(executable).toMatch(/ELSIF rel\.relname = ANY \(global_read\) THEN/);
+  });
+
   it('never grants TRUNCATE to app_user', () => {
     // TRUNCATE ignores row-level security: one statement empties the table for every organization.
     expect(executable).not.toMatch(/GRANT[^;']*TRUNCATE[^;']*TO app_user/);

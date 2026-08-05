@@ -90,6 +90,12 @@
       "dependsOn": ["^build"],
       "cache": false
     },
+    // The catalogue of permission keys, brought in line with the code. Runs on install and on every
+    // upgrade next to `db:grants`; never cached, because it is a statement about a database.
+    "db:seed:permissions": {
+      "dependsOn": ["^build"],
+      "cache": false
+    },
     "api:gen": {
       // `$TURBO_DEFAULT$` first, and it is the entry that was missing.
       //
@@ -162,6 +168,10 @@
         // two declarations of the FSD aliases and a build that resolves `@units/...` differently
         // from the editor — cached over an edited `vite.config.ts`, it would prove nothing.
         "packages/*/vite.config.ts",
+        // `test/permissions/catalog-matches-model.test.ts` parses the tables of the permission
+        // model and compares them with the catalogue in code. Cached over an edited document, the
+        // gate that keeps the two the same thing reports a PASS over the previous version.
+        "docs/security/permission-model.md",
         // Both declarations of the seed fixture: `test/e2e/seed-fixture-parity.test.ts` compares
         // the copy `packages/e2e` uses against the one `pnpm db:seed` applies. Cached over an edit
         // to either, the gate that keeps the two in step reports a PASS over the previous pair.

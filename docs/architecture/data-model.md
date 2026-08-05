@@ -686,8 +686,11 @@ salt (`saltB`), а сервер хранит `argon2id(authVerifier, serverSalt)
 
 **Индексы:**
 
-- `uq_permissions_key (key)`, `idx_permissions_resource (resource, action)`,
+- `idx_permissions_resource (resource, action)`,
   `idx_permissions_active (category) WHERE deprecated_at IS NULL` — каталог для UI матрицы ролей.
+  *Уточнено 2026-08-05 при реализации:* отдельного уникального индекса по колонке ключа нет и не
+  должно быть — `key` **и есть** первичный ключ таблицы (`pk_permissions`), ссылки отовсюду идут по
+  нему, а уникальный индекс поверх первичного был бы вторым индексом того же столбца.
 - `uq_roles_org_key (organization_id, key)`, `idx_roles_org_default (organization_id) WHERE is_default`.
 - `uq_role_permissions (role_id, permission_key)`, `idx_role_permissions_org_role (organization_id, role_id)`
   — покрывающий для сборки эффективных прав одним чтением.

@@ -326,3 +326,38 @@ model Team {
   @@index([organizationId, name], map: "idx_teams_org_name")
   @@map("teams")
 }
+
+/// Global reference table [G]: the catalogue of permission keys, seeded from code.
+///
+/// The one table in this schema without `organizationId`, and deliberately so
+/// (`docs/architecture/data-model.md`, group 2): the catalogue is defined by the **code** — the key
+/// `vault_item:decrypt` exists because a use-case checks it — so a tenant cannot invent a permission
+/// and has nothing to hang one on. It is therefore readable by every organization and written only
+/// by the seed.
+///
+/// References point at `key`, not at a uuid: a human-readable identifier survives a rebuild of the
+/// catalogue and keeps dumps readable.
+model Permission {
+  key      String @id(map: "pk_permissions")
+  resource String
+  action   String
+  /// The bounded context the key belongs to (`PERMISSION_META.domain` in `@bad-crm/shared`).
+  category String
+
+  isDangerous Boolean @default(false) @map("is_dangerous")
+
+  /// A key removed from the code is **marked**, never deleted: rows in `RolePermission` and
+  /// `UserPermissionOverride` point here, and dropping the row would break every installation where
+  /// an administrator had already granted it. A deprecated key is not offered in the UI and always
+  /// resolves to «no permission» in the policy layer (`docs/architecture/data-model.md`, group 2).
+  deprecatedAt DateTime? @map("deprecated_at") @db.Timestamptz(6)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@index([resource, action], map: "idx_permissions_resource")
+  /// `idx_permissions_active` is not declared here: it is partial (`WHERE deprecated_at IS NULL`,
+  /// because the role-matrix screen lists only the live catalogue), which Prisma cannot express — so
+  /// it lives in the migration, exactly like `uq_users_org_email`.
+  @@map("permissions")
+}
