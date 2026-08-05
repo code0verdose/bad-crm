@@ -8,6 +8,8 @@ import { type LoggerPort } from '@/application/platform/ports/logger.port.js';
 import { BootstrapOrganizationUseCase } from '@/application/organization/use-cases/bootstrap-organization.use-case.js';
 import { ConflictError } from '@/domain/shared/errors/app.errors.js';
 import { PrismaOrganizationRepository } from '@/infrastructure/persistence/prisma/organization.repository.js';
+import { ProvisionSystemRolesUseCase } from '@/application/iam/use-cases/provision-system-roles.use-case.js';
+import { PrismaRoleRepository } from '@/infrastructure/persistence/prisma/role.repository.js';
 import { createPrismaClient } from '@/infrastructure/persistence/prisma/prisma.client.js';
 import { PrismaUnitOfWork } from '@/infrastructure/persistence/prisma/unit-of-work.adapter.js';
 import { requireTenant, withTenant } from '@/infrastructure/persistence/prisma/tenant.context.js';
@@ -78,6 +80,7 @@ const useCaseFor = (organizationId: string): BootstrapOrganizationUseCase =>
     new PrismaUnitOfWork(base),
     new PrismaOrganizationRepository(),
     idsReturning(organizationId),
+    new ProvisionSystemRolesUseCase(new PrismaRoleRepository()),
   );
 
 const countUsers = async (): Promise<number> =>

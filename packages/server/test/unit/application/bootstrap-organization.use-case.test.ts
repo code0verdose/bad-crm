@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
+import { FakeRoleRepository } from '../../support/iam-doubles.util.js';
+
+import { ProvisionSystemRolesUseCase } from '@/application/iam/use-cases/provision-system-roles.use-case.js';
 import { type IdGeneratorPort } from '@/application/platform/ports/id-generator.port.js';
 import {
   type TenantScope,
@@ -116,7 +119,12 @@ const fixedIds: IdGeneratorPort = {
 };
 
 const buildUseCase = (database: InMemoryDatabase): BootstrapOrganizationUseCase =>
-  new BootstrapOrganizationUseCase(database.unitOfWork, database.organizations, fixedIds);
+  new BootstrapOrganizationUseCase(
+    database.unitOfWork,
+    database.organizations,
+    fixedIds,
+    new ProvisionSystemRolesUseCase(new FakeRoleRepository()),
+  );
 
 describe('BootstrapOrganizationUseCase', () => {
   it('CONTROL: creates the organization and its owner', async () => {

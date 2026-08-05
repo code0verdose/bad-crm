@@ -10,6 +10,7 @@ import { LoginUseCase } from '@/application/identity/use-cases/login.use-case.js
 import { RefreshSessionUseCase } from '@/application/identity/use-cases/refresh-session.use-case.js';
 import { RegisterOrganizationUseCase } from '@/application/identity/use-cases/register-organization.use-case.js';
 import { RequestPasswordResetUseCase } from '@/application/identity/use-cases/request-password-reset.use-case.js';
+import { ProvisionSystemRolesUseCase } from '@/application/iam/use-cases/provision-system-roles.use-case.js';
 import { BootstrapOrganizationUseCase } from '@/application/organization/use-cases/bootstrap-organization.use-case.js';
 import { createHttpServer } from '@/presentation/http/http-server.factory.js';
 
@@ -36,6 +37,7 @@ import {
   authUser,
   RecordingLogger,
 } from './identity-doubles.util.js';
+import { FakeRoleRepository } from './iam-doubles.util.js';
 
 /**
  * The real HTTP surface over in-memory ports.
@@ -147,6 +149,7 @@ export const createAuthApp = (options: AuthAppOptions = {}): AuthApp => {
     unitOfWork,
     organizations,
     new FakeIdGenerator(),
+    new ProvisionSystemRolesUseCase(new FakeRoleRepository()),
   );
 
   const identity = {

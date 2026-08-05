@@ -3,6 +3,7 @@ import {
   type OrganizationOwnerDraft,
   type OrganizationRepositoryPort,
 } from '@/application/organization/ports/organization-repository.port.js';
+import { type ProvisionSystemRolesUseCase } from '@/application/iam/use-cases/provision-system-roles.use-case.js';
 import { type IdGeneratorPort } from '@/application/platform/ports/id-generator.port.js';
 import { type UnitOfWorkPort } from '@/application/platform/ports/unit-of-work.port.js';
 
@@ -61,6 +62,7 @@ export class BootstrapOrganizationUseCase {
     private readonly unitOfWork: UnitOfWorkPort,
     private readonly organizations: OrganizationRepositoryPort,
     private readonly ids: IdGeneratorPort,
+    private readonly provisionRoles: ProvisionSystemRolesUseCase,
   ) {}
 
   async execute(input: BootstrapOrganizationInput): Promise<BootstrapOrganizationResult> {
@@ -75,6 +77,12 @@ export class BootstrapOrganizationUseCase {
       // problem that used to live here — organization first, owner second, `owner_id` filled in by a
       // third statement — is gone along with the nullable window it needed.
       const { ownerId } = await this.organizations.createWithOwner(input.organization, input.owner);
+
+      // In the same transaction, and that is the point: an organization whose roles arrived a
+      // statement later is an organization that existed, for a moment, with nobody able to do
+      // anything — and if that statement failed, for ever. The composition itself is code
+      // (`SYSTEM_ROLE_PERMISSIONS`), so this call is also what an upgrade re-runs.
+      await this.provisionRoles.execute();
 
       return { organizationId, ownerId };
     });

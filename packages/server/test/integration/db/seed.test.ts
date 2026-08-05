@@ -4,6 +4,8 @@ import { afterAll, beforeAll, beforeEach, describe, expect, inject, it } from 'v
 import { type LoggerPort } from '@/application/platform/ports/logger.port.js';
 import { BootstrapOrganizationUseCase } from '@/application/organization/use-cases/bootstrap-organization.use-case.js';
 import { PrismaOrganizationRepository } from '@/infrastructure/persistence/prisma/organization.repository.js';
+import { ProvisionSystemRolesUseCase } from '@/application/iam/use-cases/provision-system-roles.use-case.js';
+import { PrismaRoleRepository } from '@/infrastructure/persistence/prisma/role.repository.js';
 import { createPrismaClient } from '@/infrastructure/persistence/prisma/prisma.client.js';
 import { SystemIdGeneratorAdapter } from '@/infrastructure/platform/system-id-generator.adapter.js';
 import { PrismaUnitOfWork } from '@/infrastructure/persistence/prisma/unit-of-work.adapter.js';
@@ -56,6 +58,7 @@ const run = async (): ReturnType<typeof seedInstallation> =>
       new PrismaUnitOfWork(base),
       new PrismaOrganizationRepository(),
       new SystemIdGeneratorAdapter(),
+      new ProvisionSystemRolesUseCase(new PrismaRoleRepository()),
     ),
     hashPassword: () => Promise.resolve(FAKE_DIGEST),
   });

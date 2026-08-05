@@ -4,6 +4,8 @@ import { BootstrapOrganizationUseCase } from '../src/application/organization/us
 import { loadEnv } from '../src/infrastructure/bootstrap/load-env.util.js';
 import { Argon2PasswordHasher } from '../src/infrastructure/crypto/argon2-password-hasher.adapter.js';
 import { PrismaOrganizationRepository } from '../src/infrastructure/persistence/prisma/organization.repository.js';
+import { ProvisionSystemRolesUseCase } from '../src/application/iam/use-cases/provision-system-roles.use-case.js';
+import { PrismaRoleRepository } from '../src/infrastructure/persistence/prisma/role.repository.js';
 import { createPrismaClient } from '../src/infrastructure/persistence/prisma/prisma.client.js';
 import { PrismaUnitOfWork } from '../src/infrastructure/persistence/prisma/unit-of-work.adapter.js';
 import { SystemIdGeneratorAdapter } from '../src/infrastructure/platform/system-id-generator.adapter.js';
@@ -71,6 +73,7 @@ try {
       new PrismaUnitOfWork(prisma),
       new PrismaOrganizationRepository(),
       new SystemIdGeneratorAdapter(),
+      new ProvisionSystemRolesUseCase(new PrismaRoleRepository()),
     ),
     hashPassword: (plain) =>
       new Argon2PasswordHasher({

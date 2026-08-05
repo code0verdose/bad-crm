@@ -52,6 +52,8 @@ import {
   detachedAuthLookup,
   detachedUnitOfWork,
 } from '@/infrastructure/persistence/prisma/detached-database.adapter.js';
+import { ProvisionSystemRolesUseCase } from '@/application/iam/use-cases/provision-system-roles.use-case.js';
+import { PrismaRoleRepository } from '@/infrastructure/persistence/prisma/role.repository.js';
 import { PrismaOrganizationRepository } from '@/infrastructure/persistence/prisma/organization.repository.js';
 import { PrismaPasswordResetTokenRepository } from '@/infrastructure/persistence/prisma/password-reset-token.repository.js';
 import { PrismaSessionRepository } from '@/infrastructure/persistence/prisma/session.repository.js';
@@ -376,7 +378,12 @@ const buildIdentity = (input: {
     input.idGenerator,
   );
 
-  const bootstrap = new BootstrapOrganizationUseCase(unitOfWork, organizations, input.idGenerator);
+  const bootstrap = new BootstrapOrganizationUseCase(
+    unitOfWork,
+    organizations,
+    input.idGenerator,
+    new ProvisionSystemRolesUseCase(new PrismaRoleRepository()),
+  );
 
   const dependencies: IdentityDependencies = {
     register: new RegisterOrganizationUseCase(

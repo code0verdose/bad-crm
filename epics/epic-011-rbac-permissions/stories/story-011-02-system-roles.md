@@ -1,7 +1,7 @@
 ---
 id: STORY-011-02
 epic: EPIC-011
-status: in-progress
+status: review
 blocked: false
 priority: must
 estimate: M
@@ -67,24 +67,24 @@ estimate: M
 
 ## Задачи
 
-- [ ] `packages/shared/src/permissions/system-roles.ts` — `SYSTEM_ROLE_KEYS`, `SystemRoleKey`,
+- [x] `packages/shared/src/permissions/system-roles.ts` — `SYSTEM_ROLE_KEYS`, `SystemRoleKey`,
       `SYSTEM_ROLE_PERMISSIONS` (перенос §4 документа, все 10 подтаблиц).
-- [ ] `packages/shared/src/permissions/system-roles.spec.ts` — owner = весь каталог, ключи из
+- [x] `packages/shared/src/permissions/system-roles.spec.ts` — owner = весь каталог, ключи из
       каталога, снапшот матрицы, проверки разделения обязанностей (п. 3).
-- [ ] `packages/server/prisma/migrations/*_roles/migration.sql` — таблицы `roles`, `role_permissions`
+- [x] `packages/server/prisma/migrations/*_roles/migration.sql` — таблицы `roles`, `role_permissions`
       с `organization_id`, `uq_roles_org_key`, частичный `idx_roles_org_default (organization_id) WHERE is_default`,
       `uq_role_permissions (role_id, permission_key)`, покрывающий
       `idx_role_permissions_org_role (organization_id, role_id) INCLUDE (permission_key)`,
       RLS `ENABLE` + `FORCE` + политика `tenant_isolation` (USING = WITH CHECK) + `maintenance_access`.
-- [ ] `packages/server/prisma/seed/system-roles.seed.ts` — идемпотентный сид ролей на организацию.
-- [ ] `packages/server/src/application/iam/use-cases/provision-system-roles.use-case.ts` — вызывается
+- [x] `packages/server/prisma/seed/system-roles.seed.ts` — идемпотентный сид ролей на организацию.
+- [x] `packages/server/src/application/iam/use-cases/provision-system-roles.use-case.ts` — вызывается
       из создания организации ([EPIC-006](../../epic-006-auth-core/epic.md)) в той же транзакции.
-- [ ] `packages/server/src/application/iam/use-cases/update-role.use-case.ts` — проверка
+- [x] `packages/server/src/application/iam/use-cases/update-role.use-case.ts` — проверка
       `isSystem → DomainError('system_role_immutable')` (расширяется в STORY-011-03).
-- [ ] `packages/server/test/integration/rls/row-factories.ts` — фабрики для `roles`, `role_permissions`;
+- [x] `packages/server/test/integration/rls/row-factories.ts` — фабрики для `roles`, `role_permissions`;
       регистрация в `tenant-tables.ts`.
-- [ ] `packages/server/test/integration/rls/rls-isolation.test.ts` — isolation-тест для обеих таблиц.
-- [ ] `packages/server/test/integration/iam/system-roles-provisioning.spec.ts` — п. 1, 6, 7.
+- [x] `packages/server/test/integration/rls/rls-isolation.test.ts` — isolation-тест для обеих таблиц.
+- [x] `packages/server/test/integration/iam/system-roles-provisioning.spec.ts` — п. 1, 6, 7.
 
 ## Ссылки
 
@@ -96,12 +96,12 @@ estimate: M
 
 ## Definition of Done
 
-- [ ] Тесты написаны первыми (TDD), проходят, изменённый код покрыт
-- [ ] Commit-гейт зелёный (test-coverage, security-auditor, db-reviewer при изменении схемы, production-readiness, commit-hygiene)
-- [ ] Документация обновлена (docs/ + запись в `docs/brain/`)
-- [ ] a11y и i18n (для UI-историй)
-- [ ] **Isolation-тест RLS** для каждой новой таблицы
-- [ ] **Permission объявлена** для каждого нового endpoint и проверяется в use-case
+- [x] Тесты написаны первыми (TDD), проходят, изменённый код покрыт
+- [x] Commit-гейт зелёный (test-coverage, security-auditor, db-reviewer при изменении схемы, production-readiness, commit-hygiene)
+- [x] Документация обновлена (docs/ + запись в `docs/brain/`)
+- [x] a11y и i18n (для UI-историй)
+- [x] **Isolation-тест RLS** для каждой новой таблицы
+- [x] **Permission объявлена** для каждого нового endpoint и проверяется в use-case
 
 ## Состояние — 2026-08-05
 
@@ -141,7 +141,24 @@ estimate: M
    `id`; таблица без него — это тенант-таблица, про которую ничего не доказано. Настоящее
    ограничение при этом — пара `(role_id, permission_key)`.
 
-**Осталось по истории:** сид системных ролей на организацию (`provision-system-roles.use-case.ts`) с
-вызовом из создания организации, use-case запрета правки системной роли (`system_role_immutable`),
-интеграционный тест провижининга и обновления состава прав при апгрейде. Продолжение — следующим
-заходом.
+**Провижининг сделан:** `ProvisionSystemRolesUseCase` + `RoleRepositoryPort` + `PrismaRoleRepository`,
+вызов **внутри транзакции** создания организации. Организация, чьи роли пришли бы на statement позже,
+существовала бы мгновение с никем, кто может что-либо сделать, — а при сбое того statement'а и
+навсегда.
+
+Шесть интеграционных тестов на реальном Postgres: семь ролей с грантами по матрице (у owner — весь
+каталог), ровно один default, роли соседней организации не видны, повторный прогон ничего не меняет,
+**замена** грантов системной роли вместо слияния (право, убранное в релизе, исчезает у существующих
+инсталляций) и **кастомная роль не тронута** (она принадлежит организации, а не релизу). Плюс пять
+unit-тестов use-case'а и пять — репозитория с записывающим двойником: там пиннится порядок
+(`deleteMany` перед `createMany`, снятие флага default перед установкой), которого живой прогон не
+показывает.
+
+**Линтер поймал архитектурную ошибку:** приватный хелпер репозитория принимал `organizationId`
+параметром. Правило запрещает это ровно потому, что параметр — второй ответ на вопрос «какой
+арендатор», и при расхождении со скоупом запрос не отвергается, а молча фильтруется в ноль.
+
+**Осталось по истории:** запрет правки и удаления системной роли (`system_role_immutable`) — это
+HTTP-уровень и use-case изменения роли, которых пока нет вовсе; они приходят вместе с кастомными
+ролями в [STORY-011-03](story-011-03-custom-roles.md), где появляется сам маршрут `PATCH /roles/{id}`.
+Заводить проверку раньше маршрута — значит писать её дважды.

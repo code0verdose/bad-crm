@@ -4,6 +4,9 @@ import { IssueSessionUseCase } from '@/application/identity/use-cases/issue-sess
 import { RegisterOrganizationUseCase } from '@/application/identity/use-cases/register-organization.use-case.js';
 import { BootstrapOrganizationUseCase } from '@/application/organization/use-cases/bootstrap-organization.use-case.js';
 import { type AppError, ValidationError } from '@/domain/shared/errors/app.errors.js';
+import { ProvisionSystemRolesUseCase } from '@/application/iam/use-cases/provision-system-roles.use-case.js';
+
+import { FakeRoleRepository } from '../../support/iam-doubles.util.js';
 import {
   FakeAccessTokens,
   FakeAddressHasher,
@@ -58,6 +61,7 @@ const harness = (
     unitOfWork,
     organizations,
     new FakeIdGenerator(),
+    new ProvisionSystemRolesUseCase(new FakeRoleRepository()),
   );
 
   const issue = new IssueSessionUseCase(
