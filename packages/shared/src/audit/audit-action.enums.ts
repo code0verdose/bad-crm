@@ -21,6 +21,10 @@ export const AUDIT_ACTIONS = [
   'password.changed',
   /** A password was set through a recovery link. */
   'password.reset',
+  /** A role was given to somebody (STORY-011-04). */
+  'role.assigned',
+  /** A role was taken away, by an administrator or by the expiry of a temporary grant. */
+  'role.revoked',
   /**
    * Row level security was bypassed on purpose — a migration path, a support action, a background
    * job that must see every tenant.

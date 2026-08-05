@@ -114,7 +114,7 @@ export class EndSessionUseCase {
         organizationId: actor.organizationId,
         ipAddress: undefined,
       },
-      target: { type: 'session-family', id: familyId },
+      target: { type: 'SESSION_FAMILY', id: familyId },
       after: { reason },
       requestId: undefined,
     });

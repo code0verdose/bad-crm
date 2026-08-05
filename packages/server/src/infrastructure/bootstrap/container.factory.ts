@@ -26,6 +26,11 @@ import { noopMetrics } from '@/infrastructure/metrics/noop-metrics.adapter.js';
 import { RecordClientErrorUseCase } from '@/application/platform/use-cases/record-client-error.use-case.js';
 import { pinoAuditLogger } from '@/infrastructure/logging/pino-audit.adapter.js';
 import { PrismaAuditLogger } from '@/infrastructure/persistence/prisma/audit-log.adapter.js';
+import { PrismaEffectivePermissionsReader } from '@/infrastructure/persistence/prisma/effective-permissions-reader.adapter.js';
+import { PrismaUserRoleRepository } from '@/infrastructure/persistence/prisma/user-role.repository.js';
+import { AssignRoleUseCase } from '@/application/iam/use-cases/assign-role.use-case.js';
+import { BuildActorQuery } from '@/application/iam/use-cases/build-actor.query.js';
+import { RevokeRoleUseCase } from '@/application/iam/use-cases/revoke-role.use-case.js';
 import { createPromMetrics } from '@/infrastructure/metrics/prom-client.adapter.js';
 import { createHttpLogger } from '@/infrastructure/logging/http-logger.middleware.js';
 import { PinoLoggerAdapter } from '@/infrastructure/logging/pino-logger.adapter.js';
@@ -76,7 +81,8 @@ import {
 } from '@/infrastructure/bootstrap/container.types.js';
 import { type ServerEnv } from '@/infrastructure/bootstrap/env.schema.js';
 import { API_VERSION } from '@/presentation/http/api-version.constant.js';
-import { type IdentityDependencies } from '@/presentation/http/http-server.types.js';
+import { type IamDependencies,
+  type IdentityDependencies } from '@/presentation/http/http-server.types.js';
 
 /**
  * Where the migration folders live, relative to the working directory of the process.
@@ -316,6 +322,9 @@ export const buildContainer = (input: ContainerInput): AppContainer => {
       describeApi,
       recordClientError,
       identity: identity.dependencies,
+      // The permission layer. Built here, beside identity, because it needs the same unit of work:
+      // «who is this» and «what may they do» are two reads of the same transaction boundary.
+      iam: buildIam({ database: input.database, audit }),
     },
   };
 };
@@ -341,6 +350,29 @@ interface IdentityWiring {
  * services — is constructed unconditionally, because a repository holds no client: it reads the
  * transaction out of the scope `withTenant` opened (`tenant-scoped.repository.ts`).
  */
+/**
+ * The permission layer of the HTTP surface.
+ *
+ * Three objects and no state: the actor query the guard mounts, and the two commands the assignment
+ * routes call. They share the unit of work with identity for a reason — a role change and the trail
+ * entry that records it have to be one transaction, and a second unit of work would be a second
+ * transaction that can commit alone.
+ */
+const buildIam = (input: {
+  readonly database: DatabaseConnection | undefined;
+  readonly audit: AuditLoggerPort;
+}): IamDependencies => {
+  const unitOfWork =
+    input.database === undefined ? detachedUnitOfWork() : new PrismaUnitOfWork(input.database.base);
+  const userRoles = new PrismaUserRoleRepository();
+
+  return {
+    buildActor: new BuildActorQuery(unitOfWork, new PrismaEffectivePermissionsReader()),
+    assignRole: new AssignRoleUseCase(unitOfWork, userRoles, input.audit),
+    revokeRole: new RevokeRoleUseCase(unitOfWork, userRoles, input.audit),
+  };
+};
+
 const buildIdentity = (input: {
   readonly env: ServerEnv;
   readonly clock: SystemClockAdapter;

@@ -726,7 +726,7 @@ describe('the audit trail', () => {
     expect(audit.events[0]).toMatchObject({
       action: 'session.signed_in',
       actor: { userId: expect.any(String) as unknown as string },
-      target: { type: 'session' },
+      target: { type: 'SESSION' },
     });
     expect(result.status).toBe('authenticated');
   });

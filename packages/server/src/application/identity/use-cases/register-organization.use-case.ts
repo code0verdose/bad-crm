@@ -152,7 +152,7 @@ export class RegisterOrganizationUseCase {
             organizationId,
             ipAddress: input.client.ipAddress,
           },
-          target: { type: 'organization', id: organizationId },
+          target: { type: 'ORGANIZATION', id: organizationId },
           after: { slug: input.organization.slug, name: input.organization.name },
           requestId: undefined,
         });

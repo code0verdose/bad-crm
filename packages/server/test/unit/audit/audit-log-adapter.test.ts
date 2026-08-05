@@ -43,7 +43,7 @@ const fakeClient = (create: ReturnType<typeof vi.fn>): PrismaClient => {
 const event = (overrides: Partial<AuditEvent> = {}): AuditEvent => ({
   action: 'password.changed',
   actor: { userId: 'user-1', organizationId: ORG, ipAddress: '203.0.113.9' },
-  target: { type: 'user', id: 'user-1' },
+  target: { type: 'USER', id: 'user-1' },
   requestId: undefined,
   ...overrides,
 });
@@ -73,7 +73,7 @@ describe('an event that can be a row', () => {
         actorId: 'user-1',
         actorType: 'USER',
         action: 'password.changed',
-        resourceType: 'user',
+        resourceType: 'USER',
         resourceId: 'user-1',
         after: { revokedFamilies: 1 },
         ipHash: 'digest:203.0.113.9',

@@ -31,6 +31,10 @@ export const AUDIT_ACTION_SEVERITY: Readonly<Record<AuditAction, AuditSeverity>>
   'password.changed': 'WARNING',
   // Same, and reachable by whoever holds a mailbox rather than the old password.
   'password.reset': 'WARNING',
+  // Who may do what changed. `warning` because it is the event an escalation review starts from:
+  // §10 of the permission model files every change of rights at this level.
+  'role.assigned': 'WARNING',
+  'role.revoked': 'WARNING',
   // Row-level security deliberately bypassed. Nothing in normal operation raises it, and an
   // untraced bypass is indistinguishable from an intrusion.
   'rls.bypassed': 'CRITICAL',

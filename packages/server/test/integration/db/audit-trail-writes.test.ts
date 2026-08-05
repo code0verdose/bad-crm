@@ -103,7 +103,7 @@ describe('an audit entry and the change that caused it', () => {
       await audit.record({
         action: 'password.changed',
         actor: { userId: undefined, organizationId: ORG, ipAddress: '203.0.113.7' },
-        target: { type: 'user', id: undefined },
+        target: { type: 'USER', id: undefined },
         after: { revokedFamilies: 2 },
         requestId: undefined,
       });
@@ -114,7 +114,7 @@ describe('an audit entry and the change that caused it', () => {
     expect(entry).toMatchObject({
       organization_id: ORG,
       action: 'password.changed',
-      resource_type: 'user',
+      resource_type: 'USER',
       // From `AUDIT_ACTION_SEVERITY`, not from the call site: the same action filed at two levels
       // makes a filter over the trail silently incomplete.
       severity: 'WARNING',
@@ -131,7 +131,7 @@ describe('an audit entry and the change that caused it', () => {
       await audit.record({
         action: 'session.revoked',
         actor: { userId: undefined, organizationId: ORG, ipAddress: undefined },
-        target: { type: 'session', id: undefined },
+        target: { type: 'SESSION', id: undefined },
         requestId: 'doomed-request',
       });
 
@@ -147,7 +147,7 @@ describe('an audit entry and the change that caused it', () => {
       await audit.record({
         action: 'session.revoked',
         actor: { userId: undefined, organizationId: ORG, ipAddress: undefined },
-        target: { type: 'session', id: undefined },
+        target: { type: 'SESSION', id: undefined },
         requestId: 'surviving-request',
       });
     });
@@ -163,7 +163,7 @@ describe('an audit entry and the change that caused it', () => {
     await audit.record({
       action: 'session.signed_in',
       actor: { userId: undefined, organizationId: undefined, ipAddress: undefined },
-      target: { type: 'user', id: undefined },
+      target: { type: 'USER', id: undefined },
       requestId: 'no-tenant',
     });
 
@@ -183,7 +183,7 @@ describe('an audit entry and the change that caused it', () => {
           organizationId: '00000000-0000-4000-8000-0000000000b2',
           ipAddress: undefined,
         },
-        target: { type: 'organization', id: undefined },
+        target: { type: 'ORGANIZATION', id: undefined },
         requestId: 'mismatched',
       });
     });

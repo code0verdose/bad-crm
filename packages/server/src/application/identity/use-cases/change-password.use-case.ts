@@ -273,7 +273,7 @@ export class ChangePasswordUseCase {
           organizationId: input.actor.organizationId,
           ipAddress: undefined,
         },
-        target: { type: 'user', id: input.actor.userId },
+        target: { type: 'USER', id: input.actor.userId },
         after: { revokedFamilies, revokedResetTokens },
         requestId: undefined,
       });

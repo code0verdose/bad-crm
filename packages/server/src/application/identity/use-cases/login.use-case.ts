@@ -321,7 +321,7 @@ export class LoginUseCase {
             organizationId: user.organizationId,
             ipAddress: input.client.ipAddress,
           },
-          target: { type: 'session', id: issued.sessionId },
+          target: { type: 'SESSION', id: issued.sessionId },
           requestId: undefined,
         });
 

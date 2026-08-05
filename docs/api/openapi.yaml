@@ -744,6 +744,92 @@ paths:
         '500':
           $ref: '#/components/responses/InternalError'
 
+  /users/{userId}/roles:
+    post:
+      operationId: assignRole
+      summary: Give a person a role.
+      description: |
+        The role applies on the **next request** the person makes, without a re-login: the capability
+        view is rebuilt per request and `permissionsVersion` is bumped in the same transaction as the
+        assignment.
+
+        Two rules bound this operation, and both answer 403 rather than refusing quietly:
+
+        * a role may only be granted by somebody who already holds **everything** it grants
+          (`permission_not_granted`). Without it `role:assign` would be the only permission anybody
+          needs — find a role that grants what you want and hand it to an account you control;
+        * nobody may grant a role to **themselves** (`self_assignment_forbidden`), owner included.
+          That rule is not about capability but about the second pair of eyes: a trail showing one
+          person approving their own access proves nothing.
+
+        A `userId` or `roleId` from another organization is **404**, not 403. Assigning a role the
+        person already holds answers 204 as well — the caller asked for a state and the state is
+        there, so `Idempotency-Key` buys nothing here and is ignored.
+      tags: [iam]
+      x-permission: role:assign
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/UserId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RoleAssignment'
+      responses:
+        '204':
+          description: The person holds the role.
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /users/{userId}/roles/{roleId}:
+    delete:
+      operationId: revokeRole
+      summary: Take a role away.
+      description: |
+        Effective on the person's next request, like the assignment.
+
+        Two states an organization cannot recover from on its own are refused with **409**:
+
+        * `last_owner_required` — the last owner cannot be stripped of ownership. The count is taken
+          inside the transaction, so two concurrent revocations cannot both believe the other owner
+          is still there;
+        * `self_lockout` — the caller cannot remove their own last role, because the person who could
+          undo it is the person who just lost the right to.
+
+        Revoking a role the person does not hold answers 204: the end state is the one the caller
+        asked for, and nothing is written to the trail because nothing happened.
+      tags: [iam]
+      x-permission: role:revoke
+      parameters:
+        - $ref: '#/components/parameters/UserId'
+        - $ref: '#/components/parameters/RoleId'
+      responses:
+        '204':
+          description: The person does not hold the role.
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
 components:
   securitySchemes:
     # Declared ahead of its use (EPIC-006): the access token is a short-lived JWT in the
@@ -1350,6 +1436,27 @@ components:
           description: English, for the developer reading a log. Never shown to a user.
           examples: ['Invalid input: expected number, received string']
 
+    RoleAssignment:
+      type: object
+      additionalProperties: false
+      required: [roleId]
+      description: |
+        Which role, and until when. Absent or `null` `expiresAt` means «until revoked».
+      properties:
+        roleId:
+          type: string
+          format: uuid
+          description: A role of the caller's organization.
+        expiresAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: |
+            When the grant stops applying. Enforced where the permissions are assembled, not only by
+            the cleanup job: an expired role grants nothing from the moment it expires, whether or
+            not the job has run. A date in the past is rejected 422 rather than accepted and ignored.
+          examples: ['2027-01-01T00:00:00Z']
+
     Problem:
       type: object
       description: |
@@ -1475,6 +1582,33 @@ components:
       example: bad_crm_refresh=; Max-Age=0; Path=/api/v1/auth; HttpOnly; Secure; SameSite=Lax
 
   parameters:
+    UserId:
+      name: userId
+      in: path
+      required: true
+      description: |
+        Identifier of a person in the caller's organization. An id from another organization is
+        answered 404, not 403 — the API does not confirm what exists in tenants the caller cannot
+        see.
+      schema:
+        type: string
+        format: uuid
+      examples:
+        member:
+          value: 018f4a3b-2c1d-7a41-9f00-2b7c1d0e5a31
+
+    RoleId:
+      name: roleId
+      in: path
+      required: true
+      description: Identifier of a role of the caller's organization. Another organization's id is 404.
+      schema:
+        type: string
+        format: uuid
+      examples:
+        manager:
+          value: 018f4a3b-2c1d-7a41-9f00-2b7c1d0e5a32
+
     SessionId:
       name: sessionId
       in: path

@@ -6,15 +6,19 @@ import { createMetricsController } from '@/presentation/http/controllers/metrics
 import { createHealthController } from '@/presentation/http/controllers/health.controller.js';
 import { createMetaController } from '@/presentation/http/controllers/meta.controller.js';
 import { createSessionController } from '@/presentation/http/controllers/session.controller.js';
+import { createUserRoleController } from '@/presentation/http/controllers/user-role.controller.js';
 import { allowedOrigins } from '@/presentation/http/cors-origin.util.js';
 import { type HttpServerDependencies } from '@/presentation/http/http-server.types.js';
 import { createAuthenticationMiddleware } from '@/presentation/http/middleware/authenticate.middleware.js';
 import { requireIdempotencyKey } from '@/presentation/http/middleware/idempotency-key.middleware.js';
+import { createPermissionMiddleware } from '@/presentation/http/middleware/require-permission.middleware.js';
 import { createSameOriginMiddleware } from '@/presentation/http/middleware/same-origin.middleware.js';
 import { validate } from '@/presentation/http/middleware/validate.middleware.js';
 import {
   isSelfServiceRoute,
+  isGuardedRoute,
   requiresAuthentication,
+  requiresPermission,
   type RouteDeclaration,
 } from '@/presentation/http/route-registry.types.js';
 import {
@@ -26,6 +30,11 @@ import {
   sessionIdParamsSchema,
 } from '@/presentation/http/validators/auth.validator.js';
 import { metaQuerySchema } from '@/presentation/http/validators/meta.validator.js';
+import {
+  assignRoleBodySchema,
+  userIdParamsSchema,
+  userRoleParamsSchema,
+} from '@/presentation/http/validators/user-role.validator.js';
 
 /**
  * Every route this process answers, as data.
@@ -44,8 +53,10 @@ import { metaQuerySchema } from '@/presentation/http/validators/meta.validator.j
  *   endpoint — the failure mode a per-route `app.use(...)` invites. The permission guard joins it
  *   the same way in EPIC-011, when the first `GuardedRoute` exists.
  *
- * `aclCheckedIn` is absent from every entry below because no route here is gated by a capability
- * yet. The self-service routes name `ownershipCheckedIn` instead, which the type makes mandatory.
+ * `aclCheckedIn` is named by every guarded route that addresses one object, and
+ * `test/contract/acl-coverage.test.ts` fails when one does not — the capability guard answers «may
+ * this caller do this anywhere», which is not the question a route with an id in the path asks. The
+ * self-service routes name `ownershipCheckedIn` instead, which the type makes mandatory.
  */
 export const createRouteRegistry = (
   dependencies: HttpServerDependencies,
@@ -69,6 +80,15 @@ export const createRouteRegistry = (
   const forgotPasswordValidator = validate({ body: forgotPasswordBodySchema });
   const resetPasswordValidator = validate({ body: resetPasswordBodySchema });
   const sessionIdValidator = validate({ params: sessionIdParamsSchema });
+  const assignRoleValidator = validate({ params: userIdParamsSchema, body: assignRoleBodySchema });
+  const revokeRoleValidator = validate({ params: userRoleParamsSchema });
+
+  const userRoles = createUserRoleController({
+    assignRole: dependencies.iam.assignRole,
+    revokeRole: dependencies.iam.revokeRole,
+    assignValidator: assignRoleValidator,
+    revokeValidator: revokeRoleValidator,
+  });
 
   const auth = createAuthController({
     register: dependencies.identity.register,
@@ -238,9 +258,33 @@ export const createRouteRegistry = (
         'same subject and object as signing out, over the rest of one’s own sessions; there is no capability that could grant it to anybody else',
       ownershipCheckedIn: 'EndSessionUseCase.revokeOthers',
     },
+    {
+      method: 'post',
+      path: `${API_PREFIX}/users/:userId/roles`,
+      handlers: [requireIdempotencyKey(), assignRoleValidator.handler, userRoles.assign],
+      permission: 'role:assign',
+      // The guard answers «may this caller assign roles at all». Whether *this* role may go to
+      // *this* person — the subset rule, self-assignment, the subject being in this organization —
+      // is decided in the use-case, which is also the only place that can answer 404 rather than 403
+      // for somebody else's id.
+      aclCheckedIn: 'AssignRoleUseCase',
+    },
+    {
+      method: 'delete',
+      path: `${API_PREFIX}/users/:userId/roles/:roleId`,
+      handlers: [revokeRoleValidator.handler, userRoles.revoke],
+      permission: 'role:revoke',
+      aclCheckedIn: 'RevokeRoleUseCase',
+    },
   ];
 
-  return declarations.map((route) => withAuthenticationGuard(route, dependencies));
+  // The permission guard first, so that the authentication guard ends up **in front of it**: each
+  // wrapper prepends to `handlers`, so the last one applied runs first. The order is not cosmetic —
+  // the permission guard reads the caller the authentication guard establishes, and reversing the
+  // two makes every guarded route answer 500 instead of 401.
+  return declarations.map((route) =>
+    withAuthenticationGuard(withPermissionGuard(route, dependencies), dependencies),
+  );
 };
 
 /**
@@ -276,6 +320,29 @@ const withAuthenticationGuard = (
         }
       : {}),
   });
+
+  return { ...route, handlers: [guard, ...route.handlers] };
+};
+
+/**
+ * Prepends the capability guard to every declaration that names a permission.
+ *
+ * Mounted the same way the authentication guard is, and for the same reason: derived from the
+ * declaration, so «a route whose permission is declared and never checked» cannot be produced by
+ * forgetting a line. It runs after the authentication guard — it reads the caller that one
+ * established — and before the validator, so a caller without the right is refused before a body is
+ * parsed and before anything is read from the database.
+ */
+const withPermissionGuard = (
+  route: RouteDeclaration,
+  dependencies: HttpServerDependencies,
+): RouteDeclaration => {
+  if (!requiresPermission(route) || !isGuardedRoute(route)) return route;
+
+  const guard = createPermissionMiddleware(
+    { buildActor: dependencies.iam.buildActor },
+    route.permission,
+  );
 
   return { ...route, handlers: [guard, ...route.handlers] };
 };

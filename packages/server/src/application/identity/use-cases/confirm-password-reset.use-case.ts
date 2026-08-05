@@ -253,7 +253,7 @@ export class ConfirmPasswordResetUseCase {
         organizationId: record.organizationId,
         ipAddress: undefined,
       },
-      target: { type: 'user', id: record.userId },
+      target: { type: 'USER', id: record.userId },
       after: { revokedFamilies, revokedResetTokens },
       requestId: undefined,
     });

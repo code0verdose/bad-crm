@@ -31,7 +31,7 @@ describe('the audit trail as log lines', () => {
     await pinoAuditLogger(logger, fixedClock).record({
       action: 'session.signed_in',
       actor: { userId: 'user-1', organizationId: 'org-1', ipAddress: '203.0.113.4' },
-      target: { type: 'session', id: 'session-9' },
+      target: { type: 'SESSION', id: 'session-9' },
       requestId: 'req-3',
     });
 
@@ -41,7 +41,7 @@ describe('the audit trail as log lines', () => {
       action: 'session.signed_in',
       actorUserId: 'user-1',
       actorOrganizationId: 'org-1',
-      targetType: 'session',
+      targetType: 'SESSION',
       targetId: 'session-9',
       requestId: 'req-3',
       occurredAt: '2026-08-04T10:00:00.000Z',
@@ -58,7 +58,7 @@ describe('the audit trail as log lines', () => {
     await pinoAuditLogger(logger, fixedClock).record({
       action: 'password.changed',
       actor: { userId: 'user-1', organizationId: 'org-1', ipAddress: undefined },
-      target: { type: 'user', id: 'user-1' },
+      target: { type: 'USER', id: 'user-1' },
       requestId: undefined,
     });
 
@@ -72,7 +72,7 @@ describe('the audit trail as log lines', () => {
     await pinoAuditLogger(logger, fixedClock).record({
       action: 'organization.registered',
       actor: { userId: 'user-1', organizationId: 'org-1', ipAddress: undefined },
-      target: { type: 'organization', id: 'org-1' },
+      target: { type: 'ORGANIZATION', id: 'org-1' },
       after: { slug: 'acme', status: 'active' },
       requestId: undefined,
     });
@@ -87,15 +87,27 @@ describe('the audit trail as log lines', () => {
  * typo opens a second name for the same event that every filter over the trail then misses.
  */
 describe('the action catalogue', () => {
-  it('covers the privileged actions of M1', () => {
+  it('covers the privileged actions implemented so far', () => {
     expect([...SharedAudit.AUDIT_ACTIONS]).toEqual([
       'organization.registered',
       'session.signed_in',
       'session.revoked',
       'password.changed',
       'password.reset',
+      'role.assigned',
+      'role.revoked',
       'rls.bypassed',
     ]);
+  });
+
+  /**
+   * Every action has a severity, and the severity belongs to the action rather than to the caller:
+   * the same event filed at two levels by two use-cases makes «show me the critical ones» silently
+   * incomplete. The type already enforces completeness — this says so at runtime, and fails when a
+   * level is `undefined` because a map lost an entry in a merge.
+   */
+  it.each([...SharedAudit.AUDIT_ACTIONS])('files %s at a known severity', (action) => {
+    expect(SharedAudit.AUDIT_SEVERITIES).toContain(SharedAudit.severityOf(action));
   });
 
   it.each([...SharedAudit.AUDIT_ACTIONS])('recognises %s', (action) => {

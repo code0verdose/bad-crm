@@ -425,6 +425,72 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/users/{userId}/roles": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Give a person a role.
+         * @description The role applies on the **next request** the person makes, without a re-login: the capability
+         *     view is rebuilt per request and `permissionsVersion` is bumped in the same transaction as the
+         *     assignment.
+         *
+         *     Two rules bound this operation, and both answer 403 rather than refusing quietly:
+         *
+         *     * a role may only be granted by somebody who already holds **everything** it grants
+         *       (`permission_not_granted`). Without it `role:assign` would be the only permission anybody
+         *       needs — find a role that grants what you want and hand it to an account you control;
+         *     * nobody may grant a role to **themselves** (`self_assignment_forbidden`), owner included.
+         *       That rule is not about capability but about the second pair of eyes: a trail showing one
+         *       person approving their own access proves nothing.
+         *
+         *     A `userId` or `roleId` from another organization is **404**, not 403. Assigning a role the
+         *     person already holds answers 204 as well — the caller asked for a state and the state is
+         *     there, so `Idempotency-Key` buys nothing here and is ignored.
+         */
+        post: operations["assignRole"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/users/{userId}/roles/{roleId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Take a role away.
+         * @description Effective on the person's next request, like the assignment.
+         *
+         *     Two states an organization cannot recover from on its own are refused with **409**:
+         *
+         *     * `last_owner_required` — the last owner cannot be stripped of ownership. The count is taken
+         *       inside the transaction, so two concurrent revocations cannot both believe the other owner
+         *       is still there;
+         *     * `self_lockout` — the caller cannot remove their own last role, because the person who could
+         *       undo it is the person who just lost the right to.
+         *
+         *     Revoking a role the person does not hold answers 204: the end state is the one the caller
+         *     asked for, and nothing is written to the trail because nothing happened.
+         */
+        delete: operations["revokeRole"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -781,6 +847,22 @@ export interface components {
              */
             message: string;
         };
+        /** @description Which role, and until when. Absent or `null` `expiresAt` means «until revoked». */
+        RoleAssignment: {
+            /**
+             * Format: uuid
+             * @description A role of the caller's organization.
+             */
+            roleId: string;
+            /**
+             * Format: date-time
+             * @description When the grant stops applying. Enforced where the permissions are assembled, not only by
+             *     the cleanup job: an expired role grants nothing from the moment it expires, whether or
+             *     not the job has run. A date in the past is rejected 422 rather than accepted and ignored.
+             * @example 2027-01-01T00:00:00Z
+             */
+            expiresAt?: string | null;
+        };
         /**
          * @description RFC 9457 problem document — the only error shape this API produces, validation included.
          *
@@ -1025,6 +1107,14 @@ export interface components {
         };
     };
     parameters: {
+        /**
+         * @description Identifier of a person in the caller's organization. An id from another organization is
+         *     answered 404, not 403 — the API does not confirm what exists in tenants the caller cannot
+         *     see.
+         */
+        UserId: string;
+        /** @description Identifier of a role of the caller's organization. Another organization's id is 404. */
+        RoleId: string;
         /**
          * @description Identifier of one of the caller's own sessions, as returned by `GET /auth/sessions`. An id
          *     belonging to somebody else is answered 404, not 403.
@@ -1482,6 +1572,89 @@ export interface operations {
                 };
             };
             422: components["responses"]["ValidationFailed"];
+            429: components["responses"]["RateLimited"];
+            500: components["responses"]["InternalError"];
+        };
+    };
+    assignRole: {
+        parameters: {
+            query?: never;
+            header: {
+                /**
+                 * @description Client-generated key, mandatory on every unsafe operation that creates an entity, sends
+                 *     mail or spends money or tokens. A replay carrying the same request hash returns the stored
+                 *     response; the same key with a different hash is refused with 409 `idempotency_key_reuse`.
+                 *
+                 *     The client attaches it to every unsafe request without asking, so the operations that
+                 *     **declare** this parameter are the ones that store and replay a response. The rest ignore it,
+                 *     and two groups of them do so deliberately (see each operation's description): the ones that
+                 *     are idempotent by construction, where a stored response buys nothing, and `POST /auth/login`
+                 *     and `POST /auth/refresh`, where a stored response *is* a credential — replaying it would hand
+                 *     back tokens that have since been rotated or revoked and would let one key slip a repeat past
+                 *     the failed-attempt counter that the lockout depends on.
+                 */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                /**
+                 * @description Identifier of a person in the caller's organization. An id from another organization is
+                 *     answered 404, not 403 — the API does not confirm what exists in tenants the caller cannot
+                 *     see.
+                 */
+                userId: components["parameters"]["UserId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RoleAssignment"];
+            };
+        };
+        responses: {
+            /** @description The person holds the role. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["ValidationFailed"];
+            429: components["responses"]["RateLimited"];
+            500: components["responses"]["InternalError"];
+        };
+    };
+    revokeRole: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /**
+                 * @description Identifier of a person in the caller's organization. An id from another organization is
+                 *     answered 404, not 403 — the API does not confirm what exists in tenants the caller cannot
+                 *     see.
+                 */
+                userId: components["parameters"]["UserId"];
+                /** @description Identifier of a role of the caller's organization. Another organization's id is 404. */
+                roleId: components["parameters"]["RoleId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The person does not hold the role. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
             429: components["responses"]["RateLimited"];
             500: components["responses"]["InternalError"];
         };

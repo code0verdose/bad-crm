@@ -7,9 +7,15 @@ export interface AuditActor {
   readonly ipAddress: string | undefined;
 }
 
-/** What it was done to. `id` is absent when the action is about a capability rather than a row. */
+/**
+ * What it was done to. `id` is absent when the action is about a capability rather than a row.
+ *
+ * `type` comes from the closed vocabulary in `packages/shared`: it is what a reader of the trail
+ * filters by, and a second spelling of the same kind of object — `user` beside `USER` — is a filter
+ * that silently returns half the history.
+ */
 export interface AuditTarget {
-  readonly type: string;
+  readonly type: SharedAudit.AuditResourceType;
   readonly id: string | undefined;
 }
 

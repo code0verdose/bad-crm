@@ -10,7 +10,10 @@ import { LoginUseCase } from '@/application/identity/use-cases/login.use-case.js
 import { RefreshSessionUseCase } from '@/application/identity/use-cases/refresh-session.use-case.js';
 import { RegisterOrganizationUseCase } from '@/application/identity/use-cases/register-organization.use-case.js';
 import { RequestPasswordResetUseCase } from '@/application/identity/use-cases/request-password-reset.use-case.js';
+import { AssignRoleUseCase } from '@/application/iam/use-cases/assign-role.use-case.js';
+import { BuildActorQuery } from '@/application/iam/use-cases/build-actor.query.js';
 import { ProvisionSystemRolesUseCase } from '@/application/iam/use-cases/provision-system-roles.use-case.js';
+import { RevokeRoleUseCase } from '@/application/iam/use-cases/revoke-role.use-case.js';
 import { BootstrapOrganizationUseCase } from '@/application/organization/use-cases/bootstrap-organization.use-case.js';
 import { createHttpServer } from '@/presentation/http/http-server.factory.js';
 
@@ -37,7 +40,11 @@ import {
   authUser,
   RecordingLogger,
 } from './identity-doubles.util.js';
-import { FakeRoleRepository } from './iam-doubles.util.js';
+import {
+  FakeEffectivePermissionsReader,
+  FakeRoleRepository,
+  FakeUserRoleRepository,
+} from './iam-doubles.util.js';
 
 /**
  * The real HTTP surface over in-memory ports.
@@ -63,6 +70,7 @@ export interface AuthApp {
   readonly mail: FakeMail;
   readonly dispatcher: FakeMailDispatcher;
   readonly resetTokens: FakeResetTokens;
+  readonly userRoles: FakeUserRoleRepository;
   /**
    * Every serialized pino line the application produced, in order.
    *
@@ -82,6 +90,16 @@ export interface AuthAppOptions {
   readonly trustedProxyHops?: number;
   /** `false` models an installation without `SMTP_URL`; the mail operations then answer 503. */
   readonly mailConfigured?: boolean;
+  /**
+   * What the permission guard finds out about the caller.
+   *
+   * Absent means «no roles at all», which is what a fresh account looks like and what makes every
+   * guarded route answer 403 — the honest default for a suite about authentication, where nobody has
+   * been given anything.
+   */
+  readonly capabilities?: ConstructorParameters<typeof FakeEffectivePermissionsReader>[0];
+  /** State the assignment commands act on. */
+  readonly userRoles?: FakeUserRoleRepository;
 }
 
 /** `APP_URL` of the application these suites build; the reset links are absolute against it. */
@@ -231,12 +249,24 @@ export const createAuthApp = (options: AuthAppOptions = {}): AuthApp => {
     refreshTokens,
   };
 
+  const userRoles = options.userRoles ?? new FakeUserRoleRepository();
+  const iam = {
+    buildActor: new BuildActorQuery(
+      unitOfWork,
+      new FakeEffectivePermissionsReader(
+        options.capabilities ?? { isOwner: false, granted: [], permissionsVersion: 1 },
+      ),
+    ),
+    assignRole: new AssignRoleUseCase(unitOfWork, userRoles, audit),
+    revokeRole: new RevokeRoleUseCase(unitOfWork, userRoles, audit),
+  };
+
   const testApp = createTestApp(
     options.trustedProxyHops === undefined ? {} : { TRUSTED_PROXY_HOPS: options.trustedProxyHops },
   );
 
   return {
-    app: createHttpServer({ ...testApp.container.http, identity }),
+    app: createHttpServer({ ...testApp.container.http, identity, iam }),
     clock,
     sessions,
     users,
@@ -248,6 +278,7 @@ export const createAuthApp = (options: AuthAppOptions = {}): AuthApp => {
     mail,
     dispatcher,
     resetTokens,
+    userRoles,
     logLines: testApp.logLines,
   };
 };
