@@ -422,6 +422,12 @@ jobs:
           pnpm db:migrate
           pnpm db:grants
 
+      # The catalogue first: a role grants permissions **by name**, so seeding an organization before
+      # the catalogue exists violates the foreign key. On an installation the order is the same —
+      # §7c of the upgrade procedure runs before anybody creates anything.
+      - name: Seed the permission catalogue
+        run: pnpm db:seed:permissions
+
       - name: Seed the two organizations the scenarios sign in as
         run: pnpm db:seed
 

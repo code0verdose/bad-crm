@@ -160,7 +160,14 @@ describe('signing in from a link to a protected page', () => {
   it('asks for credentials first, remembering where the visitor was going', async () => {
     const { app } = await startApplication([]);
 
-    expect(app.getByRole('heading', { level: 1 })).toHaveTextContent('auth.login.title');
+    // Waited for by name, not read once: the starter resolves as soon as **a** level-1 heading
+    // appears, and the guard's redirect replaces the tree a commit later. On a fast machine the
+    // redirect has already happened; on a loaded CI runner the first heading is the one before it,
+    // and the assertion met an empty tree («Unable to find role=heading», CI 2026-08-05). Waiting
+    // for the heading of the sign-in screen is the property this case is about.
+    expect(
+      await app.findByRole('heading', { level: 1, name: 'auth.login.title' }),
+    ).toBeInTheDocument();
     expect(window.location.pathname).toBe('/login');
     expect(decodeURIComponent(window.location.search)).toContain(`redirect=${PROTECTED_URL}`);
   });
