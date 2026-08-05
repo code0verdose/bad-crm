@@ -25,6 +25,7 @@ import { createHttpMetrics } from '@/infrastructure/metrics/http-metrics.middlew
 import { noopMetrics } from '@/infrastructure/metrics/noop-metrics.adapter.js';
 import { RecordClientErrorUseCase } from '@/application/platform/use-cases/record-client-error.use-case.js';
 import { pinoAuditLogger } from '@/infrastructure/logging/pino-audit.adapter.js';
+import { PrismaAuditLogger } from '@/infrastructure/persistence/prisma/audit-log.adapter.js';
 import { createPromMetrics } from '@/infrastructure/metrics/prom-client.adapter.js';
 import { createHttpLogger } from '@/infrastructure/logging/http-logger.middleware.js';
 import { PinoLoggerAdapter } from '@/infrastructure/logging/pino-logger.adapter.js';
@@ -170,10 +171,19 @@ export const buildContainer = (input: ContainerInput): AppContainer => {
   const mailDispatcher = new ImmediateMailDispatcher(mailer, logger);
 
   /**
-   * The audit trail. Log lines until EPIC-016 gives it a table; the port exists from the first day
-   * so that the call sites do not have to be found in a grown codebase later.
+   * The audit trail: a row in `audit_logs`, written inside the transaction that caused it.
+   *
+   * The log line did not go away — it is where the events that cannot be rows are recorded, and
+   * there are two kinds. `organization_id` is `NOT NULL`, so an action taken before any organization
+   * is known has nowhere to be filed; and an action taken outside a tenant scope has no transaction
+   * to join. Both are still part of the trail, and both are visibly *not* rows rather than quietly
+   * missing.
    */
-  const audit = pinoAuditLogger(logger, clock);
+  const audit = new PrismaAuditLogger({
+    addressHasher: new HmacAddressHasher(input.env.APP_ENCRYPTION_KEY),
+    requestContext,
+    unscoped: pinoAuditLogger(logger, clock),
+  });
 
   const identity = buildIdentity({
     env: input.env,
