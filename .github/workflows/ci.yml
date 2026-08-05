@@ -402,6 +402,13 @@ jobs:
           done
           # Assignments only: the file explains the placeholders in its comments, and those stay.
           ! grep -qE '^[A-Z_]+=.*CHANGE_ME' .env
+          # Where the browser will be served from. `POST /auth/refresh` is the one endpoint a cookie
+          # alone authorises, so it refuses an `Origin` that is not the installation's — and the
+          # template ships `APP_URL=http://localhost:3000`, the API's own address, because a
+          # container serves the built client from there. Here the client is a preview server on
+          # 5173, so the installation is told that is where it lives. Getting this wrong produces a
+          # valid session the application refuses to resume, which reads as a broken guard.
+          sed -i "s|^APP_URL=.*|APP_URL=http://localhost:5173|" .env
 
       - name: Build the client and the server
         run: pnpm turbo run build
