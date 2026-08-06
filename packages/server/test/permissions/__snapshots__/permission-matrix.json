@@ -1,0 +1,47 @@
+{
+  "catalogSize": 331,
+  "matrix": {
+    "owner": {
+      "POST /api/v1/users/:userId/roles": "allow",
+      "DELETE /api/v1/users/:userId/roles/:roleId": "allow",
+      "PUT /api/v1/users/:userId/permission-overrides/:permission": "allow",
+      "DELETE /api/v1/users/:userId/permission-overrides/:permission": "allow"
+    },
+    "admin": {
+      "POST /api/v1/users/:userId/roles": "allow",
+      "DELETE /api/v1/users/:userId/roles/:roleId": "allow",
+      "PUT /api/v1/users/:userId/permission-overrides/:permission": "allow",
+      "DELETE /api/v1/users/:userId/permission-overrides/:permission": "allow"
+    },
+    "manager": {
+      "POST /api/v1/users/:userId/roles": "deny:permission_not_granted",
+      "DELETE /api/v1/users/:userId/roles/:roleId": "deny:permission_not_granted",
+      "PUT /api/v1/users/:userId/permission-overrides/:permission": "deny:permission_not_granted",
+      "DELETE /api/v1/users/:userId/permission-overrides/:permission": "deny:permission_not_granted"
+    },
+    "lead": {
+      "POST /api/v1/users/:userId/roles": "deny:permission_not_granted",
+      "DELETE /api/v1/users/:userId/roles/:roleId": "deny:permission_not_granted",
+      "PUT /api/v1/users/:userId/permission-overrides/:permission": "deny:permission_not_granted",
+      "DELETE /api/v1/users/:userId/permission-overrides/:permission": "deny:permission_not_granted"
+    },
+    "developer": {
+      "POST /api/v1/users/:userId/roles": "deny:permission_not_granted",
+      "DELETE /api/v1/users/:userId/roles/:roleId": "deny:permission_not_granted",
+      "PUT /api/v1/users/:userId/permission-overrides/:permission": "deny:permission_not_granted",
+      "DELETE /api/v1/users/:userId/permission-overrides/:permission": "deny:permission_not_granted"
+    },
+    "viewer": {
+      "POST /api/v1/users/:userId/roles": "deny:permission_not_granted",
+      "DELETE /api/v1/users/:userId/roles/:roleId": "deny:permission_not_granted",
+      "PUT /api/v1/users/:userId/permission-overrides/:permission": "deny:permission_not_granted",
+      "DELETE /api/v1/users/:userId/permission-overrides/:permission": "deny:permission_not_granted"
+    },
+    "guest": {
+      "POST /api/v1/users/:userId/roles": "deny:permission_not_granted",
+      "DELETE /api/v1/users/:userId/roles/:roleId": "deny:permission_not_granted",
+      "PUT /api/v1/users/:userId/permission-overrides/:permission": "deny:permission_not_granted",
+      "DELETE /api/v1/users/:userId/permission-overrides/:permission": "deny:permission_not_granted"
+    }
+  }
+}

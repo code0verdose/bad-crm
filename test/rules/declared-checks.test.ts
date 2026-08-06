@@ -191,11 +191,10 @@ const PENDING: Readonly<Record<string, string>> = {
     'The route registry carries no permission declarations yet (EPIC-011); ' +
     '`packages/server/test/unit/http/route-registry.test.ts` checks the registry against Express and stops there.',
   'permissions.mdc · file · test/permissions/acl-coverage.spec.ts':
-    'ACL levels are declared in the shared catalogue but no resource endpoint consumes them yet, so ' +
-    'the coverage this suite measures would be measured over an empty set (EPIC-011).',
-  'permissions.mdc · file · test/permissions/permission-matrix.test.ts':
-    'The role x endpoint matrix and its committed snapshot arrive with EPIC-011; ' +
-    '`packages/shared/test/permissions/catalog.test.ts` holds the catalogue itself in the meantime.',
+    'Half of it exists as `packages/server/test/contract/acl-coverage.test.ts`, which holds every ' +
+    'route with an id in its path to naming the use-case that checks the object. The other half — ' +
+    'measuring the *levels* — still has nothing to measure: no resource endpoint consumes an ACL ' +
+    'level until the first resource domain (EPIC-014).',
   'self-host-packaging.mdc · file · test/integration/shutdown.spec.ts':
     'Half of it exists as a unit test — `packages/server/test/unit/bootstrap/shutdown.test.ts` covers ' +
     'the handler and its deadline. The `/ready → 503` half needs a live server and belongs to the integration suite.',

@@ -26,6 +26,10 @@ export default defineConfig({
       'test/unit/**/*.test.ts',
       'test/integration/http/**/*.test.ts',
       'test/contract/**/*.test.ts',
+      // The permission matrix belongs to the same family: it drives the real HTTP stack with
+      // in-process adapters, needs no Docker, and is the file a reviewer reads to see whether a
+      // change moved what anybody can do. A gate only CI knows how to run is a gate nobody runs.
+      'test/permissions/**/*.test.ts',
       'src/**/*.test.ts',
     ],
     environment: 'node',
