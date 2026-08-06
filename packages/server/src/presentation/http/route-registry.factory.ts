@@ -6,6 +6,7 @@ import { createMetricsController } from '@/presentation/http/controllers/metrics
 import { createHealthController } from '@/presentation/http/controllers/health.controller.js';
 import { createMetaController } from '@/presentation/http/controllers/meta.controller.js';
 import { createSessionController } from '@/presentation/http/controllers/session.controller.js';
+import { createCustomRoleController } from '@/presentation/http/controllers/custom-role.controller.js';
 import { createMeController } from '@/presentation/http/controllers/me.controller.js';
 import { createPermissionOverrideController } from '@/presentation/http/controllers/permission-override.controller.js';
 import { createUserRoleController } from '@/presentation/http/controllers/user-role.controller.js';
@@ -32,6 +33,11 @@ import {
   sessionIdParamsSchema,
 } from '@/presentation/http/validators/auth.validator.js';
 import { metaQuerySchema } from '@/presentation/http/validators/meta.validator.js';
+import {
+  createRoleBodySchema,
+  roleIdParamsSchema,
+  updateRoleBodySchema,
+} from '@/presentation/http/validators/custom-role.validator.js';
 import {
   overrideParamsSchema,
   writeOverrideBodySchema,
@@ -103,6 +109,20 @@ export const createRouteRegistry = (
   });
 
   const me = createMeController({ getMyPermissions: dependencies.iam.getMyPermissions });
+
+  const createRoleValidator = validate({ body: createRoleBodySchema });
+  const updateRoleValidator = validate({ params: roleIdParamsSchema, body: updateRoleBodySchema });
+  const deleteRoleValidator = validate({ params: roleIdParamsSchema });
+
+  const customRoles = createCustomRoleController({
+    listRoles: dependencies.iam.listRoles,
+    createRole: dependencies.iam.createRole,
+    updateRole: dependencies.iam.updateRole,
+    deleteRole: dependencies.iam.deleteRole,
+    createValidator: createRoleValidator,
+    updateValidator: updateRoleValidator,
+    deleteValidator: deleteRoleValidator,
+  });
 
   const userRoles = createUserRoleController({
     assignRole: dependencies.iam.assignRole,
@@ -278,6 +298,38 @@ export const createRouteRegistry = (
       selfServiceReason:
         'same subject and object as signing out, over the rest of one’s own sessions; there is no capability that could grant it to anybody else',
       ownershipCheckedIn: 'EndSessionUseCase.revokeOthers',
+    },
+    {
+      method: 'get',
+      path: `${API_PREFIX}/roles`,
+      handlers: [customRoles.list],
+      permission: 'role:read',
+      // Nothing narrower to decide: the answer is every role of the tenant, and the tenant is the
+      // scope — so the guard's capability check is the whole decision.
+      aclCheckedIn: 'ListRolesQuery',
+    },
+    {
+      method: 'post',
+      path: `${API_PREFIX}/roles`,
+      handlers: [requireIdempotencyKey(), createRoleValidator.handler, customRoles.create],
+      permission: 'role:create',
+      aclCheckedIn: 'CreateCustomRoleUseCase',
+    },
+    {
+      method: 'patch',
+      path: `${API_PREFIX}/roles/:roleId`,
+      handlers: [updateRoleValidator.handler, customRoles.update],
+      permission: 'role:update',
+      // The system-role refusal, the subset rule and the self-lockout check all need the role that
+      // is being changed — which is why they live in the use-case and not in the guard.
+      aclCheckedIn: 'UpdateCustomRoleUseCase',
+    },
+    {
+      method: 'delete',
+      path: `${API_PREFIX}/roles/:roleId`,
+      handlers: [deleteRoleValidator.handler, customRoles.remove],
+      permission: 'role:delete',
+      aclCheckedIn: 'DeleteCustomRoleUseCase',
     },
     {
       method: 'post',

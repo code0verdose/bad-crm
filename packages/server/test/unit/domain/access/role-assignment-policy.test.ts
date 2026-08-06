@@ -43,6 +43,25 @@ const subject = (overrides: Partial<AssignmentSubject> = {}): AssignmentSubject 
 });
 
 describe('handing a role to somebody', () => {
+  /**
+   * The subset rule is about what the assigner **effectively** holds, and this is the case that
+   * makes the difference load-bearing: `actor.permissions` is roles plus ALLOW exceptions and does
+   * not subtract the DENY ones. Reading it raw would let a right the organization took away from
+   * this person travel to a second account inside a role — after which that account lifts the DENY,
+   * because refusing to remove one only applies to one's own.
+   */
+  it('refuses a role carrying a permission the assigner holds only on paper', () => {
+    const restrained = actorWith({
+      permissions: new Set(['role:assign', 'task:read']),
+      denied: new Set<SharedPermissions.PermissionKey>(['task:read']),
+    });
+
+    expect(canAssignRole(restrained, role({ permissions: ['task:read'] }), subject())).toEqual({
+      allowed: false,
+      reason: 'permission_not_granted',
+    });
+  });
+
   it('refuses without the capability, before anything else is considered', () => {
     const noRight = actorWith({ permissions: new Set(['role:revoke']) });
 

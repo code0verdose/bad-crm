@@ -14,6 +14,12 @@ import { AssignRoleUseCase } from '@/application/iam/use-cases/assign-role.use-c
 import { BuildActorQuery } from '@/application/iam/use-cases/build-actor.query.js';
 import { GetMyPermissionsQuery } from '@/application/iam/use-cases/get-my-permissions.query.js';
 import { ProvisionSystemRolesUseCase } from '@/application/iam/use-cases/provision-system-roles.use-case.js';
+import { DeleteCustomRoleUseCase } from '@/application/iam/use-cases/delete-custom-role.use-case.js';
+import { ListRolesQuery } from '@/application/iam/use-cases/list-roles.query.js';
+import {
+  CreateCustomRoleUseCase,
+  UpdateCustomRoleUseCase,
+} from '@/application/iam/use-cases/write-custom-role.use-case.js';
 import { RemovePermissionOverrideUseCase } from '@/application/iam/use-cases/remove-permission-override.use-case.js';
 import { RevokeRoleUseCase } from '@/application/iam/use-cases/revoke-role.use-case.js';
 import { WritePermissionOverrideUseCase } from '@/application/iam/use-cases/write-permission-override.use-case.js';
@@ -44,6 +50,7 @@ import {
   RecordingLogger,
 } from './identity-doubles.util.js';
 import {
+  FakeCustomRoleRepository,
   FakeEffectivePermissionsReader,
   FakePermissionOverrideRepository,
   FakeRoleRepository,
@@ -76,6 +83,9 @@ export interface AuthApp {
   readonly resetTokens: FakeResetTokens;
   readonly userRoles: FakeUserRoleRepository;
   readonly overrides: FakePermissionOverrideRepository;
+  readonly customRoles: FakeCustomRoleRepository;
+  /** Every privileged action the application filed, in order — the trail as a test can read it. */
+  readonly audit: FakeAuditLogger;
   /**
    * Every serialized pino line the application produced, in order.
    *
@@ -107,6 +117,8 @@ export interface AuthAppOptions {
   readonly userRoles?: FakeUserRoleRepository;
   /** State the override commands act on. */
   readonly overrides?: FakePermissionOverrideRepository;
+  /** State the custom-role commands act on. */
+  readonly customRoles?: FakeCustomRoleRepository;
   /**
    * What the reader answers about specific people, by id — the subject of an override, whose
    * ownership is the fact the `owner_immutable` rule turns on. Anybody not named here gets
@@ -264,8 +276,15 @@ export const createAuthApp = (options: AuthAppOptions = {}): AuthApp => {
 
   const userRoles = options.userRoles ?? new FakeUserRoleRepository();
   const overrides = options.overrides ?? new FakePermissionOverrideRepository();
+  const customRoles = options.customRoles ?? new FakeCustomRoleRepository();
   const capabilities = new FakeEffectivePermissionsReader(
-    options.capabilities ?? { isOwner: false, granted: [], denied: [], roleKeys: [], permissionsVersion: 1 },
+    options.capabilities ?? {
+      isOwner: false,
+      granted: [],
+      denied: [],
+      roleKeys: [],
+      permissionsVersion: 1,
+    },
     options.capabilitiesByUser,
   );
   const buildActor = new BuildActorQuery(unitOfWork, capabilities);
@@ -288,6 +307,10 @@ export const createAuthApp = (options: AuthAppOptions = {}): AuthApp => {
       userRoles,
       audit,
     ),
+    listRoles: new ListRolesQuery(unitOfWork, customRoles),
+    createRole: new CreateCustomRoleUseCase(unitOfWork, customRoles, audit),
+    updateRole: new UpdateCustomRoleUseCase(unitOfWork, customRoles, audit),
+    deleteRole: new DeleteCustomRoleUseCase(unitOfWork, customRoles, audit),
   };
 
   const testApp = createTestApp(
@@ -309,6 +332,8 @@ export const createAuthApp = (options: AuthAppOptions = {}): AuthApp => {
     resetTokens,
     userRoles,
     overrides,
+    customRoles,
+    audit,
     logLines: testApp.logLines,
   };
 };

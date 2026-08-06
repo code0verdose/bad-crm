@@ -31,6 +31,14 @@ export const AUDIT_ACTION_SEVERITY: Readonly<Record<AuditAction, AuditSeverity>>
   'password.changed': 'WARNING',
   // Same, and reachable by whoever holds a mailbox rather than the old password.
   'password.reset': 'WARNING',
+  // What a role grants is what everybody holding it may do: the composition is a change of rights
+  // for a group rather than for a person, which is why it reads at the same level as an assignment.
+  'role.created': 'WARNING',
+  'role.updated': 'WARNING',
+  'role.deleted': 'WARNING',
+  // Storing a dangerous key is the escalation an organization reviews, whoever was entitled to do
+  // it: `user:impersonate` in a role is one assignment away from being somebody else.
+  'role.dangerous_granted': 'CRITICAL',
   // Who may do what changed. `warning` because it is the event an escalation review starts from:
   // §10 of the permission model files every change of rights at this level.
   'role.assigned': 'WARNING',

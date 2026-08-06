@@ -1,0 +1,37 @@
+-- STORY-011-03 — the other direction of the assignment table: «who holds this role».
+--
+-- `user_roles` had two indexes, and both lead with the person: `uq_user_roles (user_id, role_id)`
+-- and `idx_user_roles_org_user (organization_id, user_id)`. Every question this story asks goes the
+-- other way and supplies `role_id` without a `user_id`:
+--
+--   * `GET /roles` counts the holders of **every** role for the administration matrix;
+--   * an edit invalidates everybody holding the role that changed
+--     (`UPDATE users … WHERE id IN (SELECT user_id FROM user_roles WHERE role_id = $1)`);
+--   * deleting a role cascades into its assignments, and the cascade is a `role_id` lookup too.
+--
+-- Without an index leading with `role_id`, the failure is not the sequential scan one would guess.
+-- The planner flips the join instead: it reads every **person** of the organization and probes
+-- `idx_user_roles_org_user` once per person, testing `role_id` as a filter each time. The cost is
+-- therefore O(people in the organization), not O(holders of the role), and it grows on a page that
+-- asks the question once per role.
+--
+-- MEASURED on PostgreSQL 16 (pgvector/pgvector:0.8.5-pg16) by
+-- `test/integration/db/user-role-holders.test.ts`, one organization with 2 001 people and 2 001
+-- assignments across 41 roles, after `ANALYZE`, on the statement `bumpHoldersOf` issues:
+--
+--   before  Nested Loop → Index Scan using idx_user_roles_org_user … loops=2001,
+--           Buffers: shared hit=6113, Execution Time 1.954 ms
+--   after   Index Scan using idx_user_roles_org_role … loops=1,
+--           Buffers: shared hit=72,   Execution Time 0.469 ms
+--
+-- Eighty-five times fewer buffers on an installation of two thousand people; the ratio is what
+-- matters, since it is the number of people the loop repeats over. The test asserts which index the
+-- planner picks on its own settings — and that it is not the per-person probe — so this index cannot
+-- be dropped without a failing test rather than a slower page.
+--
+-- CONCURRENTLY, alone in its file, per `rules/db-migrations.mdc` (6): `CREATE INDEX CONCURRENTLY`
+-- cannot run inside a transaction block, and PostgreSQL wraps a multi-statement simple query in an
+-- implicit one — so this file carries exactly one statement and sets no timeouts, for the reason
+-- spelled out in `20260729130000_index_sessions_org_family`: a session-level `SET` one file earlier
+-- would cap the concurrent build here, and a cancelled build leaves an INVALID index behind.
+CREATE INDEX CONCURRENTLY IF NOT EXISTS "idx_user_roles_org_role" ON "user_roles" ("organization_id", "role_id");

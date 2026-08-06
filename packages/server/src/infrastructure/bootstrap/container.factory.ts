@@ -31,6 +31,13 @@ import { PrismaUserRoleRepository } from '@/infrastructure/persistence/prisma/us
 import { AssignRoleUseCase } from '@/application/iam/use-cases/assign-role.use-case.js';
 import { BuildActorQuery } from '@/application/iam/use-cases/build-actor.query.js';
 import { GetMyPermissionsQuery } from '@/application/iam/use-cases/get-my-permissions.query.js';
+import { ListRolesQuery } from '@/application/iam/use-cases/list-roles.query.js';
+import { DeleteCustomRoleUseCase } from '@/application/iam/use-cases/delete-custom-role.use-case.js';
+import {
+  CreateCustomRoleUseCase,
+  UpdateCustomRoleUseCase,
+} from '@/application/iam/use-cases/write-custom-role.use-case.js';
+import { PrismaCustomRoleRepository } from '@/infrastructure/persistence/prisma/custom-role.repository.js';
 import { RemovePermissionOverrideUseCase } from '@/application/iam/use-cases/remove-permission-override.use-case.js';
 import { RevokeRoleUseCase } from '@/application/iam/use-cases/revoke-role.use-case.js';
 import { WritePermissionOverrideUseCase } from '@/application/iam/use-cases/write-permission-override.use-case.js';
@@ -85,8 +92,10 @@ import {
 } from '@/infrastructure/bootstrap/container.types.js';
 import { type ServerEnv } from '@/infrastructure/bootstrap/env.schema.js';
 import { API_VERSION } from '@/presentation/http/api-version.constant.js';
-import { type IamDependencies,
-  type IdentityDependencies } from '@/presentation/http/http-server.types.js';
+import {
+  type IamDependencies,
+  type IdentityDependencies,
+} from '@/presentation/http/http-server.types.js';
 
 /**
  * Where the migration folders live, relative to the working directory of the process.
@@ -371,6 +380,7 @@ const buildIam = (input: {
   const userRoles = new PrismaUserRoleRepository();
   const permissions = new PrismaEffectivePermissionsReader();
   const overrides = new PrismaPermissionOverrideRepository();
+  const customRoles = new PrismaCustomRoleRepository();
 
   const buildActor = new BuildActorQuery(unitOfWork, permissions);
 
@@ -393,6 +403,10 @@ const buildIam = (input: {
       userRoles,
       input.audit,
     ),
+    listRoles: new ListRolesQuery(unitOfWork, customRoles),
+    createRole: new CreateCustomRoleUseCase(unitOfWork, customRoles, input.audit),
+    updateRole: new UpdateCustomRoleUseCase(unitOfWork, customRoles, input.audit),
+    deleteRole: new DeleteCustomRoleUseCase(unitOfWork, customRoles, input.audit),
   };
 };
 

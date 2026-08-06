@@ -3,7 +3,13 @@ import { type RequestHandler } from 'express';
 import { type AssignRoleUseCase } from '@/application/iam/use-cases/assign-role.use-case.js';
 import { type BuildActorQuery } from '@/application/iam/use-cases/build-actor.query.js';
 import { type GetMyPermissionsQuery } from '@/application/iam/use-cases/get-my-permissions.query.js';
+import { type ListRolesQuery } from '@/application/iam/use-cases/list-roles.query.js';
+import { type DeleteCustomRoleUseCase } from '@/application/iam/use-cases/delete-custom-role.use-case.js';
 import { type RemovePermissionOverrideUseCase } from '@/application/iam/use-cases/remove-permission-override.use-case.js';
+import {
+  type CreateCustomRoleUseCase,
+  type UpdateCustomRoleUseCase,
+} from '@/application/iam/use-cases/write-custom-role.use-case.js';
 import { type RevokeRoleUseCase } from '@/application/iam/use-cases/revoke-role.use-case.js';
 import { type WritePermissionOverrideUseCase } from '@/application/iam/use-cases/write-permission-override.use-case.js';
 import { type AuthLookupPort } from '@/application/identity/ports/auth-lookup.port.js';
@@ -92,6 +98,10 @@ export interface IamDependencies {
   readonly revokeRole: RevokeRoleUseCase;
   readonly writeOverride: WritePermissionOverrideUseCase;
   readonly removeOverride: RemovePermissionOverrideUseCase;
+  readonly listRoles: ListRolesQuery;
+  readonly createRole: CreateCustomRoleUseCase;
+  readonly updateRole: UpdateCustomRoleUseCase;
+  readonly deleteRole: DeleteCustomRoleUseCase;
 }
 
 export interface HttpServerDependencies {

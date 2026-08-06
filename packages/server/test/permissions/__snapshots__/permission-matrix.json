@@ -2,42 +2,70 @@
   "catalogSize": 331,
   "matrix": {
     "owner": {
+      "GET /api/v1/roles": "allow",
+      "POST /api/v1/roles": "allow",
+      "PATCH /api/v1/roles/:roleId": "deny:role_not_found",
+      "DELETE /api/v1/roles/:roleId": "deny:role_not_found",
       "POST /api/v1/users/:userId/roles": "allow",
       "DELETE /api/v1/users/:userId/roles/:roleId": "allow",
       "PUT /api/v1/users/:userId/permission-overrides/:permission": "allow",
       "DELETE /api/v1/users/:userId/permission-overrides/:permission": "allow"
     },
     "admin": {
+      "GET /api/v1/roles": "allow",
+      "POST /api/v1/roles": "allow",
+      "PATCH /api/v1/roles/:roleId": "deny:role_not_found",
+      "DELETE /api/v1/roles/:roleId": "deny:role_not_found",
       "POST /api/v1/users/:userId/roles": "allow",
       "DELETE /api/v1/users/:userId/roles/:roleId": "allow",
       "PUT /api/v1/users/:userId/permission-overrides/:permission": "allow",
       "DELETE /api/v1/users/:userId/permission-overrides/:permission": "allow"
     },
     "manager": {
+      "GET /api/v1/roles": "allow",
+      "POST /api/v1/roles": "deny:permission_not_granted",
+      "PATCH /api/v1/roles/:roleId": "deny:permission_not_granted",
+      "DELETE /api/v1/roles/:roleId": "deny:permission_not_granted",
       "POST /api/v1/users/:userId/roles": "deny:permission_not_granted",
       "DELETE /api/v1/users/:userId/roles/:roleId": "deny:permission_not_granted",
       "PUT /api/v1/users/:userId/permission-overrides/:permission": "deny:permission_not_granted",
       "DELETE /api/v1/users/:userId/permission-overrides/:permission": "deny:permission_not_granted"
     },
     "lead": {
+      "GET /api/v1/roles": "deny:permission_not_granted",
+      "POST /api/v1/roles": "deny:permission_not_granted",
+      "PATCH /api/v1/roles/:roleId": "deny:permission_not_granted",
+      "DELETE /api/v1/roles/:roleId": "deny:permission_not_granted",
       "POST /api/v1/users/:userId/roles": "deny:permission_not_granted",
       "DELETE /api/v1/users/:userId/roles/:roleId": "deny:permission_not_granted",
       "PUT /api/v1/users/:userId/permission-overrides/:permission": "deny:permission_not_granted",
       "DELETE /api/v1/users/:userId/permission-overrides/:permission": "deny:permission_not_granted"
     },
     "developer": {
+      "GET /api/v1/roles": "deny:permission_not_granted",
+      "POST /api/v1/roles": "deny:permission_not_granted",
+      "PATCH /api/v1/roles/:roleId": "deny:permission_not_granted",
+      "DELETE /api/v1/roles/:roleId": "deny:permission_not_granted",
       "POST /api/v1/users/:userId/roles": "deny:permission_not_granted",
       "DELETE /api/v1/users/:userId/roles/:roleId": "deny:permission_not_granted",
       "PUT /api/v1/users/:userId/permission-overrides/:permission": "deny:permission_not_granted",
       "DELETE /api/v1/users/:userId/permission-overrides/:permission": "deny:permission_not_granted"
     },
     "viewer": {
+      "GET /api/v1/roles": "deny:permission_not_granted",
+      "POST /api/v1/roles": "deny:permission_not_granted",
+      "PATCH /api/v1/roles/:roleId": "deny:permission_not_granted",
+      "DELETE /api/v1/roles/:roleId": "deny:permission_not_granted",
       "POST /api/v1/users/:userId/roles": "deny:permission_not_granted",
       "DELETE /api/v1/users/:userId/roles/:roleId": "deny:permission_not_granted",
       "PUT /api/v1/users/:userId/permission-overrides/:permission": "deny:permission_not_granted",
       "DELETE /api/v1/users/:userId/permission-overrides/:permission": "deny:permission_not_granted"
     },
     "guest": {
+      "GET /api/v1/roles": "deny:permission_not_granted",
+      "POST /api/v1/roles": "deny:permission_not_granted",
+      "PATCH /api/v1/roles/:roleId": "deny:permission_not_granted",
+      "DELETE /api/v1/roles/:roleId": "deny:permission_not_granted",
       "POST /api/v1/users/:userId/roles": "deny:permission_not_granted",
       "DELETE /api/v1/users/:userId/roles/:roleId": "deny:permission_not_granted",
       "PUT /api/v1/users/:userId/permission-overrides/:permission": "deny:permission_not_granted",

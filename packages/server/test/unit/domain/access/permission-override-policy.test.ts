@@ -46,6 +46,22 @@ const subject = (overrides: Partial<OverrideSubject> = {}): OverrideSubject => (
 });
 
 describe('writing an exception', () => {
+  /**
+   * The same rule, one layer down: an ALLOW may only hand out what the granter effectively holds.
+   * Without the DENY subtracted, the exception written on this person would be undone by writing
+   * the same right onto somebody else — the shortest possible escalation.
+   */
+  it('refuses an ALLOW for a permission the granter holds only on paper', () => {
+    const restrained = actorWith({
+      denied: new Set<SharedPermissions.PermissionKey>(['invoice:issue']),
+    });
+
+    expect(canWriteOverride(restrained, draft(), subject())).toEqual({
+      allowed: false,
+      reason: 'permission_not_granted',
+    });
+  });
+
   it('refuses without the capability', () => {
     const noRight = actorWith({ permissions: new Set(['invoice:issue']) });
 
@@ -75,9 +91,9 @@ describe('writing an exception', () => {
   it('does not apply the subset rule to the owner, whose actor carries no permissions', () => {
     const owner = actorWith({ isOwner: true, permissions: new Set() });
 
-    expect(canWriteOverride(owner, draft({ permissionKey: 'vault_item:export' }), subject())).toEqual(
-      { allowed: true, reason: null },
-    );
+    expect(
+      canWriteOverride(owner, draft({ permissionKey: 'vault_item:export' }), subject()),
+    ).toEqual({ allowed: true, reason: null });
   });
 
   it('does not bound a DENY by the subset rule — taking away is not a way to gain', () => {
@@ -94,9 +110,9 @@ describe('writing an exception', () => {
    * out» false, and an organization nobody can administer is not a state any interface can fix.
    */
   it('refuses a DENY aimed at the owner', () => {
-    expect(canWriteOverride(actorWith(), draft({ effect: 'DENY' }), subject({ isOwner: true }))).toEqual(
-      { allowed: false, reason: 'owner_immutable' },
-    );
+    expect(
+      canWriteOverride(actorWith(), draft({ effect: 'DENY' }), subject({ isOwner: true })),
+    ).toEqual({ allowed: false, reason: 'owner_immutable' });
   });
 
   it('allows an ALLOW aimed at the owner, which changes nothing but is not dangerous', () => {
@@ -111,10 +127,12 @@ describe('writing an exception', () => {
     (permissionKey) => {
       const self = subject({ userId: 'admin' });
 
-      expect(canWriteOverride(actorWith(), draft({ permissionKey, effect: 'DENY' }), self)).toEqual({
-        allowed: false,
-        reason: 'self_lockout',
-      });
+      expect(canWriteOverride(actorWith(), draft({ permissionKey, effect: 'DENY' }), self)).toEqual(
+        {
+          allowed: false,
+          reason: 'self_lockout',
+        },
+      );
     },
   );
 

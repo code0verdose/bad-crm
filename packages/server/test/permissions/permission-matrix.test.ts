@@ -1,14 +1,14 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
+import { type Server } from 'node:http';
+
 import { SharedPermissions } from '@bad-crm/shared';
+import express from 'express';
 import request from 'supertest';
 import { describe, expect, it } from 'vitest';
 
-import {
-  isGuardedRoute,
-  type RouteDeclaration,
-} from '@/presentation/http/route-registry.types.js';
+import { isGuardedRoute, type RouteDeclaration } from '@/presentation/http/route-registry.types.js';
 import { createRouteRegistry } from '@/presentation/http/route-registry.factory.js';
 
 import { createAuthApp, type AuthApp } from '../support/auth-app.util.js';
@@ -42,10 +42,34 @@ const PASSWORD = 'correct-horse-battery';
 const IDEMPOTENCY_KEY = 'd'.repeat(32);
 const REASON = 'matrix fixture reason, long enough';
 
-/** How a request is made for one route. Registry-driven, so a new route without one fails below. */
-type Call = (app: AuthApp['app'], token: string) => request.Test;
+/**
+ * How a request is made for one route. Registry-driven, so a new route without one fails below.
+ *
+ * The target is a listening server rather than the Express app: `request(app)` binds a fresh
+ * ephemeral port per call, and this file makes hundreds of them in one run — enough for the operating
+ * system to recycle a port under a socket that has not finished closing, which surfaces as
+ * «Parse Error: Expected HTTP/» on an unrelated cell. One server per cell, closed when the cell is
+ * done, removes the recycling.
+ */
+type Target = Parameters<typeof request>[0];
+type Call = (target: Target, token: string) => request.Test;
 
 const CALLS: Readonly<Record<string, Call>> = {
+  'GET /api/v1/roles': (target, token) =>
+    request(target).get('/api/v1/roles').set('Authorization', `Bearer ${token}`),
+  'POST /api/v1/roles': (app, token) =>
+    request(app)
+      .post('/api/v1/roles')
+      .set('Authorization', `Bearer ${token}`)
+      .set('Idempotency-Key', IDEMPOTENCY_KEY)
+      .send({ key: 'matrix_role', name: 'Matrix', permissions: [] }),
+  'PATCH /api/v1/roles/:roleId': (app, token) =>
+    request(app)
+      .patch(`/api/v1/roles/${ROLE_ID}`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ name: 'Matrix', permissions: [] }),
+  'DELETE /api/v1/roles/:roleId': (app, token) =>
+    request(app).delete(`/api/v1/roles/${ROLE_ID}`).set('Authorization', `Bearer ${token}`),
   'POST /api/v1/users/:userId/roles': (app, token) =>
     request(app)
       .post(`/api/v1/users/${IVAN}/roles`)
@@ -81,8 +105,8 @@ const outcomeOf = (status: number, body: unknown): string => {
   return `deny:${reason ?? (body as { code?: string } | undefined)?.code ?? String(status)}`;
 };
 
-const signIn = async (test: AuthApp): Promise<string> => {
-  await request(test.app)
+const signIn = async (target: Target): Promise<string> => {
+  await request(target)
     .post('/api/v1/auth/register')
     .set('Idempotency-Key', IDEMPOTENCY_KEY)
     .send({
@@ -91,7 +115,7 @@ const signIn = async (test: AuthApp): Promise<string> => {
     })
     .expect(201);
 
-  const response = await request(test.app)
+  const response = await request(target)
     .post('/api/v1/auth/login')
     .send({ email: 'ada@example.com', password: PASSWORD })
     .expect(200);
@@ -99,39 +123,73 @@ const signIn = async (test: AuthApp): Promise<string> => {
   return (response.body as { accessToken: string }).accessToken;
 };
 
+/**
+ * One listening socket for the whole measurement, in front of a per-cell application.
+ *
+ * Every cell needs its own application — the capabilities of the caller are what is being varied,
+ * and a shared one would also carry the writes of the previous cell. But a port per cell means
+ * dozens of sockets opened and closed in a few seconds, and the operating system hands a recycled
+ * port to a client while the previous socket is still draining: the response then arrives at a
+ * parser expecting a fresh one, which reads as «Parse Error: Expected HTTP/» on whichever cell was
+ * unlucky. One port for the run removes the recycling; the application behind it is still fresh.
+ */
+const hostFor = (current: () => AuthApp): Server =>
+  express()
+    .use((request_, response_, next) => {
+      current().app(request_, response_, next);
+    })
+    .listen(0);
+
 /** The matrix, measured: role → route → outcome. */
 const measure = async (): Promise<Record<string, Record<string, string>>> => {
   const matrix: Record<string, Record<string, string>> = {};
+  let cell: AuthApp | undefined;
+  const host = hostFor(() => {
+    if (cell === undefined) throw new Error('a request reached the host before a cell was mounted');
 
-  for (const role of SharedPermissions.SYSTEM_ROLE_KEYS) {
-    const row: Record<string, string> = {};
+    return cell;
+  });
 
-    for (const route of guardedRoutes()) {
-      const test = createAuthApp({
-        capabilities: {
-          // The owner's actor carries an empty set on purpose — ownership short-circuits the
-          // capability layers rather than enumerating 331 keys.
-          isOwner: role === 'owner',
-          granted: role === 'owner' ? [] : [...SharedPermissions.SYSTEM_ROLE_PERMISSIONS[role]],
-          denied: [],
-          roleKeys: [],
-          permissionsVersion: 1,
-        },
-        capabilitiesByUser: {
-          [IVAN]: { isOwner: false, granted: [], denied: [], roleKeys: [], permissionsVersion: 1 },
-        },
-      });
-      const token = await signIn(test);
-      const call = CALLS[keyOf(route)];
+  try {
+    for (const role of SharedPermissions.SYSTEM_ROLE_KEYS) {
+      const row: Record<string, string> = {};
 
-      if (call === undefined) throw new Error(`no call defined for ${keyOf(route)}`);
+      for (const route of guardedRoutes()) {
+        const call = CALLS[keyOf(route)];
 
-      const response = await call(test.app, token);
+        if (call === undefined) throw new Error(`no call defined for ${keyOf(route)}`);
 
-      row[keyOf(route)] = outcomeOf(response.status, response.body);
+        cell = createAuthApp({
+          capabilities: {
+            // The owner's actor carries an empty set on purpose — ownership short-circuits the
+            // capability layers rather than enumerating 331 keys.
+            isOwner: role === 'owner',
+            granted: role === 'owner' ? [] : [...SharedPermissions.SYSTEM_ROLE_PERMISSIONS[role]],
+            denied: [],
+            roleKeys: [],
+            permissionsVersion: 1,
+          },
+          capabilitiesByUser: {
+            [IVAN]: {
+              isOwner: false,
+              granted: [],
+              denied: [],
+              roleKeys: [],
+              permissionsVersion: 1,
+            },
+          },
+        });
+
+        const token = await signIn(host);
+        const response = await call(host, token);
+
+        row[keyOf(route)] = outcomeOf(response.status, response.body);
+      }
+
+      matrix[role] = row;
     }
-
-    matrix[role] = row;
+  } finally {
+    host.close();
   }
 
   return matrix;
@@ -156,7 +214,11 @@ const readSnapshot = (): Snapshot => JSON.parse(readFileSync(SNAPSHOT, 'utf8')) 
 const describeChange = (role: string, route: string, before: string, after: string): string => {
   const widened = before.startsWith('deny') && after === 'allow';
   const disclosed = before === 'deny:resource_not_found' && after.startsWith('deny:permission');
-  const marker = widened ? '⚠ расширение прав' : disclosed ? '⚠ раскрытие существования' : 'изменение';
+  const marker = widened
+    ? '⚠ расширение прав'
+    : disclosed
+      ? '⚠ раскрытие существования'
+      : 'изменение';
 
   return `${marker}: ${role} ${route} ${before} → ${after}`;
 };

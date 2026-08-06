@@ -59,6 +59,23 @@ export const authorizeCapability = (actor: Actor | null, key: string): Decision 
 };
 
 /**
+ * Does the actor **effectively** hold this key — the question every «you may not grant what you do
+ * not have» rule has to ask.
+ *
+ * `actor.permissions` is roles plus ALLOW overrides and does **not** subtract the DENY overrides:
+ * they live in `actor.denied` and are applied by the decision above. So a rule that reads the set
+ * directly treats a denied key as held, and the organization's way of taking one right away from
+ * one person becomes a formality — compose a role containing it, hand the role to a second account,
+ * have that account lift the DENY. This is the one place that folding happens, so that all three
+ * subset rules (composition, assignment, overrides) agree.
+ *
+ * Ownership short-circuits, exactly as in `authorizeCapability`: the owner's set is empty because
+ * ownership replaces the layers rather than enumerating them.
+ */
+export const holdsEffectively = (actor: Actor, key: SharedPermissions.PermissionKey): boolean =>
+  actor.isOwner || (!actor.denied.has(key) && actor.permissions.has(key));
+
+/**
  * Layer 4: the resource half of the conjunction, once the capability has passed.
  *
  * Exported for the two-step flow below and for use-cases that already hold a scope; on its own it is
@@ -96,11 +113,7 @@ export const authorizeResource = (
  * The conjunction of the two layers — capability **and** resource level — in the order the model
  * states: nothing about the object is consulted until the capability holds.
  */
-export const authorize = (
-  actor: Actor | null,
-  key: string,
-  scope?: AclScope,
-): Decision => {
+export const authorize = (actor: Actor | null, key: string, scope?: AclScope): Decision => {
   const capability = authorizeCapability(actor, key);
 
   if (!capability.allowed || actor === null || !SharedPermissions.isPermissionKey(key)) {

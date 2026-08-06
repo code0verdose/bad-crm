@@ -21,6 +21,19 @@ export const AUDIT_ACTIONS = [
   'password.changed',
   /** A password was set through a recovery link. */
   'password.reset',
+  /** A custom role was composed, recomposed or removed (STORY-011-03). */
+  'role.created',
+  'role.updated',
+  'role.deleted',
+  /**
+   * A role was stored containing a key the catalogue marks dangerous.
+   *
+   * A second entry beside `role.created`/`role.updated` rather than the same one filed louder:
+   * severity comes from the action and never from the call site, and «show me every time somebody
+   * put `user:impersonate` into a role» is the question an escalation review actually asks — a
+   * filter answers it, re-reading every composition does not.
+   */
+  'role.dangerous_granted',
   /** A role was given to somebody (STORY-011-04). */
   'role.assigned',
   /** A role was taken away, by an administrator or by the expiry of a temporary grant. */

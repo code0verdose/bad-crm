@@ -188,6 +188,26 @@ export class PayloadTooLargeError extends AppError {
 }
 
 /**
+ * The caller may do this, and is being asked to say so twice.
+ *
+ * 428 rather than 403: nothing is missing — the right is held and the request is well formed. What
+ * the second signal buys is that somebody saw the list before it was stored, because the blast
+ * radius of a dangerous permission inside a role is larger than the click that adds it looks.
+ *
+ * **The response body carries no list**, deliberately. Which keys are dangerous is in the shared
+ * catalogue (`PERMISSION_META[...].dangerous`), so the client already has it and can name them in
+ * its own language; sending them back would be the server translating its own catalogue into a
+ * response nobody needs. The keys are passed as `details` all the same — `details` is developer
+ * context that reaches the log and never the body (`error-handler.middleware.ts`), and «which key
+ * made this request stop» is exactly what the log is read for afterwards.
+ */
+export class ConfirmationRequiredError extends AppError {
+  constructor(details?: ErrorDetails) {
+    super('confirmation_required', 'This operation needs an explicit confirmation', details);
+  }
+}
+
+/**
  * A dependency needed to answer is unavailable.
  *
  * The driver exception is kept as `cause` — it belongs in the log, where the error serializer can

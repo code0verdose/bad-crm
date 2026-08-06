@@ -1,7 +1,7 @@
 ---
 id: STORY-011-04
 epic: EPIC-011
-status: in-progress
+status: review
 blocked: false
 priority: must
 estimate: M

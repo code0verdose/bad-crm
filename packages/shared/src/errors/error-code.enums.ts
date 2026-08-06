@@ -148,6 +148,15 @@ const GENERIC_ERROR_CODE_STATUS = {
    * write one either.
    */
   owner_immutable: 409,
+  /**
+   * The operation is allowed and deliberately not performed without a second signal.
+   *
+   * 428 rather than 403: nothing is missing and nothing is wrong — the caller has the right, and the
+   * request would do something whose blast radius is larger than it looks (a role that grants
+   * `user:impersonate`, a mass revocation). The client repeats it with the confirmation header, which
+   * is why the status has to be one a client can act on rather than one it reports as a failure.
+   */
+  confirmation_required: 428,
   rate_limited: 429,
   /**
    * An optional subsystem is switched off in this installation, and the honest answer is "this

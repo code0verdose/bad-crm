@@ -1,5 +1,7 @@
 import { SharedPermissions } from '@bad-crm/shared';
 
+import { ConflictError } from '../../src/domain/shared/errors/app.errors.js';
+
 import {
   type CapabilityFacts,
   type EffectivePermissionsReaderPort,
@@ -8,6 +10,12 @@ import {
   type RoleRepositoryPort,
   type RoleSummary,
   type SystemRoleDraft,
+} from '../../src/application/iam/ports/role-repository.port.js';
+import {
+  type CustomRoleRepositoryPort,
+  type RoleComposition,
+  type RoleDraft,
+  type RoleListEntry,
 } from '../../src/application/iam/ports/role-repository.port.js';
 import {
   type OverrideDraftRow,
@@ -185,5 +193,107 @@ export class FakePermissionOverrideRepository implements PermissionOverrideRepos
 
   remove(userId: string, permissionKey: string): Promise<boolean> {
     return Promise.resolve(this.rows.delete(`${userId}:${permissionKey}`));
+  }
+}
+
+/**
+ * Custom roles in memory: one composition per id, plus who holds them.
+ *
+ * `holders` is settable because the two rules that matter — the self-lockout and the version bump —
+ * are about the people who hold the role, and a fake that always answered «nobody» would make both
+ * unreachable.
+ */
+export class FakeCustomRoleRepository implements CustomRoleRepositoryPort {
+  readonly roles = new Map<string, RoleComposition>();
+  readonly holders = new Map<string, string[]>();
+  readonly versionBumps: string[] = [];
+  private next = 1;
+
+  constructor(
+    private readonly options: {
+      readonly elsewhere?: readonly string[];
+      readonly duplicateKey?: boolean;
+      /** The role is readable but gone by the time the update runs — the concurrent-delete window. */
+      readonly vanishesBeforeUpdate?: boolean;
+    } = {},
+  ) {}
+
+  list(): Promise<readonly RoleListEntry[]> {
+    return Promise.resolve(
+      [...this.roles.values()].map((role) => ({
+        roleId: role.roleId,
+        key: role.key,
+        name: role.name,
+        description: null,
+        isSystem: role.isSystem,
+        isDefault: false,
+        holderCount: (this.holders.get(role.roleId) ?? []).length,
+        permissions: role.permissions,
+      })),
+    );
+  }
+
+  composition(roleId: string): Promise<RoleComposition | null> {
+    return Promise.resolve(this.roles.get(roleId) ?? null);
+  }
+
+  create(draft: RoleDraft): Promise<string> {
+    if (this.options.duplicateKey === true) {
+      return Promise.reject(new ConflictError('role_already_exists'));
+    }
+
+    const roleId = `role-${String(this.next++)}`;
+
+    this.roles.set(roleId, {
+      roleId,
+      key: draft.key,
+      name: draft.name,
+      isSystem: false,
+      permissions: [...draft.permissions],
+    });
+
+    return Promise.resolve(roleId);
+  }
+
+  update(roleId: string, draft: Omit<RoleDraft, 'key'>): Promise<boolean> {
+    if (this.options.vanishesBeforeUpdate === true) return Promise.resolve(false);
+
+    const existing = this.roles.get(roleId);
+
+    if (existing === undefined) return Promise.resolve(false);
+
+    this.roles.set(roleId, { ...existing, permissions: [...draft.permissions] });
+
+    return Promise.resolve(true);
+  }
+
+  bumpHoldersOf(roleId: string): Promise<void> {
+    this.versionBumps.push(...(this.holders.get(roleId) ?? []));
+
+    return Promise.resolve();
+  }
+
+  remove(roleId: string): Promise<void> {
+    this.roles.delete(roleId);
+    // The cascade, modelled: `ON DELETE CASCADE` takes the assignments with the role. Without this
+    // line a use-case that invalidated the holders *after* removing the role would still look
+    // correct here, and in production it would invalidate nobody.
+    this.holders.delete(roleId);
+
+    return Promise.resolve();
+  }
+
+  holdsRole(userId: string, roleId: string): Promise<boolean> {
+    return Promise.resolve((this.holders.get(roleId) ?? []).includes(userId));
+  }
+
+  holderCount(roleId: string): Promise<number> {
+    return Promise.resolve((this.holders.get(roleId) ?? []).length);
+  }
+
+  permissionsExcludingRole(): Promise<readonly SharedPermissions.PermissionKey[]> {
+    return Promise.resolve(
+      (this.options.elsewhere ?? []) as readonly SharedPermissions.PermissionKey[],
+    );
   }
 }

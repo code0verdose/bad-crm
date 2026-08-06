@@ -19,6 +19,24 @@ import { testEnv } from '../../support/test-app.util.js';
  * the startup order is asserted in `test/unit/bootstrap/api-process.test.ts`. Here they are two
  * steps that must not stand between the configuration and the socket.
  */
+/**
+ * How long the shutdown may take before the test calls it a failure.
+ *
+ * Generous on purpose, and **polled** rather than slept through: the previous fixed 50 ms passed
+ * alone and failed in the full run, where four packages test at once and the closing of a socket
+ * loses the race for the event loop. A budget with a poll is the same assertion — it just stops
+ * measuring the load of the machine.
+ */
+const SHUTDOWN_BUDGET_MS = 5_000;
+
+const exitedWithin = async (exitCodes: readonly number[], budgetMs: number): Promise<void> => {
+  const deadline = Date.now() + budgetMs;
+
+  while (exitCodes.length === 0 && Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+};
+
 describe('the process really binds a port', () => {
   it('listens, answers /health over TCP and gives the port back on shutdown', async () => {
     const lines: string[] = [];
@@ -61,7 +79,7 @@ describe('the process really binds a port', () => {
     await expect(response.json()).resolves.toMatchObject({ status: 'alive' });
 
     signals.get('SIGTERM')?.();
-    await new Promise((resolve) => setTimeout(resolve, 50));
+    await exitedWithin(exitCodes, SHUTDOWN_BUDGET_MS);
 
     expect(exitCodes).toEqual([0]);
     await expect(fetch(`http://127.0.0.1:${String(port)}/health`)).rejects.toThrow();

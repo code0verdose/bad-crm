@@ -491,6 +491,83 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/roles": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Every role of the organization, with what it grants.
+         * @description One read for the whole administration matrix — every role beside every permission — rather
+         *     than a list followed by a request per row: the screen would otherwise show the first role
+         *     before it knew the second existed.
+         *
+         *     **System roles are included.** They cannot be edited here, and `isSystem` says so; leaving
+         *     them out would mean a matrix without the roles most people actually hold.
+         */
+        get: operations["listRoles"];
+        put?: never;
+        /**
+         * Compose a custom role out of the catalogue.
+         * @description What an organization needed and the product does not ship — «technical writer», «external
+         *     auditor» — without waiting for a release and without handing somebody the nearest system role
+         *     with everything else attached.
+         *
+         *     **A role may only contain what its author already holds** (`permission_not_granted`, 403).
+         *     The rule lives here, one step before assignment, because a role nobody holds is still a
+         *     stored capability: creating one with `user:impersonate` plus any weakness in the assignment
+         *     path is a complete escalation.
+         *
+         *     A composition containing a **dangerous** key is refused **428 `confirmation_required`** until
+         *     the request is repeated with `X-Confirm-Dangerous: 1`. The refusal carries no list: which keys
+         *     are dangerous is in the shared catalogue, so the client already knows and can say it in its
+         *     own words.
+         */
+        post: operations["createRole"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/roles/{roleId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Remove a custom role.
+         * @description The assignments go with it: a role that no longer exists cannot be held, so everybody who had
+         *     it loses what it granted — on their next request, because their permission version is bumped
+         *     in the same transaction.
+         *
+         *     A system role is `system_role_immutable` (409), and so is a deletion that would take away the
+         *     caller's own last way to manage roles (`self_lockout`).
+         */
+        delete: operations["deleteRole"];
+        options?: never;
+        head?: never;
+        /**
+         * Change what a role grants.
+         * @description **Replace, not merge**: the permissions in the body are what the role will grant, and a key
+         *     left out is removed from it. Everybody holding the role gets the change on their next
+         *     request — their permission version is bumped in the same transaction.
+         *
+         *     Two refusals beyond the capability, both about states nobody can undo from inside:
+         *     `system_role_immutable` (409) — a system role is code re-applied on every upgrade, so an edit
+         *     here would look like it worked and vanish on the next release; and `self_lockout` (409) — the
+         *     change would remove the caller's own last way to edit roles.
+         */
+        patch: operations["updateRole"];
+        trace?: never;
+    };
     "/me/permissions": {
         parameters: {
             query?: never;
@@ -890,7 +967,7 @@ export interface components {
          *     reused with a different meaning.
          * @enum {string}
          */
-        ErrorCode: "validation_failed" | "unauthenticated" | "invalid_credentials" | "account_suspended" | "registration_disabled" | "password_reset_token_invalid" | "mail_not_configured" | "route_not_found" | "payload_too_large" | "vault_locked" | "stale_version" | "idempotency_key_reuse" | "last_owner_required" | "period_locked" | "self_lockout" | "system_role_immutable" | "owner_immutable" | "rate_limited" | "feature_disabled" | "service_unavailable" | "internal_error" | "organization_not_found" | "organization_forbidden" | "organization_already_exists" | "team_not_found" | "team_forbidden" | "team_already_exists" | "user_not_found" | "user_forbidden" | "user_already_exists" | "role_not_found" | "role_forbidden" | "role_already_exists" | "invitation_not_found" | "invitation_forbidden" | "invitation_already_exists" | "session_not_found" | "session_forbidden" | "session_already_exists" | "project_not_found" | "project_forbidden" | "project_already_exists" | "board_not_found" | "board_forbidden" | "board_already_exists" | "task_not_found" | "task_forbidden" | "task_already_exists" | "sprint_not_found" | "sprint_forbidden" | "sprint_already_exists" | "comment_not_found" | "comment_forbidden" | "comment_already_exists" | "doc_not_found" | "doc_forbidden" | "doc_already_exists" | "kb_note_not_found" | "kb_note_forbidden" | "kb_note_already_exists" | "file_not_found" | "file_forbidden" | "file_already_exists" | "vault_item_not_found" | "vault_item_forbidden" | "vault_item_already_exists" | "secure_link_not_found" | "secure_link_forbidden" | "secure_link_already_exists" | "time_entry_not_found" | "time_entry_forbidden" | "time_entry_already_exists" | "channel_not_found" | "channel_forbidden" | "channel_already_exists" | "message_not_found" | "message_forbidden" | "message_already_exists" | "dashboard_not_found" | "dashboard_forbidden" | "dashboard_already_exists";
+        ErrorCode: "validation_failed" | "unauthenticated" | "invalid_credentials" | "account_suspended" | "registration_disabled" | "password_reset_token_invalid" | "mail_not_configured" | "route_not_found" | "payload_too_large" | "vault_locked" | "stale_version" | "idempotency_key_reuse" | "last_owner_required" | "period_locked" | "self_lockout" | "system_role_immutable" | "owner_immutable" | "confirmation_required" | "rate_limited" | "feature_disabled" | "service_unavailable" | "internal_error" | "organization_not_found" | "organization_forbidden" | "organization_already_exists" | "team_not_found" | "team_forbidden" | "team_already_exists" | "user_not_found" | "user_forbidden" | "user_already_exists" | "role_not_found" | "role_forbidden" | "role_already_exists" | "invitation_not_found" | "invitation_forbidden" | "invitation_already_exists" | "session_not_found" | "session_forbidden" | "session_already_exists" | "project_not_found" | "project_forbidden" | "project_already_exists" | "board_not_found" | "board_forbidden" | "board_already_exists" | "task_not_found" | "task_forbidden" | "task_already_exists" | "sprint_not_found" | "sprint_forbidden" | "sprint_already_exists" | "comment_not_found" | "comment_forbidden" | "comment_already_exists" | "doc_not_found" | "doc_forbidden" | "doc_already_exists" | "kb_note_not_found" | "kb_note_forbidden" | "kb_note_already_exists" | "file_not_found" | "file_forbidden" | "file_already_exists" | "vault_item_not_found" | "vault_item_forbidden" | "vault_item_already_exists" | "secure_link_not_found" | "secure_link_forbidden" | "secure_link_already_exists" | "time_entry_not_found" | "time_entry_forbidden" | "time_entry_already_exists" | "channel_not_found" | "channel_forbidden" | "channel_already_exists" | "message_not_found" | "message_forbidden" | "message_already_exists" | "dashboard_not_found" | "dashboard_forbidden" | "dashboard_already_exists";
         /**
          * @description Why one field was rejected. The list mirrors
          *     `packages/shared/src/errors/validation-issue.enums.ts`; anything a validator produces
@@ -925,6 +1002,62 @@ export interface components {
              * @example Invalid input: expected number, received string
              */
             message: string;
+        };
+        /** @description A custom role and everything it grants. */
+        RoleComposition: {
+            /**
+             * @description The identifier, unique inside the organization. Lower case with underscores: the label is
+             *     a separate field, and a key with spaces is the kind of value that reads fine until it
+             *     reaches a URL.
+             * @example tech_writer
+             */
+            key: string;
+            /** @example Technical writer */
+            name: string;
+            description?: string | null;
+            /**
+             * @description Keys of the closed catalogue. The whole composition, not a delta — a key left out of an
+             *     update is removed from the role.
+             */
+            permissions: string[];
+        };
+        /**
+         * @description A role as stored. The composition comes back rather than the identifier alone: a client that
+         *     only got an id could not tell a composition that was stored whole from one that was narrowed
+         *     on the way in.
+         */
+        Role: {
+            /** Format: uuid */
+            id: string;
+            /** @example tech_writer */
+            key: string;
+            name: string;
+            description: string | null;
+            /**
+             * @description System roles are code re-applied on every upgrade, so their composition cannot be edited
+             *     through this API. Always `false` for a role created here.
+             */
+            isSystem: boolean;
+            permissions: string[];
+        };
+        RoleListEntry: components["schemas"]["Role"] & {
+            /** @description The role a new member gets when nobody chooses one. */
+            isDefault: boolean;
+            /**
+             * @description How many people hold it — «how many does this change affect», which is the question
+             *     asked before an edit rather than after it. A count, not the names: those are a
+             *     different read with a different permission.
+             */
+            holderCount: number;
+        };
+        /**
+         * @description The same without the key: an identifier that changed would break every reference to the role,
+         *     and renaming is what the label is for.
+         */
+        RoleCompositionUpdate: {
+            name: string;
+            description?: string | null;
+            permissions: string[];
         };
         /**
          * @description The folded view of one person's rights: what their roles and ALLOW exceptions grant, what
@@ -1208,6 +1341,19 @@ export interface components {
                 "application/problem+json": components["schemas"]["Problem"];
             };
         };
+        /**
+         * @description Allowed, and deliberately not done without a second signal. The client repeats the request
+         *     with `X-Confirm-Dangerous: 1` after showing what makes it dangerous — the list comes from the
+         *     shared catalogue, not from this body.
+         */
+        ConfirmationRequired: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/problem+json": components["schemas"]["Problem"];
+            };
+        };
         /** @description Too many requests. `Retry-After` says when to come back. */
         RateLimited: {
             headers: {
@@ -1280,6 +1426,16 @@ export interface components {
          *     the failed-attempt counter that the lockout depends on.
          */
         IdempotencyKey: string;
+        /**
+         * @description `1` repeats a request that was refused **428 `confirmation_required`** because the
+         *     composition contains a key the catalogue marks dangerous.
+         *
+         *     A header rather than a field in the body: the confirmation is about the request as a whole,
+         *     and a flag inside the payload would make the same document mean two different things — which
+         *     is how a client ends up sending it by default. Any other value, or the header repeated, reads
+         *     as «not confirmed».
+         */
+        ConfirmDangerous: "1";
     };
     requestBodies: never;
     headers: {
@@ -1789,6 +1945,159 @@ export interface operations {
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
             409: components["responses"]["Conflict"];
+            429: components["responses"]["RateLimited"];
+            500: components["responses"]["InternalError"];
+        };
+    };
+    listRoles: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The roles of the caller's organization. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: components["schemas"]["RoleListEntry"][];
+                    };
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            429: components["responses"]["RateLimited"];
+            500: components["responses"]["InternalError"];
+        };
+    };
+    createRole: {
+        parameters: {
+            query?: never;
+            header: {
+                /**
+                 * @description Client-generated key, mandatory on every unsafe operation that creates an entity, sends
+                 *     mail or spends money or tokens. A replay carrying the same request hash returns the stored
+                 *     response; the same key with a different hash is refused with 409 `idempotency_key_reuse`.
+                 *
+                 *     The client attaches it to every unsafe request without asking, so the operations that
+                 *     **declare** this parameter are the ones that store and replay a response. The rest ignore it,
+                 *     and two groups of them do so deliberately (see each operation's description): the ones that
+                 *     are idempotent by construction, where a stored response buys nothing, and `POST /auth/login`
+                 *     and `POST /auth/refresh`, where a stored response *is* a credential — replaying it would hand
+                 *     back tokens that have since been rotated or revoked and would let one key slip a repeat past
+                 *     the failed-attempt counter that the lockout depends on.
+                 */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+                /**
+                 * @description `1` repeats a request that was refused **428 `confirmation_required`** because the
+                 *     composition contains a key the catalogue marks dangerous.
+                 *
+                 *     A header rather than a field in the body: the confirmation is about the request as a whole,
+                 *     and a flag inside the payload would make the same document mean two different things — which
+                 *     is how a client ends up sending it by default. Any other value, or the header repeated, reads
+                 *     as «not confirmed».
+                 */
+                "X-Confirm-Dangerous"?: components["parameters"]["ConfirmDangerous"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RoleComposition"];
+            };
+        };
+        responses: {
+            /** @description The role exists. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Role"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["ValidationFailed"];
+            428: components["responses"]["ConfirmationRequired"];
+            429: components["responses"]["RateLimited"];
+            500: components["responses"]["InternalError"];
+        };
+    };
+    deleteRole: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Identifier of a role of the caller's organization. Another organization's id is 404. */
+                roleId: components["parameters"]["RoleId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The role is gone. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            429: components["responses"]["RateLimited"];
+            500: components["responses"]["InternalError"];
+        };
+    };
+    updateRole: {
+        parameters: {
+            query?: never;
+            header?: {
+                /**
+                 * @description `1` repeats a request that was refused **428 `confirmation_required`** because the
+                 *     composition contains a key the catalogue marks dangerous.
+                 *
+                 *     A header rather than a field in the body: the confirmation is about the request as a whole,
+                 *     and a flag inside the payload would make the same document mean two different things — which
+                 *     is how a client ends up sending it by default. Any other value, or the header repeated, reads
+                 *     as «not confirmed».
+                 */
+                "X-Confirm-Dangerous"?: components["parameters"]["ConfirmDangerous"];
+            };
+            path: {
+                /** @description Identifier of a role of the caller's organization. Another organization's id is 404. */
+                roleId: components["parameters"]["RoleId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RoleCompositionUpdate"];
+            };
+        };
+        responses: {
+            /** @description The role grants what the body says. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["ValidationFailed"];
+            428: components["responses"]["ConfirmationRequired"];
             429: components["responses"]["RateLimited"];
             500: components["responses"]["InternalError"];
         };

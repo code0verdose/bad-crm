@@ -3,7 +3,7 @@ import { type SharedPermissions } from '@bad-crm/shared';
 import { type Actor } from '@/domain/access/actor.types.js';
 import { type Decision } from '@/domain/access/decision.types.js';
 import { allow, deny } from '@/domain/access/decision.util.js';
-import { authorizeCapability } from '@/domain/access/authorize.util.js';
+import { authorizeCapability, holdsEffectively } from '@/domain/access/authorize.util.js';
 
 /** What the decision needs to know about the role being handed out or taken away. */
 export interface RoleUnderAssignment {
@@ -53,7 +53,9 @@ export const canAssignRole = (
   // everything by definition, so the check would be a tautology, and `permissions` on their actor is
   // empty rather than complete (ownership short-circuits the capability layers).
   if (!actor.isOwner) {
-    const missing = role.permissions.find((permission) => !actor.permissions.has(permission));
+    // Effectively held, so that a DENY override on the assigner is not worked around by handing
+    // somebody else a role that carries the denied key (`holdsEffectively`).
+    const missing = role.permissions.find((permission) => !holdsEffectively(actor, permission));
 
     if (missing !== undefined) return deny('permission_not_granted');
   }

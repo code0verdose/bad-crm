@@ -44,3 +44,104 @@ export interface RoleRepositoryPort {
   /** Every role of the current organization, system and custom alike. */
   listRoles(): Promise<readonly RoleSummary[]>;
 }
+
+/** A custom role as the composition screen edits it. */
+export interface RoleDraft {
+  readonly key: string;
+  readonly name: string;
+  readonly description: string | null;
+  readonly permissions: readonly SharedPermissions.PermissionKey[];
+}
+
+export interface RoleComposition {
+  readonly roleId: string;
+  readonly key: string;
+  readonly name: string;
+  readonly isSystem: boolean;
+  readonly permissions: readonly SharedPermissions.PermissionKey[];
+}
+
+/**
+ * A role as the administration screen lists it: the composition plus how many people hold it.
+ *
+ * The holder count is part of the row rather than a second request per role, because the screen that
+ * reads this renders every role beside every permission — and «how many people does this change
+ * affect» is the question asked before each edit, not after.
+ */
+export interface RoleListEntry {
+  readonly roleId: string;
+  readonly key: string;
+  readonly name: string;
+  readonly description: string | null;
+  readonly isSystem: boolean;
+  readonly isDefault: boolean;
+  readonly holderCount: number;
+  readonly permissions: readonly SharedPermissions.PermissionKey[];
+}
+
+/**
+ * Custom roles — the half of the layer that belongs to the organization rather than to the release.
+ *
+ * Separate from `RoleRepositoryPort` because the two have opposite lifecycles: system roles are
+ * re-applied on every upgrade and must never be edited, while these exist because an organization
+ * needed a role the product does not ship. Mixing them in one interface is how an upgrade path ends
+ * up rewriting somebody's own role.
+ */
+export interface CustomRoleRepositoryPort {
+  /** Every role of this organization with what it grants — system roles included, read-only. */
+  list(): Promise<readonly RoleListEntry[]>;
+
+  /** `null` when the role is not in this organization — answered 404, never 403. */
+  composition(roleId: string): Promise<RoleComposition | null>;
+
+  /** Rejects a duplicate key with the conflict the caller reports as `role_already_exists`. */
+  create(draft: RoleDraft): Promise<string>;
+
+  /**
+   * Replaces the grants wholesale: a permission removed from the draft is removed from the role.
+   *
+   * `false` when the role was not there to update — it was read a moment earlier, so this means it
+   * was deleted in between, and the caller has to answer that the way it answers every other absent
+   * role. Without the answer the grants would be written against a row that no longer exists.
+   */
+  update(roleId: string, draft: Omit<RoleDraft, 'key'>): Promise<boolean>;
+
+  remove(roleId: string): Promise<void>;
+
+  /**
+   * Does this person hold the role — the input of the self-lockout rule.
+   *
+   * A question, not a list: the two callers need «is the actor among them» and «how many», and a
+   * role the whole organization holds would otherwise be tens of thousands of identifiers in memory
+   * on every edit. The same reason `bumpHoldersOf` exists.
+   */
+  holdsRole(userId: string, roleId: string): Promise<boolean>;
+
+  /** How many people hold it — for the trail, which records the size of what changed. */
+  holderCount(roleId: string): Promise<number>;
+
+  /** What one person still gets from their **other** roles; the input of the self-lockout rule. */
+  permissionsExcludingRole(
+    userId: string,
+    roleId: string,
+  ): Promise<readonly SharedPermissions.PermissionKey[]>;
+
+  /**
+   * Invalidates whoever holds the role **as one statement**, without naming them first.
+   *
+   * The version of «read the holders into an array, then update those ids» has two faults: it misses
+   * anybody assigned the role between the two statements — they get the new permissions while their
+   * access token still says otherwise, until it expires — and it puts one bind parameter per holder
+   * into the statement, which a role the whole organization holds eventually exceeds.
+   *
+   * The subquery removes the second fault entirely and narrows the first to the duration of one
+   * statement: at READ COMMITTED the snapshot is taken when the statement starts, so an assignment
+   * committed after that and before this transaction commits is still missed. Closing it completely
+   * needs the role row locked for the duration (`SELECT … FOR UPDATE`), which is the same mechanism
+   * the optimistic-concurrency work deferred in STORY-011-03 would bring.
+   *
+   * Deletion calls this **before** removing the role, because the cascade takes the assignments with
+   * it and there would be nobody left to find.
+   */
+  bumpHoldersOf(roleId: string): Promise<void>;
+}

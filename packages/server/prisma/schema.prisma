@@ -531,6 +531,11 @@ model UserRole {
   /// idempotent without the use-case reading first.
   @@unique([userId, roleId], map: "uq_user_roles")
   @@index([organizationId, userId], map: "idx_user_roles_org_user")
+  /// The other direction: «who holds this role». Neither index above leads with `role_id`, so the
+  /// holder count of every role on the administration matrix, the invalidation of everybody holding
+  /// a role that changed, and the cascade of deleting one all scanned the assignments of the whole
+  /// organization (STORY-011-03).
+  @@index([organizationId, roleId], map: "idx_user_roles_org_role")
   @@map("user_roles")
 }
 

@@ -697,7 +697,12 @@ salt (`saltB`), а сервер хранит `argon2id(authVerifier, serverSalt)
   не покрывающий**. `INCLUDE (permission_key)` был замыслом, но datamodel Prisma его не выражает —
   схема и миграции разошлись бы навсегда, и каждый следующий `prisma migrate dev` предлагал бы
   пересоздать индекс. Постоянное расхождение двух источников схемы дороже одного index-only scan.
-- `uq_user_roles (user_id, role_id)`, `idx_user_roles_org_user (organization_id, user_id)`.
+- `uq_user_roles (user_id, role_id)`, `idx_user_roles_org_user (organization_id, user_id)`,
+  `idx_user_roles_org_role (organization_id, role_id)` — вторая сторона того же вопроса: «кто держит
+  эту роль». Нужен для подсчёта носителей на экране матрицы, для инвалидации всех носителей при
+  изменении состава роли и для каскада при её удалении; без него планировщик разворачивает join и
+  читает всех людей организации, проверяя `role_id` фильтром (миграция
+  `20260806100000_index_user_roles_org_role` — с замером).
 - `uq_user_permission_overrides (user_id, permission_key)`,
   `idx_upo_expires (expires_at) WHERE expires_at IS NOT NULL` — джоб-чистильщик.
 - `uq_resource_acl (resource_type, resource_id, subject_type, subject_id)` — **уникальность по

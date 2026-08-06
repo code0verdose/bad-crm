@@ -1,6 +1,6 @@
 import { type SharedPermissions } from '@bad-crm/shared';
 
-import { authorizeCapability } from '@/domain/access/authorize.util.js';
+import { authorizeCapability, holdsEffectively } from '@/domain/access/authorize.util.js';
 import { type Actor } from '@/domain/access/actor.types.js';
 import { type Decision } from '@/domain/access/decision.types.js';
 import { allow, deny } from '@/domain/access/decision.util.js';
@@ -48,11 +48,15 @@ export const canWriteOverride = (
 
   // The owner holds everything by definition, so the subset rule is a tautology for them — and their
   // actor carries an *empty* permission set, because ownership short-circuits the capability layers.
-  if (draft.effect === 'ALLOW' && !actor.isOwner && !actor.permissions.has(draft.permissionKey)) {
+  if (draft.effect === 'ALLOW' && !holdsEffectively(actor, draft.permissionKey)) {
     return deny('permission_not_granted');
   }
 
-  if (draft.effect === 'DENY' && subject.userId === actor.userId && governsRights(draft.permissionKey)) {
+  if (
+    draft.effect === 'DENY' &&
+    subject.userId === actor.userId &&
+    governsRights(draft.permissionKey)
+  ) {
     return deny('self_lockout');
   }
 
