@@ -114,10 +114,11 @@ const measure = async (): Promise<Record<string, Record<string, string>>> => {
           isOwner: role === 'owner',
           granted: role === 'owner' ? [] : [...SharedPermissions.SYSTEM_ROLE_PERMISSIONS[role]],
           denied: [],
+          roleKeys: [],
           permissionsVersion: 1,
         },
         capabilitiesByUser: {
-          [IVAN]: { isOwner: false, granted: [], denied: [], permissionsVersion: 1 },
+          [IVAN]: { isOwner: false, granted: [], denied: [], roleKeys: [], permissionsVersion: 1 },
         },
       });
       const token = await signIn(test);

@@ -36,6 +36,7 @@ const actorWith = (overrides: Partial<Actor> = {}): Actor => ({
     'task:read',
   ]),
   denied: new Set<SharedPermissions.PermissionKey>(),
+  roleKeys: [],
   ...overrides,
 });
 

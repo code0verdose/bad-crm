@@ -12,6 +12,7 @@ import { RegisterOrganizationUseCase } from '@/application/identity/use-cases/re
 import { RequestPasswordResetUseCase } from '@/application/identity/use-cases/request-password-reset.use-case.js';
 import { AssignRoleUseCase } from '@/application/iam/use-cases/assign-role.use-case.js';
 import { BuildActorQuery } from '@/application/iam/use-cases/build-actor.query.js';
+import { GetMyPermissionsQuery } from '@/application/iam/use-cases/get-my-permissions.query.js';
 import { ProvisionSystemRolesUseCase } from '@/application/iam/use-cases/provision-system-roles.use-case.js';
 import { RemovePermissionOverrideUseCase } from '@/application/iam/use-cases/remove-permission-override.use-case.js';
 import { RevokeRoleUseCase } from '@/application/iam/use-cases/revoke-role.use-case.js';
@@ -264,11 +265,13 @@ export const createAuthApp = (options: AuthAppOptions = {}): AuthApp => {
   const userRoles = options.userRoles ?? new FakeUserRoleRepository();
   const overrides = options.overrides ?? new FakePermissionOverrideRepository();
   const capabilities = new FakeEffectivePermissionsReader(
-    options.capabilities ?? { isOwner: false, granted: [], denied: [], permissionsVersion: 1 },
+    options.capabilities ?? { isOwner: false, granted: [], denied: [], roleKeys: [], permissionsVersion: 1 },
     options.capabilitiesByUser,
   );
+  const buildActor = new BuildActorQuery(unitOfWork, capabilities);
   const iam = {
-    buildActor: new BuildActorQuery(unitOfWork, capabilities),
+    buildActor,
+    getMyPermissions: new GetMyPermissionsQuery(buildActor),
     assignRole: new AssignRoleUseCase(unitOfWork, userRoles, audit),
     revokeRole: new RevokeRoleUseCase(unitOfWork, userRoles, audit),
     writeOverride: new WritePermissionOverrideUseCase(

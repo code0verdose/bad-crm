@@ -6,6 +6,7 @@ import { createMetricsController } from '@/presentation/http/controllers/metrics
 import { createHealthController } from '@/presentation/http/controllers/health.controller.js';
 import { createMetaController } from '@/presentation/http/controllers/meta.controller.js';
 import { createSessionController } from '@/presentation/http/controllers/session.controller.js';
+import { createMeController } from '@/presentation/http/controllers/me.controller.js';
 import { createPermissionOverrideController } from '@/presentation/http/controllers/permission-override.controller.js';
 import { createUserRoleController } from '@/presentation/http/controllers/user-role.controller.js';
 import { allowedOrigins } from '@/presentation/http/cors-origin.util.js';
@@ -100,6 +101,8 @@ export const createRouteRegistry = (
     writeValidator: writeOverrideValidator,
     removeValidator: removeOverrideValidator,
   });
+
+  const me = createMeController({ getMyPermissions: dependencies.iam.getMyPermissions });
 
   const userRoles = createUserRoleController({
     assignRole: dependencies.iam.assignRole,
@@ -293,6 +296,15 @@ export const createRouteRegistry = (
       handlers: [revokeRoleValidator.handler, userRoles.revoke],
       permission: 'role:revoke',
       aclCheckedIn: 'RevokeRoleUseCase',
+    },
+    {
+      method: 'get',
+      path: `${API_PREFIX}/me/permissions`,
+      handlers: [me.permissions],
+      selfService: true,
+      selfServiceReason:
+        'the caller reading their own permissions; a capability here would be meaningless in both directions — taking it away would not stop them knowing what they may do, and granting it to somebody else would give access to nothing, because the operation takes no subject and can only answer about the caller',
+      ownershipCheckedIn: 'GetMyPermissionsQuery',
     },
     {
       method: 'put',

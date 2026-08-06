@@ -30,6 +30,7 @@ import { PrismaEffectivePermissionsReader } from '@/infrastructure/persistence/p
 import { PrismaUserRoleRepository } from '@/infrastructure/persistence/prisma/user-role.repository.js';
 import { AssignRoleUseCase } from '@/application/iam/use-cases/assign-role.use-case.js';
 import { BuildActorQuery } from '@/application/iam/use-cases/build-actor.query.js';
+import { GetMyPermissionsQuery } from '@/application/iam/use-cases/get-my-permissions.query.js';
 import { RemovePermissionOverrideUseCase } from '@/application/iam/use-cases/remove-permission-override.use-case.js';
 import { RevokeRoleUseCase } from '@/application/iam/use-cases/revoke-role.use-case.js';
 import { WritePermissionOverrideUseCase } from '@/application/iam/use-cases/write-permission-override.use-case.js';
@@ -371,8 +372,11 @@ const buildIam = (input: {
   const permissions = new PrismaEffectivePermissionsReader();
   const overrides = new PrismaPermissionOverrideRepository();
 
+  const buildActor = new BuildActorQuery(unitOfWork, permissions);
+
   return {
-    buildActor: new BuildActorQuery(unitOfWork, permissions),
+    buildActor,
+    getMyPermissions: new GetMyPermissionsQuery(buildActor),
     assignRole: new AssignRoleUseCase(unitOfWork, userRoles, input.audit),
     revokeRole: new RevokeRoleUseCase(unitOfWork, userRoles, input.audit),
     writeOverride: new WritePermissionOverrideUseCase(

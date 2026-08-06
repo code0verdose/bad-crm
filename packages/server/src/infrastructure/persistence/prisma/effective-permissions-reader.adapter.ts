@@ -56,6 +56,7 @@ export class PrismaEffectivePermissionsReader
           select: {
             role: {
               select: {
+                key: true,
                 permissions: {
                   where: { permission: { deprecatedAt: null } },
                   select: { permissionKey: true },
@@ -90,6 +91,7 @@ export class PrismaEffectivePermissionsReader
         isOwner: organization?.ownerId === userId,
         granted: [...granted],
         denied: [...denied],
+        roleKeys: assignments.map((assignment) => assignment.role.key),
         permissionsVersion: user.permissionsVersion,
       };
     });

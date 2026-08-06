@@ -50,6 +50,7 @@ export class BuildActorQuery {
           permissionsVersion: facts.permissionsVersion,
           permissions: new Set<SharedPermissions.PermissionKey>(facts.granted),
           denied: new Set<SharedPermissions.PermissionKey>(facts.denied),
+          roleKeys: facts.roleKeys,
         };
       },
     );

@@ -30,6 +30,7 @@ const actorWith = (overrides: Partial<Actor> = {}): Actor => ({
   permissionsVersion: 1,
   permissions: new Set<SharedPermissions.PermissionKey>(),
   denied: new Set<SharedPermissions.PermissionKey>(),
+  roleKeys: [],
   ...overrides,
 });
 

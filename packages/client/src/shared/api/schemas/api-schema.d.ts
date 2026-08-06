@@ -491,6 +491,37 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/me/permissions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * What the caller may do.
+         * @description The caller's own permissions, for the interface to hint with: hide a button, grey out a menu.
+         *     **The authority is always the server** — every request the hidden button would make is
+         *     checked again — so a stale copy costs a refused action, never an unauthorised one.
+         *
+         *     There is no `userId` parameter and there will not be one: reading somebody else's rights is a
+         *     different operation gated by `permission:override_read`, and an endpoint whose authorization
+         *     depended on an argument is the shape that produces «forgot to check for this value».
+         *
+         *     `ETag` is `"perm-<userId>-<version>"`, where the version is `permissionsVersion` — bumped
+         *     inside the transaction of every change to that person's rights. The validator therefore
+         *     changes at the same moment the answer does, which is why the cache directive can be
+         *     `must-revalidate` rather than a guessed lifetime: a 304 costs one read of an integer.
+         */
+        get: operations["getMyPermissions"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/users/{userId}/permission-overrides/{permission}": {
         parameters: {
             query?: never;
@@ -894,6 +925,28 @@ export interface components {
              * @example Invalid input: expected number, received string
              */
             message: string;
+        };
+        /**
+         * @description The folded view of one person's rights: what their roles and ALLOW exceptions grant, what
+         *     their DENY exceptions take away, and the version that identifies the answer.
+         */
+        MyPermissions: {
+            /** @description Everything granted, roles and ALLOW exceptions together, deduplicated. */
+            permissions: string[];
+            /**
+             * @description DENY exceptions, kept apart from the grants because «refused by an exception» and «never
+             *     granted» are different answers with different remedies on screen.
+             */
+            denied: string[];
+            /**
+             * @description Keys of the roles held. For explaining a decision, never for making one — a check written
+             *     against a role name is the second point of truth the permission model forbids.
+             */
+            roles: string[];
+            /** @description The owner of the organization, who is not bound by the capability layers. */
+            isOwner: boolean;
+            /** @description `permissionsVersion`; also the second half of the `ETag`. */
+            version: number;
         };
         /** @description One exception, for one person, on the permission named in the path. */
         PermissionOverride: {
@@ -1736,6 +1789,44 @@ export interface operations {
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
             409: components["responses"]["Conflict"];
+            429: components["responses"]["RateLimited"];
+            500: components["responses"]["InternalError"];
+        };
+    };
+    getMyPermissions: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description The `ETag` of a copy the client already holds; a match answers 304. */
+                "If-None-Match"?: string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The caller's effective permissions. */
+            200: {
+                headers: {
+                    /** @description `"perm-<userId>-<version>"` — changes when the rights do. */
+                    ETag: string;
+                    /** @description Always `private, must-revalidate` — the body belongs to one person. */
+                    "Cache-Control": string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MyPermissions"];
+                };
+            };
+            /** @description The copy the client holds is still current. */
+            304: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthenticated"];
+            404: components["responses"]["NotFound"];
             429: components["responses"]["RateLimited"];
             500: components["responses"]["InternalError"];
         };

@@ -19,4 +19,12 @@ export interface Actor extends SharedPermissions.CapabilityView {
   readonly userId: string;
   readonly organizationId: string;
   readonly permissionsVersion: number;
+  /**
+   * Keys of the roles held, for explaining a decision rather than making one.
+   *
+   * No policy reads this and none may: «is a manager» is not a permission, and a check written
+   * against a role name is the second point of truth invariant 2 forbids. It exists so the interface
+   * can say *why* — «because you are a manager» is actionable, «you have the permission» is not.
+   */
+  readonly roleKeys: readonly string[];
 }

@@ -2,6 +2,7 @@ import { type RequestHandler } from 'express';
 
 import { type AssignRoleUseCase } from '@/application/iam/use-cases/assign-role.use-case.js';
 import { type BuildActorQuery } from '@/application/iam/use-cases/build-actor.query.js';
+import { type GetMyPermissionsQuery } from '@/application/iam/use-cases/get-my-permissions.query.js';
 import { type RemovePermissionOverrideUseCase } from '@/application/iam/use-cases/remove-permission-override.use-case.js';
 import { type RevokeRoleUseCase } from '@/application/iam/use-cases/revoke-role.use-case.js';
 import { type WritePermissionOverrideUseCase } from '@/application/iam/use-cases/write-permission-override.use-case.js';
@@ -86,6 +87,7 @@ export interface IdentityDependencies {
  */
 export interface IamDependencies {
   readonly buildActor: BuildActorQuery;
+  readonly getMyPermissions: GetMyPermissionsQuery;
   readonly assignRole: AssignRoleUseCase;
   readonly revokeRole: RevokeRoleUseCase;
   readonly writeOverride: WritePermissionOverrideUseCase;

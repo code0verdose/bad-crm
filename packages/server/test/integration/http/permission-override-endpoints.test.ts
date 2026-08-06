@@ -30,6 +30,7 @@ const ADMIN = {
   isOwner: false,
   granted: ['permission:override', 'invoice:issue'] as const,
   denied: [] as const,
+  roleKeys: [] as const,
   permissionsVersion: 1,
 };
 
@@ -58,7 +59,7 @@ describe('PUT /api/v1/users/{userId}/permission-overrides/{permission}', () => {
     const { test, token } = await signedIn({
       capabilities: { ...ADMIN, granted: [...ADMIN.granted], denied: [] },
       capabilitiesByUser: {
-        [IVAN]: { isOwner: false, granted: [], denied: [], permissionsVersion: 1 },
+        [IVAN]: { isOwner: false, granted: [], denied: [], roleKeys: [], permissionsVersion: 1 },
       },
     });
 
@@ -79,7 +80,7 @@ describe('PUT /api/v1/users/{userId}/permission-overrides/{permission}', () => {
     const { test, token } = await signedIn({
       capabilities: { ...ADMIN, granted: [...ADMIN.granted], denied: [] },
       capabilitiesByUser: {
-        [IVAN]: { isOwner: false, granted: [], denied: [], permissionsVersion: 1 },
+        [IVAN]: { isOwner: false, granted: [], denied: [], roleKeys: [], permissionsVersion: 1 },
       },
     });
     const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
@@ -122,7 +123,7 @@ describe('PUT /api/v1/users/{userId}/permission-overrides/{permission}', () => {
     const { test, token } = await signedIn({
       capabilities: { ...ADMIN, granted: [...ADMIN.granted], denied: [] },
       capabilitiesByUser: {
-        [IVAN]: { isOwner: false, granted: [], denied: [], permissionsVersion: 1 },
+        [IVAN]: { isOwner: false, granted: [], denied: [], roleKeys: [], permissionsVersion: 1 },
       },
       overrides,
     });
@@ -139,9 +140,9 @@ describe('PUT /api/v1/users/{userId}/permission-overrides/{permission}', () => {
 
   it('refuses to hand out a permission the caller does not hold', async () => {
     const { test, token } = await signedIn({
-      capabilities: { isOwner: false, granted: ['permission:override'], denied: [], permissionsVersion: 1 },
+      capabilities: { isOwner: false, granted: ['permission:override'], denied: [], roleKeys: [], permissionsVersion: 1 },
       capabilitiesByUser: {
-        [IVAN]: { isOwner: false, granted: [], denied: [], permissionsVersion: 1 },
+        [IVAN]: { isOwner: false, granted: [], denied: [], roleKeys: [], permissionsVersion: 1 },
       },
     });
 
@@ -157,9 +158,9 @@ describe('PUT /api/v1/users/{userId}/permission-overrides/{permission}', () => {
 
   it('allows a DENY of the same permission, because taking away is not a way to gain', async () => {
     const { test, token } = await signedIn({
-      capabilities: { isOwner: false, granted: ['permission:override'], denied: [], permissionsVersion: 1 },
+      capabilities: { isOwner: false, granted: ['permission:override'], denied: [], roleKeys: [], permissionsVersion: 1 },
       capabilitiesByUser: {
-        [IVAN]: { isOwner: false, granted: [], denied: [], permissionsVersion: 1 },
+        [IVAN]: { isOwner: false, granted: [], denied: [], roleKeys: [], permissionsVersion: 1 },
       },
     });
 
@@ -180,7 +181,7 @@ describe('PUT /api/v1/users/{userId}/permission-overrides/{permission}', () => {
     const { test, token } = await signedIn({
       capabilities: { ...ADMIN, granted: [...ADMIN.granted], denied: [] },
       capabilitiesByUser: {
-        [IVAN]: { isOwner: true, granted: [], denied: [], permissionsVersion: 1 },
+        [IVAN]: { isOwner: true, granted: [], denied: [], roleKeys: [], permissionsVersion: 1 },
       },
     });
 
@@ -271,7 +272,7 @@ describe('DELETE /api/v1/users/{userId}/permission-overrides/{permission}', () =
     const { test, token } = await signedIn({
       capabilities: { ...ADMIN, granted: [...ADMIN.granted], denied: [] },
       capabilitiesByUser: {
-        [IVAN]: { isOwner: false, granted: [], denied: [], permissionsVersion: 1 },
+        [IVAN]: { isOwner: false, granted: [], denied: [], roleKeys: [], permissionsVersion: 1 },
       },
       overrides,
     });
@@ -289,7 +290,7 @@ describe('DELETE /api/v1/users/{userId}/permission-overrides/{permission}', () =
     const { test, token } = await signedIn({
       capabilities: { ...ADMIN, granted: [...ADMIN.granted], denied: [] },
       capabilitiesByUser: {
-        [IVAN]: { isOwner: false, granted: [], denied: [], permissionsVersion: 1 },
+        [IVAN]: { isOwner: false, granted: [], denied: [], roleKeys: [], permissionsVersion: 1 },
       },
     });
 

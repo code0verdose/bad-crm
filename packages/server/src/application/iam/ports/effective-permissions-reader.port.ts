@@ -28,6 +28,14 @@ export interface CapabilityFacts {
    * different remedy for each.
    */
   readonly denied: readonly SharedPermissions.PermissionKey[];
+  /**
+   * Keys of the roles the person holds, unexpired ones only.
+   *
+   * Not used by any decision — the decision is made from `granted` and `denied` — but it is what the
+   * interface shows next to «why»: «you may do this because you are a manager» is an answer a person
+   * can act on, and «you have the permission» is not.
+   */
+  readonly roleKeys: readonly string[];
   /** The counter carried in the access token; a stale one means the view must be rebuilt. */
   readonly permissionsVersion: number;
 }
