@@ -1245,13 +1245,18 @@ export const DENY_REASONS = [
   'denied_by_override', 'resource_required', 'resource_not_found',
   'acl_explicit_none', 'insufficient_acl_level', 'acl_resolution_failed',
   'tenant_mismatch', 'vault_locked', 'period_locked', 'last_owner_required',
-  'self_lockout', 'self_assignment_forbidden', 'system_role_immutable',
+  'self_lockout', 'self_assignment_forbidden', 'system_role_immutable', 'owner_immutable',
 ] as const;
 export type DenyReason = (typeof DENY_REASONS)[number];
 ```
 
 `DenyReason` — не украшение: он попадает в `AuditLog`, в `problem+json` и в UI («не хватает права X»
 против «нет доступа к этому объекту»). Отказ без причины отлаживается только чтением кода.
+
+`owner_immutable` добавлена 2026-08-05 при реализации STORY-011-05: DENY-оверрайд на владельца
+отвергается и use-case'ом, и триггером `ck_upo_not_owner`, а истории нужна была причина, которую
+можно показать и отфильтровать. Это конфликт состояния (409), а не отказ в праве: администратор
+имеет право писать оверрайды, но эта строка сделала бы организацию неадминистрируемой.
 
 `self_assignment_forbidden` добавлена 2026-08-05 при реализации STORY-011-04: правило «нельзя
 назначить роль себе» (митигация `T-IAM-09`) — отдельный отказ, а не разновидность `self_lockout`.

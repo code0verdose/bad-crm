@@ -25,6 +25,10 @@ export const AUDIT_ACTIONS = [
   'role.assigned',
   /** A role was taken away, by an administrator or by the expiry of a temporary grant. */
   'role.revoked',
+  /** A per-user exception was written, replaced or removed (STORY-011-05). */
+  'permission.override.created',
+  'permission.override.updated',
+  'permission.override.deleted',
   /**
    * Row level security was bypassed on purpose — a migration path, a support action, a background
    * job that must see every tenant.

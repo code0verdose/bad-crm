@@ -96,6 +96,9 @@ describe('the action catalogue', () => {
       'password.reset',
       'role.assigned',
       'role.revoked',
+      'permission.override.created',
+      'permission.override.updated',
+      'permission.override.deleted',
       'rls.bypassed',
     ]);
   });

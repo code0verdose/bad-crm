@@ -40,12 +40,23 @@ const sourceFiles = (directory: string): string[] =>
     return entry.name.endsWith('.ts') ? [path] : [];
   });
 
+/**
+ * Every action named on an `action:` line — the whole line, not just a bare literal after the colon.
+ *
+ * Widened when the first use-case chose between two actions with a ternary («created» or «updated»,
+ * depending on whether an exception already existed): the previous pattern read only
+ * `action: '…'` and silently saw neither. Reading to the end of the line keeps both directions
+ * honest — a catalogue entry nobody writes still fails, and a name invented at a call site still
+ * fails — without turning «write it as one literal» into a rule nobody agreed to.
+ */
 const recordedActions = (): Set<string> => {
   const found = new Set<string>();
 
   for (const file of sourceFiles(SRC)) {
-    for (const [, action] of readFileSync(file, 'utf8').matchAll(/action: '([a-z_.]+)'/g)) {
-      if (action !== undefined) found.add(action);
+    for (const [, line] of readFileSync(file, 'utf8').matchAll(/action:([^\n]*)/g)) {
+      for (const [, action] of (line ?? '').matchAll(/'([a-z_.]+)'/g)) {
+        if (action !== undefined) found.add(action);
+      }
     }
   }
 

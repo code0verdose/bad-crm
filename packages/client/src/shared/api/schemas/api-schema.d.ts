@@ -491,6 +491,54 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/users/{userId}/permission-overrides/{permission}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Grant or take away one permission from one person.
+         * @description Layer 3 of the permission model: the exception that makes «custom per user» possible without
+         *     inventing a role for every difference.
+         *
+         *     `PUT`, because the pair (person, permission) identifies the row: writing the same exception
+         *     twice is the same exception, and the client never has to know whether it is creating or
+         *     replacing. The previous state, if any, goes into the audit trail as `before`.
+         *
+         *     The rules, all of which answer 403 or 409 rather than failing quietly:
+         *
+         *     * a `DENY` aimed at the **owner** is refused `owner_immutable` (409) — one such row would
+         *       make «the owner cannot be locked out» false. Refused by a database trigger as well, so a
+         *       direct SQL session cannot write one either;
+         *     * an `ALLOW` may only hand out a permission the caller already holds
+         *       (`permission_not_granted`, 403). A `DENY` is not bounded by that rule: taking something
+         *       away is not a way to gain it;
+         *     * denying **oneself** `permission:override` or `role:update` is `self_lockout` (409): the
+         *       person who could undo it is the person who just lost the right to.
+         *
+         *     `reason` is mandatory and must survive trimming to at least ten characters — six months
+         *     later it is the only thing that explains why one person differs from their role. `expiresAt`
+         *     is strongly recommended for `ALLOW`; the interface defaults it to thirty days.
+         */
+        put: operations["writePermissionOverride"];
+        post?: never;
+        /**
+         * Remove one exception, putting the person back on what their roles say.
+         * @description Removing an exception that is not there answers 204 as well: the caller asked for a state and
+         *     the state is that no exception exists. Nothing is written to the trail in that case.
+         *
+         *     Lifting a `DENY` from **oneself** is refused `self_assignment_forbidden` (403) — that is
+         *     precisely the escalation the `DENY` was written to prevent, and somebody else has to do it.
+         */
+        delete: operations["removePermissionOverride"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -811,7 +859,7 @@ export interface components {
          *     reused with a different meaning.
          * @enum {string}
          */
-        ErrorCode: "validation_failed" | "unauthenticated" | "invalid_credentials" | "account_suspended" | "registration_disabled" | "password_reset_token_invalid" | "mail_not_configured" | "route_not_found" | "payload_too_large" | "vault_locked" | "stale_version" | "idempotency_key_reuse" | "last_owner_required" | "period_locked" | "self_lockout" | "system_role_immutable" | "rate_limited" | "feature_disabled" | "service_unavailable" | "internal_error" | "organization_not_found" | "organization_forbidden" | "organization_already_exists" | "team_not_found" | "team_forbidden" | "team_already_exists" | "user_not_found" | "user_forbidden" | "user_already_exists" | "role_not_found" | "role_forbidden" | "role_already_exists" | "invitation_not_found" | "invitation_forbidden" | "invitation_already_exists" | "session_not_found" | "session_forbidden" | "session_already_exists" | "project_not_found" | "project_forbidden" | "project_already_exists" | "board_not_found" | "board_forbidden" | "board_already_exists" | "task_not_found" | "task_forbidden" | "task_already_exists" | "sprint_not_found" | "sprint_forbidden" | "sprint_already_exists" | "comment_not_found" | "comment_forbidden" | "comment_already_exists" | "doc_not_found" | "doc_forbidden" | "doc_already_exists" | "kb_note_not_found" | "kb_note_forbidden" | "kb_note_already_exists" | "file_not_found" | "file_forbidden" | "file_already_exists" | "vault_item_not_found" | "vault_item_forbidden" | "vault_item_already_exists" | "secure_link_not_found" | "secure_link_forbidden" | "secure_link_already_exists" | "time_entry_not_found" | "time_entry_forbidden" | "time_entry_already_exists" | "channel_not_found" | "channel_forbidden" | "channel_already_exists" | "message_not_found" | "message_forbidden" | "message_already_exists" | "dashboard_not_found" | "dashboard_forbidden" | "dashboard_already_exists";
+        ErrorCode: "validation_failed" | "unauthenticated" | "invalid_credentials" | "account_suspended" | "registration_disabled" | "password_reset_token_invalid" | "mail_not_configured" | "route_not_found" | "payload_too_large" | "vault_locked" | "stale_version" | "idempotency_key_reuse" | "last_owner_required" | "period_locked" | "self_lockout" | "system_role_immutable" | "owner_immutable" | "rate_limited" | "feature_disabled" | "service_unavailable" | "internal_error" | "organization_not_found" | "organization_forbidden" | "organization_already_exists" | "team_not_found" | "team_forbidden" | "team_already_exists" | "user_not_found" | "user_forbidden" | "user_already_exists" | "role_not_found" | "role_forbidden" | "role_already_exists" | "invitation_not_found" | "invitation_forbidden" | "invitation_already_exists" | "session_not_found" | "session_forbidden" | "session_already_exists" | "project_not_found" | "project_forbidden" | "project_already_exists" | "board_not_found" | "board_forbidden" | "board_already_exists" | "task_not_found" | "task_forbidden" | "task_already_exists" | "sprint_not_found" | "sprint_forbidden" | "sprint_already_exists" | "comment_not_found" | "comment_forbidden" | "comment_already_exists" | "doc_not_found" | "doc_forbidden" | "doc_already_exists" | "kb_note_not_found" | "kb_note_forbidden" | "kb_note_already_exists" | "file_not_found" | "file_forbidden" | "file_already_exists" | "vault_item_not_found" | "vault_item_forbidden" | "vault_item_already_exists" | "secure_link_not_found" | "secure_link_forbidden" | "secure_link_already_exists" | "time_entry_not_found" | "time_entry_forbidden" | "time_entry_already_exists" | "channel_not_found" | "channel_forbidden" | "channel_already_exists" | "message_not_found" | "message_forbidden" | "message_already_exists" | "dashboard_not_found" | "dashboard_forbidden" | "dashboard_already_exists";
         /**
          * @description Why one field was rejected. The list mirrors
          *     `packages/shared/src/errors/validation-issue.enums.ts`; anything a validator produces
@@ -831,7 +879,7 @@ export interface components {
          *     consulted (an unparsed body, a rate limit).
          * @enum {string}
          */
-        DenyReason: "not_authenticated" | "unknown_permission" | "permission_not_granted" | "denied_by_override" | "resource_required" | "resource_not_found" | "acl_explicit_none" | "insufficient_acl_level" | "acl_resolution_failed" | "tenant_mismatch" | "vault_locked" | "period_locked" | "last_owner_required" | "self_lockout" | "self_assignment_forbidden" | "system_role_immutable";
+        DenyReason: "not_authenticated" | "unknown_permission" | "permission_not_granted" | "denied_by_override" | "resource_required" | "resource_not_found" | "acl_explicit_none" | "insufficient_acl_level" | "acl_resolution_failed" | "tenant_mismatch" | "vault_locked" | "period_locked" | "last_owner_required" | "self_lockout" | "self_assignment_forbidden" | "system_role_immutable" | "owner_immutable";
         ValidationIssue: {
             /**
              * @description The rejected field in dot notation over the request value — `title`,
@@ -846,6 +894,28 @@ export interface components {
              * @example Invalid input: expected number, received string
              */
             message: string;
+        };
+        /** @description One exception, for one person, on the permission named in the path. */
+        PermissionOverride: {
+            /**
+             * @description `ALLOW` widens beyond the roles; `DENY` takes away what a role grants and beats every
+             *     grant below it — except for the owner, on whom a `DENY` cannot be written at all.
+             * @enum {string}
+             */
+            effect: "ALLOW" | "DENY";
+            /**
+             * @description Why. Mandatory, and checked by the database as well: without it nobody remembers six
+             *     months later why a person differs from their role, and every exception becomes permanent.
+             * @example billing handed over to Pyotr during parental leave
+             */
+            reason: string;
+            /**
+             * Format: date-time
+             * @description When it stops applying — enforced where permissions are assembled, not only by the
+             *     cleaner. A date in the past is rejected 422.
+             * @example 2027-01-01T00:00:00Z
+             */
+            expiresAt?: string | null;
         };
         /** @description Which role, and until when. Absent or `null` `expiresAt` means «until revoked». */
         RoleAssignment: {
@@ -1107,6 +1177,17 @@ export interface components {
         };
     };
     parameters: {
+        /**
+         * @description A key of the closed catalogue (`docs/security/permission-model.md` §3), in the form
+         *     `resource:action`. A key nobody declared is rejected 422 rather than stored — a permission
+         *     the product cannot check is an exception nobody can act on.
+         *
+         *     Named `permission` and not `permissionKey` deliberately: `test/contract/route-authorization.test.ts`
+         *     refuses any path or query parameter whose name suggests a credential, and «key» is one of the
+         *     words it looks for. The rule is worth more than the extra syllable — a credential in a URL
+         *     reaches every proxy log in front of the installation.
+         */
+        PermissionKey: string;
         /**
          * @description Identifier of a person in the caller's organization. An id from another organization is
          *     answered 404, not 403 — the API does not confirm what exists in tenants the caller cannot
@@ -1655,6 +1736,94 @@ export interface operations {
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
             409: components["responses"]["Conflict"];
+            429: components["responses"]["RateLimited"];
+            500: components["responses"]["InternalError"];
+        };
+    };
+    writePermissionOverride: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /**
+                 * @description Identifier of a person in the caller's organization. An id from another organization is
+                 *     answered 404, not 403 — the API does not confirm what exists in tenants the caller cannot
+                 *     see.
+                 */
+                userId: components["parameters"]["UserId"];
+                /**
+                 * @description A key of the closed catalogue (`docs/security/permission-model.md` §3), in the form
+                 *     `resource:action`. A key nobody declared is rejected 422 rather than stored — a permission
+                 *     the product cannot check is an exception nobody can act on.
+                 *
+                 *     Named `permission` and not `permissionKey` deliberately: `test/contract/route-authorization.test.ts`
+                 *     refuses any path or query parameter whose name suggests a credential, and «key» is one of the
+                 *     words it looks for. The rule is worth more than the extra syllable — a credential in a URL
+                 *     reaches every proxy log in front of the installation.
+                 */
+                permission: components["parameters"]["PermissionKey"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PermissionOverride"];
+            };
+        };
+        responses: {
+            /** @description The exception is in place. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["ValidationFailed"];
+            429: components["responses"]["RateLimited"];
+            500: components["responses"]["InternalError"];
+        };
+    };
+    removePermissionOverride: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /**
+                 * @description Identifier of a person in the caller's organization. An id from another organization is
+                 *     answered 404, not 403 — the API does not confirm what exists in tenants the caller cannot
+                 *     see.
+                 */
+                userId: components["parameters"]["UserId"];
+                /**
+                 * @description A key of the closed catalogue (`docs/security/permission-model.md` §3), in the form
+                 *     `resource:action`. A key nobody declared is rejected 422 rather than stored — a permission
+                 *     the product cannot check is an exception nobody can act on.
+                 *
+                 *     Named `permission` and not `permissionKey` deliberately: `test/contract/route-authorization.test.ts`
+                 *     refuses any path or query parameter whose name suggests a credential, and «key» is one of the
+                 *     words it looks for. The rule is worth more than the extra syllable — a credential in a URL
+                 *     reaches every proxy log in front of the installation.
+                 */
+                permission: components["parameters"]["PermissionKey"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The person has no such exception. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
             429: components["responses"]["RateLimited"];
             500: components["responses"]["InternalError"];
         };

@@ -50,6 +50,7 @@
     "period_locked": "This period is closed and can no longer be changed.",
     "self_lockout": "This change would remove your own access.",
     "system_role_immutable": "Built-in roles cannot be changed.",
+    "owner_immutable": "Built-in owner access cannot be taken away.",
     "rate_limited": "Too many attempts. Try again in {{seconds}} s.",
     "registration_disabled": "This installation is not open for registration.",
     "role_already_exists": "That role already exists.",

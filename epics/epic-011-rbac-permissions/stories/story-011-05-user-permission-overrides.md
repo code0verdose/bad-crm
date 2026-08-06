@@ -1,7 +1,7 @@
 ---
 id: STORY-011-05
 epic: EPIC-011
-status: backlog
+status: in-progress
 blocked: false
 priority: must
 estimate: L
@@ -103,6 +103,35 @@ estimate: L
       интеграционные `permission-overrides-api.spec.ts` (п. 3, 4, 6, 7, 8, 11),
       `owner-deny-anomaly.spec.ts` (п. 5, ветка 14), isolation-тест таблицы.
 - [ ] OpenAPI: `/users/{userId}/permission-overrides`.
+
+## Что уже сделано (2026-08-05)
+
+- [x] Таблица `user_permission_overrides` — миграция `20260805130000_user_permission_overrides`:
+      `effect ALLOW|DENY`, `CHECK (length(btrim(reason)) >= 10)`, `uq (user_id, permission_key)`
+      (одно мнение об одном праве — свойство схемы, а не договорённости), частичный `idx_upo_expires`,
+      триггер `ck_upo_not_owner` и полный блок RLS. Составные FK, как везде.
+- [x] `domain/iam/access/permission-override.policy.ts` — `canWriteOverride`/`canRemoveOverride`:
+      DENY на владельца (`owner_immutable`), правило подмножества **только для ALLOW** (отобрать —
+      не способ получить), самоблокировка на `permission:override`/`role:update`, и асимметрия
+      снятия: снять DENY с себя — это `self_assignment_forbidden`, а не lockout.
+- [x] Use-cases (upsert + удаление), репозиторий, инкремент `permissions_version`, записи в журнал
+      (`permission.override.created/updated/deleted`) с `reason` в `before`/`after`.
+- [x] Маршруты `PUT`/`DELETE /users/{userId}/permission-overrides/{permission}` с правом
+      `permission:override`, спека и типы клиента. Параметр называется `permission`, а не
+      `permissionKey`: контрактный тест отвергает параметры пути, чьё имя похоже на учётные данные,
+      и «key» — одно из его слов.
+- [x] Оверрайды попали в сборку актора: ALLOW добавляется к правам, DENY возвращается отдельно
+      (`denied_by_override` — это другой ответ, чем «никто не выдавал»), обе половины — с тем же
+      фильтром истечения, что и роли.
+- [x] Новая причина отказа `owner_immutable` — в закрытом списке, в модели прав, в спеке, в кодах
+      ошибок (409) и в обоих переводах.
+- [x] Тесты: табличные по policy, аргументы репозитория, восемь HTTP-сценариев, и отдельный
+      интеграционный набор на триггер — включая попытку превратить ALLOW в DENY через `UPDATE`.
+
+Осталось: список исключений с источником-ролью (`list-user-permission-overrides.query.ts`) и экран
+админки — вместе со STORY-011-11; отложенная инвалидация на момент `expiresAt` (п. 10) — вместе с
+очередями EPIC-021, до тех пор истечение действует немедленно за счёт фильтра в запросах;
+подтверждение `X-Confirm-Dangerous` для опасных ключей (п. 8) — вместе с UI, который его отправляет.
 
 ## Ссылки
 

@@ -830,6 +830,89 @@ paths:
         '500':
           $ref: '#/components/responses/InternalError'
 
+  /users/{userId}/permission-overrides/{permission}:
+    put:
+      operationId: writePermissionOverride
+      summary: Grant or take away one permission from one person.
+      description: |
+        Layer 3 of the permission model: the exception that makes «custom per user» possible without
+        inventing a role for every difference.
+
+        `PUT`, because the pair (person, permission) identifies the row: writing the same exception
+        twice is the same exception, and the client never has to know whether it is creating or
+        replacing. The previous state, if any, goes into the audit trail as `before`.
+
+        The rules, all of which answer 403 or 409 rather than failing quietly:
+
+        * a `DENY` aimed at the **owner** is refused `owner_immutable` (409) — one such row would
+          make «the owner cannot be locked out» false. Refused by a database trigger as well, so a
+          direct SQL session cannot write one either;
+        * an `ALLOW` may only hand out a permission the caller already holds
+          (`permission_not_granted`, 403). A `DENY` is not bounded by that rule: taking something
+          away is not a way to gain it;
+        * denying **oneself** `permission:override` or `role:update` is `self_lockout` (409): the
+          person who could undo it is the person who just lost the right to.
+
+        `reason` is mandatory and must survive trimming to at least ten characters — six months
+        later it is the only thing that explains why one person differs from their role. `expiresAt`
+        is strongly recommended for `ALLOW`; the interface defaults it to thirty days.
+      tags: [iam]
+      x-permission: permission:override
+      parameters:
+        - $ref: '#/components/parameters/UserId'
+        - $ref: '#/components/parameters/PermissionKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PermissionOverride'
+      responses:
+        '204':
+          description: The exception is in place.
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+    delete:
+      operationId: removePermissionOverride
+      summary: Remove one exception, putting the person back on what their roles say.
+      description: |
+        Removing an exception that is not there answers 204 as well: the caller asked for a state and
+        the state is that no exception exists. Nothing is written to the trail in that case.
+
+        Lifting a `DENY` from **oneself** is refused `self_assignment_forbidden` (403) — that is
+        precisely the escalation the `DENY` was written to prevent, and somebody else has to do it.
+      tags: [iam]
+      x-permission: permission:override
+      parameters:
+        - $ref: '#/components/parameters/UserId'
+        - $ref: '#/components/parameters/PermissionKey'
+      responses:
+        '204':
+          description: The person has no such exception.
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
 components:
   securitySchemes:
     # Declared ahead of its use (EPIC-006): the access token is a short-lived JWT in the
@@ -1303,6 +1386,7 @@ components:
         - period_locked
         - self_lockout
         - system_role_immutable
+        - owner_immutable
         - rate_limited
         - feature_disabled
         - service_unavailable
@@ -1416,6 +1500,7 @@ components:
         - self_lockout
         - self_assignment_forbidden
         - system_role_immutable
+        - owner_immutable
 
     ValidationIssue:
       type: object
@@ -1435,6 +1520,35 @@ components:
           type: string
           description: English, for the developer reading a log. Never shown to a user.
           examples: ['Invalid input: expected number, received string']
+
+    PermissionOverride:
+      type: object
+      additionalProperties: false
+      required: [effect, reason]
+      description: One exception, for one person, on the permission named in the path.
+      properties:
+        effect:
+          type: string
+          enum: [ALLOW, DENY]
+          description: |
+            `ALLOW` widens beyond the roles; `DENY` takes away what a role grants and beats every
+            grant below it — except for the owner, on whom a `DENY` cannot be written at all.
+        reason:
+          type: string
+          minLength: 10
+          maxLength: 500
+          description: |
+            Why. Mandatory, and checked by the database as well: without it nobody remembers six
+            months later why a person differs from their role, and every exception becomes permanent.
+          examples: ['billing handed over to Pyotr during parental leave']
+        expiresAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: |
+            When it stops applying — enforced where permissions are assembled, not only by the
+            cleaner. A date in the past is rejected 422.
+          examples: ['2027-01-01T00:00:00Z']
 
     RoleAssignment:
       type: object
@@ -1582,6 +1696,26 @@ components:
       example: bad_crm_refresh=; Max-Age=0; Path=/api/v1/auth; HttpOnly; Secure; SameSite=Lax
 
   parameters:
+    PermissionKey:
+      name: permission
+      in: path
+      required: true
+      description: |
+        A key of the closed catalogue (`docs/security/permission-model.md` §3), in the form
+        `resource:action`. A key nobody declared is rejected 422 rather than stored — a permission
+        the product cannot check is an exception nobody can act on.
+
+        Named `permission` and not `permissionKey` deliberately: `test/contract/route-authorization.test.ts`
+        refuses any path or query parameter whose name suggests a credential, and «key» is one of the
+        words it looks for. The rule is worth more than the extra syllable — a credential in a URL
+        reaches every proxy log in front of the installation.
+      schema:
+        type: string
+        pattern: '^[a-z][a-z0-9_]*:[a-z][a-z0-9_]*$'
+      examples:
+        issueInvoice:
+          value: invoice:issue
+
     UserId:
       name: userId
       in: path

@@ -49,10 +49,7 @@ export class BuildActorQuery {
           isOwner: facts.isOwner,
           permissionsVersion: facts.permissionsVersion,
           permissions: new Set<SharedPermissions.PermissionKey>(facts.granted),
-          // Empty until `UserPermissionOverride` exists (STORY-011-05). An empty DENY set is not an
-          // assumption: it is what «no overrides have been written» means, and the algorithm reads it
-          // the same way either way.
-          denied: new Set<SharedPermissions.PermissionKey>(),
+          denied: new Set<SharedPermissions.PermissionKey>(facts.denied),
         };
       },
     );

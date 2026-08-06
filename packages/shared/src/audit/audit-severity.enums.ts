@@ -35,6 +35,11 @@ export const AUDIT_ACTION_SEVERITY: Readonly<Record<AuditAction, AuditSeverity>>
   // §10 of the permission model files every change of rights at this level.
   'role.assigned': 'WARNING',
   'role.revoked': 'WARNING',
+  // An exception on one person: the layer that can take a right away, and the one whose rows an
+  // escalation review reads first.
+  'permission.override.created': 'WARNING',
+  'permission.override.updated': 'WARNING',
+  'permission.override.deleted': 'WARNING',
   // Row-level security deliberately bypassed. Nothing in normal operation raises it, and an
   // untraced bypass is indistinguishable from an intrusion.
   'rls.bypassed': 'CRITICAL',

@@ -6,6 +6,7 @@ import { createMetricsController } from '@/presentation/http/controllers/metrics
 import { createHealthController } from '@/presentation/http/controllers/health.controller.js';
 import { createMetaController } from '@/presentation/http/controllers/meta.controller.js';
 import { createSessionController } from '@/presentation/http/controllers/session.controller.js';
+import { createPermissionOverrideController } from '@/presentation/http/controllers/permission-override.controller.js';
 import { createUserRoleController } from '@/presentation/http/controllers/user-role.controller.js';
 import { allowedOrigins } from '@/presentation/http/cors-origin.util.js';
 import { type HttpServerDependencies } from '@/presentation/http/http-server.types.js';
@@ -30,6 +31,10 @@ import {
   sessionIdParamsSchema,
 } from '@/presentation/http/validators/auth.validator.js';
 import { metaQuerySchema } from '@/presentation/http/validators/meta.validator.js';
+import {
+  overrideParamsSchema,
+  writeOverrideBodySchema,
+} from '@/presentation/http/validators/permission-override.validator.js';
 import {
   assignRoleBodySchema,
   userIdParamsSchema,
@@ -82,6 +87,19 @@ export const createRouteRegistry = (
   const sessionIdValidator = validate({ params: sessionIdParamsSchema });
   const assignRoleValidator = validate({ params: userIdParamsSchema, body: assignRoleBodySchema });
   const revokeRoleValidator = validate({ params: userRoleParamsSchema });
+
+  const writeOverrideValidator = validate({
+    params: overrideParamsSchema,
+    body: writeOverrideBodySchema,
+  });
+  const removeOverrideValidator = validate({ params: overrideParamsSchema });
+
+  const overrides = createPermissionOverrideController({
+    writeOverride: dependencies.iam.writeOverride,
+    removeOverride: dependencies.iam.removeOverride,
+    writeValidator: writeOverrideValidator,
+    removeValidator: removeOverrideValidator,
+  });
 
   const userRoles = createUserRoleController({
     assignRole: dependencies.iam.assignRole,
@@ -275,6 +293,23 @@ export const createRouteRegistry = (
       handlers: [revokeRoleValidator.handler, userRoles.revoke],
       permission: 'role:revoke',
       aclCheckedIn: 'RevokeRoleUseCase',
+    },
+    {
+      method: 'put',
+      path: `${API_PREFIX}/users/:userId/permission-overrides/:permission`,
+      handlers: [writeOverrideValidator.handler, overrides.write],
+      permission: 'permission:override',
+      // The subject, whether they are the owner, and whether the granter holds what they are handing
+      // out are all read inside the use-case's transaction — and it is the only place that answers
+      // 404 for a person of another organization.
+      aclCheckedIn: 'WritePermissionOverrideUseCase',
+    },
+    {
+      method: 'delete',
+      path: `${API_PREFIX}/users/:userId/permission-overrides/:permission`,
+      handlers: [removeOverrideValidator.handler, overrides.remove],
+      permission: 'permission:override',
+      aclCheckedIn: 'RemovePermissionOverrideUseCase',
     },
   ];
 

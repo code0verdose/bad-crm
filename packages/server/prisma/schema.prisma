@@ -86,6 +86,7 @@ model Organization {
   roles               Role[]
   rolePermissions     RolePermission[]
   userRoles           UserRole[]
+  permissionOverrides UserPermissionOverride[]
   auditLogs           AuditLog[]
   users               User[]
   sessions            Session[]
@@ -183,6 +184,8 @@ model User {
   passwordResetTokens PasswordResetToken[]
   roles               UserRole[]           @relation("UserRoleHolder")
   rolesGranted        UserRole[]           @relation("UserRoleGrantor")
+  permissionOverrides UserPermissionOverride[] @relation("OverrideSubject")
+  overridesGranted    UserPermissionOverride[] @relation("OverrideGrantor")
 
   /// The target every composite foreign key into this table points at. A child referencing
   /// `users (id)` alone would be allowed to name a user of another organization: foreign key checks
@@ -358,9 +361,10 @@ model Permission {
   /// resolves to «no permission» in the policy layer (`docs/architecture/data-model.md`, group 2).
   deprecatedAt DateTime? @map("deprecated_at") @db.Timestamptz(6)
 
-  createdAt  DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt  DateTime         @updatedAt @map("updated_at") @db.Timestamptz(6)
+  createdAt  DateTime                 @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt  DateTime                 @updatedAt @map("updated_at") @db.Timestamptz(6)
   roleGrants RolePermission[]
+  overrides  UserPermissionOverride[]
 
   @@index([resource, action], map: "idx_permissions_resource")
   /// `idx_permissions_active` is not declared here: it is partial (`WHERE deprecated_at IS NULL`,
@@ -528,4 +532,55 @@ model UserRole {
   @@unique([userId, roleId], map: "uq_user_roles")
   @@index([organizationId, userId], map: "idx_user_roles_org_user")
   @@map("user_roles")
+}
+
+/// Which way an exception points. **ALLOW only exists at this layer**: a role that could deny would
+/// make «which role wins» unanswerable the moment somebody holds two of them.
+enum OverrideEffect {
+  ALLOW
+  DENY
+}
+
+/// Tenant-scoped table [T]: one exception, for one person, on one permission (layer 3).
+///
+/// What this layer is for: «custom per user» without inventing a role for every difference. The
+/// failure it prevents is an organization with forty roles named `manager_without_finance_2`, none
+/// of which anybody can define.
+///
+/// Three rules are in the schema and not in an agreement: one opinion per key
+/// (`uq_user_permission_overrides`), a reason of at least ten characters after trimming
+/// (`ck_user_permission_overrides_reason`), and no DENY on the owner (`ck_upo_not_owner`, a trigger,
+/// so a direct SQL session cannot write one either).
+model UserPermissionOverride {
+  id             String @id(map: "pk_user_permission_overrides") @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String @map("organization_id") @db.Uuid
+  userId         String @map("user_id") @db.Uuid
+  /// References `Permission.key`: a name, not a uuid, so the row survives a rebuilt catalogue.
+  permissionKey  String @map("permission_key")
+
+  effect OverrideEffect
+  /// Why. Mandatory, and checked for length by the database: without it nobody remembers six months
+  /// later why a right was taken away, and every override becomes permanent.
+  reason String
+
+  grantedById String?   @map("granted_by_id") @db.Uuid
+  grantedAt   DateTime  @default(now()) @map("granted_at") @db.Timestamptz(6)
+  /// Strongly recommended for ALLOW (a temporary widening), optional for DENY. Enforced where the
+  /// permissions are assembled, not only by the cleaner.
+  expiresAt   DateTime? @map("expires_at") @db.Timestamptz(6)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  user         User         @relation("OverrideSubject", fields: [organizationId, userId], references: [organizationId, id], onDelete: Cascade, onUpdate: NoAction, map: "fk_upo_user_id")
+  grantedBy    User?        @relation("OverrideGrantor", fields: [organizationId, grantedById], references: [organizationId, id], onDelete: SetNull, onUpdate: NoAction, map: "fk_upo_granted_by_id")
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "fk_upo_organization_id")
+  permission   Permission   @relation(fields: [permissionKey], references: [key], onDelete: NoAction, onUpdate: NoAction, map: "fk_upo_permission_key")
+
+  /// Also serves «every exception of this person»: `userId` leads it, so a second index on the same
+  /// leading column would cost every write and answer nothing new.
+  @@unique([userId, permissionKey], map: "uq_user_permission_overrides")
+  /// `idx_upo_expires` is not declared here: it is partial (`WHERE expires_at IS NOT NULL`), which
+  /// Prisma cannot express, so it lives in the migration.
+  @@map("user_permission_overrides")
 }

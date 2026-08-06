@@ -48,8 +48,25 @@ export interface SpecOperation {
 /** Keys of a path item that are not operations (OpenAPI 3.1 §4.8.9). */
 const NON_OPERATION_KEYS = new Set(['summary', 'description', 'servers', 'parameters', '$ref']);
 
-export const readOpenApiDocument = (): OpenApiDocument =>
-  parseYaml(readFileSync(OPENAPI_PATH, 'utf8')) as OpenApiDocument;
+/**
+ * Parsed once per test file, not once per assertion.
+ *
+ * The document is 90 KB of YAML and this suite reads it about fourteen times; each parse is tens of
+ * milliseconds alone and far more when the whole workspace runs in parallel. That was not a
+ * performance nicety — two runs of `turbo run test` failed here with a five-second timeout on tests
+ * whose only work is reading the document, and each time on a *different* one, which reads as
+ * flakiness rather than as the cost it is.
+ *
+ * Safe because the file does not change while a run is in progress: vitest gives each test file its
+ * own module registry, so the cache lives exactly as long as one file's tests do.
+ */
+let parsed: OpenApiDocument | undefined;
+
+export const readOpenApiDocument = (): OpenApiDocument => {
+  parsed ??= parseYaml(readFileSync(OPENAPI_PATH, 'utf8')) as OpenApiDocument;
+
+  return parsed;
+};
 
 /**
  * The path prefix the document publishes, taken from the first `servers` entry.

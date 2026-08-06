@@ -24,9 +24,10 @@ import { TenantScopedRepository } from '@/infrastructure/persistence/prisma/tena
  * **Ownership comes from `organizations.owner_id`, not from holding a role called owner.** The one
  * property that has to survive a broken roles table is the one that says who can repair it.
  *
- * Per-user overrides (`denied`) are not read here: `UserPermissionOverride` arrives with
- * STORY-011-05. Until then the DENY half of the model is empty rather than assumed — the actor
- * carries an empty set, and `effectivePermission` treats it exactly as «no overrides exist».
+ * **Overrides are read here too**, and the same expiry predicate applies to them: an exception that
+ * expired a second ago grants and denies nothing, whether or not the cleaner has run. ALLOW joins
+ * the grants; DENY is returned separately, because «refused by an exception» and «never granted» are
+ * different answers with different remedies.
  */
 export class PrismaEffectivePermissionsReader
   extends TenantScopedRepository
@@ -46,14 +47,12 @@ export class PrismaEffectivePermissionsReader
 
       if (user === null) return null;
 
-      const [organization, assignments] = await Promise.all([
+      const unexpired = { OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }] };
+
+      const [organization, assignments, overrides] = await Promise.all([
         tx.organization.findFirst({ where: { id: organizationId }, select: { ownerId: true } }),
         tx.userRole.findMany({
-          where: {
-            organizationId,
-            userId,
-            OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
-          },
+          where: { organizationId, userId, ...unexpired },
           select: {
             role: {
               select: {
@@ -65,9 +64,14 @@ export class PrismaEffectivePermissionsReader
             },
           },
         }),
+        tx.userPermissionOverride.findMany({
+          where: { organizationId, userId, ...unexpired },
+          select: { permissionKey: true, effect: true },
+        }),
       ]);
 
       const granted = new Set<SharedPermissions.PermissionKey>();
+      const denied = new Set<SharedPermissions.PermissionKey>();
 
       for (const assignment of assignments) {
         for (const grant of assignment.role.permissions) {
@@ -75,9 +79,17 @@ export class PrismaEffectivePermissionsReader
         }
       }
 
+      for (const override of overrides) {
+        if (!SharedPermissions.isPermissionKey(override.permissionKey)) continue;
+
+        if (override.effect === 'ALLOW') granted.add(override.permissionKey);
+        else denied.add(override.permissionKey);
+      }
+
       return {
         isOwner: organization?.ownerId === userId,
         granted: [...granted],
+        denied: [...denied],
         permissionsVersion: user.permissionsVersion,
       };
     });

@@ -60,6 +60,7 @@ const CODE_FOR: Readonly<
   // sides of this grant.
   self_assignment_forbidden: (resource) => `${resource}_forbidden`,
   system_role_immutable: () => 'system_role_immutable',
+  owner_immutable: () => 'owner_immutable',
 };
 
 /**

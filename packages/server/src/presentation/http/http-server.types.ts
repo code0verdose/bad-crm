@@ -2,7 +2,9 @@ import { type RequestHandler } from 'express';
 
 import { type AssignRoleUseCase } from '@/application/iam/use-cases/assign-role.use-case.js';
 import { type BuildActorQuery } from '@/application/iam/use-cases/build-actor.query.js';
+import { type RemovePermissionOverrideUseCase } from '@/application/iam/use-cases/remove-permission-override.use-case.js';
 import { type RevokeRoleUseCase } from '@/application/iam/use-cases/revoke-role.use-case.js';
+import { type WritePermissionOverrideUseCase } from '@/application/iam/use-cases/write-permission-override.use-case.js';
 import { type AuthLookupPort } from '@/application/identity/ports/auth-lookup.port.js';
 import { type RefreshTokenPort } from '@/application/identity/ports/refresh-token.port.js';
 import { type AuthenticateSessionQuery } from '@/application/identity/use-cases/authenticate-session.query.js';
@@ -86,6 +88,8 @@ export interface IamDependencies {
   readonly buildActor: BuildActorQuery;
   readonly assignRole: AssignRoleUseCase;
   readonly revokeRole: RevokeRoleUseCase;
+  readonly writeOverride: WritePermissionOverrideUseCase;
+  readonly removeOverride: RemovePermissionOverrideUseCase;
 }
 
 export interface HttpServerDependencies {

@@ -16,8 +16,18 @@ export interface CapabilityFacts {
    * non-null (`docs/architecture/data-model.md`, «Про циклический ключ»).
    */
   readonly isOwner: boolean;
-  /** Everything the person's unexpired roles grant, deduplicated. */
+  /**
+   * Everything the person may do: what their unexpired roles grant, plus unexpired ALLOW
+   * exceptions, deduplicated.
+   */
   readonly granted: readonly SharedPermissions.PermissionKey[];
+  /**
+   * Unexpired DENY exceptions. Kept separate rather than subtracted here, because the two are not
+   * the same statement: `effectivePermission` reads a DENY as «refused, and here is why»
+   * (`denied_by_override`), while a missing grant is «nobody gave it to you». The interface offers a
+   * different remedy for each.
+   */
+  readonly denied: readonly SharedPermissions.PermissionKey[];
   /** The counter carried in the access token; a stale one means the view must be rebuilt. */
   readonly permissionsVersion: number;
 }

@@ -110,6 +110,15 @@ export const TENANT_TABLES = {
     softDeleted: true,
     rowTimestamps: true,
   },
+  user_permission_overrides: {
+    model: 'UserPermissionOverride',
+    tenantColumn: 'organization_id',
+    // DELETE, because removing an exception is removing the row: an override that ended is not an
+    // override with a flag, and a filter everybody has to remember is a filter somebody forgets.
+    appUserPrivileges: ['SELECT', 'INSERT', 'UPDATE', 'DELETE'],
+    softDeleted: false,
+    rowTimestamps: true,
+  },
   user_roles: {
     model: 'UserRole',
     tenantColumn: 'organization_id',

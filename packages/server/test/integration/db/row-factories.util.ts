@@ -154,6 +154,24 @@ export const ROW_FACTORIES = {
   },
 
   /**
+   * One exception on one permission. The reason is long enough on purpose — the database refuses
+   * anything shorter than ten characters after trimming, and a fixture that tripped that check would
+   * fail for a reason that has nothing to do with isolation.
+   */
+  user_permission_overrides: async (client, organizationId) => {
+    const user = await createUser(client, organizationId);
+
+    return insert(
+      client,
+      `INSERT INTO user_permission_overrides
+         (organization_id, user_id, permission_key, effect, reason, updated_at)
+       VALUES ($1, $2, 'task:read', 'ALLOW', 'isolation fixture row', now())
+       RETURNING id`,
+      [organizationId, user.id],
+    );
+  },
+
+  /**
    * An assignment needs a user **and** a role of the same organization; both composite foreign keys
    * refuse anything from elsewhere, which is the point of them and the reason a shared fixture would
    * weaken the test.

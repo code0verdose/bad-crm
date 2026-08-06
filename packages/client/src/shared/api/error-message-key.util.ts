@@ -32,6 +32,7 @@ export const ERROR_MESSAGE_KEY: Readonly<Record<SharedErrors.ErrorCode, string>>
   period_locked: 'errors.code.period_locked',
   self_lockout: 'errors.code.self_lockout',
   system_role_immutable: 'errors.code.system_role_immutable',
+  owner_immutable: 'errors.code.owner_immutable',
   rate_limited: 'errors.code.rate_limited',
   feature_disabled: 'errors.code.feature_disabled',
   service_unavailable: 'errors.code.service_unavailable',

@@ -62,7 +62,7 @@ describe('POST /api/v1/users/{userId}/roles', () => {
 
   it('assigns the role and bumps the version when the caller holds the right', async () => {
     const { test, token } = await signedIn({
-      capabilities: { isOwner: false, granted: ['role:assign', 'task:read'], permissionsVersion: 3 },
+      capabilities: { isOwner: false, granted: ['role:assign', 'task:read'], denied: [], permissionsVersion: 3 },
     });
 
     await request(test.app)
@@ -83,7 +83,7 @@ describe('POST /api/v1/users/{userId}/roles', () => {
     userRoles.assignments.add(`${IVAN}:${ROLE}`);
 
     const { test, token } = await signedIn({
-      capabilities: { isOwner: false, granted: ['role:assign', 'task:read'], permissionsVersion: 1 },
+      capabilities: { isOwner: false, granted: ['role:assign', 'task:read'], denied: [], permissionsVersion: 1 },
       userRoles,
     });
 
@@ -101,7 +101,7 @@ describe('POST /api/v1/users/{userId}/roles', () => {
 
   it('answers 404 for a person of another organization, never 403', async () => {
     const { test, token } = await signedIn({
-      capabilities: { isOwner: false, granted: ['role:assign', 'task:read'], permissionsVersion: 1 },
+      capabilities: { isOwner: false, granted: ['role:assign', 'task:read'], denied: [], permissionsVersion: 1 },
       userRoles: new FakeUserRoleRepository({ knownUsers: [] }),
     });
 
@@ -118,7 +118,7 @@ describe('POST /api/v1/users/{userId}/roles', () => {
 
   it('rejects an expiry in the past rather than accepting a grant that never applies', async () => {
     const { test, token } = await signedIn({
-      capabilities: { isOwner: false, granted: ['role:assign', 'task:read'], permissionsVersion: 1 },
+      capabilities: { isOwner: false, granted: ['role:assign', 'task:read'], denied: [], permissionsVersion: 1 },
     });
 
     const response = await request(test.app)
@@ -153,7 +153,7 @@ describe('DELETE /api/v1/users/{userId}/roles/{roleId}', () => {
     userRoles.assignments.add(`${IVAN}:${ROLE}`);
 
     const { test, token } = await signedIn({
-      capabilities: { isOwner: false, granted: ['role:revoke'], permissionsVersion: 1 },
+      capabilities: { isOwner: false, granted: ['role:revoke'], denied: [], permissionsVersion: 1 },
       userRoles,
     });
 
@@ -179,7 +179,7 @@ describe('DELETE /api/v1/users/{userId}/roles/{roleId}', () => {
     userRoles.assignments.add(`${IVAN}:${ROLE}`);
 
     const { test, token } = await signedIn({
-      capabilities: { isOwner: false, granted: ['role:revoke'], permissionsVersion: 1 },
+      capabilities: { isOwner: false, granted: ['role:revoke'], denied: [], permissionsVersion: 1 },
       userRoles,
     });
 

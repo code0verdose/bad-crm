@@ -10,6 +10,11 @@ import {
   type SystemRoleDraft,
 } from '../../src/application/iam/ports/role-repository.port.js';
 import {
+  type OverrideDraftRow,
+  type OverrideRow,
+  type PermissionOverrideRepositoryPort,
+} from '../../src/application/iam/ports/permission-override-repository.port.js';
+import {
   type AssignmentDraft,
   type AssignmentResult,
   type RoleFacts,
@@ -126,11 +131,59 @@ export class FakeUserRoleRepository implements UserRoleRepositoryPort {
   }
 }
 
-/** What the guard reads to build an actor: one person's capabilities, stated by the test. */
+/**
+ * What the guard reads to build an actor, and what a use-case reads about the person it is acting
+ * on.
+ *
+ * Two answers rather than one, because the two are different questions and the override rules turn
+ * on the second: the caller's capabilities decide whether they may write an exception, while the
+ * *subject's* ownership decides whether a DENY is allowed at all. `subject` absent means «the same
+ * as the caller», which is what the assignment suites need.
+ */
 export class FakeEffectivePermissionsReader implements EffectivePermissionsReaderPort {
-  constructor(private readonly facts: CapabilityFacts | null) {}
+  constructor(
+    private readonly facts: CapabilityFacts | null,
+    /**
+     * Answers for specific people, by id. Keyed rather than ordered: a request reads this port
+     * twice — the guard builds the actor, the use-case asks about the subject — and a fake that
+     * counted calls would answer the wrong person on the second request of the same test.
+     */
+    private readonly byUser: Readonly<Record<string, CapabilityFacts | null>> = {},
+  ) {}
 
-  capabilitiesOf(): Promise<CapabilityFacts | null> {
-    return Promise.resolve(this.facts);
+  capabilitiesOf(userId: string): Promise<CapabilityFacts | null> {
+    return Promise.resolve(userId in this.byUser ? (this.byUser[userId] ?? null) : this.facts);
+  }
+}
+
+/** Exceptions in memory, keyed the way the unique index keys them. */
+export class FakePermissionOverrideRepository implements PermissionOverrideRepositoryPort {
+  readonly rows = new Map<string, OverrideRow>();
+
+  listFor(userId: string): Promise<readonly OverrideRow[]> {
+    return Promise.resolve(
+      [...this.rows.entries()]
+        .filter(([key]) => key.startsWith(`${userId}:`))
+        .map(([, row]) => row),
+    );
+  }
+
+  find(userId: string, permissionKey: string): Promise<OverrideRow | null> {
+    return Promise.resolve(this.rows.get(`${userId}:${permissionKey}`) ?? null);
+  }
+
+  upsert(draft: OverrideDraftRow): Promise<void> {
+    this.rows.set(`${draft.userId}:${draft.permissionKey}`, {
+      permissionKey: draft.permissionKey,
+      effect: draft.effect,
+      reason: draft.reason,
+      expiresAt: draft.expiresAt,
+    });
+
+    return Promise.resolve();
+  }
+
+  remove(userId: string, permissionKey: string): Promise<boolean> {
+    return Promise.resolve(this.rows.delete(`${userId}:${permissionKey}`));
   }
 }

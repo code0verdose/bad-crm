@@ -139,6 +139,15 @@ const GENERIC_ERROR_CODE_STATUS = {
   period_locked: 409,
   self_lockout: 409,
   system_role_immutable: 409,
+  /**
+   * A DENY exception aimed at the owner of the organization.
+   *
+   * A conflict rather than a denial, like the ones above: the caller may write overrides and the
+   * subject exists — the state is what refuses, because one such row makes the organization
+   * unadministrable. Refused twice, by the use-case and by a trigger, so a direct SQL session cannot
+   * write one either.
+   */
+  owner_immutable: 409,
   rate_limited: 429,
   /**
    * An optional subsystem is switched off in this installation, and the honest answer is "this

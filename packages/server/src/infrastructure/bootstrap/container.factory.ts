@@ -30,7 +30,10 @@ import { PrismaEffectivePermissionsReader } from '@/infrastructure/persistence/p
 import { PrismaUserRoleRepository } from '@/infrastructure/persistence/prisma/user-role.repository.js';
 import { AssignRoleUseCase } from '@/application/iam/use-cases/assign-role.use-case.js';
 import { BuildActorQuery } from '@/application/iam/use-cases/build-actor.query.js';
+import { RemovePermissionOverrideUseCase } from '@/application/iam/use-cases/remove-permission-override.use-case.js';
 import { RevokeRoleUseCase } from '@/application/iam/use-cases/revoke-role.use-case.js';
+import { WritePermissionOverrideUseCase } from '@/application/iam/use-cases/write-permission-override.use-case.js';
+import { PrismaPermissionOverrideRepository } from '@/infrastructure/persistence/prisma/permission-override.repository.js';
 import { createPromMetrics } from '@/infrastructure/metrics/prom-client.adapter.js';
 import { createHttpLogger } from '@/infrastructure/logging/http-logger.middleware.js';
 import { PinoLoggerAdapter } from '@/infrastructure/logging/pino-logger.adapter.js';
@@ -365,11 +368,27 @@ const buildIam = (input: {
   const unitOfWork =
     input.database === undefined ? detachedUnitOfWork() : new PrismaUnitOfWork(input.database.base);
   const userRoles = new PrismaUserRoleRepository();
+  const permissions = new PrismaEffectivePermissionsReader();
+  const overrides = new PrismaPermissionOverrideRepository();
 
   return {
-    buildActor: new BuildActorQuery(unitOfWork, new PrismaEffectivePermissionsReader()),
+    buildActor: new BuildActorQuery(unitOfWork, permissions),
     assignRole: new AssignRoleUseCase(unitOfWork, userRoles, input.audit),
     revokeRole: new RevokeRoleUseCase(unitOfWork, userRoles, input.audit),
+    writeOverride: new WritePermissionOverrideUseCase(
+      unitOfWork,
+      overrides,
+      permissions,
+      userRoles,
+      input.audit,
+    ),
+    removeOverride: new RemovePermissionOverrideUseCase(
+      unitOfWork,
+      overrides,
+      permissions,
+      userRoles,
+      input.audit,
+    ),
   };
 };
 

@@ -30,6 +30,7 @@ const recordingClient = (state: {
   user?: { id: string; permissionsVersion: number } | null;
   ownerId?: string;
   assignments?: { role: { permissions: { permissionKey: string }[] } }[];
+  overrides?: { permissionKey: string; effect: 'ALLOW' | 'DENY' }[];
 }): Recorder => {
   const calls: { name: string; args: Record<string, unknown> }[] = [];
   const record =
@@ -47,6 +48,9 @@ const recordingClient = (state: {
       findFirst: record('organization.findFirst', { ownerId: state.ownerId ?? OWNER }),
     },
     userRole: { findMany: record('userRole.findMany', state.assignments ?? []) },
+    userPermissionOverride: {
+      findMany: record('userPermissionOverride.findMany', state.overrides ?? []),
+    },
   };
 
   return {
@@ -94,6 +98,35 @@ describe('assembling what a person may do', () => {
     ] as { role: { select: { permissions: { where: unknown } } } };
 
     expect(select.role.select.permissions.where).toEqual({ permission: { deprecatedAt: null } });
+  });
+
+  /**
+   * Layer 3 folded in, and the two halves kept apart: an ALLOW joins the grants, a DENY comes back
+   * on its own. Subtracting here would make `effectivePermission` unable to tell «refused by an
+   * exception» from «nobody gave it to you» — two sentences with different remedies in the
+   * interface, and two different reasons in the trail.
+   */
+  it('adds an ALLOW exception to the grants and returns a DENY separately', async () => {
+    const recorder = recordingClient({
+      user: { id: 'ivan', permissionsVersion: 2 },
+      assignments: [{ role: { permissions: [{ permissionKey: 'task:read' }] } }],
+      overrides: [
+        { permissionKey: 'invoice:issue', effect: 'ALLOW' },
+        { permissionKey: 'task:read', effect: 'DENY' },
+      ],
+    });
+
+    const facts = await read(recorder, 'ivan');
+
+    expect([...(facts?.granted ?? [])].sort()).toEqual(['invoice:issue', 'task:read']);
+    expect(facts?.denied).toEqual(['task:read']);
+
+    const where = (recorder.calls.find((call) => call.name === 'userPermissionOverride.findMany')
+      ?.args['where'] ?? {}) as Record<string, unknown>;
+
+    // The same expiry predicate as the roles: an exception that expired a second ago grants and
+    // denies nothing, whether or not the cleaner has run.
+    expect(where['OR']).toEqual([{ expiresAt: null }, { expiresAt: { gt: expect.any(Date) } }]);
   });
 
   it('drops a key the code no longer declares', async () => {

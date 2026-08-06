@@ -16,6 +16,7 @@ export const AUDIT_RESOURCE_TYPES = [
   'SESSION',
   'ROLE',
   'USER_ROLE',
+  'USER_PERMISSION_OVERRIDE',
 ] as const;
 
 export type AuditResourceType = (typeof AUDIT_RESOURCE_TYPES)[number];

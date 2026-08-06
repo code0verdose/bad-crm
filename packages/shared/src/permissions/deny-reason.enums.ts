@@ -50,6 +50,11 @@ export const DENY_REASONS = [
   'self_assignment_forbidden',
   /** System roles are code, not data: their permission set is not editable from the interface. */
   'system_role_immutable',
+  /**
+   * A DENY override on the owner. Refused by the use-case **and** by a database trigger, because a
+   * single such row would make «owner неотзываем» false and leave the organization unadministrable.
+   */
+  'owner_immutable',
 ] as const;
 
 export type DenyReason = (typeof DENY_REASONS)[number];

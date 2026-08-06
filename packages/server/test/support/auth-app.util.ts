@@ -13,7 +13,9 @@ import { RequestPasswordResetUseCase } from '@/application/identity/use-cases/re
 import { AssignRoleUseCase } from '@/application/iam/use-cases/assign-role.use-case.js';
 import { BuildActorQuery } from '@/application/iam/use-cases/build-actor.query.js';
 import { ProvisionSystemRolesUseCase } from '@/application/iam/use-cases/provision-system-roles.use-case.js';
+import { RemovePermissionOverrideUseCase } from '@/application/iam/use-cases/remove-permission-override.use-case.js';
 import { RevokeRoleUseCase } from '@/application/iam/use-cases/revoke-role.use-case.js';
+import { WritePermissionOverrideUseCase } from '@/application/iam/use-cases/write-permission-override.use-case.js';
 import { BootstrapOrganizationUseCase } from '@/application/organization/use-cases/bootstrap-organization.use-case.js';
 import { createHttpServer } from '@/presentation/http/http-server.factory.js';
 
@@ -42,6 +44,7 @@ import {
 } from './identity-doubles.util.js';
 import {
   FakeEffectivePermissionsReader,
+  FakePermissionOverrideRepository,
   FakeRoleRepository,
   FakeUserRoleRepository,
 } from './iam-doubles.util.js';
@@ -71,6 +74,7 @@ export interface AuthApp {
   readonly dispatcher: FakeMailDispatcher;
   readonly resetTokens: FakeResetTokens;
   readonly userRoles: FakeUserRoleRepository;
+  readonly overrides: FakePermissionOverrideRepository;
   /**
    * Every serialized pino line the application produced, in order.
    *
@@ -100,6 +104,14 @@ export interface AuthAppOptions {
   readonly capabilities?: ConstructorParameters<typeof FakeEffectivePermissionsReader>[0];
   /** State the assignment commands act on. */
   readonly userRoles?: FakeUserRoleRepository;
+  /** State the override commands act on. */
+  readonly overrides?: FakePermissionOverrideRepository;
+  /**
+   * What the reader answers about specific people, by id — the subject of an override, whose
+   * ownership is the fact the `owner_immutable` rule turns on. Anybody not named here gets
+   * `capabilities`.
+   */
+  readonly capabilitiesByUser?: ConstructorParameters<typeof FakeEffectivePermissionsReader>[1];
 }
 
 /** `APP_URL` of the application these suites build; the reset links are absolute against it. */
@@ -250,15 +262,29 @@ export const createAuthApp = (options: AuthAppOptions = {}): AuthApp => {
   };
 
   const userRoles = options.userRoles ?? new FakeUserRoleRepository();
+  const overrides = options.overrides ?? new FakePermissionOverrideRepository();
+  const capabilities = new FakeEffectivePermissionsReader(
+    options.capabilities ?? { isOwner: false, granted: [], denied: [], permissionsVersion: 1 },
+    options.capabilitiesByUser,
+  );
   const iam = {
-    buildActor: new BuildActorQuery(
-      unitOfWork,
-      new FakeEffectivePermissionsReader(
-        options.capabilities ?? { isOwner: false, granted: [], permissionsVersion: 1 },
-      ),
-    ),
+    buildActor: new BuildActorQuery(unitOfWork, capabilities),
     assignRole: new AssignRoleUseCase(unitOfWork, userRoles, audit),
     revokeRole: new RevokeRoleUseCase(unitOfWork, userRoles, audit),
+    writeOverride: new WritePermissionOverrideUseCase(
+      unitOfWork,
+      overrides,
+      capabilities,
+      userRoles,
+      audit,
+    ),
+    removeOverride: new RemovePermissionOverrideUseCase(
+      unitOfWork,
+      overrides,
+      capabilities,
+      userRoles,
+      audit,
+    ),
   };
 
   const testApp = createTestApp(
@@ -279,6 +305,7 @@ export const createAuthApp = (options: AuthAppOptions = {}): AuthApp => {
     dispatcher,
     resetTokens,
     userRoles,
+    overrides,
     logLines: testApp.logLines,
   };
 };
