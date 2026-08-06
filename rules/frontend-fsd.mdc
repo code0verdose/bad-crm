@@ -50,9 +50,10 @@ alwaysApply: true
    - завязанное на сущность/домен → `units/<unit>` — никогда в `shared` и никогда inline в компоненте;
    - специфичное для одной страницы → `pages/<page>/{ui,hooks}`.
    Доменный компонент (знает про задачу, инвойс, канал) в `shared/ui` не попадает никогда.
-9. **Сегменты юнита:** `api/` (чистые fetch-функции), `service/{queries,mutations,hooks,stores?}`,
+9. **Сегменты юнита:** `api/` (чистые fetch-функции), `service/{queries,mutations,hooks,stores?,guards?}`,
    `model/{enums,constants,validation?}`, `lib/utils`, `types/`, `ui/`. Пустые сегменты не создаются
-   «на всякий случай».
+   «на всякий случай». `service/guards` — для гардов `beforeLoad`, которым нужно **прочитать** данные
+   (через query-клиент из контекста роутера); гард без ввода-вывода живёт в `lib/guards`.
 10. **Route-файл тонкий.** `app/routes/**` содержит только wiring: `validateSearch`, `beforeLoad`
     (guard), `loader`, `component`, `pendingComponent`, `errorComponent`, `notFoundComponent`.
     Рендер делегируется в `pages/<page>`; бизнес-логика и запросы — в юнитах.

@@ -1,0 +1,63 @@
+{
+  "title": "Roles and permissions",
+  "tableCaption": "Every role of the organization against every permission of the catalogue.",
+  "permissionColumn": "Permission",
+  "searchLabel": "Search permissions",
+  "searchPlaceholder": "invoice, task:read…",
+  "onlyDifferences": "Only where roles differ",
+  "dangerous": "· dangerous",
+  "empty": "This organization has no roles yet",
+  "loadFailed": "The roles could not be loaded.",
+  "saved": "The roles now grant what you saved.",
+  "cell": {
+    "label": "{{role}} may {{permission}}",
+    "systemLocked": "Built-in roles are defined by the product and re-applied on every upgrade. Create a custom role or a personal exception instead."
+  },
+  "domain": {
+    "organization": "Organization",
+    "iam": "Roles and access",
+    "project": "Projects",
+    "task": "Tasks",
+    "knowledge": "Documents and knowledge",
+    "file": "Files",
+    "vault": "Password vault",
+    "secureLink": "Secure links",
+    "time": "Time tracking",
+    "communication": "Chat and notifications",
+    "analytics": "Dashboards",
+    "integration": "Integrations",
+    "ai": "AI assistant",
+    "delivery": "Clients and billing",
+    "platform": "Platform"
+  },
+  "draft": {
+    "region": "Unsaved changes",
+    "count_one": "{{count}} role changed",
+    "count_other": "{{count}} roles changed",
+    "discard": "Discard",
+    "review": "Review changes",
+    "leave": "You have unsaved changes to the roles. Leave and lose them?"
+  },
+  "preview": {
+    "title": "What this will change",
+    "refusedTitle": "Some changes cannot be applied",
+    "dangerousTitle": "This grants a dangerous permission",
+    "dangerousBody": "Somebody holding this role will be able to act on behalf of other people or change what others may do. Saving applies it to everyone who holds the role.",
+    "holders_one": "{{count}} person holds it",
+    "holders_other": "{{count}} people hold it",
+    "added_one": "+{{count}} permission",
+    "added_other": "+{{count}} permissions",
+    "removed_one": "−{{count}} permission",
+    "removed_other": "−{{count}} permissions",
+    "cancel": "Back to editing",
+    "confirm": "Apply to all roles",
+    "close": "Close"
+  },
+  "refusal": {
+    "systemRole": "a built-in role cannot be edited",
+    "notGranted": "you do not hold every permission this would grant",
+    "selfLockout": "this would remove your own ability to edit roles",
+    "unknown": "the server refused this change",
+    "deniedByOverride": "this permission has been taken away from you personally"
+  }
+}

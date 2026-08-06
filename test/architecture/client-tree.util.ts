@@ -12,7 +12,13 @@ export type Layer = (typeof LAYERS)[number];
 export const UNIT_SEGMENTS = ['api', 'service', 'model', 'lib', 'types', 'ui'] as const;
 
 /** Subdirectories of `service`, in the same sense: the closed list, not "whatever exists". */
-export const SERVICE_SEGMENTS = ['queries', 'mutations', 'hooks', 'stores'] as const;
+/**
+ * `guards` is the fifth because a route guard is neither a hook nor a query: it runs in
+ * `beforeLoad`, outside React, and it reads through the query client the router hands it. A guard
+ * that needs no data lives in `lib` (`units/auth/lib/guards`); one that has to ask the server
+ * belongs here, where a unit is allowed to reach its own `api`.
+ */
+export const SERVICE_SEGMENTS = ['queries', 'mutations', 'hooks', 'stores', 'guards'] as const;
 
 /** `from '…'` and `import '…'`, both static and dynamic — every form the client uses. */
 const IMPORT_SPECIFIER = /(?:from|import)\s*\(?\s*['"]([^'"]+)['"]/g;

@@ -1,0 +1,26 @@
+/**
+ * The two axes stay on screen while the third scrolls.
+ *
+ * A matrix is only readable while you can see what the cell you are looking at belongs to: three
+ * hundred rows down, an unpinned header leaves a grid of anonymous checkboxes. `position: sticky`
+ * on the header row and on the first column of every row is the whole mechanism — no measurement,
+ * no scroll listener, nothing to keep in sync with a resize.
+ */
+.header {
+  position: sticky;
+  inset-block-start: 0;
+  z-index: 2;
+  background: var(--bc-surface);
+}
+
+.rowHeader {
+  position: sticky;
+  inset-inline-start: 0;
+  z-index: 1;
+  background: var(--bc-surface);
+}
+
+/* The corner belongs to both and has to sit above the two. */
+.corner {
+  z-index: 3;
+}

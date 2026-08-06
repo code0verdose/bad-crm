@@ -1,7 +1,11 @@
+import { availableParallelism } from 'node:os';
+
 import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
   test: {
+    /** A share of the machine — see the root `vitest.config.ts` for why, and why it is derived. */
+    maxWorkers: Math.max(1, Math.floor(availableParallelism() / 4)),
     include: ['test/**/*.test.ts', 'src/**/*.test.ts'],
     environment: 'node',
     coverage: {

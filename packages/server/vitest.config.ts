@@ -1,5 +1,7 @@
 import { fileURLToPath } from 'node:url';
 
+import { availableParallelism } from 'node:os';
+
 import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
@@ -10,6 +12,8 @@ export default defineConfig({
     alias: { '@': fileURLToPath(new URL('./src', import.meta.url)) },
   },
   test: {
+    /** A share of the machine — see the root `vitest.config.ts` for why, and why it is derived. */
+    maxWorkers: Math.max(1, Math.floor(availableParallelism() / 4)),
     /**
      * `test/integration/http/**` runs here on purpose: those specs drive the Express application
      * through supertest, which needs no container and no external service, so keeping them out of
@@ -33,6 +37,9 @@ export default defineConfig({
       'src/**/*.test.ts',
     ],
     environment: 'node',
+    // Why: `test/setup/http-agent.setup.ts` — keep-alive off, or supertest's ephemeral ports collide
+    // with pooled sockets under load and a random test fails with a parse error.
+    setupFiles: ['./test/setup/http-agent.setup.ts'],
     coverage: {
       enabled: true,
       provider: 'v8',

@@ -63,3 +63,33 @@ export const createRoleBodySchema = z.strictObject({ key: roleKeySchema, ...comp
 export const updateRoleBodySchema = z.strictObject(compositionShape);
 
 export const roleIdParamsSchema = z.strictObject({ roleId: roleIdSchema });
+
+/**
+ * A draft of the administration matrix: one entry per role, each carrying the composition the role
+ * should end up with — not a delta.
+ *
+ * The whole composition for the same reason the single-role edit takes one: a delta needs the server
+ * to know which version the screen was looking at, and the answer to «what should this role grant»
+ * is the only thing the administrator actually decided.
+ */
+const MAX_ROLES_PER_DRAFT = 64;
+
+export const roleChangesBodySchema = z.strictObject({
+  changes: z
+    .array(
+      z.strictObject({
+        roleId: roleIdSchema,
+        permissions: z
+          .array(permissionKeySchema)
+          .max(PERMISSIONS.length)
+          .transform((keys) => [...new Set(keys)]),
+      }),
+    )
+    .min(1, { error: 'validation.roleChanges.empty' })
+    .max(MAX_ROLES_PER_DRAFT, { error: 'validation.roleChanges.too_many' })
+    // The same role twice would make «what should it grant» ambiguous, and picking either answer
+    // silently is how a screen and a database stop agreeing.
+    .refine((changes) => new Set(changes.map((change) => change.roleId)).size === changes.length, {
+      error: 'validation.roleChanges.duplicate_role',
+    }),
+});

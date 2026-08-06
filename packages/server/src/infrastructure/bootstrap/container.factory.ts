@@ -32,6 +32,10 @@ import { AssignRoleUseCase } from '@/application/iam/use-cases/assign-role.use-c
 import { BuildActorQuery } from '@/application/iam/use-cases/build-actor.query.js';
 import { GetMyPermissionsQuery } from '@/application/iam/use-cases/get-my-permissions.query.js';
 import { ListRolesQuery } from '@/application/iam/use-cases/list-roles.query.js';
+import {
+  ApplyRoleChangesUseCase,
+  PreviewRoleChangesQuery,
+} from '@/application/iam/use-cases/write-role-changes.use-case.js';
 import { DeleteCustomRoleUseCase } from '@/application/iam/use-cases/delete-custom-role.use-case.js';
 import {
   CreateCustomRoleUseCase,
@@ -404,6 +408,8 @@ const buildIam = (input: {
       input.audit,
     ),
     listRoles: new ListRolesQuery(unitOfWork, customRoles),
+    previewChanges: new PreviewRoleChangesQuery(unitOfWork, customRoles),
+    applyChanges: new ApplyRoleChangesUseCase(unitOfWork, customRoles, input.audit),
     createRole: new CreateCustomRoleUseCase(unitOfWork, customRoles, input.audit),
     updateRole: new UpdateCustomRoleUseCase(unitOfWork, customRoles, input.audit),
     deleteRole: new DeleteCustomRoleUseCase(unitOfWork, customRoles, input.audit),

@@ -57,6 +57,8 @@ export interface RoleComposition {
   readonly roleId: string;
   readonly key: string;
   readonly name: string;
+  /** Carried so that an edit of the composition cannot silently erase it. */
+  readonly description: string | null;
   readonly isSystem: boolean;
   readonly permissions: readonly SharedPermissions.PermissionKey[];
 }
@@ -109,6 +111,28 @@ export interface CustomRoleRepositoryPort {
   remove(roleId: string): Promise<void>;
 
   /**
+   * The compositions of several roles at once, for a draft that spans them.
+   *
+   * One read rather than one per role: the matrix screen saves a dozen changes together, and a
+   * repository walked once per change would also mean a dozen round trips inside the transaction
+   * everybody else is waiting on. Roles of another organization are simply absent from the answer,
+   * which is how the caller learns they do not exist here.
+   */
+  compositionsOf(roleIds: readonly string[]): Promise<readonly RoleComposition[]>;
+
+  /**
+   * What one person's rights are made of, as the self-lockout rule needs them: their roles with the
+   * keys each grants, and their personal ALLOW exceptions, which no role edit can touch.
+   */
+  holdingsOf(userId: string): Promise<{
+    readonly byRole: ReadonlyMap<string, readonly SharedPermissions.PermissionKey[]>;
+    readonly fromOverrides: ReadonlySet<SharedPermissions.PermissionKey>;
+  }>;
+
+  /** How many people hold each of these roles — «who does this draft affect», in one statement. */
+  holderCounts(roleIds: readonly string[]): Promise<ReadonlyMap<string, number>>;
+
+  /**
    * Does this person hold the role — the input of the self-lockout rule.
    *
    * A question, not a list: the two callers need «is the actor among them» and «how many», and a
@@ -144,4 +168,16 @@ export interface CustomRoleRepositoryPort {
    * it and there would be nobody left to find.
    */
   bumpHoldersOf(roleId: string): Promise<void>;
+
+  /**
+   * The same for a whole draft — **one statement for every role in it**.
+   *
+   * A draft may carry sixty-four roles, and a round trip per role inside an interactive transaction
+   * with a five-second ceiling is how a save fails on a managed database with a fifteen-millisecond
+   * round trip: not because anything is wrong, but because the arithmetic ran out. One statement
+   * also collapses sixty-four interleaved lock phases into one, which narrows the window in which
+   * two administrators saving at once can deadlock — it does not close it, because the order the
+   * rows are locked in is still the planner's.
+   */
+  bumpHoldersOfMany(roleIds: readonly string[]): Promise<void>;
 }

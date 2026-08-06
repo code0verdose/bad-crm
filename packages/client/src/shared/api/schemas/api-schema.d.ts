@@ -532,6 +532,65 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/roles/preview-changes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * What a draft of the role matrix would do.
+         * @description The administration screen edits a matrix — several roles at once — and asks this before it
+         *     saves. It answers per role: what the change adds, what it removes, which arriving keys are
+         *     dangerous, **how many people hold the role**, and whether the server would accept it at all.
+         *
+         *     Two of those the client cannot compute: the holder count, and the verdict. Both come from
+         *     the same policy that decides on save, so the summary the administrator reads cannot disagree
+         *     with what happens when they press the button.
+         *
+         *     Nothing is written. `permissions` is the composition the role should end up with, not a
+         *     delta — the same shape the save takes.
+         */
+        post: operations["previewRoleChanges"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/roles/apply-changes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Save a draft of the role matrix — all of it or none of it.
+         * @description One transaction. If any drafted change is refused, **nothing** is applied: eleven changes of
+         *     twelve landing would leave the screen describing a state that exists nowhere, with no way to
+         *     tell which half is real.
+         *
+         *     The refusal carries the code and not the list — `details` reaches the log and never the body.
+         *     Which change was refused comes from `POST /roles/preview-changes`, the read that exists to
+         *     answer exactly that, and the client re-runs it to fill in its banner.
+         *
+         *     A role whose composition the draft leaves unchanged is skipped: nobody's rights moved, so
+         *     nobody is invalidated. Everyone holding a role that did move gets their permission version
+         *     bumped in the same transaction, so the change applies on their next request.
+         */
+        post: operations["applyRoleChanges"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/roles/{roleId}": {
         parameters: {
             query?: never;
@@ -1049,6 +1108,40 @@ export interface components {
              *     different read with a different permission.
              */
             holderCount: number;
+        };
+        /**
+         * @description A draft of the matrix: one entry per role, each carrying the composition that role should end
+         *     up with. A role may appear only once — twice would make «what should it grant» ambiguous.
+         */
+        RoleChanges: {
+            changes: {
+                /** Format: uuid */
+                roleId: string;
+                permissions: string[];
+            }[];
+        };
+        /** @description What one drafted change would do, and whether it would be accepted. */
+        RoleChangeOutcome: {
+            /** Format: uuid */
+            roleId: string;
+            key: string;
+            name: string;
+            isSystem: boolean;
+            /** @description How many people hold the role — «how many does this change affect». */
+            holderCount: number;
+            added: string[];
+            removed: string[];
+            /**
+             * @description Dangerous keys **arriving** with this change. A key the role already had is not a new
+             *     decision, so it is not warned about again.
+             */
+            dangerous: string[];
+            /**
+             * @description `null` when the change would be accepted; otherwise the refusal, named so the screen can
+             *     grey the cell out and explain why in its own language — `system_role_immutable`,
+             *     `permission_not_granted`, `self_lockout`.
+             */
+            reason: string | null;
         };
         /**
          * @description The same without the key: an identifier that changed would break every reference to the role,
@@ -2024,6 +2117,93 @@ export interface operations {
             };
             401: components["responses"]["Unauthenticated"];
             403: components["responses"]["Forbidden"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["ValidationFailed"];
+            428: components["responses"]["ConfirmationRequired"];
+            429: components["responses"]["RateLimited"];
+            500: components["responses"]["InternalError"];
+        };
+    };
+    previewRoleChanges: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RoleChanges"];
+            };
+        };
+        responses: {
+            /** @description One outcome per drafted role, in the order they were sent. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: components["schemas"]["RoleChangeOutcome"][];
+                    };
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["ValidationFailed"];
+            429: components["responses"]["RateLimited"];
+            500: components["responses"]["InternalError"];
+        };
+    };
+    applyRoleChanges: {
+        parameters: {
+            query?: never;
+            header: {
+                /**
+                 * @description Client-generated key, mandatory on every unsafe operation that creates an entity, sends
+                 *     mail or spends money or tokens. A replay carrying the same request hash returns the stored
+                 *     response; the same key with a different hash is refused with 409 `idempotency_key_reuse`.
+                 *
+                 *     The client attaches it to every unsafe request without asking, so the operations that
+                 *     **declare** this parameter are the ones that store and replay a response. The rest ignore it,
+                 *     and two groups of them do so deliberately (see each operation's description): the ones that
+                 *     are idempotent by construction, where a stored response buys nothing, and `POST /auth/login`
+                 *     and `POST /auth/refresh`, where a stored response *is* a credential — replaying it would hand
+                 *     back tokens that have since been rotated or revoked and would let one key slip a repeat past
+                 *     the failed-attempt counter that the lockout depends on.
+                 */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+                /**
+                 * @description `1` repeats a request that was refused **428 `confirmation_required`** because the
+                 *     composition contains a key the catalogue marks dangerous.
+                 *
+                 *     A header rather than a field in the body: the confirmation is about the request as a whole,
+                 *     and a flag inside the payload would make the same document mean two different things — which
+                 *     is how a client ends up sending it by default. Any other value, or the header repeated, reads
+                 *     as «not confirmed».
+                 */
+                "X-Confirm-Dangerous"?: components["parameters"]["ConfirmDangerous"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RoleChanges"];
+            };
+        };
+        responses: {
+            /** @description Every role in the draft grants what the draft says. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
             409: components["responses"]["Conflict"];
             422: components["responses"]["ValidationFailed"];
             428: components["responses"]["ConfirmationRequired"];

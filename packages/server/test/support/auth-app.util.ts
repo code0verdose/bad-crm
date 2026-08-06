@@ -17,6 +17,10 @@ import { ProvisionSystemRolesUseCase } from '@/application/iam/use-cases/provisi
 import { DeleteCustomRoleUseCase } from '@/application/iam/use-cases/delete-custom-role.use-case.js';
 import { ListRolesQuery } from '@/application/iam/use-cases/list-roles.query.js';
 import {
+  ApplyRoleChangesUseCase,
+  PreviewRoleChangesQuery,
+} from '@/application/iam/use-cases/write-role-changes.use-case.js';
+import {
   CreateCustomRoleUseCase,
   UpdateCustomRoleUseCase,
 } from '@/application/iam/use-cases/write-custom-role.use-case.js';
@@ -308,6 +312,8 @@ export const createAuthApp = (options: AuthAppOptions = {}): AuthApp => {
       audit,
     ),
     listRoles: new ListRolesQuery(unitOfWork, customRoles),
+    previewChanges: new PreviewRoleChangesQuery(unitOfWork, customRoles),
+    applyChanges: new ApplyRoleChangesUseCase(unitOfWork, customRoles, audit),
     createRole: new CreateCustomRoleUseCase(unitOfWork, customRoles, audit),
     updateRole: new UpdateCustomRoleUseCase(unitOfWork, customRoles, audit),
     deleteRole: new DeleteCustomRoleUseCase(unitOfWork, customRoles, audit),

@@ -5,7 +5,10 @@ import { type ReactNode } from 'react';
 
 import { SharedHooks } from '@shared';
 
+import { IamService } from '@units/iam';
+
 import { NAV_SECTIONS } from './model/nav-sections.constant.js';
+import { visibleSections } from './lib/visible-sections.util.js';
 import { SidebarNav } from './ui/sidebar-nav.component.js';
 import { MAIN_CONTENT_ID, SkipLink } from './ui/skip-link.component.js';
 import { Topbar } from './ui/topbar.component.js';
@@ -45,6 +48,8 @@ export interface AppShellProps {
  * failure `axe` reports and a screen reader acts on.
  */
 export function AppShell({ children }: AppShellProps) {
+  const { can } = IamService.IamHooks.useCan();
+  const sections = visibleSections(NAV_SECTIONS, can);
   const { t } = useTranslation();
 
   const [isDrawerOpen, drawer] = useDisclosure(false);
@@ -77,7 +82,7 @@ export function AppShell({ children }: AppShellProps) {
       {/* `AppShell.Navbar` *is* the `<nav>` landmark; naming it here is what keeps it from being
           an anonymous one, and stops the list inside from declaring a second. */}
       <MantineAppShell.Navbar aria-label={t('nav.primary.aria')}>
-        <SidebarNav isCollapsed={isCollapsed} sections={NAV_SECTIONS} />
+        <SidebarNav isCollapsed={isCollapsed} sections={sections} />
       </MantineAppShell.Navbar>
 
       <Drawer
@@ -89,7 +94,7 @@ export function AppShell({ children }: AppShellProps) {
         title={t('nav.drawer.title')}
       >
         <Box aria-label={t('nav.drawer.aria')} component="nav">
-          <SidebarNav onNavigate={drawer.close} sections={NAV_SECTIONS} />
+          <SidebarNav onNavigate={drawer.close} sections={sections} />
         </Box>
       </Drawer>
 

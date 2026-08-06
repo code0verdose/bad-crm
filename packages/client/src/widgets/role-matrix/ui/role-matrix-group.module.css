@@ -1,0 +1,13 @@
+/**
+ * The first column stays on screen while the row scrolls sideways.
+ *
+ * Duplicated rather than reached for across folders: a file under `ui/` importing `../something` is
+ * the relative path out of the folder the layer rules forbid, and a shared stylesheet for two rules
+ * is not worth a `shared/ui` component nobody else would use.
+ */
+.rowHeader {
+  position: sticky;
+  inset-inline-start: 0;
+  z-index: 1;
+  background: var(--bc-surface);
+}

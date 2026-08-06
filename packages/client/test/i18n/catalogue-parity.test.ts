@@ -65,15 +65,27 @@ const flatten = (value: unknown, prefix: string): string[] => {
   return Object.entries(value).flatMap(([key, nested]) => flatten(nested, `${prefix}.${key}`));
 };
 
-const cataloguedKeys = (language: string): Set<string> =>
-  new Set(
-    namespaces(language).flatMap((namespace) =>
-      flatten(
-        JSON.parse(readFileSync(`${LOCALES}/${language}/${namespace}.json`, 'utf8')),
-        namespace,
-      ),
+/**
+ * The suffixes i18next appends to a plural key, in the two languages this product ships.
+ *
+ * `t('roles.draft.count', { count })` resolves to `count_one` or `count_other` in English and to one
+ * of four forms in Russian: the base key is what the source asks for and never exists in the file.
+ * Without this the gate reports every plural as missing **and** every form as unused — two failures
+ * for a catalogue that is correct, which is the kind of noise that gets a gate switched off.
+ */
+const PLURAL_SUFFIX = /_(zero|one|two|few|many|other)$/;
+
+/** What the source may ask for: every entry, plus the base key of every plural form. */
+const cataloguedKeys = (language: string): Set<string> => {
+  const entries = namespaces(language).flatMap((namespace) =>
+    flatten(
+      JSON.parse(readFileSync(`${LOCALES}/${language}/${namespace}.json`, 'utf8')),
+      namespace,
     ),
   );
+
+  return new Set(entries.flatMap((key) => [key, key.replace(PLURAL_SUFFIX, '')]));
+};
 
 describe('the translation catalogues', () => {
   it('CONTROL: finds keys in the source and entries in both catalogues', () => {
@@ -81,6 +93,9 @@ describe('the translation catalogues', () => {
     expect(usedKeys().size).toBeGreaterThan(20);
     expect(cataloguedKeys('en').size).toBeGreaterThan(20);
     expect(cataloguedKeys('ru').size).toBeGreaterThan(20);
+    // CONTROL for the plural rule itself: the catalogues really do carry suffixed forms, so the
+    // two assertions below are exercising it rather than passing on an empty case.
+    expect([...cataloguedKeys('ru')].some((key) => PLURAL_SUFFIX.test(key))).toBe(true);
   });
 
   it('carries the same namespaces in both languages', () => {
@@ -107,6 +122,10 @@ describe('the translation catalogues', () => {
   it.each(['en', 'ru'])('carries no entry the interface never asks for — %s', (language) => {
     const used = new Set(usedKeys().keys());
 
-    expect([...cataloguedKeys(language)].filter((key) => !used.has(key))).toEqual([]);
+    // A plural form is asked for through its base key, so `count_few` counts as used when
+    // `roles.draft.count` appears in the source — and stops counting the moment that call goes.
+    expect(
+      [...cataloguedKeys(language)].filter((key) => !used.has(key.replace(PLURAL_SUFFIX, ''))),
+    ).toEqual([]);
   });
 });

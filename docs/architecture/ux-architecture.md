@@ -424,7 +424,7 @@ flowchart TD
 | `/admin/members` | `routes/_authenticated/admin/members/index.tsx` | `requirePermission('user:read')` | `memberListSearchSchema`: `q`, `role[]`, `status[]`, `team[]`, `sort`, `page` | `MemberListWidget` |
 | `/admin/members/$userId` | `routes/_authenticated/admin/members/$userId.tsx` | `requirePermission('user:read')` | `tab=profile\|roles\|projects\|sessions\|onboarding` | `MemberDetailWidget` |
 | `/admin/members/invite` | `routes/_authenticated/admin/members/invite.tsx` | `requirePermission('user:invite')` | — | `InviteMemberWidget` |
-| `/admin/roles` | `routes/_authenticated/admin/roles/index.tsx` | `requirePermission('role:read')` | `rolesSearchSchema`: `q`, `group[]`, `diff?` (сравнение ролей), `role?` | `RoleMatrixWidget` |
+| `/admin/roles` | `routes/_authenticated/admin/roles.tsx` | `requirePermission('role:read')` | `rolesSearchSchema`: `q`, `collapsed` (свёрнутые домены), `diff` (только различия) | `RoleMatrix` |
 | `/admin/roles/$roleId` | `routes/_authenticated/admin/roles/$roleId.tsx` | `requirePermission('role:read')` | `tab=permissions\|members` | `RoleDetailWidget` |
 | `/admin/ai-providers` | `routes/_authenticated/admin/ai-providers/index.tsx` | `requirePermission('ai:configure_providers')` | `provider?` | `AiProviderListWidget` |
 | `/admin/ai-providers/$providerId` | `routes/_authenticated/admin/ai-providers/$providerId.tsx` | `requirePermission('ai:configure_providers')` | `tab=connection\|models\|limits` | `AiProviderDetailWidget` |

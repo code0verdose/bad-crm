@@ -916,6 +916,103 @@ paths:
         '500':
           $ref: '#/components/responses/InternalError'
 
+  /roles/preview-changes:
+    post:
+      operationId: previewRoleChanges
+      summary: What a draft of the role matrix would do.
+      description: |
+        The administration screen edits a matrix — several roles at once — and asks this before it
+        saves. It answers per role: what the change adds, what it removes, which arriving keys are
+        dangerous, **how many people hold the role**, and whether the server would accept it at all.
+
+        Two of those the client cannot compute: the holder count, and the verdict. Both come from
+        the same policy that decides on save, so the summary the administrator reads cannot disagree
+        with what happens when they press the button.
+
+        Nothing is written. `permissions` is the composition the role should end up with, not a
+        delta — the same shape the save takes.
+      tags: [iam]
+      x-permission: role:read
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RoleChanges'
+      responses:
+        '200':
+          description: One outcome per drafted role, in the order they were sent.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/RoleChangeOutcome'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /roles/apply-changes:
+    post:
+      operationId: applyRoleChanges
+      summary: Save a draft of the role matrix — all of it or none of it.
+      description: |
+        One transaction. If any drafted change is refused, **nothing** is applied: eleven changes of
+        twelve landing would leave the screen describing a state that exists nowhere, with no way to
+        tell which half is real.
+
+        The refusal carries the code and not the list — `details` reaches the log and never the body.
+        Which change was refused comes from `POST /roles/preview-changes`, the read that exists to
+        answer exactly that, and the client re-runs it to fill in its banner.
+
+        A role whose composition the draft leaves unchanged is skipped: nobody's rights moved, so
+        nobody is invalidated. Everyone holding a role that did move gets their permission version
+        bumped in the same transaction, so the change applies on their next request.
+      tags: [iam]
+      x-permission: role:update
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/ConfirmDangerous'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RoleChanges'
+      responses:
+        '204':
+          description: Every role in the draft grants what the draft says.
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '428':
+          $ref: '#/components/responses/ConfirmationRequired'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
   /roles/{roleId}:
     patch:
       operationId: updateRole
@@ -1817,6 +1914,73 @@ components:
                 How many people hold it — «how many does this change affect», which is the question
                 asked before an edit rather than after it. A count, not the names: those are a
                 different read with a different permission.
+
+    RoleChanges:
+      type: object
+      additionalProperties: false
+      required: [changes]
+      description: |
+        A draft of the matrix: one entry per role, each carrying the composition that role should end
+        up with. A role may appear only once — twice would make «what should it grant» ambiguous.
+      properties:
+        changes:
+          type: array
+          minItems: 1
+          maxItems: 64
+          items:
+            type: object
+            additionalProperties: false
+            required: [roleId, permissions]
+            properties:
+              roleId:
+                type: string
+                format: uuid
+              permissions:
+                type: array
+                items:
+                  type: string
+
+    RoleChangeOutcome:
+      type: object
+      additionalProperties: false
+      required: [roleId, key, name, isSystem, holderCount, added, removed, dangerous, reason]
+      description: What one drafted change would do, and whether it would be accepted.
+      properties:
+        roleId:
+          type: string
+          format: uuid
+        key:
+          type: string
+        name:
+          type: string
+        isSystem:
+          type: boolean
+        holderCount:
+          type: integer
+          minimum: 0
+          description: How many people hold the role — «how many does this change affect».
+        added:
+          type: array
+          items:
+            type: string
+        removed:
+          type: array
+          items:
+            type: string
+        dangerous:
+          type: array
+          description: |
+            Dangerous keys **arriving** with this change. A key the role already had is not a new
+            decision, so it is not warned about again.
+          items:
+            type: string
+        reason:
+          type: string
+          nullable: true
+          description: |
+            `null` when the change would be accepted; otherwise the refusal, named so the screen can
+            grey the cell out and explain why in its own language — `system_role_immutable`,
+            `permission_not_granted`, `self_lockout`.
 
     RoleCompositionUpdate:
       type: object

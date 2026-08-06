@@ -12,10 +12,12 @@
     "aria": "Основная навигация"
   },
   "section": {
-    "personal": "Личное"
+    "personal": "Личное",
+    "administration": "Администрирование"
   },
   "sidebar": {
     "toggle": "Свернуть боковую панель"
   },
-  "signOut": "Выйти"
+  "signOut": "Выйти",
+  "adminRoles": "Роли и права"
 }

@@ -35,6 +35,7 @@ import {
 import { metaQuerySchema } from '@/presentation/http/validators/meta.validator.js';
 import {
   createRoleBodySchema,
+  roleChangesBodySchema,
   roleIdParamsSchema,
   updateRoleBodySchema,
 } from '@/presentation/http/validators/custom-role.validator.js';
@@ -114,8 +115,13 @@ export const createRouteRegistry = (
   const updateRoleValidator = validate({ params: roleIdParamsSchema, body: updateRoleBodySchema });
   const deleteRoleValidator = validate({ params: roleIdParamsSchema });
 
+  const roleChangesValidator = validate({ body: roleChangesBodySchema });
+
   const customRoles = createCustomRoleController({
     listRoles: dependencies.iam.listRoles,
+    previewChanges: dependencies.iam.previewChanges,
+    applyChanges: dependencies.iam.applyChanges,
+    changesValidator: roleChangesValidator,
     createRole: dependencies.iam.createRole,
     updateRole: dependencies.iam.updateRole,
     deleteRole: dependencies.iam.deleteRole,
@@ -307,6 +313,27 @@ export const createRouteRegistry = (
       // Nothing narrower to decide: the answer is every role of the tenant, and the tenant is the
       // scope — so the guard's capability check is the whole decision.
       aclCheckedIn: 'ListRolesQuery',
+    },
+    {
+      method: 'post',
+      path: `${API_PREFIX}/roles/preview-changes`,
+      handlers: [roleChangesValidator.handler, customRoles.preview],
+      // A read that answers «what would happen», so it asks for the reading right — a draft nobody
+      // saves changes nothing, and requiring `role:update` here would hide the summary from the
+      // people the summary is for.
+      permission: 'role:read',
+      aclCheckedIn: 'PreviewRoleChangesQuery',
+    },
+    {
+      method: 'post',
+      path: `${API_PREFIX}/roles/apply-changes`,
+      handlers: [requireIdempotencyKey(), roleChangesValidator.handler, customRoles.apply],
+      permission: 'role:update',
+      // The guard answers «may this caller edit roles at all». Which of the drafted changes are
+      // acceptable — the subset rule, system roles, the self-lockout across the whole draft — is
+      // decided in the use-case, which is also the only place that can answer 404 for a role id
+      // belonging to somebody else.
+      aclCheckedIn: 'ApplyRoleChangesUseCase',
     },
     {
       method: 'post',

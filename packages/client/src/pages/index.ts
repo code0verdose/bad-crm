@@ -7,3 +7,4 @@ export * from './dashboard/index.js';
 export * from './forgot-password/index.js';
 export * from './login/index.js';
 export * from './reset-password/index.js';
+export * from './admin-roles/index.js';

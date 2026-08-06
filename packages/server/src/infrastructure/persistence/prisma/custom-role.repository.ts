@@ -74,6 +74,108 @@ export class PrismaCustomRoleRepository
     });
   }
 
+  compositionsOf(roleIds: readonly string[]): Promise<readonly RoleComposition[]> {
+    return this.run('compositionsOf', async (tx) => {
+      if (roleIds.length === 0) return [];
+
+      const rows = await tx.role.findMany({
+        where: { organizationId: this.organizationId('compositionsOf'), id: { in: [...roleIds] } },
+        select: {
+          id: true,
+          key: true,
+          name: true,
+          description: true,
+          isSystem: true,
+          permissions: { select: { permissionKey: true } },
+        },
+      });
+
+      return rows.map((row) => ({
+        roleId: row.id,
+        key: row.key,
+        name: row.name,
+        description: row.description,
+        isSystem: row.isSystem,
+        permissions: row.permissions
+          .map((grant) => grant.permissionKey)
+          .filter((key): key is SharedPermissions.PermissionKey =>
+            SharedPermissions.isPermissionKey(key),
+          ),
+      }));
+    });
+  }
+
+  holdingsOf(userId: string): Promise<{
+    readonly byRole: ReadonlyMap<string, readonly SharedPermissions.PermissionKey[]>;
+    readonly fromOverrides: ReadonlySet<SharedPermissions.PermissionKey>;
+  }> {
+    return this.run('holdingsOf', async (tx) => {
+      const organizationId = this.organizationId('holdingsOf');
+      const [assignments, allowed] = await Promise.all([
+        tx.userRole.findMany({
+          where: { organizationId, userId, ...effectiveAssignment() },
+          select: {
+            roleId: true,
+            role: {
+              select: {
+                permissions: {
+                  where: { permission: { deprecatedAt: null } },
+                  select: { permissionKey: true },
+                },
+              },
+            },
+          },
+        }),
+        tx.userPermissionOverride.findMany({
+          where: { organizationId, userId, effect: 'ALLOW', ...effectiveAssignment() },
+          select: { permissionKey: true },
+        }),
+      ]);
+
+      const byRole = new Map<string, readonly SharedPermissions.PermissionKey[]>(
+        assignments.map((assignment) => [
+          assignment.roleId,
+          assignment.role.permissions
+            .map((grant) => grant.permissionKey)
+            .filter((key): key is SharedPermissions.PermissionKey =>
+              SharedPermissions.isPermissionKey(key),
+            ),
+        ]),
+      );
+
+      return {
+        byRole,
+        fromOverrides: new Set(
+          allowed
+            .map((override) => override.permissionKey)
+            .filter((key): key is SharedPermissions.PermissionKey =>
+              SharedPermissions.isPermissionKey(key),
+            ),
+        ),
+      };
+    });
+  }
+
+  holderCounts(roleIds: readonly string[]): Promise<ReadonlyMap<string, number>> {
+    return this.run('holderCounts', async (tx) => {
+      if (roleIds.length === 0) return new Map<string, number>();
+
+      // One grouped statement rather than a count per role: a draft spans several roles, and the
+      // screen shows «how many people this affects» beside each of them at once.
+      const rows = await tx.userRole.groupBy({
+        by: ['roleId'],
+        where: {
+          organizationId: this.organizationId('holderCounts'),
+          roleId: { in: [...roleIds] },
+          ...effectiveAssignment(),
+        },
+        _count: { userId: true },
+      });
+
+      return new Map(rows.map((row) => [row.roleId, row._count.userId]));
+    });
+  }
+
   composition(roleId: string): Promise<RoleComposition | null> {
     return this.run('composition', async (tx) => {
       const role = await tx.role.findFirst({
@@ -82,6 +184,7 @@ export class PrismaCustomRoleRepository
           id: true,
           key: true,
           name: true,
+          description: true,
           isSystem: true,
           permissions: { select: { permissionKey: true } },
         },
@@ -93,6 +196,7 @@ export class PrismaCustomRoleRepository
         roleId: role.id,
         key: role.key,
         name: role.name,
+        description: role.description,
         isSystem: role.isSystem,
         permissions: role.permissions.map(
           (grant) => grant.permissionKey as SharedPermissions.PermissionKey,
@@ -235,6 +339,36 @@ export class PrismaCustomRoleRepository
       ].filter((key): key is SharedPermissions.PermissionKey =>
         SharedPermissions.isPermissionKey(key),
       );
+    });
+  }
+
+  bumpHoldersOfMany(roleIds: readonly string[]): Promise<void> {
+    return this.run('bumpHoldersOfMany', async (tx) => {
+      if (roleIds.length === 0) return;
+
+      const organizationId = this.organizationId('bumpHoldersOfMany');
+
+      // `= ANY($n)` rather than a statement per role: sixty-four round trips inside a transaction
+      // with a five-second ceiling is a save that fails on arithmetic rather than on anything being
+      // wrong.
+      //
+      // It also narrows the deadlock window, and the honest version of why is narrower than it
+      // looks: one statement means one lock phase instead of sixty-four interleaved ones. The order
+      // **within** it is PostgreSQL's — an `ORDER BY` in the subquery does not decide the order the
+      // outer `UPDATE` takes row locks in, and claiming it did would be a comment that stops
+      // somebody from looking for the real fix (a deterministic order needs `ORDER BY` on the
+      // update's own scan, which `UPDATE` does not take, or serialisable isolation with a retry).
+      await tx.$executeRaw`
+        UPDATE users
+           SET permissions_version = permissions_version + 1
+         WHERE organization_id = ${organizationId}::uuid
+           AND id IN (
+                 SELECT user_id
+                   FROM user_roles
+                  WHERE organization_id = ${organizationId}::uuid
+                    AND role_id = ANY(${[...roleIds]}::uuid[])
+                    AND (expires_at IS NULL OR expires_at > now())
+               )`;
     });
   }
 

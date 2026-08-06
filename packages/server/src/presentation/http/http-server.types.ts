@@ -4,6 +4,10 @@ import { type AssignRoleUseCase } from '@/application/iam/use-cases/assign-role.
 import { type BuildActorQuery } from '@/application/iam/use-cases/build-actor.query.js';
 import { type GetMyPermissionsQuery } from '@/application/iam/use-cases/get-my-permissions.query.js';
 import { type ListRolesQuery } from '@/application/iam/use-cases/list-roles.query.js';
+import {
+  type ApplyRoleChangesUseCase,
+  type PreviewRoleChangesQuery,
+} from '@/application/iam/use-cases/write-role-changes.use-case.js';
 import { type DeleteCustomRoleUseCase } from '@/application/iam/use-cases/delete-custom-role.use-case.js';
 import { type RemovePermissionOverrideUseCase } from '@/application/iam/use-cases/remove-permission-override.use-case.js';
 import {
@@ -99,6 +103,8 @@ export interface IamDependencies {
   readonly writeOverride: WritePermissionOverrideUseCase;
   readonly removeOverride: RemovePermissionOverrideUseCase;
   readonly listRoles: ListRolesQuery;
+  readonly previewChanges: PreviewRoleChangesQuery;
+  readonly applyChanges: ApplyRoleChangesUseCase;
   readonly createRole: CreateCustomRoleUseCase;
   readonly updateRole: UpdateCustomRoleUseCase;
   readonly deleteRole: DeleteCustomRoleUseCase;

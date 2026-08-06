@@ -60,6 +60,7 @@ describe('GET /api/v1/roles', () => {
       roleId: ROLE_ID,
       key: 'tech_writer',
       name: 'Technical writer',
+      description: null,
       isSystem: false,
       permissions: ['task:read'],
     });
@@ -331,6 +332,7 @@ describe('PATCH /api/v1/roles/{roleId}', () => {
       roleId: ROLE_ID,
       key: overrides.isSystem === true ? 'manager' : 'tech_writer',
       name: 'Technical writer',
+      description: null,
       isSystem: overrides.isSystem ?? false,
       permissions: ['task:read'],
     });
@@ -439,6 +441,7 @@ describe('DELETE /api/v1/roles/{roleId}', () => {
       roleId: ROLE_ID,
       key: 'tech_writer',
       name: 'Technical writer',
+      description: null,
       isSystem: false,
       permissions: ['task:read'],
     });

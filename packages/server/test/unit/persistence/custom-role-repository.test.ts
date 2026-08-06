@@ -58,6 +58,7 @@ const recordingClient = (overrides: Record<string, unknown> = {}): Recorder => {
       findMany: record('userRole.findMany', overrides['userRoles'] ?? []),
       findFirst: record('userRole.findFirst', overrides['userRole'] ?? null),
       count: record('userRole.count', 3),
+      groupBy: record('userRole.groupBy', overrides['grouped'] ?? []),
     },
     userPermissionOverride: {
       findMany: record('userPermissionOverride.findMany', overrides['overrides'] ?? []),
@@ -156,6 +157,105 @@ describe('listing the roles of the tenant', () => {
       },
     });
     expect(args['orderBy']).toEqual([{ priority: 'desc' }, { key: 'asc' }]);
+  });
+});
+
+describe('reading a draft that spans several roles', () => {
+  it('reads every composition in one statement and drops keys outside the catalogue', async () => {
+    const recorder = recordingClient({
+      roles: [
+        {
+          id: 'role-1',
+          key: 'tech_writer',
+          name: 'Technical writer',
+          description: null,
+          isSystem: false,
+          // `task:teleport` is what a row left behind by an older release looks like: filtered out
+          // rather than cast, because `Set<PermissionKey>` is where a cast stops being checked.
+          permissions: [{ permissionKey: 'task:read' }, { permissionKey: 'task:teleport' }],
+        },
+      ],
+    });
+
+    expect(
+      await inScope(recorder, (repository) => repository.compositionsOf(['role-1', 'role-2'])),
+    ).toEqual([
+      {
+        roleId: 'role-1',
+        key: 'tech_writer',
+        name: 'Technical writer',
+        description: null,
+        isSystem: false,
+        permissions: ['task:read'],
+      },
+    ]);
+    expect(argsOf(recorder, 'role.findMany')['where']).toEqual({
+      organizationId: ORG,
+      id: { in: ['role-1', 'role-2'] },
+    });
+  });
+
+  it('asks nothing at all for an empty draft', async () => {
+    const recorder = recordingClient();
+
+    expect(await inScope(recorder, (repository) => repository.compositionsOf([]))).toEqual([]);
+    expect(await inScope(recorder, (repository) => repository.holderCounts([]))).toEqual(new Map());
+    expect(recorder.calls).toEqual([]);
+  });
+
+  it('counts the holders of several roles with one grouped statement', async () => {
+    const recorder = recordingClient({
+      grouped: [
+        { roleId: 'role-1', _count: { userId: 2 } },
+        { roleId: 'role-2', _count: { userId: 0 } },
+      ],
+    });
+
+    expect(
+      await inScope(recorder, (repository) => repository.holderCounts(['role-1', 'role-2'])),
+    ).toEqual(
+      new Map([
+        ['role-1', 2],
+        ['role-2', 0],
+      ]),
+    );
+
+    const args = argsOf(recorder, 'userRole.groupBy');
+
+    expect(args['by']).toEqual(['roleId']);
+    expect(args['where']).toMatchObject({
+      organizationId: ORG,
+      roleId: { in: ['role-1', 'role-2'] },
+    });
+    // The same expiry predicate as every other holder read: an expired assignment affects nobody.
+    expect((args['where'] as { OR: unknown }).OR).toEqual([
+      { expiresAt: null },
+      { expiresAt: { gt: expect.any(Date) } },
+    ]);
+  });
+
+  it('reads what one person’s rights are made of — roles and their ALLOW exceptions', async () => {
+    const recorder = recordingClient({
+      userRoles: [
+        { roleId: 'role-1', role: { permissions: [{ permissionKey: 'role:update' }] } },
+        { roleId: 'role-2', role: { permissions: [{ permissionKey: 'task:teleport' }] } },
+      ],
+      overrides: [{ permissionKey: 'role:delete' }, { permissionKey: 'task:teleport' }],
+    });
+
+    expect(await inScope(recorder, (repository) => repository.holdingsOf('admin'))).toEqual({
+      byRole: new Map([
+        ['role-1', ['role:update']],
+        // A key outside the catalogue grants nothing, so it is not a source of anything either.
+        ['role-2', []],
+      ]),
+      fromOverrides: new Set(['role:delete']),
+    });
+    expect(argsOf(recorder, 'userPermissionOverride.findMany')['where']).toMatchObject({
+      organizationId: ORG,
+      userId: 'admin',
+      effect: 'ALLOW',
+    });
   });
 });
 
@@ -346,6 +446,33 @@ describe('who is affected by a change', () => {
     // An expired role grants nothing, so it is not a reason to believe somebody keeps a right — and
     // believing it wrongly is exactly the lockout the policy exists to refuse.
     expect(where['OR']).toEqual([{ expiresAt: null }, { expiresAt: { gt: expect.any(Date) } }]);
+  });
+
+  it('invalidates the holders of a whole draft with one statement', async () => {
+    const recorder = recordingClient();
+
+    await inScope(recorder, (repository) =>
+      repository.bumpHoldersOfMany(['role-1', 'role-2', 'role-3']),
+    );
+
+    const statement = recorder.raw.at(-1);
+
+    // `= ANY($n)`, not a statement per role: sixty-four round trips inside a transaction with a
+    // five-second ceiling is a save that fails on arithmetic rather than on anything being wrong.
+    expect(statement?.sql).toContain('role_id = ANY(');
+    expect(statement?.sql).toContain('permissions_version = permissions_version + 1');
+    // The tenant twice — outer update and subquery — because neither may be reached by an id alone.
+    expect(statement?.values).toEqual([ORG, ORG, ['role-1', 'role-2', 'role-3']]);
+  });
+
+  it('asks nothing for a draft that moved no role', async () => {
+    const recorder = recordingClient();
+
+    await inScope(recorder, (repository) => repository.bumpHoldersOfMany([]));
+
+    expect(
+      recorder.raw.filter((statement) => statement.sql.includes('permissions_version')),
+    ).toEqual([]);
   });
 
   it('invalidates the holders by subquery, never by a list of ids', async () => {

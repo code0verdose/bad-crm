@@ -207,6 +207,9 @@ export class FakeCustomRoleRepository implements CustomRoleRepositoryPort {
   readonly roles = new Map<string, RoleComposition>();
   readonly holders = new Map<string, string[]>();
   readonly versionBumps: string[] = [];
+  /** Every draft the repository was asked to store — the trail a test reads instead of a database. */
+  readonly updates: Omit<RoleDraft, 'key'>[] = [];
+  private vanishing = false;
   private next = 1;
 
   constructor(
@@ -248,6 +251,7 @@ export class FakeCustomRoleRepository implements CustomRoleRepositoryPort {
       roleId,
       key: draft.key,
       name: draft.name,
+      description: draft.description,
       isSystem: false,
       permissions: [...draft.permissions],
     });
@@ -255,8 +259,15 @@ export class FakeCustomRoleRepository implements CustomRoleRepositoryPort {
     return Promise.resolve(roleId);
   }
 
+  /** From here on the role is gone, as if somebody else deleted it mid-save. */
+  vanishOnUpdate(): void {
+    this.vanishing = true;
+  }
+
   update(roleId: string, draft: Omit<RoleDraft, 'key'>): Promise<boolean> {
-    if (this.options.vanishesBeforeUpdate === true) return Promise.resolve(false);
+    if (this.vanishing || this.options.vanishesBeforeUpdate === true) return Promise.resolve(false);
+
+    this.updates.push(draft);
 
     const existing = this.roles.get(roleId);
 
@@ -265,6 +276,12 @@ export class FakeCustomRoleRepository implements CustomRoleRepositoryPort {
     this.roles.set(roleId, { ...existing, permissions: [...draft.permissions] });
 
     return Promise.resolve(true);
+  }
+
+  bumpHoldersOfMany(roleIds: readonly string[]): Promise<void> {
+    for (const roleId of roleIds) this.versionBumps.push(...(this.holders.get(roleId) ?? []));
+
+    return Promise.resolve();
   }
 
   bumpHoldersOf(roleId: string): Promise<void> {
@@ -281,6 +298,46 @@ export class FakeCustomRoleRepository implements CustomRoleRepositoryPort {
     this.holders.delete(roleId);
 
     return Promise.resolve();
+  }
+
+  compositionsOf(roleIds: readonly string[]): Promise<readonly RoleComposition[]> {
+    return Promise.resolve(
+      roleIds
+        .map((roleId) => this.roles.get(roleId))
+        .filter((role): role is RoleComposition => role !== undefined),
+    );
+  }
+
+  holdingsOf(userId: string): Promise<{
+    readonly byRole: ReadonlyMap<string, readonly SharedPermissions.PermissionKey[]>;
+    readonly fromOverrides: ReadonlySet<SharedPermissions.PermissionKey>;
+  }> {
+    const byRole = new Map<string, readonly SharedPermissions.PermissionKey[]>();
+
+    for (const [roleId, holders] of this.holders) {
+      if (!holders.includes(userId)) continue;
+
+      byRole.set(roleId, this.roles.get(roleId)?.permissions ?? []);
+    }
+
+    return Promise.resolve({
+      byRole,
+      fromOverrides: new Set(
+        (this.options.elsewhere ?? []) as readonly SharedPermissions.PermissionKey[],
+      ),
+    });
+  }
+
+  holderCounts(roleIds: readonly string[]): Promise<ReadonlyMap<string, number>> {
+    // A role nobody holds is **absent** from the answer, exactly as `groupBy` leaves it out: a fake
+    // that returned a zero would hide the fallback the real path depends on.
+    return Promise.resolve(
+      new Map(
+        roleIds
+          .filter((roleId) => (this.holders.get(roleId) ?? []).length > 0)
+          .map((roleId) => [roleId, (this.holders.get(roleId) ?? []).length]),
+      ),
+    );
   }
 
   holdsRole(userId: string, roleId: string): Promise<boolean> {

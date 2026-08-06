@@ -89,6 +89,7 @@ const heldByActor = (
     roleId: ROLE_ID,
     key: 'tech_writer',
     name: 'Technical writer',
+    description: null,
     isSystem: false,
     permissions: ['role:update', 'role:delete', 'task:read'],
   });

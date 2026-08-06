@@ -39,6 +39,9 @@ export default defineConfig({
           name: 'db',
           include: ['test/integration/db/**/*.test.ts'],
           environment: 'node',
+          // Why: `test/setup/http-agent.setup.ts` — keep-alive off, or supertest's ephemeral ports
+          // collide with pooled sockets under load and a random test fails with a parse error.
+          setupFiles: ['./test/setup/http-agent.setup.ts'],
           /**
            * One container for the whole run, started once and reused by every file — starting one
            * per file would add ten seconds each and make the suite something people skip.
@@ -59,6 +62,9 @@ export default defineConfig({
           name: 'services',
           include: ['test/integration/{mail,rate-limit}/**/*.test.ts'],
           environment: 'node',
+          // Why: `test/setup/http-agent.setup.ts` — keep-alive off, or supertest's ephemeral ports
+          // collide with pooled sockets under load and a random test fails with a parse error.
+          setupFiles: ['./test/setup/http-agent.setup.ts'],
           ...CONTAINER_TIMEOUTS,
         },
       },

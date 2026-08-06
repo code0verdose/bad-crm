@@ -51,10 +51,27 @@ export interface PermissionQueryKeys {
   readonly mine: () => readonly [string, 'mine'];
 }
 
+/**
+ * Roles of the organization — the administration matrix reads one address and writes it back.
+ *
+ * `matrix()` rather than `list(params)`: the screen asks for every role with everything it grants,
+ * because it renders them all against every permission at once. There is no filter that would make
+ * a second cache entry meaningful, and the filtering the screen does do — search, groups, «only
+ * differences» — happens over an answer it already has.
+ */
+export interface RoleQueryKeys {
+  readonly all: readonly [string];
+  readonly matrix: () => readonly [string, 'matrix'];
+}
+
 export const QueryKeys = {
   Sessions: entityQueryKeys<SessionListParams>('sessions'),
   Permissions: {
     all: ['permissions'],
     mine: () => ['permissions', 'mine'],
   } satisfies PermissionQueryKeys,
+  Roles: {
+    all: ['roles'],
+    matrix: () => ['roles', 'matrix'],
+  } satisfies RoleQueryKeys,
 } as const;

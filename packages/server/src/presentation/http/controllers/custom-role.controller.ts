@@ -7,14 +7,20 @@ import {
 } from '@/application/iam/use-cases/write-custom-role.use-case.js';
 import { type DeleteCustomRoleUseCase } from '@/application/iam/use-cases/delete-custom-role.use-case.js';
 import { type ListRolesQuery } from '@/application/iam/use-cases/list-roles.query.js';
+import {
+  type ApplyRoleChangesUseCase,
+  type PreviewRoleChangesQuery,
+} from '@/application/iam/use-cases/write-role-changes.use-case.js';
 import { readActor } from '@/presentation/http/middleware/require-permission.middleware.js';
 import {
   serializeCreatedRole,
   serializeRole,
+  serializeRoleChangeOutcome,
 } from '@/presentation/http/serializers/role.serializer.js';
 import { type RequestValidator } from '@/presentation/http/middleware/validate.middleware.js';
 import {
   type createRoleBodySchema,
+  type roleChangesBodySchema,
   type roleIdParamsSchema,
   type updateRoleBodySchema,
 } from '@/presentation/http/validators/custom-role.validator.js';
@@ -30,6 +36,9 @@ const CONFIRM_DANGEROUS = 'x-confirm-dangerous';
 
 export interface CustomRoleControllerDependencies {
   readonly listRoles: ListRolesQuery;
+  readonly previewChanges: PreviewRoleChangesQuery;
+  readonly applyChanges: ApplyRoleChangesUseCase;
+  readonly changesValidator: RequestValidator<{ body: typeof roleChangesBodySchema }>;
   readonly createRole: CreateCustomRoleUseCase;
   readonly updateRole: UpdateCustomRoleUseCase;
   readonly deleteRole: DeleteCustomRoleUseCase;
@@ -52,6 +61,8 @@ export const createCustomRoleController = (
   dependencies: CustomRoleControllerDependencies,
 ): {
   readonly list: RequestHandler;
+  readonly preview: RequestHandler;
+  readonly apply: RequestHandler;
   readonly create: RequestHandler;
   readonly update: RequestHandler;
   readonly remove: RequestHandler;
@@ -60,6 +71,29 @@ export const createCustomRoleController = (
     const roles = await dependencies.listRoles.execute({ actor: readActor(response) });
 
     response.status(200).json({ items: roles.map(serializeRole) });
+  },
+
+  preview: async (_request, response) => {
+    const { body } = dependencies.changesValidator.read(response);
+
+    const outcomes = await dependencies.previewChanges.execute({
+      actor: readActor(response),
+      changes: body.changes as { roleId: string; permissions: SharedPermissions.PermissionKey[] }[],
+    });
+
+    response.status(200).json({ items: outcomes.map(serializeRoleChangeOutcome) });
+  },
+
+  apply: async (request, response) => {
+    const { body } = dependencies.changesValidator.read(response);
+
+    await dependencies.applyChanges.execute({
+      actor: readActor(response),
+      changes: body.changes as { roleId: string; permissions: SharedPermissions.PermissionKey[] }[],
+      confirmedDangerous: request.headers[CONFIRM_DANGEROUS] === '1',
+    });
+
+    response.status(204).send();
   },
 
   create: async (request, response) => {

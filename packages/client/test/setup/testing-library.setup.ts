@@ -1,3 +1,4 @@
+import { configure } from '@testing-library/react';
 import i18next from 'i18next';
 import { initReactI18next } from 'react-i18next';
 import '@testing-library/jest-dom/vitest';
@@ -15,6 +16,20 @@ import { afterEach, vi } from 'vitest';
 afterEach(() => {
   cleanup();
 });
+
+/**
+ * How long a `findBy*` waits before it reports «not in the document».
+ *
+ * The default is one second, which is a statement about the machine rather than about the code: this
+ * suite mounts the whole application — router, providers, i18next, three hundred rows of catalogue —
+ * and under `turbo run test`, with four packages competing, a query that resolves in eighty
+ * milliseconds alone has been measured past a second. What comes out then is not «this is slow» but
+ * «element not found», printed with a DOM dump that shows the element about to appear.
+ *
+ * Five seconds is far above what any of these renders costs and far below a hang: a genuinely
+ * missing element still fails, five seconds later, with the same message.
+ */
+configure({ asyncUtilTimeout: 5_000 });
 
 /**
  * Two browser APIs jsdom does not implement and Mantine calls on mount.
@@ -77,7 +92,17 @@ await i18next.use(initReactI18next).init({
   // `auth.login.title` — and every assertion in this suite names the full key.
   appendNamespaceToCIMode: true,
   fallbackLng: 'cimode',
-  ns: ['common', 'validation', 'errors', 'nav', 'auth', 'filter', 'pagination', 'dashboard'],
+  ns: [
+    'common',
+    'validation',
+    'errors',
+    'nav',
+    'auth',
+    'filter',
+    'pagination',
+    'dashboard',
+    'roles',
+  ],
   defaultNS: 'common',
   nsSeparator: '.',
   keySeparator: '.',

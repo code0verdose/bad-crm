@@ -1,3 +1,5 @@
+import { availableParallelism } from 'node:os';
+
 import { defineConfig, mergeConfig } from 'vitest/config';
 
 import viteConfig from './vite.config.js';
@@ -14,6 +16,8 @@ export default mergeConfig(
   viteConfig,
   defineConfig({
     test: {
+      /** A share of the machine — see the root `vitest.config.ts` for why, and why it is derived. */
+      maxWorkers: Math.max(1, Math.floor(availableParallelism() / 4)),
       include: ['test/**/*.test.{ts,tsx}', 'src/**/*.test.{ts,tsx}'],
       // Component tests render into a DOM. It is the runner's DOM, not a browser: anything that
       // depends on real layout or on a real navigation belongs in Playwright instead.

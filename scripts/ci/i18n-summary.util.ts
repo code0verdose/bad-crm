@@ -57,12 +57,22 @@ export const flatten = (
 export const isUntranslated = (entry: CatalogueEntry): boolean =>
   entry.value.trim() === '' || entry.value === entry.key;
 
+/**
+ * The suffixes i18next appends to a plural key.
+ *
+ * Pairing is done on the **base** key, because plural categories are a property of the language:
+ * English needs `one` and `other`, Russian needs `one`, `few`, `many` and `other`. Comparing the
+ * suffixed forms one-to-one reports a correct Russian catalogue as missing two entries in English —
+ * and asks whoever reads the report to «fix» it by deleting a form the language requires.
+ */
+const PLURAL_SUFFIX = /_(zero|one|two|few|many|other)$/;
+
 export const summarise = (
   catalogues: ReadonlyMap<string, readonly CatalogueEntry[]>,
 ): I18nSummary => {
   const languages = [...catalogues.keys()].sort();
   const keysOf = (language: string): Set<string> =>
-    new Set((catalogues.get(language) ?? []).map((entry) => entry.key));
+    new Set((catalogues.get(language) ?? []).map((entry) => entry.key.replace(PLURAL_SUFFIX, '')));
 
   const unpaired = new Set<string>();
   for (const language of languages) {

@@ -1,4 +1,5 @@
-import { IconLayoutDashboard, type Icon } from '@tabler/icons-react';
+import { IconLayoutDashboard, IconShieldLock, type Icon } from '@tabler/icons-react';
+import { type SharedPermissions } from '@bad-crm/shared';
 
 /**
  * The navigation, as data (`ux-architecture.md` → «Информационная архитектура»).
@@ -13,9 +14,17 @@ import { IconLayoutDashboard, type Icon } from '@tabler/icons-react';
  */
 export interface NavItem {
   /** A path of the route tree. Widening this to `string` would give up the compile-time check. */
-  readonly to: '/dashboard';
+  readonly to: '/dashboard' | '/admin/roles';
   readonly labelKey: string;
   readonly icon: Icon;
+  /**
+   * Hidden from anybody who does not hold it.
+   *
+   * A hint, never a gate: the route has its own guard and the server answers every request on its
+   * own authority. What this prevents is a menu of entries that answer «not found» — an interface
+   * showing dead ends (`ux-architecture.md`, principle 6).
+   */
+  readonly permission?: SharedPermissions.PermissionKey;
 }
 
 export interface NavSection {
@@ -27,5 +36,16 @@ export const NAV_SECTIONS: readonly NavSection[] = [
   {
     titleKey: 'nav.section.personal',
     items: [{ to: '/dashboard', labelKey: 'nav.dashboard', icon: IconLayoutDashboard }],
+  },
+  {
+    titleKey: 'nav.section.administration',
+    items: [
+      {
+        to: '/admin/roles',
+        labelKey: 'nav.adminRoles',
+        icon: IconShieldLock,
+        permission: 'role:read',
+      },
+    ],
   },
 ];

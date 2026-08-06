@@ -72,6 +72,17 @@ const session = () =>
  */
 let sessionRevoked = false;
 
+/**
+ * The caller's own rights, which the shell asks for as soon as it mounts: the navigation hides the
+ * entries this person cannot open (STORY-011-10). An empty set is the honest fixture here — this
+ * file is about the session, and a menu of one entry is what a signed-in nobody sees.
+ */
+const noPermissions = (): Response =>
+  new Response(
+    JSON.stringify({ permissions: [], denied: [], roles: [], isOwner: false, version: 1 }),
+    { status: 200, headers: { 'content-type': 'application/json' } },
+  );
+
 /** No cookie to restore from, a sign-in that works, a sign-out that is accepted. */
 const api = (requests: string[]) => (request: Request) => {
   const { pathname } = new URL(request.url);
@@ -79,6 +90,7 @@ const api = (requests: string[]) => (request: Request) => {
 
   if (sessionRevoked) return Promise.resolve(new Response(null, { status: 401 }));
   if (pathname.endsWith('/auth/login')) return Promise.resolve(session());
+  if (pathname.endsWith('/me/permissions')) return Promise.resolve(noPermissions());
   if (pathname.endsWith('/auth/logout'))
     return Promise.resolve(new Response(null, { status: 204 }));
 
@@ -202,7 +214,12 @@ describe('signing in from a link to a protected page', () => {
       expect(window.location.pathname).toBe('/dashboard');
     });
 
-    expect(requests).toEqual(['/api/v1/auth/refresh', '/api/v1/auth/login']);
+    // Filtered to the authentication path: the shell also asks for the caller's permissions once it
+    // mounts, and this case is about the credential exchange — one sign-in, and no rotation behind it.
+    expect(requests.filter((path) => path.includes('/auth/'))).toEqual([
+      '/api/v1/auth/refresh',
+      '/api/v1/auth/login',
+    ]);
   });
 
   /**

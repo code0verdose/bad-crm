@@ -125,7 +125,12 @@ describe('when the refresh cookie is still good', () => {
     const app = await renderApplication();
     await app.findByRole('main');
 
-    expect(exchanges).toEqual(['/api/v1/auth/refresh']);
+    // The permissions request belongs to the shell, which asks once so the navigation can hide the
+    // entries this person cannot open. What this case is about is the **rotation**: one, not one per
+    // component that reads the session.
+    expect(exchanges.filter((path) => path.endsWith('/auth/refresh'))).toEqual([
+      '/api/v1/auth/refresh',
+    ]);
   });
 
   /**

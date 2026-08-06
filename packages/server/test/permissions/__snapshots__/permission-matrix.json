@@ -3,6 +3,8 @@
   "matrix": {
     "owner": {
       "GET /api/v1/roles": "allow",
+      "POST /api/v1/roles/preview-changes": "deny:role_not_found",
+      "POST /api/v1/roles/apply-changes": "deny:role_not_found",
       "POST /api/v1/roles": "allow",
       "PATCH /api/v1/roles/:roleId": "deny:role_not_found",
       "DELETE /api/v1/roles/:roleId": "deny:role_not_found",
@@ -13,6 +15,8 @@
     },
     "admin": {
       "GET /api/v1/roles": "allow",
+      "POST /api/v1/roles/preview-changes": "deny:role_not_found",
+      "POST /api/v1/roles/apply-changes": "deny:role_not_found",
       "POST /api/v1/roles": "allow",
       "PATCH /api/v1/roles/:roleId": "deny:role_not_found",
       "DELETE /api/v1/roles/:roleId": "deny:role_not_found",
@@ -23,6 +27,8 @@
     },
     "manager": {
       "GET /api/v1/roles": "allow",
+      "POST /api/v1/roles/preview-changes": "deny:role_not_found",
+      "POST /api/v1/roles/apply-changes": "deny:permission_not_granted",
       "POST /api/v1/roles": "deny:permission_not_granted",
       "PATCH /api/v1/roles/:roleId": "deny:permission_not_granted",
       "DELETE /api/v1/roles/:roleId": "deny:permission_not_granted",
@@ -33,6 +39,8 @@
     },
     "lead": {
       "GET /api/v1/roles": "deny:permission_not_granted",
+      "POST /api/v1/roles/preview-changes": "deny:permission_not_granted",
+      "POST /api/v1/roles/apply-changes": "deny:permission_not_granted",
       "POST /api/v1/roles": "deny:permission_not_granted",
       "PATCH /api/v1/roles/:roleId": "deny:permission_not_granted",
       "DELETE /api/v1/roles/:roleId": "deny:permission_not_granted",
@@ -43,6 +51,8 @@
     },
     "developer": {
       "GET /api/v1/roles": "deny:permission_not_granted",
+      "POST /api/v1/roles/preview-changes": "deny:permission_not_granted",
+      "POST /api/v1/roles/apply-changes": "deny:permission_not_granted",
       "POST /api/v1/roles": "deny:permission_not_granted",
       "PATCH /api/v1/roles/:roleId": "deny:permission_not_granted",
       "DELETE /api/v1/roles/:roleId": "deny:permission_not_granted",
@@ -53,6 +63,8 @@
     },
     "viewer": {
       "GET /api/v1/roles": "deny:permission_not_granted",
+      "POST /api/v1/roles/preview-changes": "deny:permission_not_granted",
+      "POST /api/v1/roles/apply-changes": "deny:permission_not_granted",
       "POST /api/v1/roles": "deny:permission_not_granted",
       "PATCH /api/v1/roles/:roleId": "deny:permission_not_granted",
       "DELETE /api/v1/roles/:roleId": "deny:permission_not_granted",
@@ -63,6 +75,8 @@
     },
     "guest": {
       "GET /api/v1/roles": "deny:permission_not_granted",
+      "POST /api/v1/roles/preview-changes": "deny:permission_not_granted",
+      "POST /api/v1/roles/apply-changes": "deny:permission_not_granted",
       "POST /api/v1/roles": "deny:permission_not_granted",
       "PATCH /api/v1/roles/:roleId": "deny:permission_not_granted",
       "DELETE /api/v1/roles/:roleId": "deny:permission_not_granted",

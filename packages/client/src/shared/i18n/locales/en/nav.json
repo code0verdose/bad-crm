@@ -12,10 +12,12 @@
     "aria": "Primary navigation"
   },
   "section": {
-    "personal": "Personal"
+    "personal": "Personal",
+    "administration": "Administration"
   },
   "sidebar": {
     "toggle": "Fold the sidebar"
   },
-  "signOut": "Sign out"
+  "signOut": "Sign out",
+  "adminRoles": "Roles and permissions"
 }

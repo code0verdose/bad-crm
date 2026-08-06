@@ -57,6 +57,17 @@ type Call = (target: Target, token: string) => request.Test;
 const CALLS: Readonly<Record<string, Call>> = {
   'GET /api/v1/roles': (target, token) =>
     request(target).get('/api/v1/roles').set('Authorization', `Bearer ${token}`),
+  'POST /api/v1/roles/preview-changes': (target, token) =>
+    request(target)
+      .post('/api/v1/roles/preview-changes')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ changes: [{ roleId: ROLE_ID, permissions: [] }] }),
+  'POST /api/v1/roles/apply-changes': (target, token) =>
+    request(target)
+      .post('/api/v1/roles/apply-changes')
+      .set('Authorization', `Bearer ${token}`)
+      .set('Idempotency-Key', IDEMPOTENCY_KEY)
+      .send({ changes: [{ roleId: ROLE_ID, permissions: [] }] }),
   'POST /api/v1/roles': (app, token) =>
     request(app)
       .post('/api/v1/roles')

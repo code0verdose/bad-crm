@@ -1,3 +1,5 @@
+import { availableParallelism } from 'node:os';
+
 import { defineConfig } from 'vitest/config';
 
 import { ReadsLastSequencer } from './test/repo/reads-last.sequencer.js';
@@ -5,6 +7,20 @@ import { ReadsLastSequencer } from './test/repo/reads-last.sequencer.js';
 /** Repository-level contract tests: workspace layout, dependency direction, tsconfig contract. */
 export default defineConfig({
   test: {
+    /**
+     * A share of the machine, not all of it — **the reference copy of this rule**; the three package
+     * configs carry the same expression and point here.
+     *
+     * `turbo run test` starts four vitest projects at once and each one defaults to a worker per
+     * core. On a ten-core machine that is forty processes, every one of them transforming, rendering
+     * and waiting — and what it looks like is not «slow»: it is a test that times out at twenty
+     * seconds while doing nothing but queuing, in a different file on every run.
+     *
+     * Derived rather than fixed, because a fixed number is a statement about one machine: three per
+     * project is right on ten cores, absurd on a two-core CI runner and wasteful on thirty-two. The
+     * floor of one keeps a single-core runner working rather than dividing itself out of existence.
+     */
+    maxWorkers: Math.max(1, Math.floor(availableParallelism() / 4)),
     include: ['test/**/*.test.ts'],
     environment: 'node',
     /**
