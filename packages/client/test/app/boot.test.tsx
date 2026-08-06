@@ -65,7 +65,12 @@ describe('the entry point', () => {
     expect(await screen.findByRole('heading', { level: 1 })).toHaveTextContent('Dashboard');
     expect(screen.getByRole('main')).toBeInTheDocument();
     expect(screen.getByRole('banner')).toBeInTheDocument();
-  });
+    // Twice the default: this case boots the whole application — router, providers, i18next, the
+    // shell — and takes about two seconds alone. Under `turbo run test`, with four packages' suites
+    // competing for the machine, it has exceeded five and failed as if something were wrong. A
+    // timeout that only holds on an idle machine reports contention as a defect, which is how a
+    // suite earns the reputation of being flaky.
+  }, 10_000);
 
   /**
    * The failure that would otherwise be a blank page and an empty console: an `index.html` whose

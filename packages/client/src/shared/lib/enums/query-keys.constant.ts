@@ -39,6 +39,22 @@ export interface SessionListParams {
  * The registry. A group is added here by the epic that adds the operations behind it — today that is
  * the client session (`units/session`), the reference unit of the tree.
  */
+/**
+ * The caller's own permissions — one address, because the question takes no parameters.
+ *
+ * Not `entityQueryKeys`: that shape carries a list and a detail, and this group has neither. There
+ * is exactly one answer per signed-in person, and asking about somebody else is a different
+ * operation under a different permission (`GET /me/permissions` takes no subject on purpose).
+ */
+export interface PermissionQueryKeys {
+  readonly all: readonly [string];
+  readonly mine: () => readonly [string, 'mine'];
+}
+
 export const QueryKeys = {
   Sessions: entityQueryKeys<SessionListParams>('sessions'),
+  Permissions: {
+    all: ['permissions'],
+    mine: () => ['permissions', 'mine'],
+  } satisfies PermissionQueryKeys,
 } as const;
