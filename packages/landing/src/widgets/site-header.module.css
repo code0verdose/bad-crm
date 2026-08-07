@@ -47,13 +47,6 @@
   flex-shrink: 0;
 }
 
-.mark {
-  inline-size: 1.75rem;
-  block-size: 1.75rem;
-  border-radius: var(--bcl-radius-sm);
-  background: linear-gradient(135deg, var(--bcl-accent-cyan), var(--bcl-accent-violet));
-}
-
 .nav {
   display: flex;
   align-items: center;
@@ -133,6 +126,12 @@
 
   .brand {
     font-size: var(--bcl-text-sm);
+  }
+
+  /* The logo is a wide lockup — mark plus wordmark — so on a phone it has to give the language
+     switch and the call to action room rather than take the bar for itself. */
+  .brand svg {
+    block-size: 1.5em;
   }
 
   .mark {

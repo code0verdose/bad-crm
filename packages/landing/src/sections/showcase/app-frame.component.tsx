@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useLocale } from '@/app/i18n/use-locale.hook.js';
 import { useReducedMotion } from '@/shared/lib/use-reduced-motion.hook.js';
 import { DomainIcon } from '@/shared/ui/domain-icon.component.js';
+import { SiteLogo } from '@/shared/ui/site-logo.component.js';
 import { WindowChrome } from '@/shared/ui/window-chrome.component.js';
 
 import { BoardView } from './board-view.component.js';
@@ -93,7 +94,7 @@ export const AppFrame = ({ live }: { live: boolean }) => {
       <div className={classes['body']}>
         <div className={classes['sidebar']}>
           <span className={classes['brand']}>
-            <span className={classes['mark']} />
+            <SiteLogo markOnly />
             {frame.sidebarTitle}
           </span>
 

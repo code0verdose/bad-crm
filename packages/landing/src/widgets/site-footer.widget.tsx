@@ -2,6 +2,7 @@ import { useLocale } from '@/app/i18n/use-locale.hook.js';
 import { GITHUB_URL, LICENCE_URL } from '@/shared/lib/site-links.constant.js';
 import { clearConsent } from '@/shared/lib/consent.util.js';
 import { navigate, ROUTES } from '@/shared/lib/use-route.hook.js';
+import { SiteLogo } from '@/shared/ui/site-logo.component.js';
 
 import classes from './site-footer.module.css';
 
@@ -17,7 +18,7 @@ export const SiteFooter = () => {
     <footer className={classes['footer']}>
       <div className={classes['inner']}>
         <div className={classes['brand']}>
-          <span className={classes['name']}>Bad CRM</span>
+          <SiteLogo title="Bad CRM" className={classes['name']} />
           <span className={classes['tagline']}>{copy.footer.tagline}</span>
           <a className={classes['licence']} href={LICENCE_URL}>
             {copy.footer.licence}

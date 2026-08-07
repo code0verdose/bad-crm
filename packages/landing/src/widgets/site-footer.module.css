@@ -20,8 +20,10 @@
 }
 
 .name {
-  font-weight: 600;
-  letter-spacing: var(--bcl-tracking-tight);
+  /* The brand column is a flex column, which stretches its children; the logo is artwork and keeps
+     its own proportions instead. */
+  align-self: flex-start;
+  block-size: 2.2em;
 }
 
 .tagline,

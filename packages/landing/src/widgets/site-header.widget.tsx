@@ -7,6 +7,7 @@ import { EASE_OUT } from '@/shared/lib/motion-presets.constant.js';
 import { GITHUB_URL, SECTION_IDS } from '@/shared/lib/site-links.constant.js';
 import { SectionLink } from '@/shared/ui/section-link.component.js';
 import { ActionLink } from '@/shared/ui/action-link.component.js';
+import { SiteLogo } from '@/shared/ui/site-logo.component.js';
 
 import { LanguageSwitch } from './language-switch.widget.js';
 import classes from './site-header.module.css';
@@ -59,8 +60,8 @@ export const SiteHeader = () => {
 
       <div className={clsx(classes['bar'], condensed && classes['condensed'])}>
         <SectionLink id="top" className={classes['brand']}>
-          <span className={classes['mark']} aria-hidden="true" />
-          Bad CRM
+          {/* The logo carries the link's accessible name — it is the only thing inside it. */}
+          <SiteLogo title="Bad CRM" />
         </SectionLink>
 
         <nav className={classes['nav']} aria-label="Bad CRM">

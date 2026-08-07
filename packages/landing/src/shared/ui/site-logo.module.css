@@ -1,0 +1,12 @@
+.logo {
+  /* Height follows the surrounding type, width follows the artwork — the logo stays in proportion
+     with whatever it sits next to instead of carrying a size of its own. */
+  block-size: 1.9em;
+  inline-size: auto;
+  display: block;
+  flex-shrink: 0;
+}
+
+.markOnly {
+  block-size: 1.4em;
+}

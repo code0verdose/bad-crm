@@ -53,13 +53,6 @@
   color: var(--bcl-text);
 }
 
-.mark {
-  inline-size: 1.25rem;
-  block-size: 1.25rem;
-  border-radius: var(--bcl-radius-sm);
-  background: linear-gradient(135deg, var(--bcl-accent-cyan), var(--bcl-accent-violet));
-}
-
 .navItem {
   display: flex;
   align-items: center;
