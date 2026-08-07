@@ -387,5 +387,32 @@
   .board {
     grid-template-columns: minmax(0, 1fr);
     overflow: visible;
+    gap: var(--bcl-space-xs);
+    padding: var(--bcl-space-xs);
+  }
+
+  /*
+   * The board is a real screenshot, not a diagram, so on a phone it has to survive being read at
+   * a third of the width it was drawn for: tighter cards, a type size that is still legible, and
+   * meta rows that wrap instead of pushing the card wider than the window.
+   */
+  .card {
+    gap: var(--bcl-space-3xs);
+    padding: var(--bcl-space-2xs) var(--bcl-space-xs);
+  }
+
+  .cardTitle {
+    font-size: var(--bcl-text-sm);
+    line-height: 1.3;
+  }
+
+  .cardMeta {
+    flex-wrap: wrap;
+    row-gap: var(--bcl-space-3xs);
+  }
+
+  .avatar {
+    inline-size: 1.25rem;
+    block-size: 1.25rem;
   }
 }

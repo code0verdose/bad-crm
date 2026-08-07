@@ -1,8 +1,10 @@
-import { motion, useMotionValueEvent, useTransform } from 'motion/react';
+import { motion, useMotionValueEvent, useTransform, type Variants } from 'motion/react';
 import { useRef, useState } from 'react';
 
 import { useLocale } from '@/app/i18n/use-locale.hook.js';
+import { EASE_OUT, IN_VIEW } from '@/shared/lib/motion-presets.constant.js';
 import { SECTION_IDS } from '@/shared/lib/site-links.constant.js';
+import { useMediaQuery } from '@/shared/lib/use-media-query.hook.js';
 import { useSceneProgress } from '@/shared/lib/use-scene-progress.hook.js';
 import { SectionHeading } from '@/shared/ui/section-heading.component.js';
 
@@ -26,16 +28,32 @@ import classes from './showcase.module.css';
  * `AppFrame` refuses to run its timer under reduced motion anyway. Two independent reasons for the
  * same correct behaviour, which is the level of redundancy that setting deserves.
  */
+/**
+ * The phone version of the unfolding: the same arrival — smaller, tilted, fading up into place —
+ * played once on entry instead of being scrubbed by a scroll track that no longer exists there.
+ */
+const REVEAL: Variants = {
+  hidden: { opacity: 0, y: 28, scale: 0.94 },
+  visible: { opacity: 1, y: 0, scale: 1, transition: { duration: 0.6, ease: EASE_OUT } },
+};
+
 export const Showcase = () => {
   const { copy } = useLocale();
   const ref = useRef<HTMLDivElement>(null);
 
+  /**
+   * Below this width the stylesheet unpins the scene, and the scroll timeline has to go with it: an
+   * `end end` offset over an element shorter than the viewport finishes before it starts, so the
+   * unfolding played backwards — the frame folded away as you scrolled towards it.
+   *
+   * The arrival is not dropped, it changes shape. Scrubbing needs scroll distance the phone layout
+   * no longer spends; a one-shot reveal on entry gives the same beat without the timeline.
+   */
+  const narrow = useMediaQuery('(width <= 62em)');
+
   const progress = useSceneProgress(ref, {
     offset: ['start start', 'end end'],
     staticProgress: 1,
-    // The stylesheet unpins this scene at the same width. Without matching it here the timeline
-    // outlives the layout it was written for and plays backwards — the frame started unfolded and
-    // folded away as you scrolled towards it.
     frozenBelow: '(width <= 62em)',
   });
 
@@ -61,12 +79,25 @@ export const Showcase = () => {
           <SectionHeading title={copy.showcase.title} centered />
         </div>
 
-        <motion.div
-          className={classes['stage']}
-          style={{ scale, rotateX, opacity, transformOrigin: 'center center' }}
-        >
-          <AppFrame live={live} />
-        </motion.div>
+        {narrow ? (
+          <motion.div
+            className={classes['stage']}
+            initial="hidden"
+            whileInView="visible"
+            viewport={IN_VIEW}
+            variants={REVEAL}
+            onViewportEnter={() => setLive(true)}
+          >
+            <AppFrame live={live} />
+          </motion.div>
+        ) : (
+          <motion.div
+            className={classes['stage']}
+            style={{ scale, rotateX, opacity, transformOrigin: 'center center' }}
+          >
+            <AppFrame live={live} />
+          </motion.div>
+        )}
 
         <p className={classes['caption']}>{copy.showcase.caption}</p>
       </div>

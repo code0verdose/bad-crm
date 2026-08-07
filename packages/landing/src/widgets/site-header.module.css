@@ -92,6 +92,9 @@
   display: flex;
   align-items: center;
   gap: var(--bcl-space-2xs);
+  /* Hard right. The centred nav used to do this by filling the middle; it is hidden on a phone, and
+     without a push of its own the pair drifted back against the wordmark. */
+  margin-inline-start: auto;
 }
 
 .skipLink {

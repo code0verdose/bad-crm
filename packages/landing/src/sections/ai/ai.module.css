@@ -209,7 +209,43 @@
     gap: var(--bcl-space-lg);
   }
 
+  /*
+   * The transcript reads as a chat on a phone, not as a shrunken desktop panel.
+   *
+   * At 94% of a narrow column the bubbles were a few characters wide with a ragged right edge, and
+   * the tool-call block — a monospace two-column row — was the widest thing on the page. Wider
+   * turns, tighter padding, and a call row that wraps instead of pushing.
+   */
   .thread {
-    padding: var(--bcl-space-md);
+    padding: var(--bcl-space-sm);
+    gap: var(--bcl-space-xs);
+  }
+
+  .turn {
+    max-inline-size: 100%;
+  }
+
+  .avatar {
+    inline-size: 1.5rem;
+    block-size: 1.5rem;
+  }
+
+  .bubble {
+    padding: var(--bcl-space-2xs) var(--bcl-space-xs);
+    font-size: var(--bcl-text-sm);
+  }
+
+  .calls {
+    padding: var(--bcl-space-xs);
+  }
+
+  .call {
+    flex-wrap: wrap;
+    row-gap: var(--bcl-space-3xs);
+  }
+
+  .callTool {
+    /* Tool names are the one token here that must stay intact to be recognisable. */
+    white-space: nowrap;
   }
 }
