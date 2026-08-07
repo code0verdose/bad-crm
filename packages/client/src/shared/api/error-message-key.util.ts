@@ -34,6 +34,7 @@ export const ERROR_MESSAGE_KEY: Readonly<Record<SharedErrors.ErrorCode, string>>
   system_role_immutable: 'errors.code.system_role_immutable',
   owner_immutable: 'errors.code.owner_immutable',
   confirmation_required: 'errors.code.confirmation_required',
+  invitation_already_accepted: 'errors.code.invitation_already_accepted',
   rate_limited: 'errors.code.rate_limited',
   feature_disabled: 'errors.code.feature_disabled',
   service_unavailable: 'errors.code.service_unavailable',

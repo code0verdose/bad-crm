@@ -43,6 +43,12 @@ export const AUDIT_ACTION_SEVERITY: Readonly<Record<AuditAction, AuditSeverity>>
   // §10 of the permission model files every change of rights at this level.
   'role.assigned': 'WARNING',
   'role.revoked': 'WARNING',
+  // An invitation is a role assignment written in advance: the same level as making one, because
+  // that is what it becomes. Re-issuing is its own event — it reopens a door that was closing.
+  // Revoking one is `info`: it takes access away, and nothing that never existed can be misused.
+  'invitation.created': 'WARNING',
+  'invitation.resent': 'WARNING',
+  'invitation.revoked': 'INFO',
   // An exception on one person: the layer that can take a right away, and the one whose rows an
   // escalation review reads first.
   'permission.override.created': 'WARNING',

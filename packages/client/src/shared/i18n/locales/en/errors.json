@@ -86,7 +86,8 @@
     "vault_item_already_exists": "That secret already exists.",
     "vault_item_forbidden": "You do not have access to this secret.",
     "vault_item_not_found": "Secret not found.",
-    "vault_locked": "The vault is locked. Unlock it to continue."
+    "vault_locked": "The vault is locked. Unlock it to continue.",
+    "invitation_already_accepted": "That invitation has already been accepted."
   },
   "field": {
     "custom": "This value was rejected.",

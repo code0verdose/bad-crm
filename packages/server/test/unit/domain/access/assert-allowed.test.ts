@@ -31,6 +31,7 @@ const EXPECTED: Readonly<Record<SharedPermissions.DenyReason, { code: string; st
   self_lockout: { code: 'self_lockout', status: 409 },
   self_assignment_forbidden: { code: 'role_forbidden', status: 403 },
   system_role_immutable: { code: 'system_role_immutable', status: 409 },
+  invitation_already_accepted: { code: 'invitation_already_accepted', status: 409 },
   owner_immutable: { code: 'owner_immutable', status: 409 },
 };
 

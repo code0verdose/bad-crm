@@ -55,6 +55,14 @@ export const DENY_REASONS = [
    * single such row would make «owner неотзываем» false and leave the organization unadministrable.
    */
   'owner_immutable',
+  /**
+   * The invitation has been accepted, so there is nothing left to resend or revoke.
+   *
+   * A separate sentence from «not found» on purpose: the row exists and the caller may see it. What
+   * changed is that it stopped being an invitation and became a person — and the way to take *their*
+   * access away is deactivation, which is a different operation with a different audit trail.
+   */
+  'invitation_already_accepted',
 ] as const;
 
 export type DenyReason = (typeof DENY_REASONS)[number];

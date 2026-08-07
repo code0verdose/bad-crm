@@ -110,6 +110,16 @@ export const TENANT_TABLES = {
     softDeleted: true,
     rowTimestamps: true,
   },
+  invitations: {
+    model: 'Invitation',
+    tenantColumn: 'organization_id',
+    // DELETE, because revoking an invitation removes it: a revoked invitation is not a row with a
+    // flag — the token has to stop working, and a filter everybody has to remember is a filter
+    // somebody forgets. An **accepted** one is history and is never deleted.
+    appUserPrivileges: ['SELECT', 'INSERT', 'UPDATE', 'DELETE'],
+    softDeleted: false,
+    rowTimestamps: true,
+  },
   user_permission_overrides: {
     model: 'UserPermissionOverride',
     tenantColumn: 'organization_id',

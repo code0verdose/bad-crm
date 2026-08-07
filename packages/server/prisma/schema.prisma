@@ -89,6 +89,7 @@ model Organization {
   permissionOverrides UserPermissionOverride[]
   auditLogs           AuditLog[]
   users               User[]
+  invitations         Invitation[]
   sessions            Session[]
   passwordResetTokens PasswordResetToken[]
 
@@ -178,13 +179,15 @@ model User {
   updatedAt DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
   deletedAt DateTime? @map("deleted_at") @db.Timestamptz(6)
 
-  organization        Organization         @relation(fields: [organizationId], references: [id], onDelete: Restrict, map: "fk_users_organization_id")
-  ownedOrganizations  Organization[]       @relation("OrganizationOwner")
+  organization        Organization             @relation(fields: [organizationId], references: [id], onDelete: Restrict, map: "fk_users_organization_id")
+  ownedOrganizations  Organization[]           @relation("OrganizationOwner")
   sessions            Session[]
   passwordResetTokens PasswordResetToken[]
-  roles               UserRole[]           @relation("UserRoleHolder")
-  rolesGranted        UserRole[]           @relation("UserRoleGrantor")
+  roles               UserRole[]               @relation("UserRoleHolder")
+  rolesGranted        UserRole[]               @relation("UserRoleGrantor")
   permissionOverrides UserPermissionOverride[] @relation("OverrideSubject")
+  invitationsSent     Invitation[]             @relation("InvitationAuthor")
+  invitationAccepted  Invitation[]             @relation("InvitationAcceptor")
   overridesGranted    UserPermissionOverride[] @relation("OverrideGrantor")
 
   /// The target every composite foreign key into this table points at. A child referencing
@@ -336,6 +339,59 @@ model Team {
   @@map("teams")
 }
 
+/// Tenant-scoped table [T]: an invitation to join this organization.
+///
+/// **A role assignment written in advance**, which is why it carries a role and why the policy that
+/// creates one applies the same subset rule as an assignment (`T-IAM-09`).
+///
+/// The token lives only in the link that was handed out. What is stored is `token_hash` — SHA-256 of
+/// 32 CSPRNG bytes — for the same reason sessions store one: a dump, a backup or a curious operator
+/// must not yield a working invitation. `uq_invitations_token` is therefore on the **hash**, and it
+/// is one of the few unique keys declared globally: a digest collision across organizations would be
+/// a collision of the credential itself.
+model Invitation {
+  id             String @id(map: "pk_invitations") @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String @map("organization_id") @db.Uuid
+
+  email   String
+  /// The role the account will hold once it exists. Optional: «somebody who can sign in and nothing
+  /// else» is a legitimate invitation.
+  roleId  String?  @map("role_id") @db.Uuid
+  /// Teams the account joins on acceptance. An array rather than a join table because it is a
+  /// **draft** — nothing references it until the invitation is accepted, and then it becomes rows in
+  /// `team_members` and stops being read.
+  teamIds String[] @default([]) @map("team_ids") @db.Uuid
+
+  tokenHash      String    @map("token_hash")
+  invitedById    String    @map("invited_by_id") @db.Uuid
+  expiresAt      DateTime  @map("expires_at") @db.Timestamptz(6)
+  /// `null` while it is still an invitation; a date once it became a person.
+  acceptedAt     DateTime? @map("accepted_at") @db.Timestamptz(6)
+  acceptedUserId String?   @map("accepted_user_id") @db.Uuid
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "fk_invitations_organization_id")
+  /// `Restrict`, not `SetNull`: the composite key carries `organization_id`, which is not nullable,
+  /// and a role that still has open invitations is a role somebody is about to hold — deleting it
+  /// out from under them is the change that should stop, not the invitation.
+  role         Role?        @relation(fields: [organizationId, roleId], references: [organizationId, id], onDelete: Restrict, onUpdate: NoAction, map: "fk_invitations_role_id")
+  invitedBy    User         @relation("InvitationAuthor", fields: [organizationId, invitedById], references: [organizationId, id], onDelete: Restrict, onUpdate: NoAction, map: "fk_invitations_invited_by_id")
+  /// Same reason as the role above; and an accepted invitation is history, so the person it names
+  /// should not be deletable without deciding what happens to that history first.
+  acceptedUser User?        @relation("InvitationAcceptor", fields: [organizationId, acceptedUserId], references: [organizationId, id], onDelete: Restrict, onUpdate: NoAction, map: "fk_invitations_accepted_user_id")
+
+  /// The credential, and the only global unique key of this table — see the note above.
+  @@unique([tokenHash], map: "uq_invitations_token")
+  /// `idx_invitations_org_email` is not declared here: it is partial and unique
+  /// (`WHERE accepted_at IS NULL`), which Prisma's datamodel cannot express, so it lives in the
+  /// migration — exactly like `uq_users_org_email`. One **open** invitation per address per
+  /// organization; a closed one is history, and inviting somebody again after they left is an
+  /// ordinary thing to do.
+  @@map("invitations")
+}
+
 /// Global reference table [G]: the catalogue of permission keys, seeded from code.
 ///
 /// The one table in this schema without `organizationId`, and deliberately so
@@ -400,6 +456,7 @@ model Role {
   organization Organization     @relation(fields: [organizationId], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "fk_roles_organization_id")
   permissions  RolePermission[]
   holders      UserRole[]
+  invitations  Invitation[]
 
   /// The target every composite foreign key into this table points at: a child referencing `id`
   /// alone could name a role of another organization, because foreign key checks bypass RLS.

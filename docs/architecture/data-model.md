@@ -250,7 +250,11 @@ updated: 2026-07-26
   каскаду не помогает;
   `idx_password_reset_tokens_org_expires (organization_id, expires_at) WHERE used_at IS NULL` —
   зачистка просроченных.
-- `uq_invitations_token (token_hash)`, `idx_invitations_org_email (organization_id, email) WHERE accepted_at IS NULL`.
+- `uq_invitations_token (token_hash)` — **уникальный глобально**: значение и есть предъявляемая
+  учётная запись, коллизия между организациями была бы коллизией самого токена;
+  `idx_invitations_org_email (organization_id, email) WHERE accepted_at IS NULL` — **уникальный**
+  частичный: одно открытое приглашение на адрес, при этом закрытое остаётся историей и не мешает
+  пригласить человека снова.
 - `uq_teams_org_slug (organization_id, slug)`, `idx_teams_org_name (organization_id, name)` —
   список команд организации в алфавитном порядке.
 - `uq_team_members (team_id, user_id)`, `idx_team_members_org_user (organization_id, user_id)`.

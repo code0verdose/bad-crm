@@ -17,6 +17,8 @@ export const AUDIT_RESOURCE_TYPES = [
   'ROLE',
   'USER_ROLE',
   'USER_PERMISSION_OVERRIDE',
+  /** An invitation — a role assignment written in advance, and a credential until it is accepted. */
+  'INVITATION',
 ] as const;
 
 export type AuditResourceType = (typeof AUDIT_RESOURCE_TYPES)[number];

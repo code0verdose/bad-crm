@@ -156,6 +156,8 @@ const GENERIC_ERROR_CODE_STATUS = {
    * `user:impersonate`, a mass revocation). The client repeats it with the confirmation header, which
    * is why the status has to be one a client can act on rather than one it reports as a failure.
    */
+  /** The invitation was accepted: a state conflict, not a missing row and not a refusal. */
+  invitation_already_accepted: 409,
   confirmation_required: 428,
   rate_limited: 429,
   /**

@@ -38,6 +38,15 @@ export const AUDIT_ACTIONS = [
   'role.assigned',
   /** A role was taken away, by an administrator or by the expiry of a temporary grant. */
   'role.revoked',
+  /**
+   * An invitation was created, re-issued with a fresh token, or closed early (STORY-012-01).
+   *
+   * Filed beside the role events rather than with the account ones: an invitation **is** a role
+   * assignment written in advance, and the review that asks «who was given what» has to see both.
+   */
+  'invitation.created',
+  'invitation.resent',
+  'invitation.revoked',
   /** A per-user exception was written, replaced or removed (STORY-011-05). */
   'permission.override.created',
   'permission.override.updated',

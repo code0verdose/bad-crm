@@ -1,7 +1,7 @@
 ---
 id: EPIC-012
 title: Сотрудники, приглашения и офбординг
-status: backlog
+status: in-progress
 blocked: false
 milestone: M2
 owner: unassigned

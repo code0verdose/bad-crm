@@ -1246,6 +1246,7 @@ export const DENY_REASONS = [
   'acl_explicit_none', 'insufficient_acl_level', 'acl_resolution_failed',
   'tenant_mismatch', 'vault_locked', 'period_locked', 'last_owner_required',
   'self_lockout', 'self_assignment_forbidden', 'system_role_immutable', 'owner_immutable',
+  'invitation_already_accepted',
 ] as const;
 export type DenyReason = (typeof DENY_REASONS)[number];
 ```
@@ -1257,6 +1258,13 @@ export type DenyReason = (typeof DENY_REASONS)[number];
 отвергается и use-case'ом, и триггером `ck_upo_not_owner`, а истории нужна была причина, которую
 можно показать и отфильтровать. Это конфликт состояния (409), а не отказ в праве: администратор
 имеет право писать оверрайды, но эта строка сделала бы организацию неадминистрируемой.
+
+`invitation_already_accepted` добавлена 2026-08-07 при реализации STORY-012-01. Принятое приглашение
+перестало быть приглашением и стало человеком: переотправка выписала бы токен на уже существующий
+аккаунт, а отзыв намекал бы, что доступ так забирается — забирается он деактивацией, это другая
+операция с другим следом в журнале. Конфликт состояния (409), а не отказ в праве: право у
+администратора есть, изменилось состояние объекта. Отдельная причина, а не «не найдено», потому что
+строка существует и вызывающий вправе её видеть.
 
 `self_assignment_forbidden` добавлена 2026-08-05 при реализации STORY-011-04: правило «нельзя
 назначить роль себе» (митигация `T-IAM-09`) — отдельный отказ, а не разновидность `self_lockout`.

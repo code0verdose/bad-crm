@@ -1,7 +1,7 @@
 ---
 id: STORY-012-01
 epic: EPIC-012
-status: backlog
+status: in-progress
 blocked: false
 priority: must
 estimate: M
@@ -96,6 +96,37 @@ estimate: M
 - [ ] Тесты: `invitation-access.policy.spec.ts`, интеграционные `invitations-api.spec.ts`
       (п. 3–7, 9), `invitation-token-hashed.spec.ts`, isolation-тест `invitations`,
       компонентный на копирование ссылки без SMTP.
+
+## Что уже сделано (2026-08-07)
+
+Доменная и прикладная половина; HTTP-поверхность и экран — следующим срезом.
+
+- [x] Таблица `invitations` — миграция `20260807100000_invitations`: `token_hash` вместо токена,
+      составные внешние ключи с `organization_id` первой колонкой (проверки FK обходят RLS),
+      `uq_invitations_token` **глобально уникальный** (дайджест и есть предъявляемая учётная запись),
+      частичный уникальный `idx_invitations_org_email ... WHERE accepted_at IS NULL` — одно открытое
+      приглашение на адрес, закрытое остаётся историей. Полный блок RLS (`ENABLE` + `FORCE` +
+      `tenant_isolation` с обоими предикатами + `maintenance_access`), явные GRANT-ы, три CHECK-а:
+      адрес похож на адрес, срок больше даты создания, «принято» и «принято кем» движутся вместе.
+- [x] Isolation-тесты генерируются из реестра `TENANT_TABLES` — добавление таблицы туда сразу дало
+      17 падающих тестов, пока не появилась row-фабрика (гейт сработал как задумано).
+- [x] `domain/iam/access/invitation-access.policy.ts` — `canInvite` (правило подмножества
+      `T-IAM-09` по **эффективному** праву, то есть с вычетом DENY-оверрайдов; владелец исключён),
+      `canResendInvitation`/`canRevokeInvitation` — отдельные capability и отказ
+      `invitation_already_accepted` для принятого. 10 табличных тестов.
+- [x] `CreateInvitationUseCase` / `ResendInvitationUseCase` / `RevokeInvitationUseCase`: токен
+      выдаётся **ровно один раз** в ответе, в хранилище идёт только дайджест, в журнал — адрес, роль
+      и срок (тест утверждает, что токена нет ни там, ни там). Переотправка выписывает **новый**
+      токен и убивает старый одним оператором. 14 тестов.
+- [x] Новая причина отказа `invitation_already_accepted` проведена через все закрытые словари:
+      `DENY_REASONS`, `ErrorCode` (409), маппинг `CODE_FOR`, спека, обе локали клиента и
+      `permission-model.md` (документ правится первым — гейт `catalog-matches-model` это проверяет).
+- [x] Действия журнала `invitation.created` / `.resent` / `.revoked` и тип цели `INVITATION`;
+      уровни — `WARNING` для создания и переотправки, `INFO` для отзыва.
+
+Осталось в этой истории: репозиторий на Prisma, маршруты (`POST /invitations`,
+`POST /invitations/{id}/resend`, `DELETE /invitations/{id}`, `GET /invitations`), rate limit,
+экран приглашения на клиенте и интеграционные тесты HTTP-поверхности.
 
 ## Ссылки
 

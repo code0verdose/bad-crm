@@ -61,6 +61,7 @@ const CODE_FOR: Readonly<
   self_assignment_forbidden: (resource) => `${resource}_forbidden`,
   system_role_immutable: () => 'system_role_immutable',
   owner_immutable: () => 'owner_immutable',
+  invitation_already_accepted: () => 'invitation_already_accepted',
 };
 
 /**

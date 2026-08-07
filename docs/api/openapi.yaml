@@ -1702,6 +1702,7 @@ components:
         - self_lockout
         - system_role_immutable
         - owner_immutable
+        - invitation_already_accepted
         - confirmation_required
         - rate_limited
         - feature_disabled
@@ -1817,6 +1818,7 @@ components:
         - self_assignment_forbidden
         - system_role_immutable
         - owner_immutable
+        - invitation_already_accepted
 
     ValidationIssue:
       type: object

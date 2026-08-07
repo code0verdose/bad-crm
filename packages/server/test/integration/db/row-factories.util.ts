@@ -154,6 +154,30 @@ export const ROW_FACTORIES = {
   },
 
   /**
+   * An invitation needs the person who sent it, and its token has to be unique across the whole
+   * installation — `uq_invitations_token` is one of the few globally unique keys in this schema,
+   * because the digest **is** the credential. Random per row, so the index is exercised rather than
+   * tripped by the second tenant.
+   */
+  invitations: async (client, organizationId) => {
+    const inviter = await createUser(client, organizationId);
+
+    return insert(
+      client,
+      `INSERT INTO invitations
+         (organization_id, email, token_hash, invited_by_id, expires_at, updated_at)
+       VALUES ($1, $2, $3, $4, now() + interval '7 days', now())
+       RETURNING id`,
+      [
+        organizationId,
+        `invited-${randomUUID().slice(0, 8)}@example.test`,
+        randomBytes(32).toString('hex'),
+        inviter.id,
+      ],
+    );
+  },
+
+  /**
    * One exception on one permission. The reason is long enough on purpose — the database refuses
    * anything shorter than ten characters after trimming, and a fixture that tripped that check would
    * fail for a reason that has nothing to do with isolation.
