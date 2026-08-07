@@ -133,21 +133,29 @@ describe('the commit scopes', () => {
    * them. The two ordinary ones are the positive control: without them a linter that refused
    * everything would pass this test.
    */
-  it.each(['i18n', 'a11y', 'auth', 'client'])('accepts %s', (scope) => {
-    // Over stdin rather than through a temp file: `test/repo` may not touch `node:fs` directly —
-    // every read here goes through `readRepoFile` so the turbo-inputs audit can see it — and a
-    // message written to disk would need exactly that. The linter reads stdin as its documented
-    // input, so this is the real binary with the real configuration either way.
-    const message = `feat(${scope}): subject`;
-    const result = spawnSync('npx', ['--no-install', 'commitlint'], {
-      cwd: REPO_ROOT,
-      input: `${message}\n`,
-      encoding: 'utf8',
-    });
+  it.each(['i18n', 'a11y', 'auth', 'client'])(
+    'accepts %s',
+    (scope) => {
+      // Over stdin rather than through a temp file: `test/repo` may not touch `node:fs` directly —
+      // every read here goes through `readRepoFile` so the turbo-inputs audit can see it — and a
+      // message written to disk would need exactly that. The linter reads stdin as its documented
+      // input, so this is the real binary with the real configuration either way.
+      const message = `feat(${scope}): subject`;
+      const result = spawnSync('npx', ['--no-install', 'commitlint'], {
+        cwd: REPO_ROOT,
+        input: `${message}\n`,
+        encoding: 'utf8',
+      });
 
-    expect(
-      result.status,
-      `\`${message}\` is refused by the project's own commitlint:\n${result.stdout}`,
-    ).toBe(0);
-  });
+      expect(
+        result.status,
+        `\`${message}\` is refused by the project's own commitlint:\n${result.stdout}`,
+      ).toBe(0);
+      // Six times the default, and about the machine rather than the code: each case starts a real
+      // `commitlint` process, which loads the config, TypeScript and the whole rule set from a cold
+      // module cache. Measured at five-plus seconds on a GitHub runner — where it failed the Node 24
+      // job while the same commit passed everywhere else.
+    },
+    30_000,
+  );
 });
