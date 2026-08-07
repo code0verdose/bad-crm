@@ -12,8 +12,22 @@
   margin-inline: auto;
 }
 
-@media (width <= 48em) {
+/*
+ * Sections breathe less on a phone.
+ *
+ * The desktop rhythm is built for a wide viewport where a section fills the screen and the gap
+ * reads as a pause. On a 375px-wide screen the same 6rem top and bottom put nearly 200px of empty
+ * space between every two blocks, and the page reads as a series of disconnected screens with
+ * nothing in them.
+ */
+@media (width <= 62em) {
   .section {
-    padding-block: var(--bcl-space-2xl);
+    padding-block: var(--bcl-space-xl);
+  }
+}
+
+@media (width <= 30em) {
+  .section {
+    padding-block: var(--bcl-space-lg);
   }
 }

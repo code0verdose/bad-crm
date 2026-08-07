@@ -333,14 +333,40 @@
   .layout {
     grid-template-columns: minmax(0, 1fr);
     block-size: auto;
-    grid-auto-rows: 22rem;
+    /* Each panel is as tall as what is in it; a fixed row was what cut the board off. */
+    grid-auto-rows: auto;
+  }
+
+  /*
+   * The board turns into a column of columns.
+   *
+   * Three kanban columns across a phone leave about 100px each — a card titled «Инвойс №114 —
+   * мартовский ретейнер» cannot live in that, and `overflow: hidden` on the column turned the
+   * overflow into clipped text. Stacked, every column gets the full width.
+   *
+   * The card motion survives this untouched: cards move between columns by `layoutId`, and motion
+   * animates from the old box to the new one whatever direction that happens to be — side to side
+   * on a desktop, up and down here.
+   */
+  .window {
+    block-size: auto;
+    grid-template-rows: auto auto;
   }
 
   .board {
+    grid-template-columns: minmax(0, 1fr);
     padding: var(--bcl-space-sm);
+    overflow: visible;
   }
 
   .column {
-    block-size: 100%;
+    block-size: auto;
+    min-block-size: 6rem;
+    overflow: visible;
+  }
+
+  .chat {
+    block-size: auto;
+    grid-template-rows: auto auto auto auto;
   }
 }
