@@ -355,10 +355,28 @@
   .frame {
     block-size: auto;
     max-block-size: none;
+    /*
+     * A phone is too narrow for the 16:10 box to hold the board: the ratio fixed the height at
+     * about 200px, and `overflow: hidden` cut the cards off mid-title. Off a wide screen the window
+     * is a column of real content, so it gets to be as tall as that content is.
+     */
+    /*
+     * Portrait, and tall enough for the board.
+     *
+     * The views inside are stacked with `position: absolute` so they can crossfade, which means
+     * they contribute no height and the frame has to state one. At 16:10 a phone-width window is
+     * about 200px tall and the cards were cut off mid-title; a portrait box gives the columns the
+     * room they need without turning the window into a scroller.
+     */
+    aspect-ratio: auto;
+    /* Sized to the tallest view — the board, whose three columns stack on a narrow screen. */
+    block-size: 36rem;
   }
 
   .body {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
+    /* Nothing left to clip against once the window is as tall as what is in it. */
+    overflow: visible;
   }
 
   .sidebar,
@@ -367,6 +385,7 @@
   }
 
   .board {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
+    overflow: visible;
   }
 }

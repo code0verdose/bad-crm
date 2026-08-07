@@ -46,6 +46,9 @@
 .window {
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
+  /* A grid item's automatic minimum is its content, and the transcript is wider than a phone. Without
+     this the window sizes to the longest line instead of to the column it was given. */
+  min-inline-size: 0;
   overflow: hidden;
   border: 1px solid var(--bcl-border);
   border-radius: var(--bcl-radius-lg);
@@ -58,6 +61,13 @@
   flex-direction: column;
   gap: var(--bcl-space-sm);
   padding: var(--bcl-space-lg);
+  /* Same reason as the window: the transcript wraps to the column, it does not widen it. */
+  min-inline-size: 0;
+}
+
+.thread * {
+  /* Tool names and ids are single unbroken tokens; on a phone they have to be allowed to break. */
+  overflow-wrap: anywhere;
 }
 
 .turn {
@@ -195,7 +205,7 @@
 
 @media (width <= 62em) {
   .layout {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
     gap: var(--bcl-space-lg);
   }
 

@@ -104,3 +104,23 @@
   gap: var(--bcl-space-sm);
   justify-content: center;
 }
+
+/*
+ * The closing pair stays a pair on a phone.
+ *
+ * At `size="lg"` the two labels are wider than a phone, so they wrapped into a stack — two
+ * full-width slabs at the end of the page, which reads as two separate decisions rather than one
+ * choice with a preferred side. Smaller type and padding buy enough room to keep them on one line.
+ */
+@media (width <= 30em) {
+  .actions {
+    flex-wrap: nowrap;
+    gap: var(--bcl-space-2xs);
+  }
+
+  .actions a {
+    padding-inline: var(--bcl-space-sm);
+    padding-block: var(--bcl-space-2xs);
+    font-size: var(--bcl-text-sm);
+  }
+}

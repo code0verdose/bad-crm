@@ -170,8 +170,19 @@
 
 @media (width <= 62em) {
   .layout {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
     gap: var(--bcl-space-lg);
+  }
+
+  /*
+   * Heading first once the columns collapse.
+   *
+   * Side by side the demo leads and the text explains it from the right, which reads fine. Stacked
+   * in source order it put a password field above its own title — the reader met the mechanism
+   * before being told what it is for.
+   */
+  .text {
+    order: -1;
   }
 
   .pane {

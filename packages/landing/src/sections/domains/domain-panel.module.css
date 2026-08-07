@@ -71,7 +71,7 @@
 
 @media (width <= 62em) {
   .panel {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
     min-block-size: 0;
     padding: var(--bcl-space-md);
   }

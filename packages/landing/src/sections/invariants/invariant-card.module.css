@@ -115,7 +115,7 @@
   }
 
   .card {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
     padding: var(--bcl-space-md);
     min-block-size: 0;
   }

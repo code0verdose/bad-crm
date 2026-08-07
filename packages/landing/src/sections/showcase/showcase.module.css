@@ -58,6 +58,16 @@
     position: static;
     block-size: auto;
     padding-block: var(--bcl-space-2xl);
+    /*
+     * Rows sized by content, not by a viewport that is no longer being filled.
+     *
+     * The pinned layout gives the stage `minmax(0, 1fr)` so the frame can never outgrow the screen
+     * it is centred on. Unpinned, that row has no free space to take a share of, so it collapsed to
+     * about a hundred pixels and clipped the window down to its title bar.
+     */
+    grid-template-rows: auto auto auto;
+    /* The frame is the tallest thing here and it may exceed the old fixed row. */
+    overflow: visible;
   }
 
   .stage {

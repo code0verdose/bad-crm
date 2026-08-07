@@ -8,6 +8,7 @@ import {
 import { type RefObject } from 'react';
 
 import { SCROLL_SPRING } from './motion-presets.constant.js';
+import { useMediaQuery } from './use-media-query.hook.js';
 import { useReducedMotion } from './use-reduced-motion.hook.js';
 
 interface SceneOptions {
@@ -24,6 +25,16 @@ interface SceneOptions {
   staticProgress?: number;
   /** Raw progress, unsmoothed — for transforms that must track the wheel exactly (pinned scroll). */
   raw?: boolean;
+  /**
+   * Freeze the scene at `staticProgress` below this width, as a media query.
+   *
+   * For sections whose stylesheet unpins the scene on narrow screens. Once `position: sticky` and
+   * the tall scroll track are gone, the element is shorter than the viewport, and an
+   * `['start start', 'end end']` timeline over a short element runs its end before its start — the
+   * transform plays backwards, so the thing that should arrive on scroll leaves instead. The layout
+   * decides there is no scene; this makes the timeline agree.
+   */
+  frozenBelow?: string;
 }
 
 /**
@@ -35,14 +46,17 @@ interface SceneOptions {
  */
 export const useSceneProgress = (
   target: RefObject<HTMLElement | null>,
-  { offset, staticProgress = 0, raw = false }: SceneOptions,
+  { offset, staticProgress = 0, raw = false, frozenBelow }: SceneOptions,
 ): MotionValue<number> => {
   const reduced = useReducedMotion();
+  // Hooks cannot be called conditionally, so a scene without the option subscribes to a query that
+  // never matches rather than skipping the hook.
+  const narrow = useMediaQuery(frozenBelow ?? '(width < 0px)');
   const { scrollYProgress } = useScroll({ target, offset });
   const smoothed = useSpring(scrollYProgress, SCROLL_SPRING);
   const frozen = useMotionValue(staticProgress);
 
-  if (reduced) return frozen;
+  if (reduced || narrow) return frozen;
 
   return raw ? scrollYProgress : smoothed;
 };

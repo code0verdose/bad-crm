@@ -33,6 +33,10 @@ export const Showcase = () => {
   const progress = useSceneProgress(ref, {
     offset: ['start start', 'end end'],
     staticProgress: 1,
+    // The stylesheet unpins this scene at the same width. Without matching it here the timeline
+    // outlives the layout it was written for and plays backwards — the frame started unfolded and
+    // folded away as you scrolled towards it.
+    frozenBelow: '(width <= 62em)',
   });
 
   const scale = useTransform(progress, [0, 0.7], [0.66, 1]);
