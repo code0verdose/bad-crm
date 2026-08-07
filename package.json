@@ -47,16 +47,14 @@
     "prepare": "husky"
   },
   "pnpm": {
-    "onlyBuiltDependencies": [
-      "esbuild"
-    ],
+    "onlyBuiltDependencies": ["esbuild"],
     "overrides": {
       "brace-expansion@<1.1.18": ">=1.1.18 <2",
       "brace-expansion@>=2.0.0 <2.1.4": ">=2.1.4 <3",
       "brace-expansion@>=3.0.0 <5.0.9": ">=5.0.9",
       "fast-uri@<3.1.5": ">=3.1.5 <4",
       "fast-uri@>=4.0.0 <4.1.2": ">=4.1.2",
-      "js-yaml@<4.3.0": ">=4.3.0",
+      "js-yaml@<4.3.1": ">=4.3.1 <5",
       "keyv@>=6.0.0": "<6.0.0",
       "cacheable@>=2.5.1": "<2.5.1",
       "flat-cache@>=6.1.24": "<6.1.24",
