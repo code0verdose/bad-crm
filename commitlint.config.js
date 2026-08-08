@@ -15,6 +15,10 @@ const SCOPES = [
   'landing',
   // cross-cutting
   'api',
+  // `docs/brain` — the knowledge journal. Three commits used this scope before it was listed, and
+  // the enum simply never caught up: the rule of «двойное объяснение» makes a journal entry part of
+  // every commit gate, so the scope recurs by construction.
+  'brain',
   'auth',
   'ci',
   'config',
