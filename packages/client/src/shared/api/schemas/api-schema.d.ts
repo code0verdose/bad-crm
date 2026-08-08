@@ -451,7 +451,8 @@ export interface paths {
          *
          *     A `userId` or `roleId` from another organization is **404**, not 403. Assigning a role the
          *     person already holds answers 204 as well — the caller asked for a state and the state is
-         *     there, so `Idempotency-Key` buys nothing here and is ignored.
+         *     there. `Idempotency-Key` is still **required** (omitting it is a 422); what it buys here is
+         *     nothing, because the operation is already idempotent by construction.
          */
         post: operations["assignRole"];
         delete?: never;
@@ -769,6 +770,166 @@ export interface paths {
          *     taking their access away is deactivation, not this.
          */
         delete: operations["revokeInvitation"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/organization/transfer-ownership": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Hand the organization to somebody else.
+         * @description Ownership as an operation rather than as a database edit. In **one transaction**: the
+         *     recipient is given the `owner` role, `organizations.owner_id` is repointed, the outgoing
+         *     owner is given the role they chose, and `permissionsVersion` is incremented for **both** —
+         *     the recipient so their new authority applies to their next request, the previous owner
+         *     because their live token still claims one they have just given away.
+         *
+         *     There is no moment at which the organization has two owners or none.
+         *
+         *     **The outgoing owner is never left with nothing.** `previousOwnerRoleKey` defaults to `admin`
+         *     and the screen shows the choice in the confirmation: an organization whose founder can no
+         *     longer open the administration screen has traded one broken state for another.
+         *
+         *     Held by `owner` alone (`permission-model.md` §4.1) — but that is what the guard checks, not
+         *     what this operation trusts. The capability itself can be delegated to somebody who is not the
+         *     owner, by a per-user override or a custom role ("a stand-in while I am on leave" is a real
+         *     request), so the use-case re-reads `organizations.owner_id` inside the transaction and
+         *     refuses **403 `not_the_owner`** if the caller is not it — before the recipient is even
+         *     looked at. Two concurrent transfers of the same organization cannot both succeed either: the
+         *     write is conditioned on the owner still being who this request read, so the loser answers
+         *     **409 `stale_version`** rather than silently losing the race.
+         *
+         *     Refusals: **403 `not_the_owner`** for a caller who holds the capability but not the
+         *     organization; **422 `invalid_recipient`** for handing it to its current holder — a wrong
+         *     value, which no state would make right; **409 `recipient_not_active`** for a suspended
+         *     account — a wrong state, with a next step; **409 `stale_version`** for a transfer that raced
+         *     another one and lost; **404** for somebody of another organization.
+         *
+         *     There is no confirmation field: typing the organization's `slug` back is a client-side
+         *     control against a mis-click, and this body is strict — sending one is a 422. A server-side
+         *     comparison would add nothing an attacker holding the token could not satisfy, while making
+         *     the operation impossible to script.
+         */
+        post: operations["transferOwnership"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/users/{userId}/deactivate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Offboard an employee — one operation, one report.
+         * @description Switches an account off and answers with **what that actually revoked**, as counters. An
+         *     offboarding whose response carries no numbers is one the caller has to trust rather than
+         *     check, and this operation exists to replace «кажется, всё отключили».
+         *
+         *     In one transaction: the account becomes `SUSPENDED`, the personnel record gets a termination
+         *     date, `permissionsVersion` is incremented, every live session is revoked with reason
+         *     `OFFBOARDING`, and team memberships are removed.
+         *
+         *     **Access stops at once**, by three independent facts rather than one: every authenticated
+         *     request re-reads the session and requires it un-revoked, the account `ACTIVE`, and the
+         *     token's `permissionsVersion` equal to the row's. A token minted a minute ago and valid for
+         *     fourteen more stops working on the next request (`T-IAM-06`).
+         *
+         *     **Nothing is deleted.** Tasks, hours, invoices and the audit trail keep pointing at the
+         *     person, because those record work that really happened (NFR-12). What is removed is
+         *     membership, which is access rather than history — and the trail records **which** teams and
+         *     in what role (`LEAD`/`MEMBER`), because those rows do not survive and reactivation restores
+         *     no membership: somebody granting them again needs a record of what to grant.
+         *
+         *     **`pending` names the steps this installation cannot take yet** — project membership, live
+         *     sockets, secure links and vault memberships arrive with their own milestones. They are named
+         *     rather than reported as zero: «revoked 0 secure links» would claim we looked.
+         *
+         *     Repeating the call on an already-suspended account is not an error and not a second trail
+         *     entry: the answer carries `alreadyDeactivated: true` and nothing is written — **provided the
+         *     caller still clears the checks below.** They run before that idempotency check, not after, so
+         *     a second call by a caller whose own rights were narrowed between the two calls (a permission
+         *     override removed, a role revoked) is refused rather than answered with the idempotent report.
+         *
+         *     **`user:suspend` does not reach an account that can do more than its holder.** The operation
+         *     carries the same bound every other way of touching somebody's rights carries (`T-IAM-09`):
+         *     an account may only be switched off by somebody who effectively holds everything it holds.
+         *     Without it one holder of this permission could end every other administrator's session in a
+         *     loop, and only the owner could undo it. The owner is exempt, holding everything by
+         *     definition; a right the organization already took away from the subject with a DENY
+         *     exception does not bound anybody.
+         *
+         *     Refusals: **409 `self_lockout`** for one's own account, **409 `last_owner_required`** until
+         *     ownership is transferred, **403 `user_forbidden`** with `reason: permission_not_granted`
+         *     when the subject holds a permission the caller does not, **404** for somebody of another
+         *     organization.
+         */
+        post: operations["deactivateUser"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/users/{userId}/reactivate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Bring a deactivated account back.
+         * @description Restores the ability to sign in — **and, deliberately, little beyond that**. Teams, projects
+         *     and shared vaults the person left on the way out stay left, and the response says so
+         *     (`membershipsRestored: false`) rather than leaving it to a release note. Restoring them would
+         *     be re-granting access on the strength of a state that was correct months ago; somebody
+         *     returning to the same job is added back by a person who decided so today.
+         *
+         *     Two things do come back with the account, observably. **`GET /employees/{userId}`** stops
+         *     showing a termination date: the personnel record's `terminatedAt` is cleared in the same
+         *     transaction. And `permissionsVersion` is incremented, exactly as it is on the way out — the
+         *     account may have been suspended while a token was in flight, and a returning account whose
+         *     version never moved would accept that token as current.
+         *
+         *     Its own capability rather than a share of `user:suspend`: bringing an account back is the
+         *     step an intruder needs after an offboarding, and an organization may well let more people
+         *     switch somebody off than switch them on. It carries the same bound `deactivateUser` does
+         *     (`T-IAM-09`): an account may only be brought back by somebody who effectively holds everything
+         *     it holds, checked against what the account could still do while suspended. Without it, one
+         *     holder of `user:reactivate` could restore any suspended account, including one that outranks
+         *     them and one suspended during an incident precisely because it did. The check runs before the
+         *     idempotency branch below, not after — a caller whose own rights were narrowed between two
+         *     calls is refused on the second one too.
+         *
+         *     Repeating the call on an account that was never off answers `alreadyActive: true` and writes
+         *     nothing, **provided the caller still clears the check above.**
+         *
+         *     What the person was in before they left is not in this answer and never was: it is in the
+         *     `user.suspended` entry of the audit trail, which records each membership with its team and
+         *     role precisely because this operation does not bring them back.
+         *
+         *     Refusals: **403 `user_forbidden`** with `reason: permission_not_granted` when the subject
+         *     holds a permission the caller does not, **404** for somebody of another organization.
+         */
+        post: operations["reactivateUser"];
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -1305,7 +1466,7 @@ export interface components {
          *     reused with a different meaning.
          * @enum {string}
          */
-        ErrorCode: "validation_failed" | "unauthenticated" | "invalid_credentials" | "account_suspended" | "registration_disabled" | "password_reset_token_invalid" | "invitation_not_valid" | "mail_not_configured" | "route_not_found" | "payload_too_large" | "vault_locked" | "stale_version" | "idempotency_key_reuse" | "last_owner_required" | "period_locked" | "self_lockout" | "system_role_immutable" | "owner_immutable" | "invitation_already_accepted" | "manager_cycle_detected" | "employment_period_inverted" | "confirmation_required" | "rate_limited" | "feature_disabled" | "service_unavailable" | "internal_error" | "organization_not_found" | "organization_forbidden" | "organization_already_exists" | "team_not_found" | "team_forbidden" | "team_already_exists" | "user_not_found" | "user_forbidden" | "user_already_exists" | "role_not_found" | "role_forbidden" | "role_already_exists" | "invitation_not_found" | "invitation_forbidden" | "invitation_already_exists" | "session_not_found" | "session_forbidden" | "session_already_exists" | "project_not_found" | "project_forbidden" | "project_already_exists" | "board_not_found" | "board_forbidden" | "board_already_exists" | "task_not_found" | "task_forbidden" | "task_already_exists" | "sprint_not_found" | "sprint_forbidden" | "sprint_already_exists" | "comment_not_found" | "comment_forbidden" | "comment_already_exists" | "doc_not_found" | "doc_forbidden" | "doc_already_exists" | "kb_note_not_found" | "kb_note_forbidden" | "kb_note_already_exists" | "file_not_found" | "file_forbidden" | "file_already_exists" | "vault_item_not_found" | "vault_item_forbidden" | "vault_item_already_exists" | "secure_link_not_found" | "secure_link_forbidden" | "secure_link_already_exists" | "time_entry_not_found" | "time_entry_forbidden" | "time_entry_already_exists" | "channel_not_found" | "channel_forbidden" | "channel_already_exists" | "message_not_found" | "message_forbidden" | "message_already_exists" | "dashboard_not_found" | "dashboard_forbidden" | "dashboard_already_exists";
+        ErrorCode: "validation_failed" | "unauthenticated" | "invalid_credentials" | "account_suspended" | "registration_disabled" | "password_reset_token_invalid" | "invitation_not_valid" | "mail_not_configured" | "route_not_found" | "payload_too_large" | "vault_locked" | "stale_version" | "idempotency_key_reuse" | "last_owner_required" | "period_locked" | "self_lockout" | "system_role_immutable" | "owner_immutable" | "invitation_already_accepted" | "manager_cycle_detected" | "employment_period_inverted" | "recipient_not_active" | "invalid_recipient" | "not_the_owner" | "confirmation_required" | "rate_limited" | "feature_disabled" | "service_unavailable" | "internal_error" | "organization_not_found" | "organization_forbidden" | "organization_already_exists" | "team_not_found" | "team_forbidden" | "team_already_exists" | "user_not_found" | "user_forbidden" | "user_already_exists" | "role_not_found" | "role_forbidden" | "role_already_exists" | "invitation_not_found" | "invitation_forbidden" | "invitation_already_exists" | "session_not_found" | "session_forbidden" | "session_already_exists" | "project_not_found" | "project_forbidden" | "project_already_exists" | "board_not_found" | "board_forbidden" | "board_already_exists" | "task_not_found" | "task_forbidden" | "task_already_exists" | "sprint_not_found" | "sprint_forbidden" | "sprint_already_exists" | "comment_not_found" | "comment_forbidden" | "comment_already_exists" | "doc_not_found" | "doc_forbidden" | "doc_already_exists" | "kb_note_not_found" | "kb_note_forbidden" | "kb_note_already_exists" | "file_not_found" | "file_forbidden" | "file_already_exists" | "vault_item_not_found" | "vault_item_forbidden" | "vault_item_already_exists" | "secure_link_not_found" | "secure_link_forbidden" | "secure_link_already_exists" | "time_entry_not_found" | "time_entry_forbidden" | "time_entry_already_exists" | "channel_not_found" | "channel_forbidden" | "channel_already_exists" | "message_not_found" | "message_forbidden" | "message_already_exists" | "dashboard_not_found" | "dashboard_forbidden" | "dashboard_already_exists";
         /**
          * @description Why one field was rejected. The list mirrors
          *     `packages/shared/src/errors/validation-issue.enums.ts`; anything a validator produces
@@ -1325,7 +1486,7 @@ export interface components {
          *     consulted (an unparsed body, a rate limit).
          * @enum {string}
          */
-        DenyReason: "not_authenticated" | "unknown_permission" | "permission_not_granted" | "denied_by_override" | "resource_required" | "resource_not_found" | "acl_explicit_none" | "insufficient_acl_level" | "acl_resolution_failed" | "tenant_mismatch" | "vault_locked" | "period_locked" | "last_owner_required" | "self_lockout" | "self_assignment_forbidden" | "system_role_immutable" | "owner_immutable" | "invitation_already_accepted" | "manager_cycle_detected" | "employment_period_inverted";
+        DenyReason: "not_authenticated" | "unknown_permission" | "permission_not_granted" | "denied_by_override" | "resource_required" | "resource_not_found" | "acl_explicit_none" | "insufficient_acl_level" | "acl_resolution_failed" | "tenant_mismatch" | "vault_locked" | "period_locked" | "last_owner_required" | "self_lockout" | "self_assignment_forbidden" | "system_role_immutable" | "owner_immutable" | "invitation_already_accepted" | "manager_cycle_detected" | "employment_period_inverted" | "invalid_recipient" | "not_the_owner";
         ValidationIssue: {
             /**
              * @description The rejected field in dot notation over the request value — `title`,
@@ -1411,6 +1572,30 @@ export interface components {
              *     a caller who may see it, and never written to a log or to the audit trail.
              */
             emergencyContact?: string | null;
+        };
+        OffboardingReport: {
+            /** Format: uuid */
+            userId: string;
+            /** @description The account was already off; nothing was written and no trail entry was made. */
+            alreadyDeactivated: boolean;
+            sessionsRevoked: number;
+            teamsLeft: number;
+            /**
+             * @description Steps no subsystem exists for yet, **named rather than counted as zero**: reporting
+             *     `linksRevoked: 0` would claim the installation looked. Each entry disappears when its
+             *     milestone lands.
+             */
+            pending: ("projectsLeft" | "socketsClosed" | "linksRevoked" | "vaultMembershipsFlagged")[];
+        };
+        ReactivationResult: {
+            /** Format: uuid */
+            userId: string;
+            alreadyActive: boolean;
+            /**
+             * @description Always `false`. Stated in the answer because it is the question the caller asks next:
+             *     teams, projects and vaults are not restored with the account.
+             */
+            membershipsRestored: boolean;
         };
         /**
          * @description `key` is what a filter matches and what the code knows a system role by; `name` is what a
@@ -2029,16 +2214,34 @@ export interface components {
         Limit: number;
         /**
          * @description Client-generated key, mandatory on every unsafe operation that creates an entity, sends
-         *     mail or spends money or tokens. A replay carrying the same request hash returns the stored
-         *     response; the same key with a different hash is refused with 409 `idempotency_key_reuse`.
+         *     mail or spends money or tokens.
          *
-         *     The client attaches it to every unsafe request without asking, so the operations that
-         *     **declare** this parameter are the ones that store and replay a response. The rest ignore it,
-         *     and two groups of them do so deliberately (see each operation's description): the ones that
-         *     are idempotent by construction, where a stored response buys nothing, and `POST /auth/login`
-         *     and `POST /auth/refresh`, where a stored response *is* a credential — replaying it would hand
-         *     back tokens that have since been rotated or revoked and would let one key slip a repeat past
-         *     the failed-attempt counter that the lockout depends on.
+         *     **Today the server only requires the key; it does not yet store or replay a response.** The
+         *     table keyed by `(key, request hash)` is a cross-cutting mechanism that has not been built —
+         *     the open half is recorded in STORY-006-01. What the requirement buys now is that a client
+         *     which never learned to send the header cannot be made idempotent later without a breaking
+         *     change; what it does not buy is the convenience of getting the original `201` back instead
+         *     of a `409` on retry. Where a lost response is genuinely ambiguous rather than merely
+         *     inconvenient, the operation says so in its own description.
+         *
+         *     When the store lands: a replay carrying the same request hash will return the stored
+         *     response, and the same key with a different hash will be refused with 409
+         *     `idempotency_key_reuse`.
+         *
+         *     Declaring the parameter is not a claim that the operation will replay: the client attaches a
+         *     key to every unsafe request, and nearly every unsafe operation therefore requires one. What
+         *     the store will change differs per operation, and each says so in its own description:
+         *
+         *     * operations that create something, send mail or spend tokens are the ones a replay is *for*
+         *       — today a lost response leaves the caller unable to tell «it did not happen» from «it
+         *       happened and the answer was lost»;
+         *     * operations idempotent by construction (`assignRole`, `deactivateUser`, `reactivateUser`)
+         *       require the key but gain nothing from a stored response — asking twice for a state that is
+         *       already there answers the same way. The key is required anyway, so a client written today
+         *       keeps working when the store lands;
+         *     * `POST /auth/login` and `POST /auth/refresh` will **never** replay: a stored response *is* a
+         *       credential. Replaying it would hand back tokens that have since been rotated or revoked,
+         *       and would let one key slip a repeat past the failed-attempt counter the lockout depends on.
          */
         IdempotencyKey: string;
         /**
@@ -2094,16 +2297,34 @@ export interface operations {
             header: {
                 /**
                  * @description Client-generated key, mandatory on every unsafe operation that creates an entity, sends
-                 *     mail or spends money or tokens. A replay carrying the same request hash returns the stored
-                 *     response; the same key with a different hash is refused with 409 `idempotency_key_reuse`.
+                 *     mail or spends money or tokens.
                  *
-                 *     The client attaches it to every unsafe request without asking, so the operations that
-                 *     **declare** this parameter are the ones that store and replay a response. The rest ignore it,
-                 *     and two groups of them do so deliberately (see each operation's description): the ones that
-                 *     are idempotent by construction, where a stored response buys nothing, and `POST /auth/login`
-                 *     and `POST /auth/refresh`, where a stored response *is* a credential — replaying it would hand
-                 *     back tokens that have since been rotated or revoked and would let one key slip a repeat past
-                 *     the failed-attempt counter that the lockout depends on.
+                 *     **Today the server only requires the key; it does not yet store or replay a response.** The
+                 *     table keyed by `(key, request hash)` is a cross-cutting mechanism that has not been built —
+                 *     the open half is recorded in STORY-006-01. What the requirement buys now is that a client
+                 *     which never learned to send the header cannot be made idempotent later without a breaking
+                 *     change; what it does not buy is the convenience of getting the original `201` back instead
+                 *     of a `409` on retry. Where a lost response is genuinely ambiguous rather than merely
+                 *     inconvenient, the operation says so in its own description.
+                 *
+                 *     When the store lands: a replay carrying the same request hash will return the stored
+                 *     response, and the same key with a different hash will be refused with 409
+                 *     `idempotency_key_reuse`.
+                 *
+                 *     Declaring the parameter is not a claim that the operation will replay: the client attaches a
+                 *     key to every unsafe request, and nearly every unsafe operation therefore requires one. What
+                 *     the store will change differs per operation, and each says so in its own description:
+                 *
+                 *     * operations that create something, send mail or spend tokens are the ones a replay is *for*
+                 *       — today a lost response leaves the caller unable to tell «it did not happen» from «it
+                 *       happened and the answer was lost»;
+                 *     * operations idempotent by construction (`assignRole`, `deactivateUser`, `reactivateUser`)
+                 *       require the key but gain nothing from a stored response — asking twice for a state that is
+                 *       already there answers the same way. The key is required anyway, so a client written today
+                 *       keeps working when the store lands;
+                 *     * `POST /auth/login` and `POST /auth/refresh` will **never** replay: a stored response *is* a
+                 *       credential. Replaying it would hand back tokens that have since been rotated or revoked,
+                 *       and would let one key slip a repeat past the failed-attempt counter the lockout depends on.
                  */
                 "Idempotency-Key": components["parameters"]["IdempotencyKey"];
             };
@@ -2307,16 +2528,34 @@ export interface operations {
             header: {
                 /**
                  * @description Client-generated key, mandatory on every unsafe operation that creates an entity, sends
-                 *     mail or spends money or tokens. A replay carrying the same request hash returns the stored
-                 *     response; the same key with a different hash is refused with 409 `idempotency_key_reuse`.
+                 *     mail or spends money or tokens.
                  *
-                 *     The client attaches it to every unsafe request without asking, so the operations that
-                 *     **declare** this parameter are the ones that store and replay a response. The rest ignore it,
-                 *     and two groups of them do so deliberately (see each operation's description): the ones that
-                 *     are idempotent by construction, where a stored response buys nothing, and `POST /auth/login`
-                 *     and `POST /auth/refresh`, where a stored response *is* a credential — replaying it would hand
-                 *     back tokens that have since been rotated or revoked and would let one key slip a repeat past
-                 *     the failed-attempt counter that the lockout depends on.
+                 *     **Today the server only requires the key; it does not yet store or replay a response.** The
+                 *     table keyed by `(key, request hash)` is a cross-cutting mechanism that has not been built —
+                 *     the open half is recorded in STORY-006-01. What the requirement buys now is that a client
+                 *     which never learned to send the header cannot be made idempotent later without a breaking
+                 *     change; what it does not buy is the convenience of getting the original `201` back instead
+                 *     of a `409` on retry. Where a lost response is genuinely ambiguous rather than merely
+                 *     inconvenient, the operation says so in its own description.
+                 *
+                 *     When the store lands: a replay carrying the same request hash will return the stored
+                 *     response, and the same key with a different hash will be refused with 409
+                 *     `idempotency_key_reuse`.
+                 *
+                 *     Declaring the parameter is not a claim that the operation will replay: the client attaches a
+                 *     key to every unsafe request, and nearly every unsafe operation therefore requires one. What
+                 *     the store will change differs per operation, and each says so in its own description:
+                 *
+                 *     * operations that create something, send mail or spend tokens are the ones a replay is *for*
+                 *       — today a lost response leaves the caller unable to tell «it did not happen» from «it
+                 *       happened and the answer was lost»;
+                 *     * operations idempotent by construction (`assignRole`, `deactivateUser`, `reactivateUser`)
+                 *       require the key but gain nothing from a stored response — asking twice for a state that is
+                 *       already there answers the same way. The key is required anyway, so a client written today
+                 *       keeps working when the store lands;
+                 *     * `POST /auth/login` and `POST /auth/refresh` will **never** replay: a stored response *is* a
+                 *       credential. Replaying it would hand back tokens that have since been rotated or revoked,
+                 *       and would let one key slip a repeat past the failed-attempt counter the lockout depends on.
                  */
                 "Idempotency-Key": components["parameters"]["IdempotencyKey"];
             };
@@ -2351,16 +2590,34 @@ export interface operations {
             header: {
                 /**
                  * @description Client-generated key, mandatory on every unsafe operation that creates an entity, sends
-                 *     mail or spends money or tokens. A replay carrying the same request hash returns the stored
-                 *     response; the same key with a different hash is refused with 409 `idempotency_key_reuse`.
+                 *     mail or spends money or tokens.
                  *
-                 *     The client attaches it to every unsafe request without asking, so the operations that
-                 *     **declare** this parameter are the ones that store and replay a response. The rest ignore it,
-                 *     and two groups of them do so deliberately (see each operation's description): the ones that
-                 *     are idempotent by construction, where a stored response buys nothing, and `POST /auth/login`
-                 *     and `POST /auth/refresh`, where a stored response *is* a credential — replaying it would hand
-                 *     back tokens that have since been rotated or revoked and would let one key slip a repeat past
-                 *     the failed-attempt counter that the lockout depends on.
+                 *     **Today the server only requires the key; it does not yet store or replay a response.** The
+                 *     table keyed by `(key, request hash)` is a cross-cutting mechanism that has not been built —
+                 *     the open half is recorded in STORY-006-01. What the requirement buys now is that a client
+                 *     which never learned to send the header cannot be made idempotent later without a breaking
+                 *     change; what it does not buy is the convenience of getting the original `201` back instead
+                 *     of a `409` on retry. Where a lost response is genuinely ambiguous rather than merely
+                 *     inconvenient, the operation says so in its own description.
+                 *
+                 *     When the store lands: a replay carrying the same request hash will return the stored
+                 *     response, and the same key with a different hash will be refused with 409
+                 *     `idempotency_key_reuse`.
+                 *
+                 *     Declaring the parameter is not a claim that the operation will replay: the client attaches a
+                 *     key to every unsafe request, and nearly every unsafe operation therefore requires one. What
+                 *     the store will change differs per operation, and each says so in its own description:
+                 *
+                 *     * operations that create something, send mail or spend tokens are the ones a replay is *for*
+                 *       — today a lost response leaves the caller unable to tell «it did not happen» from «it
+                 *       happened and the answer was lost»;
+                 *     * operations idempotent by construction (`assignRole`, `deactivateUser`, `reactivateUser`)
+                 *       require the key but gain nothing from a stored response — asking twice for a state that is
+                 *       already there answers the same way. The key is required anyway, so a client written today
+                 *       keeps working when the store lands;
+                 *     * `POST /auth/login` and `POST /auth/refresh` will **never** replay: a stored response *is* a
+                 *       credential. Replaying it would hand back tokens that have since been rotated or revoked,
+                 *       and would let one key slip a repeat past the failed-attempt counter the lockout depends on.
                  */
                 "Idempotency-Key": components["parameters"]["IdempotencyKey"];
             };
@@ -2395,16 +2652,34 @@ export interface operations {
             header: {
                 /**
                  * @description Client-generated key, mandatory on every unsafe operation that creates an entity, sends
-                 *     mail or spends money or tokens. A replay carrying the same request hash returns the stored
-                 *     response; the same key with a different hash is refused with 409 `idempotency_key_reuse`.
+                 *     mail or spends money or tokens.
                  *
-                 *     The client attaches it to every unsafe request without asking, so the operations that
-                 *     **declare** this parameter are the ones that store and replay a response. The rest ignore it,
-                 *     and two groups of them do so deliberately (see each operation's description): the ones that
-                 *     are idempotent by construction, where a stored response buys nothing, and `POST /auth/login`
-                 *     and `POST /auth/refresh`, where a stored response *is* a credential — replaying it would hand
-                 *     back tokens that have since been rotated or revoked and would let one key slip a repeat past
-                 *     the failed-attempt counter that the lockout depends on.
+                 *     **Today the server only requires the key; it does not yet store or replay a response.** The
+                 *     table keyed by `(key, request hash)` is a cross-cutting mechanism that has not been built —
+                 *     the open half is recorded in STORY-006-01. What the requirement buys now is that a client
+                 *     which never learned to send the header cannot be made idempotent later without a breaking
+                 *     change; what it does not buy is the convenience of getting the original `201` back instead
+                 *     of a `409` on retry. Where a lost response is genuinely ambiguous rather than merely
+                 *     inconvenient, the operation says so in its own description.
+                 *
+                 *     When the store lands: a replay carrying the same request hash will return the stored
+                 *     response, and the same key with a different hash will be refused with 409
+                 *     `idempotency_key_reuse`.
+                 *
+                 *     Declaring the parameter is not a claim that the operation will replay: the client attaches a
+                 *     key to every unsafe request, and nearly every unsafe operation therefore requires one. What
+                 *     the store will change differs per operation, and each says so in its own description:
+                 *
+                 *     * operations that create something, send mail or spend tokens are the ones a replay is *for*
+                 *       — today a lost response leaves the caller unable to tell «it did not happen» from «it
+                 *       happened and the answer was lost»;
+                 *     * operations idempotent by construction (`assignRole`, `deactivateUser`, `reactivateUser`)
+                 *       require the key but gain nothing from a stored response — asking twice for a state that is
+                 *       already there answers the same way. The key is required anyway, so a client written today
+                 *       keeps working when the store lands;
+                 *     * `POST /auth/login` and `POST /auth/refresh` will **never** replay: a stored response *is* a
+                 *       credential. Replaying it would hand back tokens that have since been rotated or revoked,
+                 *       and would let one key slip a repeat past the failed-attempt counter the lockout depends on.
                  */
                 "Idempotency-Key": components["parameters"]["IdempotencyKey"];
             };
@@ -2487,16 +2762,34 @@ export interface operations {
             header: {
                 /**
                  * @description Client-generated key, mandatory on every unsafe operation that creates an entity, sends
-                 *     mail or spends money or tokens. A replay carrying the same request hash returns the stored
-                 *     response; the same key with a different hash is refused with 409 `idempotency_key_reuse`.
+                 *     mail or spends money or tokens.
                  *
-                 *     The client attaches it to every unsafe request without asking, so the operations that
-                 *     **declare** this parameter are the ones that store and replay a response. The rest ignore it,
-                 *     and two groups of them do so deliberately (see each operation's description): the ones that
-                 *     are idempotent by construction, where a stored response buys nothing, and `POST /auth/login`
-                 *     and `POST /auth/refresh`, where a stored response *is* a credential — replaying it would hand
-                 *     back tokens that have since been rotated or revoked and would let one key slip a repeat past
-                 *     the failed-attempt counter that the lockout depends on.
+                 *     **Today the server only requires the key; it does not yet store or replay a response.** The
+                 *     table keyed by `(key, request hash)` is a cross-cutting mechanism that has not been built —
+                 *     the open half is recorded in STORY-006-01. What the requirement buys now is that a client
+                 *     which never learned to send the header cannot be made idempotent later without a breaking
+                 *     change; what it does not buy is the convenience of getting the original `201` back instead
+                 *     of a `409` on retry. Where a lost response is genuinely ambiguous rather than merely
+                 *     inconvenient, the operation says so in its own description.
+                 *
+                 *     When the store lands: a replay carrying the same request hash will return the stored
+                 *     response, and the same key with a different hash will be refused with 409
+                 *     `idempotency_key_reuse`.
+                 *
+                 *     Declaring the parameter is not a claim that the operation will replay: the client attaches a
+                 *     key to every unsafe request, and nearly every unsafe operation therefore requires one. What
+                 *     the store will change differs per operation, and each says so in its own description:
+                 *
+                 *     * operations that create something, send mail or spend tokens are the ones a replay is *for*
+                 *       — today a lost response leaves the caller unable to tell «it did not happen» from «it
+                 *       happened and the answer was lost»;
+                 *     * operations idempotent by construction (`assignRole`, `deactivateUser`, `reactivateUser`)
+                 *       require the key but gain nothing from a stored response — asking twice for a state that is
+                 *       already there answers the same way. The key is required anyway, so a client written today
+                 *       keeps working when the store lands;
+                 *     * `POST /auth/login` and `POST /auth/refresh` will **never** replay: a stored response *is* a
+                 *       credential. Replaying it would hand back tokens that have since been rotated or revoked,
+                 *       and would let one key slip a repeat past the failed-attempt counter the lockout depends on.
                  */
                 "Idempotency-Key": components["parameters"]["IdempotencyKey"];
             };
@@ -2596,16 +2889,34 @@ export interface operations {
             header: {
                 /**
                  * @description Client-generated key, mandatory on every unsafe operation that creates an entity, sends
-                 *     mail or spends money or tokens. A replay carrying the same request hash returns the stored
-                 *     response; the same key with a different hash is refused with 409 `idempotency_key_reuse`.
+                 *     mail or spends money or tokens.
                  *
-                 *     The client attaches it to every unsafe request without asking, so the operations that
-                 *     **declare** this parameter are the ones that store and replay a response. The rest ignore it,
-                 *     and two groups of them do so deliberately (see each operation's description): the ones that
-                 *     are idempotent by construction, where a stored response buys nothing, and `POST /auth/login`
-                 *     and `POST /auth/refresh`, where a stored response *is* a credential — replaying it would hand
-                 *     back tokens that have since been rotated or revoked and would let one key slip a repeat past
-                 *     the failed-attempt counter that the lockout depends on.
+                 *     **Today the server only requires the key; it does not yet store or replay a response.** The
+                 *     table keyed by `(key, request hash)` is a cross-cutting mechanism that has not been built —
+                 *     the open half is recorded in STORY-006-01. What the requirement buys now is that a client
+                 *     which never learned to send the header cannot be made idempotent later without a breaking
+                 *     change; what it does not buy is the convenience of getting the original `201` back instead
+                 *     of a `409` on retry. Where a lost response is genuinely ambiguous rather than merely
+                 *     inconvenient, the operation says so in its own description.
+                 *
+                 *     When the store lands: a replay carrying the same request hash will return the stored
+                 *     response, and the same key with a different hash will be refused with 409
+                 *     `idempotency_key_reuse`.
+                 *
+                 *     Declaring the parameter is not a claim that the operation will replay: the client attaches a
+                 *     key to every unsafe request, and nearly every unsafe operation therefore requires one. What
+                 *     the store will change differs per operation, and each says so in its own description:
+                 *
+                 *     * operations that create something, send mail or spend tokens are the ones a replay is *for*
+                 *       — today a lost response leaves the caller unable to tell «it did not happen» from «it
+                 *       happened and the answer was lost»;
+                 *     * operations idempotent by construction (`assignRole`, `deactivateUser`, `reactivateUser`)
+                 *       require the key but gain nothing from a stored response — asking twice for a state that is
+                 *       already there answers the same way. The key is required anyway, so a client written today
+                 *       keeps working when the store lands;
+                 *     * `POST /auth/login` and `POST /auth/refresh` will **never** replay: a stored response *is* a
+                 *       credential. Replaying it would hand back tokens that have since been rotated or revoked,
+                 *       and would let one key slip a repeat past the failed-attempt counter the lockout depends on.
                  */
                 "Idempotency-Key": components["parameters"]["IdempotencyKey"];
                 /**
@@ -2684,16 +2995,34 @@ export interface operations {
             header: {
                 /**
                  * @description Client-generated key, mandatory on every unsafe operation that creates an entity, sends
-                 *     mail or spends money or tokens. A replay carrying the same request hash returns the stored
-                 *     response; the same key with a different hash is refused with 409 `idempotency_key_reuse`.
+                 *     mail or spends money or tokens.
                  *
-                 *     The client attaches it to every unsafe request without asking, so the operations that
-                 *     **declare** this parameter are the ones that store and replay a response. The rest ignore it,
-                 *     and two groups of them do so deliberately (see each operation's description): the ones that
-                 *     are idempotent by construction, where a stored response buys nothing, and `POST /auth/login`
-                 *     and `POST /auth/refresh`, where a stored response *is* a credential — replaying it would hand
-                 *     back tokens that have since been rotated or revoked and would let one key slip a repeat past
-                 *     the failed-attempt counter that the lockout depends on.
+                 *     **Today the server only requires the key; it does not yet store or replay a response.** The
+                 *     table keyed by `(key, request hash)` is a cross-cutting mechanism that has not been built —
+                 *     the open half is recorded in STORY-006-01. What the requirement buys now is that a client
+                 *     which never learned to send the header cannot be made idempotent later without a breaking
+                 *     change; what it does not buy is the convenience of getting the original `201` back instead
+                 *     of a `409` on retry. Where a lost response is genuinely ambiguous rather than merely
+                 *     inconvenient, the operation says so in its own description.
+                 *
+                 *     When the store lands: a replay carrying the same request hash will return the stored
+                 *     response, and the same key with a different hash will be refused with 409
+                 *     `idempotency_key_reuse`.
+                 *
+                 *     Declaring the parameter is not a claim that the operation will replay: the client attaches a
+                 *     key to every unsafe request, and nearly every unsafe operation therefore requires one. What
+                 *     the store will change differs per operation, and each says so in its own description:
+                 *
+                 *     * operations that create something, send mail or spend tokens are the ones a replay is *for*
+                 *       — today a lost response leaves the caller unable to tell «it did not happen» from «it
+                 *       happened and the answer was lost»;
+                 *     * operations idempotent by construction (`assignRole`, `deactivateUser`, `reactivateUser`)
+                 *       require the key but gain nothing from a stored response — asking twice for a state that is
+                 *       already there answers the same way. The key is required anyway, so a client written today
+                 *       keeps working when the store lands;
+                 *     * `POST /auth/login` and `POST /auth/refresh` will **never** replay: a stored response *is* a
+                 *       credential. Replaying it would hand back tokens that have since been rotated or revoked,
+                 *       and would let one key slip a repeat past the failed-attempt counter the lockout depends on.
                  */
                 "Idempotency-Key": components["parameters"]["IdempotencyKey"];
                 /**
@@ -2836,16 +3165,34 @@ export interface operations {
             header: {
                 /**
                  * @description Client-generated key, mandatory on every unsafe operation that creates an entity, sends
-                 *     mail or spends money or tokens. A replay carrying the same request hash returns the stored
-                 *     response; the same key with a different hash is refused with 409 `idempotency_key_reuse`.
+                 *     mail or spends money or tokens.
                  *
-                 *     The client attaches it to every unsafe request without asking, so the operations that
-                 *     **declare** this parameter are the ones that store and replay a response. The rest ignore it,
-                 *     and two groups of them do so deliberately (see each operation's description): the ones that
-                 *     are idempotent by construction, where a stored response buys nothing, and `POST /auth/login`
-                 *     and `POST /auth/refresh`, where a stored response *is* a credential — replaying it would hand
-                 *     back tokens that have since been rotated or revoked and would let one key slip a repeat past
-                 *     the failed-attempt counter that the lockout depends on.
+                 *     **Today the server only requires the key; it does not yet store or replay a response.** The
+                 *     table keyed by `(key, request hash)` is a cross-cutting mechanism that has not been built —
+                 *     the open half is recorded in STORY-006-01. What the requirement buys now is that a client
+                 *     which never learned to send the header cannot be made idempotent later without a breaking
+                 *     change; what it does not buy is the convenience of getting the original `201` back instead
+                 *     of a `409` on retry. Where a lost response is genuinely ambiguous rather than merely
+                 *     inconvenient, the operation says so in its own description.
+                 *
+                 *     When the store lands: a replay carrying the same request hash will return the stored
+                 *     response, and the same key with a different hash will be refused with 409
+                 *     `idempotency_key_reuse`.
+                 *
+                 *     Declaring the parameter is not a claim that the operation will replay: the client attaches a
+                 *     key to every unsafe request, and nearly every unsafe operation therefore requires one. What
+                 *     the store will change differs per operation, and each says so in its own description:
+                 *
+                 *     * operations that create something, send mail or spend tokens are the ones a replay is *for*
+                 *       — today a lost response leaves the caller unable to tell «it did not happen» from «it
+                 *       happened and the answer was lost»;
+                 *     * operations idempotent by construction (`assignRole`, `deactivateUser`, `reactivateUser`)
+                 *       require the key but gain nothing from a stored response — asking twice for a state that is
+                 *       already there answers the same way. The key is required anyway, so a client written today
+                 *       keeps working when the store lands;
+                 *     * `POST /auth/login` and `POST /auth/refresh` will **never** replay: a stored response *is* a
+                 *       credential. Replaying it would hand back tokens that have since been rotated or revoked,
+                 *       and would let one key slip a repeat past the failed-attempt counter the lockout depends on.
                  */
                 "Idempotency-Key": components["parameters"]["IdempotencyKey"];
             };
@@ -2882,16 +3229,34 @@ export interface operations {
             header: {
                 /**
                  * @description Client-generated key, mandatory on every unsafe operation that creates an entity, sends
-                 *     mail or spends money or tokens. A replay carrying the same request hash returns the stored
-                 *     response; the same key with a different hash is refused with 409 `idempotency_key_reuse`.
+                 *     mail or spends money or tokens.
                  *
-                 *     The client attaches it to every unsafe request without asking, so the operations that
-                 *     **declare** this parameter are the ones that store and replay a response. The rest ignore it,
-                 *     and two groups of them do so deliberately (see each operation's description): the ones that
-                 *     are idempotent by construction, where a stored response buys nothing, and `POST /auth/login`
-                 *     and `POST /auth/refresh`, where a stored response *is* a credential — replaying it would hand
-                 *     back tokens that have since been rotated or revoked and would let one key slip a repeat past
-                 *     the failed-attempt counter that the lockout depends on.
+                 *     **Today the server only requires the key; it does not yet store or replay a response.** The
+                 *     table keyed by `(key, request hash)` is a cross-cutting mechanism that has not been built —
+                 *     the open half is recorded in STORY-006-01. What the requirement buys now is that a client
+                 *     which never learned to send the header cannot be made idempotent later without a breaking
+                 *     change; what it does not buy is the convenience of getting the original `201` back instead
+                 *     of a `409` on retry. Where a lost response is genuinely ambiguous rather than merely
+                 *     inconvenient, the operation says so in its own description.
+                 *
+                 *     When the store lands: a replay carrying the same request hash will return the stored
+                 *     response, and the same key with a different hash will be refused with 409
+                 *     `idempotency_key_reuse`.
+                 *
+                 *     Declaring the parameter is not a claim that the operation will replay: the client attaches a
+                 *     key to every unsafe request, and nearly every unsafe operation therefore requires one. What
+                 *     the store will change differs per operation, and each says so in its own description:
+                 *
+                 *     * operations that create something, send mail or spend tokens are the ones a replay is *for*
+                 *       — today a lost response leaves the caller unable to tell «it did not happen» from «it
+                 *       happened and the answer was lost»;
+                 *     * operations idempotent by construction (`assignRole`, `deactivateUser`, `reactivateUser`)
+                 *       require the key but gain nothing from a stored response — asking twice for a state that is
+                 *       already there answers the same way. The key is required anyway, so a client written today
+                 *       keeps working when the store lands;
+                 *     * `POST /auth/login` and `POST /auth/refresh` will **never** replay: a stored response *is* a
+                 *       credential. Replaying it would hand back tokens that have since been rotated or revoked,
+                 *       and would let one key slip a repeat past the failed-attempt counter the lockout depends on.
                  */
                 "Idempotency-Key": components["parameters"]["IdempotencyKey"];
             };
@@ -2991,6 +3356,230 @@ export interface operations {
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
             409: components["responses"]["Conflict"];
+            429: components["responses"]["RateLimited"];
+            500: components["responses"]["InternalError"];
+        };
+    };
+    transferOwnership: {
+        parameters: {
+            query?: never;
+            header: {
+                /**
+                 * @description Client-generated key, mandatory on every unsafe operation that creates an entity, sends
+                 *     mail or spends money or tokens.
+                 *
+                 *     **Today the server only requires the key; it does not yet store or replay a response.** The
+                 *     table keyed by `(key, request hash)` is a cross-cutting mechanism that has not been built —
+                 *     the open half is recorded in STORY-006-01. What the requirement buys now is that a client
+                 *     which never learned to send the header cannot be made idempotent later without a breaking
+                 *     change; what it does not buy is the convenience of getting the original `201` back instead
+                 *     of a `409` on retry. Where a lost response is genuinely ambiguous rather than merely
+                 *     inconvenient, the operation says so in its own description.
+                 *
+                 *     When the store lands: a replay carrying the same request hash will return the stored
+                 *     response, and the same key with a different hash will be refused with 409
+                 *     `idempotency_key_reuse`.
+                 *
+                 *     Declaring the parameter is not a claim that the operation will replay: the client attaches a
+                 *     key to every unsafe request, and nearly every unsafe operation therefore requires one. What
+                 *     the store will change differs per operation, and each says so in its own description:
+                 *
+                 *     * operations that create something, send mail or spend tokens are the ones a replay is *for*
+                 *       — today a lost response leaves the caller unable to tell «it did not happen» from «it
+                 *       happened and the answer was lost»;
+                 *     * operations idempotent by construction (`assignRole`, `deactivateUser`, `reactivateUser`)
+                 *       require the key but gain nothing from a stored response — asking twice for a state that is
+                 *       already there answers the same way. The key is required anyway, so a client written today
+                 *       keeps working when the store lands;
+                 *     * `POST /auth/login` and `POST /auth/refresh` will **never** replay: a stored response *is* a
+                 *       credential. Replaying it would hand back tokens that have since been rotated or revoked,
+                 *       and would let one key slip a repeat past the failed-attempt counter the lockout depends on.
+                 */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** Format: uuid */
+                    toUserId: string;
+                    /**
+                     * @description What the outgoing owner keeps. `owner` is not among the values: «keep being the
+                     *     owner» is not a way to stop being one.
+                     * @default admin
+                     * @enum {string}
+                     */
+                    previousOwnerRoleKey?: "admin" | "manager" | "lead" | "developer" | "viewer";
+                };
+            };
+        };
+        responses: {
+            /** @description The organization changed hands. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** Format: uuid */
+                        fromUserId: string;
+                        /** Format: uuid */
+                        toUserId: string;
+                        previousOwnerRoleKey: string;
+                    };
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["ValidationFailed"];
+            429: components["responses"]["RateLimited"];
+            500: components["responses"]["InternalError"];
+        };
+    };
+    deactivateUser: {
+        parameters: {
+            query?: never;
+            header: {
+                /**
+                 * @description Client-generated key, mandatory on every unsafe operation that creates an entity, sends
+                 *     mail or spends money or tokens.
+                 *
+                 *     **Today the server only requires the key; it does not yet store or replay a response.** The
+                 *     table keyed by `(key, request hash)` is a cross-cutting mechanism that has not been built —
+                 *     the open half is recorded in STORY-006-01. What the requirement buys now is that a client
+                 *     which never learned to send the header cannot be made idempotent later without a breaking
+                 *     change; what it does not buy is the convenience of getting the original `201` back instead
+                 *     of a `409` on retry. Where a lost response is genuinely ambiguous rather than merely
+                 *     inconvenient, the operation says so in its own description.
+                 *
+                 *     When the store lands: a replay carrying the same request hash will return the stored
+                 *     response, and the same key with a different hash will be refused with 409
+                 *     `idempotency_key_reuse`.
+                 *
+                 *     Declaring the parameter is not a claim that the operation will replay: the client attaches a
+                 *     key to every unsafe request, and nearly every unsafe operation therefore requires one. What
+                 *     the store will change differs per operation, and each says so in its own description:
+                 *
+                 *     * operations that create something, send mail or spend tokens are the ones a replay is *for*
+                 *       — today a lost response leaves the caller unable to tell «it did not happen» from «it
+                 *       happened and the answer was lost»;
+                 *     * operations idempotent by construction (`assignRole`, `deactivateUser`, `reactivateUser`)
+                 *       require the key but gain nothing from a stored response — asking twice for a state that is
+                 *       already there answers the same way. The key is required anyway, so a client written today
+                 *       keeps working when the store lands;
+                 *     * `POST /auth/login` and `POST /auth/refresh` will **never** replay: a stored response *is* a
+                 *       credential. Replaying it would hand back tokens that have since been rotated or revoked,
+                 *       and would let one key slip a repeat past the failed-attempt counter the lockout depends on.
+                 */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                /**
+                 * @description Identifier of a person in the caller's organization. An id from another organization is
+                 *     answered 404, not 403 — the API does not confirm what exists in tenants the caller cannot
+                 *     see.
+                 */
+                userId: components["parameters"]["UserId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /**
+                     * @description Why the account is being switched off. Required: «switched off, no reason given»
+                     *     is the trail entry that costs an hour of asking around. It reaches the audit log
+                     *     and is never shown to the person being deactivated.
+                     */
+                    reason: string;
+                };
+            };
+        };
+        responses: {
+            /** @description What the offboarding revoked. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OffboardingReport"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["ValidationFailed"];
+            429: components["responses"]["RateLimited"];
+            500: components["responses"]["InternalError"];
+        };
+    };
+    reactivateUser: {
+        parameters: {
+            query?: never;
+            header: {
+                /**
+                 * @description Client-generated key, mandatory on every unsafe operation that creates an entity, sends
+                 *     mail or spends money or tokens.
+                 *
+                 *     **Today the server only requires the key; it does not yet store or replay a response.** The
+                 *     table keyed by `(key, request hash)` is a cross-cutting mechanism that has not been built —
+                 *     the open half is recorded in STORY-006-01. What the requirement buys now is that a client
+                 *     which never learned to send the header cannot be made idempotent later without a breaking
+                 *     change; what it does not buy is the convenience of getting the original `201` back instead
+                 *     of a `409` on retry. Where a lost response is genuinely ambiguous rather than merely
+                 *     inconvenient, the operation says so in its own description.
+                 *
+                 *     When the store lands: a replay carrying the same request hash will return the stored
+                 *     response, and the same key with a different hash will be refused with 409
+                 *     `idempotency_key_reuse`.
+                 *
+                 *     Declaring the parameter is not a claim that the operation will replay: the client attaches a
+                 *     key to every unsafe request, and nearly every unsafe operation therefore requires one. What
+                 *     the store will change differs per operation, and each says so in its own description:
+                 *
+                 *     * operations that create something, send mail or spend tokens are the ones a replay is *for*
+                 *       — today a lost response leaves the caller unable to tell «it did not happen» from «it
+                 *       happened and the answer was lost»;
+                 *     * operations idempotent by construction (`assignRole`, `deactivateUser`, `reactivateUser`)
+                 *       require the key but gain nothing from a stored response — asking twice for a state that is
+                 *       already there answers the same way. The key is required anyway, so a client written today
+                 *       keeps working when the store lands;
+                 *     * `POST /auth/login` and `POST /auth/refresh` will **never** replay: a stored response *is* a
+                 *       credential. Replaying it would hand back tokens that have since been rotated or revoked,
+                 *       and would let one key slip a repeat past the failed-attempt counter the lockout depends on.
+                 */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                /**
+                 * @description Identifier of a person in the caller's organization. An id from another organization is
+                 *     answered 404, not 403 — the API does not confirm what exists in tenants the caller cannot
+                 *     see.
+                 */
+                userId: components["parameters"]["UserId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The account is on again. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReactivationResult"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["ValidationFailed"];
             429: components["responses"]["RateLimited"];
             500: components["responses"]["InternalError"];
         };

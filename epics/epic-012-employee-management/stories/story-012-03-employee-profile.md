@@ -1,7 +1,7 @@
 ---
 id: STORY-012-03
 epic: EPIC-012
-status: in-progress
+status: review
 blocked: false
 priority: must
 estimate: M
@@ -190,7 +190,7 @@ estimate: M
 ## Definition of Done
 
 - [x] Тесты написаны первыми (TDD), проходят (server 99.31 lines, client 100/100 — база не просела)
-- [ ] Commit-гейт зелёный (test-coverage, security-auditor, db-reviewer, production-readiness, commit-hygiene)
+- [x] Commit-гейт зелёный (test-coverage, security-auditor, db-reviewer, production-readiness, commit-hygiene)
 - [x] Документация обновлена (`data-model.md`, `permission-model.md`, `openapi.yaml`; запись в `docs/brain/`)
 - [x] a11y и i18n (кадровые поля disabled, а не скрыты; обе локали; ноль хардкод-строк)
 - [x] **Isolation-тест RLS** для `employee_profiles` — 17 тестов из реестра

@@ -477,7 +477,16 @@ export const PERMISSION_META: Readonly<Record<PermissionKey, PermissionMeta>> = 
     resource: 'organization',
     action: 'transfer_ownership',
     domain: 'organization',
-    requiredLevel: 'MANAGER',
+    // `null`, like `team:*` below: `MANAGER` here used to name a resource-level check nothing
+    // reads. There is no `ResourceAcl` for any domain yet (STORY-011-06 is blocked on EPIC-014, and
+    // `require-permission.middleware.ts` only ever calls `authorizeCapability`, never
+    // `authorizeResource`/`authorizeWith`, for this key) — so the field was a promise, not a check.
+    // The actual decision belongs to `TransferOwnershipUseCase`, which reads
+    // `organizations.owner_id` inside its own transaction and refuses a caller who holds this
+    // capability without holding that row (`domain/iam/access/ownership-transfer.policy.ts`,
+    // deny reason `not_the_owner`) — a check this catalog cannot express, because it depends on data
+    // no ACL level carries.
+    requiredLevel: null,
     dangerous: true,
     descriptionKey: 'permission.organization.transfer_ownership',
   },

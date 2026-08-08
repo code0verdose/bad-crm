@@ -1,7 +1,7 @@
 ---
 id: STORY-012-01
 epic: EPIC-012
-status: in-progress
+status: review
 blocked: false
 priority: must
 estimate: M
@@ -199,7 +199,7 @@ estimate: M
 
 - [x] Тесты написаны первыми (TDD), проходят, изменённый код покрыт (базовая линия покрытия не
       просела: server 99.34 lines, client 100)
-- [ ] Commit-гейт зелёный (test-coverage, security-auditor, db-reviewer при изменении схемы, production-readiness, commit-hygiene)
+- [x] Commit-гейт зелёный (test-coverage, security-auditor, db-reviewer при изменении схемы, production-readiness, commit-hygiene)
 - [x] Документация обновлена (`stack.md`, `data-model.md`, `ux-architecture.md`, `openapi.yaml` +
       запись в `docs/brain/`)
 - [x] a11y и i18n (нативный `<select>`, `role="status"` на панели со ссылкой, обе локали, ноль

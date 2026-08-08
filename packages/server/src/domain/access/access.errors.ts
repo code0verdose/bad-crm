@@ -64,6 +64,11 @@ const CODE_FOR: Readonly<
   invitation_already_accepted: () => 'invitation_already_accepted',
   manager_cycle_detected: () => 'manager_cycle_detected',
   employment_period_inverted: () => 'employment_period_inverted',
+  invalid_recipient: () => 'invalid_recipient',
+  // Not a `${resource}_forbidden`, on purpose: the caller holds the capability the guard checked,
+  // so the generic "you do not have access to this organization" sentence would be false. The
+  // dedicated code says the one thing that is actually true — you may act, but not as this person.
+  not_the_owner: () => 'not_the_owner',
 };
 
 /**

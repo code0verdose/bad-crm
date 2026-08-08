@@ -1,0 +1,35 @@
+{
+  "action": "Deactivate",
+  "title": "Deactivate this person",
+  "description": "One operation ends their access. Everything below happens at once.",
+  "consequence": {
+    "sessions": "Every session is revoked — they are signed out everywhere within a second, not at token expiry.",
+    "teams": "They leave their teams. Coming back does not put them back.",
+    "data": "Nothing is deleted: their tasks, hours and history stay exactly as they are.",
+    "reactivation": "You can reactivate the account later, but memberships have to be granted again."
+  },
+  "reasonLabel": "Reason",
+  "confirmLabel": "Type the email address to confirm",
+  "confirmHint": "Type «{{email}}» — this ends somebody's access, and the row above is one mis-click away.",
+  "submit": "Deactivate",
+  "close": "Close",
+  "failed": {
+    "title": "Not deactivated — nothing was changed"
+  },
+  "already": {
+    "title": "Already deactivated — this run changed nothing",
+    "description": "The account was off before this run: no session was revoked and no team was left, because there was nothing left to revoke. Nothing was written and no trail entry was made. This is what a second run looks like, not a failure."
+  },
+  "done": {
+    "sessions": "Sessions revoked: {{count}}",
+    "teams": "Teams left: {{count}}"
+  },
+  "pending": {
+    "title": "Not done here — no such subsystem yet",
+    "description": "This installation has nothing to switch off for the steps below. They are listed rather than counted as zero, so nobody reads this report as complete.",
+    "projectsLeft": "Project membership — arrives with projects.",
+    "socketsClosed": "Live connections — arrives with realtime.",
+    "linksRevoked": "Secure links — arrives with the vault.",
+    "vaultMembershipsFlagged": "Shared vaults — removing membership will not take back keys already downloaded, so a key rotation will be required."
+  }
+}

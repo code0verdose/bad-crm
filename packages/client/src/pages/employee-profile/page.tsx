@@ -1,9 +1,12 @@
-import { Stack } from '@mantine/core';
+import { Button, Stack } from '@mantine/core';
+import { useDisclosure } from '@mantine/hooks';
 import { getRouteApi } from '@tanstack/react-router';
+import { useTranslation } from 'react-i18next';
 
 import { SharedLib, SharedUi } from '@shared';
 
 import { Breadcrumbs } from '@widgets/breadcrumbs';
+import { OffboardingDialog } from '@widgets/offboarding';
 import { EmployeeService, EmployeeUi, type EmployeeApi } from '@units/employee';
 import { IamService } from '@units/iam';
 
@@ -18,14 +21,52 @@ const route = getRouteApi('/_authenticated/admin/members/$userId');
  * client believes it may see.
  */
 export function EmployeeProfilePage() {
+  const { t } = useTranslation();
   const { userId } = route.useParams();
   const query = EmployeeService.EmployeeQueries.useEmployeeProfileQuery(userId);
   const save = EmployeeService.EmployeeMutations.useUpdateEmployeeProfile();
   const { can } = IamService.IamHooks.useCan();
+  const [dialogOpened, dialogControls] = useDisclosure(false);
+
+  /**
+   * Who the offboarding would be about — and `undefined` whenever there is nobody to offer it for.
+   *
+   * **One decision, not two.** The permission is a hint, never a gate: the endpoint refuses on its
+   * own authority, and what the check prevents is offering an action that always answers 403
+   * (`ux-architecture.md`, принцип 6). But a permission is not enough to draw the control: the
+   * confirmation cannot ask anybody to type back an address the page has not got, so a button drawn
+   * from `can(...)` alone is clickable while the document is still on its way — and for ever, if it
+   * comes back 403, 404 or not at all — while opening nothing.
+   *
+   * The page already says «loading» and «this did not load» once, through `DataState` below.
+   * Repeating either in the header, as a disabled control or a spinning one, would be a second
+   * signal for one condition (`rules/errors-and-toasts.mdc` §2) — and a red button that explains
+   * itself is still a red button offering an action that cannot be taken.
+   */
+  const subject = query.data !== undefined && can('user:suspend') ? query.data : undefined;
 
   return (
     <Stack gap="md">
-      <SharedUi.PageHeader breadcrumbs={<Breadcrumbs />} titleKey="employee.title" />
+      <SharedUi.PageHeader
+        actions={
+          subject === undefined ? undefined : (
+            <Button color="red" onClick={dialogControls.open} variant="light">
+              {t('offboarding.action')}
+            </Button>
+          )
+        }
+        breadcrumbs={<Breadcrumbs />}
+        titleKey="employee.title"
+      />
+
+      {subject !== undefined && (
+        <OffboardingDialog
+          email={subject.email}
+          onClose={dialogControls.close}
+          opened={dialogOpened}
+          userId={userId}
+        />
+      )}
 
       <SharedUi.DataState
         // A key, not the error object: choosing the sentence from the `code` belongs to whoever

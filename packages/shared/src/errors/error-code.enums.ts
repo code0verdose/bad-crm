@@ -181,6 +181,26 @@ const GENERIC_ERROR_CODE_STATUS = {
    * formed, and what it describes is a record that cannot exist.
    */
   employment_period_inverted: 422,
+  /**
+   * The person the organization would be handed to cannot hold it: suspended, or an invitation
+   * nobody has accepted. **409**, not 422 — the request is well formed and the account exists; what
+   * is wrong is its state, and the fix is to reactivate them first.
+   */
+  recipient_not_active: 409,
+  /**
+   * Handing the organization to oneself. **422**: the value in the field is wrong, and no state
+   * anywhere would make it right.
+   */
+  invalid_recipient: 422,
+  /**
+   * `organization:transfer_ownership` was held — by role, by a per-user override, or by a custom
+   * role — and the holder is not `organizations.owner_id`. **403**, inside the caller's own
+   * organization: nothing here is a missing row, so `organization_not_found` would be false, and it
+   * is not the generic `organization_forbidden` either, because that sentence says "you lack the
+   * right" when the guard already confirmed the opposite. The one fact that decides this operation
+   * is who the row currently names, and the code says exactly that (`domain/access/access.errors.ts`).
+   */
+  not_the_owner: 403,
   confirmation_required: 428,
   rate_limited: 429,
   /**

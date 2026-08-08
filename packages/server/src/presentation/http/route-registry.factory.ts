@@ -11,6 +11,8 @@ import { createEmployeeController } from '@/presentation/http/controllers/employ
 import { createInvitationController } from '@/presentation/http/controllers/invitation.controller.js';
 import { createMeController } from '@/presentation/http/controllers/me.controller.js';
 import { createPermissionOverrideController } from '@/presentation/http/controllers/permission-override.controller.js';
+import { createOwnershipController } from '@/presentation/http/controllers/ownership.controller.js';
+import { createUserLifecycleController } from '@/presentation/http/controllers/user-lifecycle.controller.js';
 import { createUserRoleController } from '@/presentation/http/controllers/user-role.controller.js';
 import { allowedOrigins } from '@/presentation/http/cors-origin.util.js';
 import { type HttpServerDependencies } from '@/presentation/http/http-server.types.js';
@@ -55,6 +57,11 @@ import {
   overrideParamsSchema,
   writeOverrideBodySchema,
 } from '@/presentation/http/validators/permission-override.validator.js';
+import { transferOwnershipBodySchema } from '@/presentation/http/validators/ownership.validator.js';
+import {
+  deactivateUserBodySchema,
+  userLifecycleParamsSchema,
+} from '@/presentation/http/validators/user-lifecycle.validator.js';
 import {
   assignRoleBodySchema,
   userIdParamsSchema,
@@ -174,6 +181,26 @@ export const createRouteRegistry = (
     readValidator: employeeReadValidator,
     writeValidator: employeeWriteValidator,
     listValidator: employeeListValidator,
+  });
+
+  const deactivateUserValidator = validate({
+    params: userLifecycleParamsSchema,
+    body: deactivateUserBodySchema,
+  });
+  const reactivateUserValidator = validate({ params: userLifecycleParamsSchema });
+
+  const userLifecycle = createUserLifecycleController({
+    deactivateUser: dependencies.iam.deactivateUser,
+    reactivateUser: dependencies.iam.reactivateUser,
+    deactivateValidator: deactivateUserValidator,
+    reactivateValidator: reactivateUserValidator,
+  });
+
+  const transferOwnershipValidator = validate({ body: transferOwnershipBodySchema });
+
+  const ownership = createOwnershipController({
+    transferOwnership: dependencies.iam.transferOwnership,
+    transferValidator: transferOwnershipValidator,
   });
 
   const userRoles = createUserRoleController({
@@ -508,6 +535,46 @@ export const createRouteRegistry = (
       selfServiceReason:
         'a person always edits the handful of fields on their own record that nobody else is a better authority on — name, timezone, skills, emergency contact; anybody else’s record and every employment field need employee:update, which WriteEmployeeProfileUseCase checks per field rather than per route, because the same request may carry both kinds',
       ownershipCheckedIn: 'WriteEmployeeProfileUseCase',
+    },
+    {
+      method: 'post',
+      path: `${API_PREFIX}/organization/transfer-ownership`,
+      handlers: [requireIdempotencyKey(), transferOwnershipValidator.handler, ownership.transfer],
+      permission: 'organization:transfer_ownership',
+      // Held by `owner` alone (`permission-model.md` §4.1), so the guard settles «may this caller
+      // hand the organization over at all». Whether *this* recipient may receive it — not oneself,
+      // not a suspended account — and whether they exist in this tenant are decided in the use-case,
+      // which is also the only place that answers 404 rather than 403 for somebody else's id.
+      aclCheckedIn: 'TransferOwnershipUseCase',
+    },
+    {
+      method: 'post',
+      path: `${API_PREFIX}/users/:userId/deactivate`,
+      handlers: [
+        requireIdempotencyKey(),
+        deactivateUserValidator.handler,
+        userLifecycle.deactivate,
+      ],
+      permission: 'user:suspend',
+      // The guard answers «may this caller deactivate anybody». Whether *this* account may be
+      // deactivated — not oneself, not the last owner — and whether it exists in this tenant at all
+      // are decided inside the use-case, which is also the only place that can answer 404 rather
+      // than 403 for somebody else's id.
+      aclCheckedIn: 'DeactivateUserUseCase',
+    },
+    {
+      method: 'post',
+      path: `${API_PREFIX}/users/:userId/reactivate`,
+      handlers: [
+        requireIdempotencyKey(),
+        reactivateUserValidator.handler,
+        userLifecycle.reactivate,
+      ],
+      permission: 'user:reactivate',
+      // Its own capability rather than a share of `user:suspend`: bringing an account back is the
+      // step an intruder needs after an offboarding, and an organization may well let more people
+      // switch somebody off than switch them on.
+      aclCheckedIn: 'ReactivateUserUseCase',
     },
     {
       method: 'get',

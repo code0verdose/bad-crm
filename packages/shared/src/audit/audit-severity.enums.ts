@@ -55,6 +55,24 @@ export const AUDIT_ACTION_SEVERITY: Readonly<Record<AuditAction, AuditSeverity>>
   // `INFO`: editing a profile grants nothing and takes nothing away. What makes it worth recording
   // is that the fields are personal data and the edit may have been made by somebody else.
   'employee.updated': 'INFO',
+  /**
+   * `CRITICAL`, alongside `rls.bypassed`: after this entry a different person can do everything,
+   * including granting themselves whatever the trail would otherwise record. An installation that
+   * alerts on one event should alert on this one.
+   */
+  'organization.ownership_transferred': 'CRITICAL',
+  /**
+   * `WARNING`, not `INFO`: deactivation ends somebody's access to everything at once, and it is the
+   * entry an incident review looks for first — both when it was expected and when it was not. The
+   * level belongs to the action, not to who took it.
+   */
+  'user.suspended': 'WARNING',
+  /**
+   * Also `WARNING`, and for the sharper reason: an account coming back is the step an intruder needs
+   * after an offboarding, and it restores no memberships — so a reviewer seeing it must ask what was
+   * granted afterwards.
+   */
+  'user.reactivated': 'WARNING',
   // An exception on one person: the layer that can take a right away, and the one whose rows an
   // escalation review reads first.
   'permission.override.created': 'WARNING',

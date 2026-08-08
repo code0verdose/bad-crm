@@ -64,6 +64,28 @@ export const AUDIT_ACTIONS = [
    * whom, about whom», not the data itself.
    */
   'employee.updated',
+  /**
+   * The organization changed hands (STORY-012-06).
+   *
+   * The one entry in this catalogue that records a change to who can do **everything**: the owner
+   * short-circuits every capability layer, so this event is the boundary between two people's
+   * authority over an installation. `before`/`after` carry both ids, and nothing else needs to.
+   */
+  'organization.ownership_transferred',
+  /**
+   * An account was deactivated or brought back (STORY-012-05).
+   *
+   * `user.suspended` is the offboarding entry, and it is deliberately one action rather than a
+   * family of them: deactivation is a **single** operation that revokes sessions, leaves teams and
+   * stops the account, and a trail that recorded those separately would let a reviewer see three
+   * quarters of an offboarding and believe it complete. What was actually revoked travels in
+   * `after`, as counters.
+   *
+   * `user.reactivated` is not its mirror image, and the entry says so: memberships are **not**
+   * restored, so the two events do not cancel out and the trail must not read as if they did.
+   */
+  'user.suspended',
+  'user.reactivated',
   /** A per-user exception was written, replaced or removed (STORY-011-05). */
   'permission.override.created',
   'permission.override.updated',

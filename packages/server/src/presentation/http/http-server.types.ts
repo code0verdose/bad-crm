@@ -4,6 +4,9 @@ import { type AssignRoleUseCase } from '@/application/iam/use-cases/assign-role.
 import { type BuildActorQuery } from '@/application/iam/use-cases/build-actor.query.js';
 import { type GetMyPermissionsQuery } from '@/application/iam/use-cases/get-my-permissions.query.js';
 import { type AcceptInvitationUseCase } from '@/application/iam/use-cases/accept-invitation.use-case.js';
+import { type DeactivateUserUseCase } from '@/application/iam/use-cases/deactivate-user.use-case.js';
+import { type TransferOwnershipUseCase } from '@/application/iam/use-cases/transfer-ownership.use-case.js';
+import { type ReactivateUserUseCase } from '@/application/iam/use-cases/reactivate-user.use-case.js';
 import { type GetOrgChartQuery } from '@/application/iam/use-cases/get-org-chart.query.js';
 import { type ListEmployeesQuery } from '@/application/iam/use-cases/list-employees.query.js';
 import {
@@ -126,6 +129,9 @@ export interface IamDependencies {
   readonly resendInvitation: ResendInvitationUseCase;
   readonly revokeInvitation: RevokeInvitationUseCase;
   readonly acceptInvitation: AcceptInvitationUseCase;
+  readonly transferOwnership: TransferOwnershipUseCase;
+  readonly deactivateUser: DeactivateUserUseCase;
+  readonly reactivateUser: ReactivateUserUseCase;
   readonly listEmployees: ListEmployeesQuery;
   readonly getOrgChart: GetOrgChartQuery;
   readonly readEmployeeProfile: ReadEmployeeProfileQuery;

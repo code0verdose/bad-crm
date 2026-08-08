@@ -1,7 +1,7 @@
 ---
 id: STORY-012-04
 epic: EPIC-012
-status: in-progress
+status: review
 blocked: false
 priority: should
 estimate: M
@@ -188,7 +188,7 @@ namespace-barrel юнита, а barrel — весь юнит целиком, в�
 ## Definition of Done
 
 - [x] Тесты написаны первыми (TDD), проходят, изменённый код покрыт
-- [ ] Commit-гейт зелёный (test-coverage, security-auditor, db-reviewer при изменении схемы, production-readiness, commit-hygiene)
+- [x] Commit-гейт зелёный (test-coverage, security-auditor, db-reviewer при изменении схемы, production-readiness, commit-hygiene)
 - [x] Документация обновлена (`ux-architecture.md`, `data-model.md`, `openapi.yaml` + запись в `docs/brain/`)
 - [x] a11y и i18n (для UI-историй)
 - [x] **Isolation-тест RLS** — новых таблиц нет, но запрос новый: `employee-directory-isolation.test.ts` гоняет сам репозиторий на живом Postgres из двух организаций, с положительным контролем

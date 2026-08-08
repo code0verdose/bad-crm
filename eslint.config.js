@@ -81,9 +81,9 @@ const INTL_OUTSIDE_FORMAT = [
       '`Intl` belongs to `shared/lib/format` (`rules/i18n.mdc` §10): the wrappers carry the current locale and cache the formatter.',
   },
   {
-    selector: 'CallExpression[callee.property.name=/^toLocale(String|DateString|TimeString)$/]',
+    selector: 'CallExpression[callee.property.name=/^toLocale[A-Z]\\w*$/]',
     message:
-      '`toLocale*` formats with whatever locale the runtime happens to have. Use `SharedLib.format*` (`rules/i18n.mdc` §10).',
+      '`toLocale*` bends to whatever locale the runtime happens to have — including case folding, where Turkish maps `I` to `ı` and breaks an equality check. Use `SharedLib.format*` for output, plain `toLowerCase()` for comparison (`rules/i18n.mdc` §10).',
   },
 ];
 

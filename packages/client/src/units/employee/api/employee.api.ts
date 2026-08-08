@@ -1,4 +1,10 @@
-import { apiClient, unwrapApiResult, type components, type operations } from '@shared/api';
+import {
+  apiClient,
+  idempotencyParams,
+  unwrapApiResult,
+  type components,
+  type operations,
+} from '@shared/api';
 
 /**
  * The personnel record of one person.
@@ -91,3 +97,41 @@ export const fetchEmployeeList = async (
 
 export const fetchOrgChart = async (signal: AbortSignal): Promise<readonly OrgChartNode[]> =>
   unwrapApiResult(await apiClient.GET('/employees/org-chart', { signal })).nodes;
+
+/** What an offboarding actually revoked, and what it could not reach. */
+export type OffboardingReport = components['schemas']['OffboardingReport'];
+
+/**
+ * Switch an account off.
+ *
+ * No signal: issued by pressing a button behind a confirmation, so there is no later request that
+ * could overtake it — and a cancelled offboarding is worse than a slow one.
+ */
+export const deactivateUser = async (
+  userId: string,
+  reason: string,
+): Promise<OffboardingReport> => {
+  // The key is minted per call rather than left to the middleware's default, because the contract
+  // marks it `required` and the generated types therefore demand it at the call site — which is the
+  // spec making «I forgot the header» a compile error instead of a duplicate offboarding.
+  const { params } = idempotencyParams();
+
+  return unwrapApiResult(
+    await apiClient.POST('/users/{userId}/deactivate', {
+      params: { ...params, path: { userId } },
+      body: { reason },
+    }),
+  );
+};
+
+/**
+ * There is no `reactivateUser` here, and that is deliberate.
+ *
+ * `POST /users/{userId}/reactivate` exists on the server and is covered there, but no screen calls
+ * it yet: the button belongs on the personnel record of a suspended person, and the profile document
+ * does not carry `status` — only a directory row does. Adding the field is a contract change worth
+ * doing on purpose rather than in passing.
+ *
+ * A client function nobody calls is a contract nobody checks (the same reason `fetchInvitations`
+ * is absent), so it arrives with its screen.
+ */

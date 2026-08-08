@@ -112,6 +112,24 @@ const CALLS: Readonly<Record<string, Call>> = {
     request(target).get('/api/v1/employees').set('Authorization', `Bearer ${token}`),
   'GET /api/v1/employees/org-chart': (target, token) =>
     request(target).get('/api/v1/employees/org-chart').set('Authorization', `Bearer ${token}`),
+  'POST /api/v1/organization/transfer-ownership': (app, token) =>
+    request(app)
+      .post('/api/v1/organization/transfer-ownership')
+      .set('Authorization', `Bearer ${token}`)
+      .set('Idempotency-Key', IDEMPOTENCY_KEY)
+      .send({ toUserId: IVAN }),
+  'POST /api/v1/users/:userId/deactivate': (app, token) =>
+    request(app)
+      .post(`/api/v1/users/${IVAN}/deactivate`)
+      .set('Authorization', `Bearer ${token}`)
+      .set('Idempotency-Key', IDEMPOTENCY_KEY)
+      .send({ reason: 'left the company' }),
+  'POST /api/v1/users/:userId/reactivate': (app, token) =>
+    request(app)
+      .post(`/api/v1/users/${IVAN}/reactivate`)
+      .set('Authorization', `Bearer ${token}`)
+      .set('Idempotency-Key', IDEMPOTENCY_KEY)
+      .send({}),
   'PUT /api/v1/users/:userId/permission-overrides/:permission': (app, token) =>
     request(app)
       .put(`/api/v1/users/${IVAN}/permission-overrides/task%3Aread`)

@@ -1,7 +1,7 @@
 ---
 id: STORY-012-02
 epic: EPIC-012
-status: in-progress
+status: review
 blocked: false
 priority: must
 estimate: M
@@ -196,7 +196,7 @@ estimate: M
 
 - [x] Тесты написаны первыми (TDD), проходят, изменённый код покрыт (server 99.28 lines,
       client 100/100 — базовая линия не просела)
-- [ ] Commit-гейт зелёный (test-coverage, security-auditor, db-reviewer, production-readiness, commit-hygiene)
+- [x] Commit-гейт зелёный (test-coverage, security-auditor, db-reviewer, production-readiness, commit-hygiene)
 - [x] Документация обновлена (`openapi.yaml`, `stack.md` — таблица лимитов; запись в `docs/brain/`)
 - [x] a11y и i18n (`aria-invalid` на обоих полях пароля, обе локали, ноль хардкод-строк)
 - [x] **Isolation-тест RLS** для `team_members` — 17 тестов из реестра `TENANT_TABLES`

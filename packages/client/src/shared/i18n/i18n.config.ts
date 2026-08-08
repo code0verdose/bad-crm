@@ -9,6 +9,7 @@ import enCommon from './locales/en/common.json' with { type: 'json' };
 import enErrors from './locales/en/errors.json' with { type: 'json' };
 import enEmployee from './locales/en/employee.json' with { type: 'json' };
 import enMembers from './locales/en/members.json' with { type: 'json' };
+import enOffboarding from './locales/en/offboarding.json' with { type: 'json' };
 import enNav from './locales/en/nav.json' with { type: 'json' };
 import enPagination from './locales/en/pagination.json' with { type: 'json' };
 import enValidation from './locales/en/validation.json' with { type: 'json' };
@@ -20,6 +21,7 @@ import ruCommon from './locales/ru/common.json' with { type: 'json' };
 import ruErrors from './locales/ru/errors.json' with { type: 'json' };
 import ruEmployee from './locales/ru/employee.json' with { type: 'json' };
 import ruMembers from './locales/ru/members.json' with { type: 'json' };
+import ruOffboarding from './locales/ru/offboarding.json' with { type: 'json' };
 import ruNav from './locales/ru/nav.json' with { type: 'json' };
 import ruPagination from './locales/ru/pagination.json' with { type: 'json' };
 import ruValidation from './locales/ru/validation.json' with { type: 'json' };
@@ -39,6 +41,7 @@ const RESOURCES = {
     employee: enEmployee,
     filter: enFilter,
     members: enMembers,
+    offboarding: enOffboarding,
     nav: enNav,
     pagination: enPagination,
     validation: enValidation,
@@ -52,6 +55,7 @@ const RESOURCES = {
     employee: ruEmployee,
     filter: ruFilter,
     members: ruMembers,
+    offboarding: ruOffboarding,
     nav: ruNav,
     pagination: ruPagination,
     validation: ruValidation,
@@ -82,19 +86,16 @@ export const createI18n = (language: Language = 'en'): i18n => {
   void instance.use(initReactI18next).init({
     lng: language,
     fallbackLng: 'en',
-    ns: [
-      'common',
-      'validation',
-      'errors',
-      'nav',
-      'auth',
-      'filter',
-      'pagination',
-      'dashboard',
-      'roles',
-      'members',
-      'employee',
-    ],
+    // Derived, never typed out. A hand-kept copy of these names is a list that drifts silently: a
+    // namespace present in `RESOURCES` and missing here loads nothing, and every string of that
+    // feature renders as its own key — on the screen, in both languages, with the parity gate still
+    // green (it compares the JSON files with each other, not with this list). The drift happened
+    // here, in this change: `offboarding` was added to `RESOURCES` and to both catalogues while this
+    // list — written out by hand until now — still ended at `employee`. Nothing red said so; it was
+    // noticed by looking at what the dialog rendered. Deriving the list is what removes the second
+    // place to keep in step, and `test/i18n/namespace-registration.test.ts` is what notices if
+    // anyone types the names out again.
+    ns: Object.keys(RESOURCES.en),
     defaultNS: 'common',
     nsSeparator: '.',
     keySeparator: '.',

@@ -85,6 +85,32 @@ export const DENY_REASONS = [
    * only one of the two dates and still invert the pair.
    */
   'employment_period_inverted',
+
+  /**
+   * The organization was to be handed to the person already holding it (STORY-012-06).
+   *
+   * A **422**, like the two above and for the same reason: the request is well formed and both
+   * parties exist — what is wrong is the value in the field, and no state anywhere would make it
+   * right. «Recipient is suspended» is the other half of that decision and is a `409` instead,
+   * because that one has a next step.
+   */
+  'invalid_recipient',
+
+  /**
+   * The caller holds `organization:transfer_ownership` and is not `organizations.owner_id`.
+   *
+   * A **403**, and a different sentence from every other `role_forbidden`-shaped refusal in this
+   * list: the caller is not missing the capability — the guard already let them through — they are
+   * missing the one fact the capability does not carry. `organization:transfer_ownership` is
+   * documented as `owner`-only (`permission-model.md` §4.1), but nothing in the capability layer
+   * enforces that: a per-user ALLOW override or a custom role can hand it to anybody, and a genuine
+   * owner delegating "can transfer ownership while I am on leave" is a supported shape, not a bug.
+   * Answering that request with the recipient's own refusal (`invalid_recipient`,
+   * `recipient_not_active`) would let a delegate give away somebody *else's* organization — the row
+   * the transaction is about to change is what decides this, and the capability only decides who
+   * may ask.
+   */
+  'not_the_owner',
 ] as const;
 
 export type DenyReason = (typeof DENY_REASONS)[number];

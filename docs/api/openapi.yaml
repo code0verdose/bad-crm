@@ -764,7 +764,8 @@ paths:
 
         A `userId` or `roleId` from another organization is **404**, not 403. Assigning a role the
         person already holds answers 204 as well — the caller asked for a state and the state is
-        there, so `Idempotency-Key` buys nothing here and is ignored.
+        there. `Idempotency-Key` is still **required** (omitting it is a 422); what it buys here is
+        nothing, because the operation is already idempotent by construction.
       tags: [iam]
       x-permission: role:assign
       parameters:
@@ -1315,6 +1316,249 @@ paths:
           $ref: '#/components/responses/NotFound'
         '409':
           $ref: '#/components/responses/Conflict'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /organization/transfer-ownership:
+    post:
+      operationId: transferOwnership
+      summary: Hand the organization to somebody else.
+      description: |
+        Ownership as an operation rather than as a database edit. In **one transaction**: the
+        recipient is given the `owner` role, `organizations.owner_id` is repointed, the outgoing
+        owner is given the role they chose, and `permissionsVersion` is incremented for **both** —
+        the recipient so their new authority applies to their next request, the previous owner
+        because their live token still claims one they have just given away.
+
+        There is no moment at which the organization has two owners or none.
+
+        **The outgoing owner is never left with nothing.** `previousOwnerRoleKey` defaults to `admin`
+        and the screen shows the choice in the confirmation: an organization whose founder can no
+        longer open the administration screen has traded one broken state for another.
+
+        Held by `owner` alone (`permission-model.md` §4.1) — but that is what the guard checks, not
+        what this operation trusts. The capability itself can be delegated to somebody who is not the
+        owner, by a per-user override or a custom role ("a stand-in while I am on leave" is a real
+        request), so the use-case re-reads `organizations.owner_id` inside the transaction and
+        refuses **403 `not_the_owner`** if the caller is not it — before the recipient is even
+        looked at. Two concurrent transfers of the same organization cannot both succeed either: the
+        write is conditioned on the owner still being who this request read, so the loser answers
+        **409 `stale_version`** rather than silently losing the race.
+
+        Refusals: **403 `not_the_owner`** for a caller who holds the capability but not the
+        organization; **422 `invalid_recipient`** for handing it to its current holder — a wrong
+        value, which no state would make right; **409 `recipient_not_active`** for a suspended
+        account — a wrong state, with a next step; **409 `stale_version`** for a transfer that raced
+        another one and lost; **404** for somebody of another organization.
+
+        There is no confirmation field: typing the organization's `slug` back is a client-side
+        control against a mis-click, and this body is strict — sending one is a 422. A server-side
+        comparison would add nothing an attacker holding the token could not satisfy, while making
+        the operation impossible to script.
+      tags: [iam]
+      x-permission: organization:transfer_ownership
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [toUserId]
+              properties:
+                toUserId:
+                  type: string
+                  format: uuid
+                previousOwnerRoleKey:
+                  type: string
+                  enum: [admin, manager, lead, developer, viewer]
+                  default: admin
+                  description: |
+                    What the outgoing owner keeps. `owner` is not among the values: «keep being the
+                    owner» is not a way to stop being one.
+      responses:
+        '200':
+          description: The organization changed hands.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [fromUserId, toUserId, previousOwnerRoleKey]
+                properties:
+                  fromUserId:
+                    type: string
+                    format: uuid
+                  toUserId:
+                    type: string
+                    format: uuid
+                  previousOwnerRoleKey:
+                    type: string
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /users/{userId}/deactivate:
+    post:
+      operationId: deactivateUser
+      summary: Offboard an employee — one operation, one report.
+      description: |
+        Switches an account off and answers with **what that actually revoked**, as counters. An
+        offboarding whose response carries no numbers is one the caller has to trust rather than
+        check, and this operation exists to replace «кажется, всё отключили».
+
+        In one transaction: the account becomes `SUSPENDED`, the personnel record gets a termination
+        date, `permissionsVersion` is incremented, every live session is revoked with reason
+        `OFFBOARDING`, and team memberships are removed.
+
+        **Access stops at once**, by three independent facts rather than one: every authenticated
+        request re-reads the session and requires it un-revoked, the account `ACTIVE`, and the
+        token's `permissionsVersion` equal to the row's. A token minted a minute ago and valid for
+        fourteen more stops working on the next request (`T-IAM-06`).
+
+        **Nothing is deleted.** Tasks, hours, invoices and the audit trail keep pointing at the
+        person, because those record work that really happened (NFR-12). What is removed is
+        membership, which is access rather than history — and the trail records **which** teams and
+        in what role (`LEAD`/`MEMBER`), because those rows do not survive and reactivation restores
+        no membership: somebody granting them again needs a record of what to grant.
+
+        **`pending` names the steps this installation cannot take yet** — project membership, live
+        sockets, secure links and vault memberships arrive with their own milestones. They are named
+        rather than reported as zero: «revoked 0 secure links» would claim we looked.
+
+        Repeating the call on an already-suspended account is not an error and not a second trail
+        entry: the answer carries `alreadyDeactivated: true` and nothing is written — **provided the
+        caller still clears the checks below.** They run before that idempotency check, not after, so
+        a second call by a caller whose own rights were narrowed between the two calls (a permission
+        override removed, a role revoked) is refused rather than answered with the idempotent report.
+
+        **`user:suspend` does not reach an account that can do more than its holder.** The operation
+        carries the same bound every other way of touching somebody's rights carries (`T-IAM-09`):
+        an account may only be switched off by somebody who effectively holds everything it holds.
+        Without it one holder of this permission could end every other administrator's session in a
+        loop, and only the owner could undo it. The owner is exempt, holding everything by
+        definition; a right the organization already took away from the subject with a DENY
+        exception does not bound anybody.
+
+        Refusals: **409 `self_lockout`** for one's own account, **409 `last_owner_required`** until
+        ownership is transferred, **403 `user_forbidden`** with `reason: permission_not_granted`
+        when the subject holds a permission the caller does not, **404** for somebody of another
+        organization.
+      tags: [iam]
+      x-permission: user:suspend
+      parameters:
+        - $ref: '#/components/parameters/UserId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [reason]
+              properties:
+                reason:
+                  type: string
+                  minLength: 1
+                  maxLength: 500
+                  description: |
+                    Why the account is being switched off. Required: «switched off, no reason given»
+                    is the trail entry that costs an hour of asking around. It reaches the audit log
+                    and is never shown to the person being deactivated.
+      responses:
+        '200':
+          description: What the offboarding revoked.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OffboardingReport'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /users/{userId}/reactivate:
+    post:
+      operationId: reactivateUser
+      summary: Bring a deactivated account back.
+      description: |
+        Restores the ability to sign in — **and, deliberately, little beyond that**. Teams, projects
+        and shared vaults the person left on the way out stay left, and the response says so
+        (`membershipsRestored: false`) rather than leaving it to a release note. Restoring them would
+        be re-granting access on the strength of a state that was correct months ago; somebody
+        returning to the same job is added back by a person who decided so today.
+
+        Two things do come back with the account, observably. **`GET /employees/{userId}`** stops
+        showing a termination date: the personnel record's `terminatedAt` is cleared in the same
+        transaction. And `permissionsVersion` is incremented, exactly as it is on the way out — the
+        account may have been suspended while a token was in flight, and a returning account whose
+        version never moved would accept that token as current.
+
+        Its own capability rather than a share of `user:suspend`: bringing an account back is the
+        step an intruder needs after an offboarding, and an organization may well let more people
+        switch somebody off than switch them on. It carries the same bound `deactivateUser` does
+        (`T-IAM-09`): an account may only be brought back by somebody who effectively holds everything
+        it holds, checked against what the account could still do while suspended. Without it, one
+        holder of `user:reactivate` could restore any suspended account, including one that outranks
+        them and one suspended during an incident precisely because it did. The check runs before the
+        idempotency branch below, not after — a caller whose own rights were narrowed between two
+        calls is refused on the second one too.
+
+        Repeating the call on an account that was never off answers `alreadyActive: true` and writes
+        nothing, **provided the caller still clears the check above.**
+
+        What the person was in before they left is not in this answer and never was: it is in the
+        `user.suspended` entry of the audit trail, which records each membership with its team and
+        role precisely because this operation does not bring them back.
+
+        Refusals: **403 `user_forbidden`** with `reason: permission_not_granted` when the subject
+        holds a permission the caller does not, **404** for somebody of another organization.
+      tags: [iam]
+      x-permission: user:reactivate
+      parameters:
+        - $ref: '#/components/parameters/UserId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: The account is on again.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReactivationResult'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
         '429':
           $ref: '#/components/responses/RateLimited'
         '500':
@@ -2194,6 +2438,9 @@ components:
         - invitation_already_accepted
         - manager_cycle_detected
         - employment_period_inverted
+        - recipient_not_active
+        - invalid_recipient
+        - not_the_owner
         - confirmation_required
         - rate_limited
         - feature_disabled
@@ -2312,6 +2559,8 @@ components:
         - invitation_already_accepted
         - manager_cycle_detected
         - employment_period_inverted
+        - invalid_recipient
+        - not_the_owner
 
     ValidationIssue:
       type: object
@@ -2450,6 +2699,49 @@ components:
           description: |
             Stored encrypted at rest (`v1:<iv>:<tag>:<ciphertext>`, AES-256-GCM). Decrypted only for
             a caller who may see it, and never written to a log or to the audit trail.
+
+    OffboardingReport:
+      type: object
+      additionalProperties: false
+      required: [userId, alreadyDeactivated, sessionsRevoked, teamsLeft, pending]
+      properties:
+        userId:
+          type: string
+          format: uuid
+        alreadyDeactivated:
+          type: boolean
+          description: The account was already off; nothing was written and no trail entry was made.
+        sessionsRevoked:
+          type: integer
+          minimum: 0
+        teamsLeft:
+          type: integer
+          minimum: 0
+        pending:
+          type: array
+          description: |
+            Steps no subsystem exists for yet, **named rather than counted as zero**: reporting
+            `linksRevoked: 0` would claim the installation looked. Each entry disappears when its
+            milestone lands.
+          items:
+            type: string
+            enum: [projectsLeft, socketsClosed, linksRevoked, vaultMembershipsFlagged]
+
+    ReactivationResult:
+      type: object
+      additionalProperties: false
+      required: [userId, alreadyActive, membershipsRestored]
+      properties:
+        userId:
+          type: string
+          format: uuid
+        alreadyActive:
+          type: boolean
+        membershipsRestored:
+          type: boolean
+          description: |
+            Always `false`. Stated in the answer because it is the question the caller asks next:
+            teams, projects and vaults are not restored with the account.
 
     DirectoryRole:
       type: object
@@ -3233,16 +3525,34 @@ components:
       required: true
       description: |
         Client-generated key, mandatory on every unsafe operation that creates an entity, sends
-        mail or spends money or tokens. A replay carrying the same request hash returns the stored
-        response; the same key with a different hash is refused with 409 `idempotency_key_reuse`.
+        mail or spends money or tokens.
 
-        The client attaches it to every unsafe request without asking, so the operations that
-        **declare** this parameter are the ones that store and replay a response. The rest ignore it,
-        and two groups of them do so deliberately (see each operation's description): the ones that
-        are idempotent by construction, where a stored response buys nothing, and `POST /auth/login`
-        and `POST /auth/refresh`, where a stored response *is* a credential — replaying it would hand
-        back tokens that have since been rotated or revoked and would let one key slip a repeat past
-        the failed-attempt counter that the lockout depends on.
+        **Today the server only requires the key; it does not yet store or replay a response.** The
+        table keyed by `(key, request hash)` is a cross-cutting mechanism that has not been built —
+        the open half is recorded in STORY-006-01. What the requirement buys now is that a client
+        which never learned to send the header cannot be made idempotent later without a breaking
+        change; what it does not buy is the convenience of getting the original `201` back instead
+        of a `409` on retry. Where a lost response is genuinely ambiguous rather than merely
+        inconvenient, the operation says so in its own description.
+
+        When the store lands: a replay carrying the same request hash will return the stored
+        response, and the same key with a different hash will be refused with 409
+        `idempotency_key_reuse`.
+
+        Declaring the parameter is not a claim that the operation will replay: the client attaches a
+        key to every unsafe request, and nearly every unsafe operation therefore requires one. What
+        the store will change differs per operation, and each says so in its own description:
+
+        * operations that create something, send mail or spend tokens are the ones a replay is *for*
+          — today a lost response leaves the caller unable to tell «it did not happen» from «it
+          happened and the answer was lost»;
+        * operations idempotent by construction (`assignRole`, `deactivateUser`, `reactivateUser`)
+          require the key but gain nothing from a stored response — asking twice for a state that is
+          already there answers the same way. The key is required anyway, so a client written today
+          keeps working when the store lands;
+        * `POST /auth/login` and `POST /auth/refresh` will **never** replay: a stored response *is* a
+          credential. Replaying it would hand back tokens that have since been rotated or revoked,
+          and would let one key slip a repeat past the failed-attempt counter the lockout depends on.
       schema:
         type: string
         minLength: 16

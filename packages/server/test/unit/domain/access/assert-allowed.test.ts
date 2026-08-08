@@ -41,6 +41,12 @@ const EXPECTED: Readonly<Record<SharedPermissions.DenyReason, { code: string; st
   // exist, and the database says so too — this is what keeps the answer a named 422 instead of a
   // `23514` the error handler has never heard of, i.e. a 500.
   employment_period_inverted: { code: 'employment_period_inverted', status: 422 },
+  // Handing the organization to its current holder: a wrong value, not a wrong state.
+  invalid_recipient: { code: 'invalid_recipient', status: 422 },
+  // The capability was held and the guard let the caller through; what refuses this one is the row
+  // (`organizations.owner_id`), not a missing right — hence its own code rather than
+  // `organization_forbidden`, which would say the opposite of what is true.
+  not_the_owner: { code: 'not_the_owner', status: 403 },
 };
 
 describe('a refusal reason as an HTTP answer', () => {

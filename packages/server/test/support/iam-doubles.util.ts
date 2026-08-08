@@ -30,6 +30,16 @@ import {
   type EmployeeProfileRow,
 } from '../../src/application/iam/ports/employee-profile-repository.port.js';
 import {
+  type OwnershipRepositoryPort,
+  type OwnershipTransfer,
+  type TransferCandidate,
+} from '../../src/application/iam/ports/ownership-repository.port.js';
+import {
+  type LeftTeamMembership,
+  type UserLifecycleRepositoryPort,
+  type UserLifecycleRow,
+} from '../../src/application/iam/ports/user-lifecycle-repository.port.js';
+import {
   type DirectoryFacets,
   type EmployeeDirectoryFilter,
   type EmployeeDirectoryPage,
@@ -694,3 +704,86 @@ export const directoryRow = (
   weeklyCapacityHours: 40,
   ...overrides,
 });
+
+/**
+ * The account lifecycle in memory.
+ *
+ * It models the two facts the use-case decides on — the status and who owns the organization — and
+ * hands back what a suspension removed. What it deliberately does **not** model is the transaction,
+ * so nothing here can show that the writes land together. That is split across two suites, and it is
+ * worth knowing which says what before trusting either: `test/integration/db/user-lifecycle-repository.test.ts`
+ * asserts on a live Postgres that the status, the termination date and `permissions_version` move in
+ * one operator; the sessions belong to a different port and are asserted over the wire, in
+ * `test/integration/http/user-lifecycle.test.ts` — a live refresh cookie that works before the
+ * offboarding and answers 401 after it.
+ */
+export class FakeUserLifecycleRepository implements UserLifecycleRepositoryPort {
+  readonly rows = new Map<string, UserLifecycleRow>();
+  /**
+   * Team memberships per account, so a suspension has something real to remove.
+   *
+   * The memberships themselves rather than a count: what the operation has to hand back is `teamId`
+   * and `teamRole`, because the rows do not survive it and nothing else records what they were.
+   */
+  readonly teams = new Map<string, LeftTeamMembership[]>();
+  readonly suspended: { userId: string; at: Date }[] = [];
+  readonly reactivated: string[] = [];
+
+  byId(userId: string): Promise<UserLifecycleRow | null> {
+    return Promise.resolve(this.rows.get(userId) ?? null);
+  }
+
+  suspend(userId: string, at: Date): Promise<readonly LeftTeamMembership[]> {
+    this.suspended.push({ userId, at });
+
+    const row = this.rows.get(userId);
+
+    if (row !== undefined) this.rows.set(userId, { ...row, status: 'SUSPENDED' });
+
+    const left = this.teams.get(userId) ?? [];
+
+    this.teams.set(userId, []);
+
+    return Promise.resolve(left);
+  }
+
+  reactivate(userId: string): Promise<void> {
+    this.reactivated.push(userId);
+
+    const row = this.rows.get(userId);
+
+    if (row !== undefined) this.rows.set(userId, { ...row, status: 'ACTIVE' });
+
+    return Promise.resolve();
+  }
+}
+
+/** Ownership in memory: who holds it, who could, and what a transfer was asked to do. */
+export class FakeOwnershipRepository implements OwnershipRepositoryPort {
+  ownerId: string | null = null;
+  readonly candidates = new Map<string, TransferCandidate>();
+  readonly transfers: OwnershipTransfer[] = [];
+
+  currentOwnerId(): Promise<string | null> {
+    return Promise.resolve(this.ownerId);
+  }
+
+  candidate(userId: string): Promise<TransferCandidate | null> {
+    return Promise.resolve(this.candidates.get(userId) ?? null);
+  }
+
+  transfer(transfer: OwnershipTransfer): Promise<void> {
+    // Mirrors the guarded `UPDATE … WHERE owner_id = fromUserId` the real repository runs: a
+    // transfer built on a stale read of who currently owns the organization must fail rather than
+    // silently overwrite whoever holds it now — two transfers racing off the same origin must not
+    // both be able to succeed.
+    if (transfer.fromUserId !== this.ownerId) {
+      throw new ConflictError('stale_version', { cause: 'ownership_changed_concurrently' });
+    }
+
+    this.transfers.push(transfer);
+    this.ownerId = transfer.toUserId;
+
+    return Promise.resolve();
+  }
+}

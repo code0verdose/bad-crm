@@ -17,6 +17,9 @@ import { ProvisionSystemRolesUseCase } from '@/application/iam/use-cases/provisi
 import { DeleteCustomRoleUseCase } from '@/application/iam/use-cases/delete-custom-role.use-case.js';
 import { type IamDependencies } from '@/presentation/http/http-server.types.js';
 import { AcceptInvitationUseCase } from '@/application/iam/use-cases/accept-invitation.use-case.js';
+import { DeactivateUserUseCase } from '@/application/iam/use-cases/deactivate-user.use-case.js';
+import { TransferOwnershipUseCase } from '@/application/iam/use-cases/transfer-ownership.use-case.js';
+import { ReactivateUserUseCase } from '@/application/iam/use-cases/reactivate-user.use-case.js';
 import { GetOrgChartQuery } from '@/application/iam/use-cases/get-org-chart.query.js';
 import { ListEmployeesQuery } from '@/application/iam/use-cases/list-employees.query.js';
 import {
@@ -71,6 +74,8 @@ import {
 import {
   FakeCustomRoleRepository,
   FakeEmployeeDirectoryRepository,
+  FakeOwnershipRepository,
+  FakeUserLifecycleRepository,
   FakeEmployeeProfileRepository,
   FakeInvitationRepository,
   FakeEffectivePermissionsReader,
@@ -94,6 +99,10 @@ export interface AuthApp {
   readonly app: Express;
   readonly clock: FakeClock;
   readonly sessions: FakeSessions;
+  /** The account lifecycle, so a test can seed a subject and read back what a suspension removed. */
+  readonly userLifecycle: FakeUserLifecycleRepository;
+  /** Ownership, so a test can seed a recipient and read back what a transfer was asked to do. */
+  readonly ownership: FakeOwnershipRepository;
   readonly users: FakeUsers;
   readonly organizations: FakeOrganizations;
   readonly lookup: FakeAuthLookup;
@@ -148,6 +157,8 @@ export interface AuthAppOptions {
   readonly invitations?: FakeInvitationRepository;
   readonly employeeProfiles?: FakeEmployeeProfileRepository;
   readonly employeeDirectory?: FakeEmployeeDirectoryRepository;
+  readonly userLifecycle?: FakeUserLifecycleRepository;
+  readonly ownership?: FakeOwnershipRepository;
   /**
    * What the reader answers about specific people, by id — the subject of an override, whose
    * ownership is the fact the `owner_immutable` rule turns on. Anybody not named here gets
@@ -309,6 +320,8 @@ export const createAuthApp = (options: AuthAppOptions = {}): AuthApp => {
   const invitations = options.invitations ?? new FakeInvitationRepository();
   const employeeProfiles = options.employeeProfiles ?? new FakeEmployeeProfileRepository();
   const employeeDirectory = options.employeeDirectory ?? new FakeEmployeeDirectoryRepository();
+  const userLifecycle = options.userLifecycle ?? new FakeUserLifecycleRepository();
+  const ownership = options.ownership ?? new FakeOwnershipRepository();
   const fields = new AesFieldEncryption(Buffer.alloc(32, 7).toString('base64'));
 
   // The org-less resolver reads the very rows the repository wrote, like the session and reset-token
@@ -376,6 +389,16 @@ export const createAuthApp = (options: AuthAppOptions = {}): AuthApp => {
       APP_URL,
     ),
     revokeInvitation: new RevokeInvitationUseCase(unitOfWork, invitations, audit),
+    transferOwnership: new TransferOwnershipUseCase(unitOfWork, ownership, audit),
+    deactivateUser: new DeactivateUserUseCase(
+      unitOfWork,
+      userLifecycle,
+      sessions,
+      capabilities,
+      audit,
+      clock,
+    ),
+    reactivateUser: new ReactivateUserUseCase(unitOfWork, userLifecycle, capabilities, audit),
     listEmployees: new ListEmployeesQuery(unitOfWork, employeeDirectory),
     getOrgChart: new GetOrgChartQuery(unitOfWork, employeeDirectory),
     readEmployeeProfile: new ReadEmployeeProfileQuery(unitOfWork, employeeProfiles, fields),
@@ -408,6 +431,8 @@ export const createAuthApp = (options: AuthAppOptions = {}): AuthApp => {
   return {
     app: createHttpServer({ ...testApp.container.http, identity, iam }),
     iam,
+    userLifecycle,
+    ownership,
     clock,
     sessions,
     users,

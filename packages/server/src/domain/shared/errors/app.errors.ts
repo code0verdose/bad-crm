@@ -99,7 +99,15 @@ export class ConflictError extends AppError {
       | `${ErrorResource}_already_exists`
       | 'stale_version'
       | 'idempotency_key_reuse'
-      | 'last_owner_required',
+      | 'last_owner_required'
+      // «The change would remove the actor's own last way back in» — a state, not a permission, so a
+      // conflict rather than a denial (`error-code.enums.ts`, `self_lockout: 409`). Reached first by
+      // offboarding; the role matrix raises it as a `Decision` instead, because there the refusal is
+      // one cell of a larger judgement rather than the whole answer.
+      | 'self_lockout'
+      // The recipient of an ownership transfer is suspended or has never signed in: a state, and
+      // one with a specific next step — reactivate them, then transfer.
+      | 'recipient_not_active',
     details?: ErrorDetails,
   ) {
     super(code, `Conflicting request: ${code}`, details);

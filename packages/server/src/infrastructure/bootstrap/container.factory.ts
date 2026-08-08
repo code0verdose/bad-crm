@@ -32,9 +32,13 @@ import { AssignRoleUseCase } from '@/application/iam/use-cases/assign-role.use-c
 import { BuildActorQuery } from '@/application/iam/use-cases/build-actor.query.js';
 import { GetMyPermissionsQuery } from '@/application/iam/use-cases/get-my-permissions.query.js';
 import { type AuthLookupPort } from '@/application/identity/ports/auth-lookup.port.js';
+import { type SessionRepositoryPort } from '@/application/identity/ports/session-repository.port.js';
 import { type PasswordHasherPort } from '@/application/identity/ports/password-hasher.port.js';
 import { type FieldEncryptionPort } from '@/application/platform/ports/field-encryption.port.js';
 import { AcceptInvitationUseCase } from '@/application/iam/use-cases/accept-invitation.use-case.js';
+import { DeactivateUserUseCase } from '@/application/iam/use-cases/deactivate-user.use-case.js';
+import { TransferOwnershipUseCase } from '@/application/iam/use-cases/transfer-ownership.use-case.js';
+import { ReactivateUserUseCase } from '@/application/iam/use-cases/reactivate-user.use-case.js';
 import { GetOrgChartQuery } from '@/application/iam/use-cases/get-org-chart.query.js';
 import { ListEmployeesQuery } from '@/application/iam/use-cases/list-employees.query.js';
 import {
@@ -93,6 +97,8 @@ import { ProvisionSystemRolesUseCase } from '@/application/iam/use-cases/provisi
 import { PrismaRoleRepository } from '@/infrastructure/persistence/prisma/role.repository.js';
 import { AesFieldEncryption } from '@/infrastructure/crypto/field-encryption.adapter.js';
 import { PrismaEmployeeDirectoryRepository } from '@/infrastructure/persistence/prisma/employee-directory.repository.js';
+import { PrismaOwnershipRepository } from '@/infrastructure/persistence/prisma/ownership.repository.js';
+import { PrismaUserLifecycleRepository } from '@/infrastructure/persistence/prisma/user-lifecycle.repository.js';
 import { PrismaEmployeeProfileRepository } from '@/infrastructure/persistence/prisma/employee-profile.repository.js';
 import { PrismaInvitationRepository } from '@/infrastructure/persistence/prisma/invitation.repository.js';
 import { PrismaOrganizationRepository } from '@/infrastructure/persistence/prisma/organization.repository.js';
@@ -390,6 +396,7 @@ interface IdentityWiring {
     readonly hasher: PasswordHasherPort;
     readonly issueSession: IssueSessionUseCase;
     readonly authLookup: AuthLookupPort;
+    readonly sessions: SessionRepositoryPort;
   };
   /** Present only when a second pool was opened; registered as its own shutdown step. */
   readonly closeAuthLookup?: () => Promise<void>;
@@ -426,6 +433,7 @@ const buildIam = (input: {
     readonly hasher: PasswordHasherPort;
     readonly issueSession: IssueSessionUseCase;
     readonly authLookup: AuthLookupPort;
+    readonly sessions: SessionRepositoryPort;
   };
   readonly clock: SystemClockAdapter;
   readonly rateLimit: RateLimitPort;
@@ -448,6 +456,8 @@ const buildIam = (input: {
   const inviteTokens = new Sha256ResetTokenAdapter();
   const employeeProfiles = new PrismaEmployeeProfileRepository();
   const employeeDirectory = new PrismaEmployeeDirectoryRepository();
+  const userLifecycle = new PrismaUserLifecycleRepository();
+  const ownership = new PrismaOwnershipRepository();
 
   const buildActor = new BuildActorQuery(unitOfWork, permissions);
 
@@ -516,6 +526,16 @@ const buildIam = (input: {
       input.logger,
       input.audit,
     ),
+    transferOwnership: new TransferOwnershipUseCase(unitOfWork, ownership, input.audit),
+    deactivateUser: new DeactivateUserUseCase(
+      unitOfWork,
+      userLifecycle,
+      input.identityKit.sessions,
+      permissions,
+      input.audit,
+      input.clock,
+    ),
+    reactivateUser: new ReactivateUserUseCase(unitOfWork, userLifecycle, permissions, input.audit),
     listEmployees: new ListEmployeesQuery(unitOfWork, employeeDirectory),
     getOrgChart: new GetOrgChartQuery(unitOfWork, employeeDirectory),
     readEmployeeProfile: new ReadEmployeeProfileQuery(unitOfWork, employeeProfiles, input.fields),
@@ -661,7 +681,10 @@ const buildIdentity = (input: {
     refreshTokens,
   };
 
-  const identityKit = { hasher, issueSession, authLookup };
+  // `sessions` travels with the kit because offboarding revokes them: the account status, the
+  // permission version and every live session have to change in **one** transaction, and a second
+  // repository instance built in `buildIam` would be a second connection to co-ordinate.
+  const identityKit = { hasher, issueSession, authLookup, sessions };
 
   return authClient === undefined
     ? { dependencies, identityKit }
