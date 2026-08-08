@@ -15,8 +15,12 @@ import { Route as LoginRouteImport } from './routes/login';
 import { Route as AuthenticatedIndexRouteImport } from './routes/_authenticated/index';
 import { Route as AuthenticatedSplatRouteImport } from './routes/_authenticated/$';
 import { Route as AuthenticatedDashboardRouteImport } from './routes/_authenticated/dashboard';
+import { Route as InviteTokenRouteImport } from './routes/invite.$token';
 import { Route as ResetPasswordTokenRouteImport } from './routes/reset-password.$token';
 import { Route as AuthenticatedAdminRolesRouteImport } from './routes/_authenticated/admin/roles';
+import { Route as AuthenticatedAdminMembersIndexRouteImport } from './routes/_authenticated/admin/members/index';
+import { Route as AuthenticatedAdminMembersUserIdRouteImport } from './routes/_authenticated/admin/members/$userId';
+import { Route as AuthenticatedAdminMembersInviteRouteImport } from './routes/_authenticated/admin/members/invite';
 
 const AuthenticatedRoute = AuthenticatedRouteImport.update({
   id: '/_authenticated',
@@ -47,6 +51,11 @@ const AuthenticatedDashboardRoute = AuthenticatedDashboardRouteImport.update({
   path: '/dashboard',
   getParentRoute: () => AuthenticatedRoute,
 } as any);
+const InviteTokenRoute = InviteTokenRouteImport.update({
+  id: '/invite/$token',
+  path: '/invite/$token',
+  getParentRoute: () => rootRouteImport,
+} as any);
 const ResetPasswordTokenRoute = ResetPasswordTokenRouteImport.update({
   id: '/reset-password/$token',
   path: '/reset-password/$token',
@@ -57,6 +66,24 @@ const AuthenticatedAdminRolesRoute = AuthenticatedAdminRolesRouteImport.update({
   path: '/admin/roles',
   getParentRoute: () => AuthenticatedRoute,
 } as any);
+const AuthenticatedAdminMembersIndexRoute =
+  AuthenticatedAdminMembersIndexRouteImport.update({
+    id: '/admin/members/',
+    path: '/admin/members/',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any);
+const AuthenticatedAdminMembersUserIdRoute =
+  AuthenticatedAdminMembersUserIdRouteImport.update({
+    id: '/admin/members/$userId',
+    path: '/admin/members/$userId',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any);
+const AuthenticatedAdminMembersInviteRoute =
+  AuthenticatedAdminMembersInviteRouteImport.update({
+    id: '/admin/members/invite',
+    path: '/admin/members/invite',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any);
 
 export interface FileRoutesByFullPath {
   '/': typeof AuthenticatedIndexRoute;
@@ -64,17 +91,25 @@ export interface FileRoutesByFullPath {
   '/login': typeof LoginRoute;
   '/$': typeof AuthenticatedSplatRoute;
   '/dashboard': typeof AuthenticatedDashboardRoute;
+  '/invite/$token': typeof InviteTokenRoute;
   '/reset-password/$token': typeof ResetPasswordTokenRoute;
   '/admin/roles': typeof AuthenticatedAdminRolesRoute;
+  '/admin/members/$userId': typeof AuthenticatedAdminMembersUserIdRoute;
+  '/admin/members/invite': typeof AuthenticatedAdminMembersInviteRoute;
+  '/admin/members/': typeof AuthenticatedAdminMembersIndexRoute;
 }
 export interface FileRoutesByTo {
   '/forgot-password': typeof ForgotPasswordRoute;
   '/login': typeof LoginRoute;
   '/$': typeof AuthenticatedSplatRoute;
   '/dashboard': typeof AuthenticatedDashboardRoute;
+  '/invite/$token': typeof InviteTokenRoute;
   '/reset-password/$token': typeof ResetPasswordTokenRoute;
   '/': typeof AuthenticatedIndexRoute;
   '/admin/roles': typeof AuthenticatedAdminRolesRoute;
+  '/admin/members/$userId': typeof AuthenticatedAdminMembersUserIdRoute;
+  '/admin/members/invite': typeof AuthenticatedAdminMembersInviteRoute;
+  '/admin/members': typeof AuthenticatedAdminMembersIndexRoute;
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport;
@@ -83,9 +118,13 @@ export interface FileRoutesById {
   '/login': typeof LoginRoute;
   '/_authenticated/$': typeof AuthenticatedSplatRoute;
   '/_authenticated/dashboard': typeof AuthenticatedDashboardRoute;
+  '/invite/$token': typeof InviteTokenRoute;
   '/reset-password/$token': typeof ResetPasswordTokenRoute;
   '/_authenticated/': typeof AuthenticatedIndexRoute;
   '/_authenticated/admin/roles': typeof AuthenticatedAdminRolesRoute;
+  '/_authenticated/admin/members/$userId': typeof AuthenticatedAdminMembersUserIdRoute;
+  '/_authenticated/admin/members/invite': typeof AuthenticatedAdminMembersInviteRoute;
+  '/_authenticated/admin/members/': typeof AuthenticatedAdminMembersIndexRoute;
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath;
@@ -95,17 +134,25 @@ export interface FileRouteTypes {
     | '/login'
     | '/$'
     | '/dashboard'
+    | '/invite/$token'
     | '/reset-password/$token'
-    | '/admin/roles';
+    | '/admin/roles'
+    | '/admin/members/$userId'
+    | '/admin/members/invite'
+    | '/admin/members/';
   fileRoutesByTo: FileRoutesByTo;
   to:
     | '/forgot-password'
     | '/login'
     | '/$'
     | '/dashboard'
+    | '/invite/$token'
     | '/reset-password/$token'
     | '/'
-    | '/admin/roles';
+    | '/admin/roles'
+    | '/admin/members/$userId'
+    | '/admin/members/invite'
+    | '/admin/members';
   id:
     | '__root__'
     | '/_authenticated'
@@ -113,15 +160,20 @@ export interface FileRouteTypes {
     | '/login'
     | '/_authenticated/$'
     | '/_authenticated/dashboard'
+    | '/invite/$token'
     | '/reset-password/$token'
     | '/_authenticated/'
-    | '/_authenticated/admin/roles';
+    | '/_authenticated/admin/roles'
+    | '/_authenticated/admin/members/$userId'
+    | '/_authenticated/admin/members/invite'
+    | '/_authenticated/admin/members/';
   fileRoutesById: FileRoutesById;
 }
 export interface RootRouteChildren {
   AuthenticatedRoute: typeof AuthenticatedRouteWithChildren;
   ForgotPasswordRoute: typeof ForgotPasswordRoute;
   LoginRoute: typeof LoginRoute;
+  InviteTokenRoute: typeof InviteTokenRoute;
   ResetPasswordTokenRoute: typeof ResetPasswordTokenRoute;
 }
 
@@ -169,6 +221,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedDashboardRouteImport;
       parentRoute: typeof AuthenticatedRoute;
     };
+    '/invite/$token': {
+      id: '/invite/$token';
+      path: '/invite/$token';
+      fullPath: '/invite/$token';
+      preLoaderRoute: typeof InviteTokenRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
     '/reset-password/$token': {
       id: '/reset-password/$token';
       path: '/reset-password/$token';
@@ -183,6 +242,27 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAdminRolesRouteImport;
       parentRoute: typeof AuthenticatedRoute;
     };
+    '/_authenticated/admin/members/': {
+      id: '/_authenticated/admin/members/';
+      path: '/admin/members';
+      fullPath: '/admin/members/';
+      preLoaderRoute: typeof AuthenticatedAdminMembersIndexRouteImport;
+      parentRoute: typeof AuthenticatedRoute;
+    };
+    '/_authenticated/admin/members/$userId': {
+      id: '/_authenticated/admin/members/$userId';
+      path: '/admin/members/$userId';
+      fullPath: '/admin/members/$userId';
+      preLoaderRoute: typeof AuthenticatedAdminMembersUserIdRouteImport;
+      parentRoute: typeof AuthenticatedRoute;
+    };
+    '/_authenticated/admin/members/invite': {
+      id: '/_authenticated/admin/members/invite';
+      path: '/admin/members/invite';
+      fullPath: '/admin/members/invite';
+      preLoaderRoute: typeof AuthenticatedAdminMembersInviteRouteImport;
+      parentRoute: typeof AuthenticatedRoute;
+    };
   }
 }
 
@@ -191,6 +271,9 @@ interface AuthenticatedRouteChildren {
   AuthenticatedDashboardRoute: typeof AuthenticatedDashboardRoute;
   AuthenticatedIndexRoute: typeof AuthenticatedIndexRoute;
   AuthenticatedAdminRolesRoute: typeof AuthenticatedAdminRolesRoute;
+  AuthenticatedAdminMembersUserIdRoute: typeof AuthenticatedAdminMembersUserIdRoute;
+  AuthenticatedAdminMembersInviteRoute: typeof AuthenticatedAdminMembersInviteRoute;
+  AuthenticatedAdminMembersIndexRoute: typeof AuthenticatedAdminMembersIndexRoute;
 }
 
 const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
@@ -198,6 +281,9 @@ const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedDashboardRoute: AuthenticatedDashboardRoute,
   AuthenticatedIndexRoute: AuthenticatedIndexRoute,
   AuthenticatedAdminRolesRoute: AuthenticatedAdminRolesRoute,
+  AuthenticatedAdminMembersUserIdRoute: AuthenticatedAdminMembersUserIdRoute,
+  AuthenticatedAdminMembersInviteRoute: AuthenticatedAdminMembersInviteRoute,
+  AuthenticatedAdminMembersIndexRoute: AuthenticatedAdminMembersIndexRoute,
 };
 
 const AuthenticatedRouteWithChildren = AuthenticatedRoute._addFileChildren(
@@ -208,6 +294,7 @@ const rootRouteChildren: RootRouteChildren = {
   AuthenticatedRoute: AuthenticatedRouteWithChildren,
   ForgotPasswordRoute: ForgotPasswordRoute,
   LoginRoute: LoginRoute,
+  InviteTokenRoute: InviteTokenRoute,
   ResetPasswordTokenRoute: ResetPasswordTokenRoute,
 };
 export const routeTree = rootRouteImport

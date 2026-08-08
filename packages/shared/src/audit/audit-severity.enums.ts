@@ -49,6 +49,12 @@ export const AUDIT_ACTION_SEVERITY: Readonly<Record<AuditAction, AuditSeverity>>
   'invitation.created': 'WARNING',
   'invitation.resent': 'WARNING',
   'invitation.revoked': 'INFO',
+  // The moment the advance assignment takes effect and a new account appears: the same level as
+  // making the invitation, because this is what it was for.
+  'invitation.accepted': 'WARNING',
+  // `INFO`: editing a profile grants nothing and takes nothing away. What makes it worth recording
+  // is that the fields are personal data and the edit may have been made by somebody else.
+  'employee.updated': 'INFO',
   // An exception on one person: the layer that can take a right away, and the one whose rows an
   // escalation review reads first.
   'permission.override.created': 'WARNING',

@@ -33,6 +33,14 @@ const EXPECTED: Readonly<Record<SharedPermissions.DenyReason, { code: string; st
   system_role_immutable: { code: 'system_role_immutable', status: 409 },
   invitation_already_accepted: { code: 'invitation_already_accepted', status: 409 },
   owner_immutable: { code: 'owner_immutable', status: 409 },
+  // 422 rather than 409: no state of anybody else's is in conflict — the request as written
+  // describes an organization that cannot exist, and the fix is a different value in the field the
+  // client sent.
+  manager_cycle_detected: { code: 'manager_cycle_detected', status: 422 },
+  // Same shape, same reason: an employment that ends before it begins is a record that cannot
+  // exist, and the database says so too — this is what keeps the answer a named 422 instead of a
+  // `23514` the error handler has never heard of, i.e. a 500.
+  employment_period_inverted: { code: 'employment_period_inverted', status: 422 },
 };
 
 describe('a refusal reason as an HTTP answer', () => {

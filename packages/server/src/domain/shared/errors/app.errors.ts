@@ -180,6 +180,17 @@ export class PasswordResetTokenInvalidError extends AppError {
   }
 }
 
+/**
+ * The invitation link cannot be used: unknown, revoked, accepted, expired, or its organization was
+ * deactivated. **One error for all five** — see the code's own note in
+ * `packages/shared/src/errors/error-code.enums.ts`.
+ */
+export class InvitationNotValidError extends AppError {
+  constructor() {
+    super('invitation_not_valid', 'The invitation link is not usable');
+  }
+}
+
 /** The body exceeded the 1 MB limit; files never travel through the API (ADR-0015). */
 export class PayloadTooLargeError extends AppError {
   constructor(details?: ErrorDetails, cause?: unknown) {

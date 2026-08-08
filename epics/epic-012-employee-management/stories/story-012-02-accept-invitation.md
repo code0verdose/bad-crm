@@ -1,7 +1,7 @@
 ---
 id: STORY-012-02
 epic: EPIC-012
-status: backlog
+status: in-progress
 blocked: false
 priority: must
 estimate: M
@@ -76,22 +76,114 @@ estimate: M
     появления сессии»); маршрут исполняется через ограниченный пул `app_auth` и
     `SECURITY DEFINER`-путь (см. `rls-design.md`, «Путь 1»).
 
+## Сделано (2026-08-07)
+
+### Слой БД
+
+- [x] Миграция `20260807150000_team_members_and_invitation_resolver`:
+  - **`team_members`** — таблица, в которую превращается черновик `invitations.team_ids` при
+    принятии. Полный блок RLS (`ENABLE` + `FORCE` + `tenant_isolation` с обоими предикатами +
+    `maintenance_access`), составные внешние ключи с `organization_id` первой колонкой, `CHECK` на
+    `team_role IN ('MEMBER','LEAD')`, `uq_team_members (team_id, user_id)` — принятие идемпотентно
+    без предварительного чтения, как у `uq_user_roles`.
+  - **`auth_lookup_invitation(bytea)`** — пятый резолвер безорганизационного пути. Возвращает **два
+    id и ничего больше**: ни `accepted_at`, ни `expires_at`. Иначе годность решалась бы чтением, и
+    два клика по одной ссылке прошли бы эту проверку оба под READ COMMITTED, создав два аккаунта.
+    Годность решает условный `UPDATE … WHERE accepted_at IS NULL … RETURNING` под `app_user`.
+    Джойн с `organizations ON deleted_at IS NULL` — деактивированная организация резолвится в ничто,
+    то есть отвечает ровно как неизвестный токен (критерий 8).
+- [x] `team_members` в `TENANT_TABLES` → 17 isolation-тестов сгенерировались автоматически;
+      row-фабрика создаёт **обе** родительские строки своей организации, иначе тест зеленел бы на
+      внешнем ключе, а не на политике.
+- [x] `invitations` добавлены в `definer_reads` (`prisma/sql/01-grants.sql`) — пятая таблица,
+      читаемая ролью с `BYPASSRLS`. Тест `grants-registry` требует вписать её литералом рядом с
+      причиной, и причина вписана.
+- [x] Три пина на «ровно четыре SECURITY DEFINER функции» обновлены до пяти
+      (`auth-lookup-path`, `upgrade-path`) — гейты сработали и потребовали осознанного решения.
+- [x] Prisma-модель `TeamMember`, обратные связи у `Organization`, `Team`, `User`.
+
+### Прикладной слой
+
+- [x] `AcceptInvitationUseCase` — порядок, в котором каждая позиция что-то покупает: бюджет **первым**
+      (звонящий анонимен, адрес — единственный возможный субъект, а лимит после argon2id — это
+      вектор исчерпания памяти, а не защита, `T-IAM-08`); резолвер вторым и он дешёвый; хеш третьим
+      и **вне транзакции**; всё остальное — одной транзакцией.
+- [x] **Учётная запись пишется до того, как приглашение потрачено**, и обратный порядок физически
+      невозможен: `ck_invitations_accepted_pair` требует, чтобы `accepted_at` и `accepted_user_id`
+      двигались вместе, а внешний ключ на `accepted_user_id` проверяется по завершении оператора.
+      Цена — одна вставка на проигранной гонке, и она не пропадает: её откатывает та же транзакция.
+- [x] **Две независимых гарантии одноразовости:** условный `UPDATE … WHERE accepted_at IS NULL AND
+      expires_at > $now RETURNING` (проигравший не обновляет ничего) и `uq_users_org_email` (двое,
+      прочитавших ещё открытое приглашение, создают один и тот же адрес — второго отвергает индекс).
+- [x] Rate limit `invitation_accept` — 10 за 15 минут на адрес, без эскалации: субъект — адрес, а не
+      аккаунт, и растущая блокировка наказывала бы офис за NAT.
+- [x] Новый код `invitation_not_valid` → **410 Gone**, и он один на пять состояний: неизвестно,
+      отозвано, уже принято, просрочено, организация деактивирована. Обе локали, маппинг клиента.
+- [x] Действие аудита `invitation.accepted` (severity `WARNING`) и событие `invitation_accepted` —
+      пишется на **каждую** попытку, иначе журнал стал бы тем оракулом, которым 410 отказывается быть.
+
+### HTTP
+
+- [x] `POST /api/v1/invitations/accept` — **публичный** маршрут с `publicReason`, идемпотентность,
+      строгая схема тела. Ответ — тот же документ, что у входа, и та же refresh-cookie.
+- [x] **В теле нет поля `email`, и это свойство безопасности, а не упрощение.** Аккаунт создаётся на
+      адресе из строки; `strictObject` превращает «мы это не читаем» в «вы это не можете прислать».
+- [x] Спека: путь, схема `InvitationAcceptance`, 410 с телом `Problem`, `security: []`.
+
+### Клиент
+
+- [x] Публичный маршрут `/invite/$token` — токен в **сегменте пути**, не в query: query-строка
+      копируется в `Referer` и пишется в access-лог каждого прокси перед установкой (`T-IAM-07`).
+- [x] Экран `pages/accept-invite`, форма `units/iam/ui/accept-invitation-form.component.tsx`
+      (два поля пароля, `aria-invalid` руками на обоих — Mantine вешает атрибут на обёртку),
+      namespace-ключи `members.accept.*` в обеих локалях.
+- [x] Мутация — **в `units/auth`, а не в `units/iam`**: архитектурный тест поймал импорт между
+      юнитами, и он был прав по существу. С точки зрения клиента приём приглашения — это операция,
+      которая заканчивается сессией; копия «как стать залогиненным» во втором юните была бы вторым
+      способом это сделать. `gcTime: 0`, потому что аргументы — одноразовый токен и пароль.
+
+### Гейты, которые сработали
+
+- 17 isolation-тестов на `team_members` (генерируются из `TENANT_TABLES`).
+- `grants-registry` потребовал вписать `invitations` в `definer_reads` литералом рядом с причиной.
+- Три пина «ровно четыре SECURITY DEFINER функции» → пять, осознанно.
+- Контрактный тест: маршрут без операции в спеке не проходит, публичный без `security: []` — тоже.
+- Архитектурный тест слоёв: `units/iam → units/auth` — переезд мутации, а не подавление правила.
+
+Интеграционный набор: 463 passed. Полный пайплайн: 17/17. Покрытие: server 99.28 lines, client 100/100.
+
+## Что отложено, и почему
+
+1. **Пункт 7 — обязательная 2FA.** Это EPIC-013, которого ещё нет: ни `totp_secret_enc`, ни политики
+   организации, ни экрана настройки. Реализовать «доступ только к маршрутам второго фактора» не к
+   чему. Останется открытым до STORY-013-05.
+2. **Пустой `EmployeeProfile` в критерии 1.** Сущность и таблица — STORY-012-03. Поэтому в теле
+   запроса нет и `firstName`/`lastName`: принять поле, которому некуда лечь, значит молча его
+   выбросить, и никто не узнает об этом, пока не пойдёт искать.
+3. **e2e «приглашение → пароль → рабочий стол»** — харнесс Playwright гоняет свои сценарии в CI, и
+   этот добавится вместе со сценарием приглашения; на уровне ниже путь закрыт 10 HTTP-тестами,
+   включая гонку из шести параллельных запросов.
+
 ## Задачи
 
-- [ ] `packages/server/src/application/iam/use-cases/accept-invitation.use-case.ts` — одна
-      транзакция, атомарный `UPDATE ... WHERE accepted_at IS NULL RETURNING` для одноразовости.
-- [ ] `packages/server/src/domain/iam/invitation.entity.ts` — проверки `isAcceptable(now)`.
-- [ ] `packages/server/src/presentation/http/validators/accept-invitation.validator.ts` — Zod
-      `.strict()`, политика пароля из `shared/lib/validation`.
-- [ ] `packages/server/src/presentation/http/routes/registry.ts` — публичная запись с `publicReason`.
-- [ ] `packages/server/src/infrastructure/persistence/prisma/invitation.repository.ts` — резолв по
-      `tokenHash` через ограниченную роль `app_auth`.
-- [ ] `packages/client/src/app/routes/invite.$token.tsx` (публичная зона) +
-      `pages/accept-invite/page.tsx`, `widgets/accept-invite-form/accept-invite-form.widget.tsx`.
-- [ ] `packages/client/src/units/auth/model/validation/accept-invitation.schema.ts`.
-- [ ] i18n: `packages/client/src/app/i18n/{en,ru}/invite.json`.
-- [ ] Тесты: `accept-invitation.use-case.spec.ts`, конкурентный `accept-invitation-race.spec.ts`
-      (п. 2), интеграционные на п. 3, 4, 8, 9, e2e «приглашение → пароль → рабочий стол» + axe.
+- [x] `application/iam/use-cases/accept-invitation.use-case.ts` — одна транзакция, атомарный
+      `UPDATE … WHERE accepted_at IS NULL AND expires_at > $now RETURNING`.
+- [x] Отдельная `invitation.entity.ts` не понадобилась: `isAcceptable(now)` как функция домена была
+      бы вторым местом, где решается годность, — а решает её предикат условного write'а. Сущность,
+      дублирующая условие SQL, расходится с ним ровно в тот день, когда условие правят.
+- [x] `presentation/http/validators/accept-invitation.validator.ts` — `strictObject`, политика
+      пароля из `@bad-crm/shared/validation`.
+- [x] `route-registry.factory.ts` — публичная запись с `publicReason`.
+- [x] Резолв по `tokenHash` — `auth_lookup_invitation` через роль `app_auth` (не репозиторий:
+      организация ещё не известна, а репозиторий работает внутри `withTenant`).
+- [x] `app/routes/invite.$token.tsx` + `pages/accept-invite/page.tsx`; форма — компонент юнита
+      (`units/iam/ui`), а не виджет: одна форма без композиции виджетом не является.
+- [x] `units/iam/model/validation/accept-invitation.schema.ts` (в iam, а не в auth: схема описывает
+      форму приглашения; сессию открывает мутация в `units/auth`).
+- [x] i18n — ключи `members.accept.*` в существующем namespace `members`, отдельного `invite.json`
+      заводить не стали: namespace уже про людей и приглашения.
+- [x] Тесты: use-case (9), HTTP-поверхность (10, включая гонку из шести параллельных запросов),
+      репозиторий (4 новых), резолвер (2), экран (5).
 
 ## Ссылки
 
@@ -102,9 +194,11 @@ estimate: M
 
 ## Definition of Done
 
-- [ ] Тесты написаны первыми (TDD), проходят, изменённый код покрыт
-- [ ] Commit-гейт зелёный (test-coverage, security-auditor, db-reviewer при изменении схемы, production-readiness, commit-hygiene)
-- [ ] Документация обновлена (docs/ + запись в `docs/brain/`)
-- [ ] a11y и i18n (для UI-историй)
-- [ ] **Isolation-тест RLS** для каждой новой таблицы
-- [ ] **Permission объявлена** для каждого нового endpoint и проверяется в use-case
+- [x] Тесты написаны первыми (TDD), проходят, изменённый код покрыт (server 99.28 lines,
+      client 100/100 — базовая линия не просела)
+- [ ] Commit-гейт зелёный (test-coverage, security-auditor, db-reviewer, production-readiness, commit-hygiene)
+- [x] Документация обновлена (`openapi.yaml`, `stack.md` — таблица лимитов; запись в `docs/brain/`)
+- [x] a11y и i18n (`aria-invalid` на обоих полях пароля, обе локали, ноль хардкод-строк)
+- [x] **Isolation-тест RLS** для `team_members` — 17 тестов из реестра `TENANT_TABLES`
+- [x] **Маршрут объявлен публичным** с непустым `publicReason`; permission здесь нет и быть не может —
+      субъект, у которого её проверяли бы, создаётся этим же запросом

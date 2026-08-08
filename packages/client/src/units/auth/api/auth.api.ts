@@ -73,3 +73,25 @@ export const confirmPasswordReset = async (request: ResetPasswordRequest): Promi
     await apiClient.POST('/auth/reset-password', { ...idempotencyParams(), body: request }),
   );
 };
+
+/** What the invited person supplies: no address and no name — see the schema's own note. */
+export type InvitationAcceptance = components['schemas']['InvitationAcceptance'];
+
+/** The same document sign-in answers with; acceptance ends in a session like every other entry. */
+export type AcceptedInvitationSession = components['schemas']['AuthenticatedSession'];
+
+/**
+ * Takes up an invitation, creating the account and opening its first session.
+ *
+ * It lives beside sign-in rather than with the rest of the invitation surface because of what it
+ * *is* from the client's side: the operation that ends with this tab holding a session. Everything
+ * that follows — adopting the token, starting the store, announcing on the bus — is the code right
+ * above, and a copy of it in another unit would be a second way to become signed in.
+ */
+export const acceptInvitation = async (
+  acceptance: InvitationAcceptance,
+): Promise<AcceptedInvitationSession> => {
+  const { params } = idempotencyParams();
+
+  return unwrapApiResult(await apiClient.POST('/invitations/accept', { body: acceptance, params }));
+};

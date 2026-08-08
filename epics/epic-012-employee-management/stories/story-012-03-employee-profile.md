@@ -1,7 +1,7 @@
 ---
 id: STORY-012-03
 epic: EPIC-012
-status: backlog
+status: in-progress
 blocked: false
 priority: must
 estimate: M
@@ -76,29 +76,109 @@ estimate: M
     When администратор организации A читает или меняет профиль;
     Then **404** `resource_not_found`.
 
+## Сделано (2026-08-07)
+
+### Схема
+
+- [x] Таблица `employee_profiles`: полный блок RLS, составные внешние ключи, `CHECK` на ёмкость
+      0…80, на тип занятости, на «руководитель ≠ сам себе» и на «уволен не раньше, чем принят».
+      Индексы — `uq_employee_profiles_user (organization_id, user_id)` (тенант первой колонкой, как
+      требует инвариант 1; на эту же пару указывает связь 1:1 в Prisma),
+      `idx_employee_profiles_org_manager`, частичный `..._org_active WHERE terminated_at IS NULL`,
+      GIN по `skills`.
+- [x] **`data-model.md` дополнен до кода, а не наоборот:** имени человека не было ни в `User`, ни в
+      профиле, и это всплыло дважды подряд — при приёме приглашения (некуда было положить) и здесь.
+      `firstName`/`lastName` живут в профиле по той же логике, по которой разделены сами таблицы:
+      имя не участвует ни в одном решении о доступе. `skills String[]` тоже дописан.
+- [x] 17 isolation-тестов сгенерировались из `TENANT_TABLES`; имена индексов сверил гейт
+      `data-model-indexes` — он поймал, что миграция назвала индекс иначе, чем реестр.
+
+### Домен и приложение
+
+- [x] `domain/iam/org-chart.util.ts` — `closesManagerCycle`, чистый обход вверх по ссылкам. `seen`
+      ограничивает обход даже на уже испорченных данных: цикл, записанный до появления проверки,
+      делает функцию отказывающей, а не висящей. 8 тестов.
+- [x] `domain/iam/access/employee-access.policy.ts` — whitelist самообслуживаемых полей, «своё ≠
+      чужое», и **три уровня видимости**, где `cost` **не** следует из `personal`: знать дату найма
+      не значит знать зарплату (`permission-model.md` §4.1). 22 теста.
+- [x] `infrastructure/crypto/field-encryption.adapter.ts` — AES-256-GCM, формат `v1:<iv>:<tag>:<ct>`,
+      свежий 12-байтовый IV на каждое шифрование, проверка тега при чтении, отказ (а не `null`) на
+      значение, которое ключ прочитать не может. 11 тестов.
+- [x] `WriteEmployeeProfileUseCase` / `ReadEmployeeProfileQuery`: шифрование **в use-case**, а не в
+      репозитории; расшифровка **только** для того, кому положено — значение, которое не
+      расшифровывали, нельзя случайно сериализовать или залогировать. Проверка цикла читает граф
+      **внутри той же транзакции**, что и запись.
+
+### HTTP
+
+- [x] `GET`/`PATCH /api/v1/employees/{userId}` — оба `selfService` с `ownershipCheckedIn`: право
+      проверяется **по полям**, а не по маршруту, потому что один запрос может нести и то и другое.
+- [x] Сериализатор из трёх уровней, собирающий **только разрешённую форму**, а не удаляющий лишнее:
+      поле, которого нельзя видеть, никогда не присваивается. 13 тестов, включая «ни на одном уровне
+      нет ключа, начинающегося с `cost`» — в том числе для администратора.
+- [x] Новая причина отказа `manager_cycle_detected` (**422**, не 409) проведена через все закрытые
+      словари: `DENY_REASONS`, `ErrorCode`, `CODE_FOR`, таблицу `assert-allowed`, спеку, обе локали,
+      `permission-model.md`.
+- [x] 11 интеграционных HTTP-тестов: своё имя, отказ на кадровом поле, 422 на ёмкость и на цикл,
+      404 на чужую организацию, три аудитории на чтении.
+
+### Клиент
+
+- [x] Юнит `units/employee` целиком: api, схема формы, query, мутация, форма.
+- [x] Экран `/admin/members/$userId`. Кадровые поля **отключены, а не спрятаны** для того, кто их
+      видит, но не правит: тип занятости — факт о человеке, который он вправе прочитать, а спрятать
+      видимое значение значит превратить границу прав в угадайку. Поле, которого нельзя **читать**,
+      до компонента вообще не доходит — сервер не кладёт его в документ.
+- [x] Namespace `employee` в обеих локалях; 7 тестов экрана.
+
+### Бюджет бандла — структурная починка, которую я обещал
+
+Экран сначала перевесил лимит на 23 kB: `TagsInput` и `NumberInput` тянут `Combobox` с поповером.
+Заменены на текстовые поля (разбор — в схеме формы, где «что набрано» и «что отправлено» и так
+разные вещи) — осталось +1 kB перевеса. Дальше пришлось чинить то, что я отмечал дважды:
+
+- **barrel `@pages` отменял code-splitting**: маршрут, импортирующий его, тянул в первую отрисовку
+  все страницы разом. Теперь каждый route-файл импортирует свою страницу напрямую;
+- **`.size-limit.js` больше не угадывает по именам файлов.** Список «что тянет первая отрисовка»
+  читается из собранного `index.html` — `<script type="module">` плюс все `modulepreload`. Это по
+  построению ровно то, что скачивает браузер: не нужно поддерживать список исключений, разделяемый
+  чанк считается тогда и только тогда, когда его действительно предзагружают, а каждый route-чанк
+  меряется отдельной строкой.
+
+**Итог: 247.75 → 243.32 kB** при лимите 250. Экран добавлен, а бюджета стало больше на 4.4 kB.
+
 ## Задачи
 
-- [ ] `packages/server/prisma/migrations/*_employee_profiles/migration.sql` — таблица
+- [x] `packages/server/prisma/migrations/*_employee_profiles/migration.sql` — таблица
       `employee_profiles` (`user_id @unique`, `job_title`, `department`, `manager_id`,
       `weekly_capacity_hours` + CHECK 0…80, `employment_type`, `hired_at`, `terminated_at`,
       `timezone`, `skills text[]`, `emergency_contact_enc`), индексы
       `idx_employee_profiles_org_manager`, частичный `... WHERE terminated_at IS NULL`,
       RLS `ENABLE` + `FORCE` + политики.
-- [ ] `packages/server/src/application/iam/use-cases/update-employee-profile.use-case.ts`,
-      `update-own-profile.use-case.ts`.
-- [ ] `packages/server/src/domain/iam/access/employee-access.policy.ts` — разделение «своё vs чужое»,
-      whitelist самообслуживаемых полей.
-- [ ] `packages/server/src/domain/iam/org-chart.ts` — чистая функция `assertNoManagerCycle`.
-- [ ] `packages/server/src/presentation/http/serializers/employee.serializer.ts` — три уровня
-      (публичный / кадровый / финансовый) по правам.
-- [ ] `packages/server/src/infrastructure/crypto/field-encryption.adapter.ts` — использование для
-      `emergencyContactEnc`.
-- [ ] `packages/client/src/units/employee/{model/validation,service,ui}` — схема профиля,
-      хуки, компоненты; `widgets/employee-profile-form/employee-profile-form.widget.tsx`;
-      `shared/ui/avatar-uploader.component.tsx`.
-- [ ] Тесты: `employee-access.policy.spec.ts`, `org-chart.spec.ts` (циклы), снапшот-тест
-      сериализаторов по ролям (п. 3, 4), интеграционный на п. 5, 8, 10, isolation-тест
-      `employee_profiles`.
+- [x] Один `write-employee-profile.use-case.ts` вместо двух: «своё» и «чужое» различает политика по
+      полям, а два use-case'а с одним и тем же телом разошлись бы на первой же правке.
+- [x] `domain/iam/access/employee-access.policy.ts`.
+- [x] `domain/iam/org-chart.util.ts` — `closesManagerCycle` (предикат, а не `assert`: решение
+      принимает use-case, а домен отвечает на вопрос).
+- [x] `presentation/http/serializers/employee.serializer.ts` — три уровня.
+- [x] `infrastructure/crypto/field-encryption.adapter.ts` + порт `field-encryption.port.ts`.
+- [x] `packages/client/src/units/employee/**` и экран. Форма — компонент юнита, а не виджет: одна
+      форма без композиции виджетом не является.
+- [x] Тесты: политика (22), оргструктура (8), шифрование (11), сериализатор (13), репозиторий (8),
+      use-case'ы (10), HTTP (11), экран (7), isolation `employee_profiles` (17).
+
+## Что отложено, и почему
+
+1. **Аватар (пункты 7–8).** Это EPIC-015: нет ни модели `File`, ни S3-адаптера, ни presigned-эндпоинтов,
+   ни `HeadObject`, по которому определяется настоящий MIME. Реализовать «415 на SVG с подменённым
+   расширением» не над чем. Экран получит загрузчик вместе с файловым хранилищем.
+2. **`locale` в самообслуживаемых полях.** Язык живёт на **аккаунте** (`users.locale`), а не в кадровой
+   записи: он решает, на каком языке интерфейс и письма. Принять его на этом теле значило бы либо
+   писать во вторую таблицу из операции, названной по первой, либо молча его выбрасывать. Поле убрано
+   и из схемы, и из whitelist'а — вместе с причиной.
+3. **Себестоимость (пункт 4)** — ставки живут в `cost_rates` (M6) со своим правом. Здесь закрыта
+   ровно та половина, которую можно закрыть сейчас: **ни на одном уровне сериализатора нет ключа с
+   префиксом `cost`**, и это утверждается тестом, а не выводится из того, что колонки пока нет.
 
 ## Ссылки
 
@@ -109,9 +189,10 @@ estimate: M
 
 ## Definition of Done
 
-- [ ] Тесты написаны первыми (TDD), проходят, изменённый код покрыт
-- [ ] Commit-гейт зелёный (test-coverage, security-auditor, db-reviewer при изменении схемы, production-readiness, commit-hygiene)
-- [ ] Документация обновлена (docs/ + запись в `docs/brain/`)
-- [ ] a11y и i18n (для UI-историй)
-- [ ] **Isolation-тест RLS** для каждой новой таблицы
-- [ ] **Permission объявлена** для каждого нового endpoint и проверяется в use-case
+- [x] Тесты написаны первыми (TDD), проходят (server 99.31 lines, client 100/100 — база не просела)
+- [ ] Commit-гейт зелёный (test-coverage, security-auditor, db-reviewer, production-readiness, commit-hygiene)
+- [x] Документация обновлена (`data-model.md`, `permission-model.md`, `openapi.yaml`; запись в `docs/brain/`)
+- [x] a11y и i18n (кадровые поля disabled, а не скрыты; обе локали; ноль хардкод-строк)
+- [x] **Isolation-тест RLS** для `employee_profiles` — 17 тестов из реестра
+- [x] **Маршруты объявлены** `selfService` с `ownershipCheckedIn`; capability проверяется в use-case
+      по полям — по маршруту её проверить нельзя, один запрос может нести и своё, и чужое

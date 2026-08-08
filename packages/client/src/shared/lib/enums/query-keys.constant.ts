@@ -64,6 +64,32 @@ export interface RoleQueryKeys {
   readonly matrix: () => readonly [string, 'matrix'];
 }
 
+/**
+ * Personnel records. `entityQueryKeys`, because this group genuinely has both shapes: one record per
+ * person (`detail`) and the directory that lists them (`list`, STORY-012-04). Both start with the
+ * same prefix, so saving a profile can invalidate the directory with one call.
+ */
+export interface EmployeeListParams {
+  readonly q: string;
+  readonly status: readonly string[];
+  readonly role: readonly string[];
+  readonly team: readonly string[];
+  readonly sort: string;
+  readonly page: number;
+  readonly perPage: number;
+}
+
+/**
+ * The chart is a third address, not a `list` with a filter.
+ *
+ * It answers a different question — every edge of the organization, unpaged — behind a different
+ * permission, and it does not change when the directory's filters do. Giving it a `list` key would
+ * mean a cache entry per filter of a screen whose answer does not depend on any of them.
+ */
+export interface EmployeeQueryKeys extends EntityQueryKeys<EmployeeListParams> {
+  readonly orgChart: () => readonly [string, 'org-chart'];
+}
+
 export const QueryKeys = {
   Sessions: entityQueryKeys<SessionListParams>('sessions'),
   Permissions: {
@@ -74,4 +100,8 @@ export const QueryKeys = {
     all: ['roles'],
     matrix: () => ['roles', 'matrix'],
   } satisfies RoleQueryKeys,
+  Employees: {
+    ...entityQueryKeys<EmployeeListParams>('employees'),
+    orgChart: () => ['employees', 'org-chart'],
+  } satisfies EmployeeQueryKeys,
 } as const;

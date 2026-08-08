@@ -62,6 +62,15 @@ export const TENANT_TABLES = {
     softDeleted: false,
     rowTimestamps: false,
   },
+  employee_profiles: {
+    model: 'EmployeeProfile',
+    tenantColumn: 'organization_id',
+    // DELETE, because a profile goes with the account it describes: the composite key cascades, and
+    // a row about nobody is not a row anybody filters out reliably.
+    appUserPrivileges: ['SELECT', 'INSERT', 'UPDATE', 'DELETE'],
+    softDeleted: false,
+    rowTimestamps: true,
+  },
   organizations: {
     model: 'Organization',
     tenantColumn: 'id',
@@ -99,6 +108,15 @@ export const TENANT_TABLES = {
   sessions: {
     model: 'Session',
     tenantColumn: 'organization_id',
+    appUserPrivileges: ['SELECT', 'INSERT', 'UPDATE', 'DELETE'],
+    softDeleted: false,
+    rowTimestamps: true,
+  },
+  team_members: {
+    model: 'TeamMember',
+    tenantColumn: 'organization_id',
+    // DELETE, because leaving a team removes the row: a membership that ended is not a membership
+    // with a flag — a filter everybody has to remember is a filter somebody forgets.
     appUserPrivileges: ['SELECT', 'INSERT', 'UPDATE', 'DELETE'],
     softDeleted: false,
     rowTimestamps: true,

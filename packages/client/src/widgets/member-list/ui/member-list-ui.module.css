@@ -1,0 +1,51 @@
+/**
+ * The classes the row and the chart share, in the directory they are used from.
+ *
+ * Next to the components rather than beside the widget: a relative parent import is forbidden
+ * (`rules/frontend-fsd.mdc`), and a CSS module reached through an alias would be a public surface
+ * of a widget's internals.
+ */
+
+/**
+ * The link to a person, styled by hand.
+ *
+ * `Anchor component={Link}` would have been shorter and is what the shell uses for navigation — but
+ * the polymorphic wrapper widens the router type to `AnyRouter`, and with it goes the compile-time
+ * check on `params`. A link to a route that does not exist would then be found by a reader clicking
+ * it. One class is the cheaper half of that trade.
+ */
+.personLink {
+  color: var(--mantine-color-anchor);
+  text-decoration: none;
+}
+
+.personLink:hover {
+  text-decoration: underline;
+}
+
+/**
+ * The chart is a nested list, and the indentation is the only thing this adds.
+ *
+ * `list-style: none` with `padding-inline-start` on the nested level: the structure lives in the
+ * markup, so the bullets are noise — and a screen reader still reads it as a tree because the
+ * elements are still `ul` and `li`.
+ */
+.chart {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.chart .chart {
+  padding-inline-start: var(--mantine-spacing-lg);
+  border-inline-start: 1px solid var(--bc-border);
+  margin-inline-start: var(--mantine-spacing-xs);
+}
+
+.chartNode {
+  padding-block: var(--mantine-spacing-xs);
+}
+
+.search {
+  flex: 1 1 16rem;
+}

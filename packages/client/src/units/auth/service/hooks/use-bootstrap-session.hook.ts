@@ -1,4 +1,4 @@
-import { useSyncExternalStore } from 'react';
+import { useStore } from 'zustand';
 
 import { authSession } from '@units/auth/service/stores';
 import { type SessionState } from '@units/auth/types';
@@ -12,9 +12,11 @@ import { type SessionState } from '@units/auth/types';
  * exists to close, and the failure with no symptom: guards let `unknown` through on purpose, so the
  * application would simply wait for ever.
  *
- * `useSyncExternalStore` rather than state plus an effect, because the store is read from outside
- * React too: `beforeLoad` asks it before any component renders (`app/router-auth.util.ts`), and
- * a value that lived in React state would reach a guard one commit late.
+ * `useStore` with a selector rather than React state plus an effect, because the store is read from
+ * outside React too: `beforeLoad` asks it before any component renders
+ * (`app/router-auth.util.ts`), and a value that lived in React state would reach a guard one commit
+ * late. The selector is not decoration — `useStore` without one subscribes to the whole state, and
+ * rule 16 of `rules/frontend-fsd.mdc` asks for it everywhere for that reason.
  *
  * The call to `bootstrap()` during render is deliberate and is not the `useEffect` that
  * `rules/frontend-fsd.mdc` rule 11 forbids — it is the opposite of it. `bootstrap()` is memoised
@@ -27,5 +29,5 @@ import { type SessionState } from '@units/auth/types';
 export const useBootstrapSession = (): SessionState => {
   void authSession.bootstrap();
 
-  return useSyncExternalStore(authSession.subscribe, authSession.read, authSession.read);
+  return useStore(authSession, (state) => state.session);
 };

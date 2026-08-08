@@ -23,6 +23,24 @@ export const RATE_LIMIT_POLICIES = [
    * write three hundred lines a minute into the log of an installation that has no idea why.
    */
   'client_error_report',
+  /**
+   * Creating invitations. Keyed on the inviter; 20 / 10 minutes.
+   *
+   * Its own policy rather than a share of `api_request`, because the cost is not ours: every
+   * invitation is a message our relay sends to an address the caller chose, and a budget of three
+   * hundred a minute would make an authenticated account a mail cannon pointed at anybody. Keyed on
+   * the inviter for the same reason it is not keyed on the recipient — the recipient is the part the
+   * caller varies (`docs/security/threat-model.md`, `T-IAM-10`).
+   */
+  'invitation_create',
+  /**
+   * Presenting an invitation link. Keyed on the address; 10 / 15 minutes.
+   *
+   * The caller has no account and no session — the token **is** the credential — so the address is
+   * the only subject there is. Keying it on anything derived from the token would give every guess a
+   * fresh budget, which is not a limit at all (the same reasoning as `confirm-password-reset`).
+   */
+  'invitation_accept',
 ] as const;
 
 export type RateLimitPolicy = (typeof RATE_LIMIT_POLICIES)[number];
@@ -78,6 +96,8 @@ export interface RateLimitSubjects {
   readonly api_request: ActorSubject;
   readonly heavy_operation: UserSubject;
   readonly client_error_report: ActorSubject;
+  readonly invitation_create: UserSubject;
+  readonly invitation_accept: IpSubject;
 }
 
 /**

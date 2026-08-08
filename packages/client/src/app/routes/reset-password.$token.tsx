@@ -1,6 +1,14 @@
+/**
+ * The page is imported from **its own module**, not from the `@pages` barrel.
+ *
+ * The barrel re-exports every page, so a route importing it pulls all of them into one shared chunk
+ * that the entry then preloads — code-splitting by route, defeated by one import. Measured: the
+ * shared `pages-*.js` was 10 kB gzip of screens no first paint reaches, and the budget of
+ * `ux-architecture.md` → «Бюджет бандла» is what caught it (STORY-012-03).
+ */
 import { createFileRoute } from '@tanstack/react-router';
 
-import { ResetPasswordPage } from '@pages';
+import { ResetPasswordPage } from '@pages/reset-password';
 
 /**
  * `/reset-password/$token` — the address in the mail.

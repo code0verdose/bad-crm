@@ -1,5 +1,7 @@
+import { UserStatus } from '@prisma/client';
 import { describe, expect, it } from 'vitest';
 
+import { DIRECTORY_STATUSES } from '@/application/iam/ports/employee-directory-repository.port.js';
 import {
   TENANT_TABLES,
   tenantTablesFromSchema,
@@ -80,5 +82,20 @@ describe('the tenant table registry', () => {
     for (const [table, spec] of Object.entries(TENANT_TABLES)) {
       expect(spec.appUserPrivileges as readonly string[], table).toContain('SELECT');
     }
+  });
+});
+
+/**
+ * The lists `application` restates because it may not import the driver.
+ *
+ * `rules/hexagonal-backend.mdc` keeps Prisma out of `application`, so a couple of enums are written
+ * out there by hand. A restatement is a copy, and a copy drifts — this is the check that makes the
+ * drift a failing test rather than a filter that silently stops matching a status somebody added.
+ */
+describe('what application restates from the datamodel', () => {
+  it('lists exactly the account statuses the schema declares', () => {
+    // From the generated client, which is the datamodel compiled: comparing against a second
+    // hand-written list would only prove that two copies agree with each other.
+    expect([...DIRECTORY_STATUSES].sort()).toEqual(Object.values(UserStatus).sort());
   });
 });

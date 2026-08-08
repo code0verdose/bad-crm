@@ -7,6 +7,8 @@ import enDashboard from './locales/en/dashboard.json' with { type: 'json' };
 import enFilter from './locales/en/filter.json' with { type: 'json' };
 import enCommon from './locales/en/common.json' with { type: 'json' };
 import enErrors from './locales/en/errors.json' with { type: 'json' };
+import enEmployee from './locales/en/employee.json' with { type: 'json' };
+import enMembers from './locales/en/members.json' with { type: 'json' };
 import enNav from './locales/en/nav.json' with { type: 'json' };
 import enPagination from './locales/en/pagination.json' with { type: 'json' };
 import enValidation from './locales/en/validation.json' with { type: 'json' };
@@ -16,6 +18,8 @@ import ruDashboard from './locales/ru/dashboard.json' with { type: 'json' };
 import ruFilter from './locales/ru/filter.json' with { type: 'json' };
 import ruCommon from './locales/ru/common.json' with { type: 'json' };
 import ruErrors from './locales/ru/errors.json' with { type: 'json' };
+import ruEmployee from './locales/ru/employee.json' with { type: 'json' };
+import ruMembers from './locales/ru/members.json' with { type: 'json' };
 import ruNav from './locales/ru/nav.json' with { type: 'json' };
 import ruPagination from './locales/ru/pagination.json' with { type: 'json' };
 import ruValidation from './locales/ru/validation.json' with { type: 'json' };
@@ -32,7 +36,9 @@ const RESOURCES = {
     roles: enRoles,
     common: enCommon,
     errors: enErrors,
+    employee: enEmployee,
     filter: enFilter,
+    members: enMembers,
     nav: enNav,
     pagination: enPagination,
     validation: enValidation,
@@ -43,7 +49,9 @@ const RESOURCES = {
     roles: ruRoles,
     common: ruCommon,
     errors: ruErrors,
+    employee: ruEmployee,
     filter: ruFilter,
+    members: ruMembers,
     nav: ruNav,
     pagination: ruPagination,
     validation: ruValidation,
@@ -84,6 +92,8 @@ export const createI18n = (language: Language = 'en'): i18n => {
       'pagination',
       'dashboard',
       'roles',
+      'members',
+      'employee',
     ],
     defaultNS: 'common',
     nsSeparator: '.',

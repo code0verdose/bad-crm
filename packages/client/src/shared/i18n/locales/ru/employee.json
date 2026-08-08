@@ -1,0 +1,24 @@
+{
+  "title": "Кадровая запись",
+  "firstName": "Имя",
+  "lastName": "Фамилия",
+  "jobTitle": "Должность",
+  "department": "Отдел",
+  "employmentTypeLabel": "Занятость",
+  "employmentType": {
+    "FULL_TIME": "Полная",
+    "PART_TIME": "Частичная",
+    "CONTRACTOR": "Подрядчик",
+    "INTERN": "Стажёр"
+  },
+  "capacity": "Часов в неделю",
+  "capacityHint": "На это опирается планирование. От 0 до 80.",
+  "timezone": "Часовой пояс",
+  "skills": "Навыки",
+  "skillsHint": "По ним отвечают на вопрос «кто умеет postgres». Каждый — по Enter.",
+  "emergencyContact": "Экстренный контакт",
+  "emergencyHint": "Хранится в зашифрованном виде. Виден вам и тем, кому положено видеть кадровые данные.",
+  "save": "Сохранить",
+  "saved": "Запись сохранена.",
+  "loadFailed": "Не удалось загрузить запись."
+}

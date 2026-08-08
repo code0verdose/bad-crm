@@ -96,12 +96,21 @@ describe('01-grants.sql agrees with the tenant table registry', () => {
    *
    * Removing a name is caught the loud way: a resolver stops working and the sign-in path fails.
    * **Adding** one is caught by nothing at all — the new table simply becomes cross-tenant readable,
-   * no test changes colour, and the next reviewer reads a norm that says «exactly four». So the set is
-   * pinned literally rather than derived: a fifth entry has to be typed here too, next to the reason
-   * it is dangerous, which is the whole point of making it inconvenient.
+   * no test changes colour, and the next reviewer reads a norm that says «exactly N». So the set is
+   * pinned literally rather than derived: a further entry has to be typed here too, next to the
+   * reason it is dangerous, which is the whole point of making it inconvenient.
+   *
+   * `invitations` joined the list in STORY-012-02 and is the one to look at hardest, because it is
+   * the only one whose rows are addressed by somebody with **no account at all**: `/invite/<token>`
+   * carries a digest and nothing else, so `auth_lookup_invitation` has to find the organization
+   * before there is a tenant to scope by. What bounds the exposure is the shape of that function
+   * rather than this grant — it returns two ids and neither `accepted_at` nor `expires_at`, so the
+   * privileged surface cannot answer «is this invitation still good» for anybody who reached the
+   * `app_auth` connection.
    */
-  it('grants the BYPASSRLS role SELECT on exactly the four tables the org-less resolvers read', () => {
+  it('grants the BYPASSRLS role SELECT on exactly the tables the org-less resolvers read', () => {
     expect(sqlList('definer_reads').sort()).toEqual([
+      'invitations',
       'organizations',
       'password_reset_tokens',
       'sessions',

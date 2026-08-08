@@ -1,15 +1,15 @@
-import { type Request, type RequestHandler } from 'express';
+import { type RequestHandler } from 'express';
 
 import { type ChangePasswordUseCase } from '@/application/identity/use-cases/change-password.use-case.js';
 import { type ConfirmPasswordResetUseCase } from '@/application/identity/use-cases/confirm-password-reset.use-case.js';
 import { type EndSessionUseCase } from '@/application/identity/use-cases/end-session.use-case.js';
-import { type SessionClient } from '@/application/identity/use-cases/issue-session.use-case.js';
 import { type LoginUseCase } from '@/application/identity/use-cases/login.use-case.js';
 import { type RefreshSessionUseCase } from '@/application/identity/use-cases/refresh-session.use-case.js';
 import { type RegisterOrganizationUseCase } from '@/application/identity/use-cases/register-organization.use-case.js';
 import { type RequestPasswordResetUseCase } from '@/application/identity/use-cases/request-password-reset.use-case.js';
 import { UnauthenticatedError } from '@/domain/shared/errors/app.errors.js';
 import { readCaller } from '@/presentation/http/middleware/authenticate.middleware.js';
+import { clientOf } from '@/presentation/http/session-client.util.js';
 import { type RequestValidator } from '@/presentation/http/middleware/validate.middleware.js';
 import {
   clearRefreshCookie,
@@ -42,19 +42,6 @@ export interface AuthControllerDependencies {
   readonly forgotPasswordValidator: RequestValidator<{ body: typeof forgotPasswordBodySchema }>;
   readonly resetPasswordValidator: RequestValidator<{ body: typeof resetPasswordBodySchema }>;
 }
-
-/**
- * The peer address, as far as the process is allowed to believe it.
- *
- * `req.ip` and not `X-Forwarded-For` read by hand: `trust proxy` is set to exactly one hop in
- * `http-server.factory.ts`, so Express takes the entry the operator's own proxy wrote and ignores
- * whatever a client prepended. The value is masked and hashed before it is stored, and it appears in
- * no log and in no response.
- */
-const clientOf = (request: Request): SessionClient => ({
-  userAgent: request.headers['user-agent'] ?? '',
-  ipAddress: request.ip,
-});
 
 /**
  * The authentication endpoints: registration, sign-in, rotation and sign-out.

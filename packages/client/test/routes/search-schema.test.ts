@@ -6,6 +6,7 @@ import { describe, expect, it } from 'vitest';
 import { SharedLib } from '@shared';
 import { AuthModel } from '@units/auth';
 import { DashboardModel } from '@units/dashboard';
+import { EmployeeModel } from '@units/employee';
 
 /**
  * Search parameters are user input from the address bar: a link in a chat, a bookmark from a
@@ -101,6 +102,71 @@ describe('the dashboard search', () => {
   });
 });
 
+/**
+ * The directory's filter is the widest search schema in the client, and the one most likely to be
+ * hand-edited: it is what a shared link carries. Every field falls back rather than failing, because
+ * a rejected `validateSearch` replaces the screen with the error boundary — and with `replace: true`
+ * on every filter change the broken address stays in the bar, so a reload does not help either.
+ */
+describe('the directory search', () => {
+  it('starts from everybody, page one, ordered by surname', () => {
+    expect(EmployeeModel.memberListSearchSchema.parse({})).toEqual({
+      q: '',
+      status: [],
+      role: [],
+      team: [],
+      sort: 'name',
+      page: 1,
+      view: 'table',
+    });
+  });
+
+  it('keeps a filter somebody actually selected', () => {
+    const id = '018f4a3b-2c1d-7a41-9f00-2b7c1d0e5ae1';
+
+    expect(
+      EmployeeModel.memberListSearchSchema.parse({
+        q: ' ив ',
+        status: ['SUSPENDED'],
+        role: [id],
+        sort: '-hiredAt',
+        page: '4',
+        view: 'chart',
+      }),
+    ).toMatchObject({
+      q: 'ив',
+      status: ['SUSPENDED'],
+      role: [id],
+      sort: '-hiredAt',
+      page: 4,
+      view: 'chart',
+    });
+  });
+
+  it.each([
+    ['a status that is not one', { status: ['RETIRED'] }, 'status', []],
+    ['an order by a column nobody exposed', { sort: 'salary' }, 'sort', 'name'],
+    ['a page that is a word', { page: 'last' }, 'page', 1],
+    ['a page before the first', { page: '0' }, 'page', 1],
+    ['a view that does not exist', { view: 'gantt' }, 'view', 'table'],
+    ['a role filter that is not an id', { role: ['../etc/passwd'] }, 'role', []],
+  ])('falls back on %s', (_name, input, field, expected) => {
+    expect(
+      EmployeeModel.memberListSearchSchema.parse(input)[
+        field as keyof EmployeeModel.MemberListSearch
+      ],
+    ).toEqual(expected);
+  });
+
+  it('drops the whole list when one id in it is rubbish', () => {
+    // `.catch` on the array, not on the item: a partially accepted filter would silently narrow the
+    // list to something nobody asked for, which is worse than the unfiltered answer.
+    const id = '018f4a3b-2c1d-7a41-9f00-2b7c1d0e5ae1';
+
+    expect(EmployeeModel.memberListSearchSchema.parse({ team: [id, 'nonsense'] }).team).toEqual([]);
+  });
+});
+
 describe('the login search', () => {
   it('has no redirect when the user came to the login page directly', () => {
     expect(AuthModel.loginSearchSchema.parse({})).toEqual({});
@@ -171,6 +237,9 @@ describe('where the search schemas live', () => {
     );
     expect(
       existsSync(`${CLIENT_SRC}/units/dashboard/model/validation/dashboard-search.schema.ts`),
+    ).toBe(true);
+    expect(
+      existsSync(`${CLIENT_SRC}/units/employee/model/validation/member-list-search.schema.ts`),
     ).toBe(true);
   });
 

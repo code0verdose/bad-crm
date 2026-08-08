@@ -132,7 +132,7 @@ DECLARE
   -- returns the id, the organization and the user — never `used_at` or `expires_at`, so the read
   -- this GRANT enables cannot answer whether a token is still usable.
   definer_reads CONSTANT text[] := ARRAY[
-    'users', 'organizations', 'sessions', 'password_reset_tokens'
+    'users', 'organizations', 'sessions', 'password_reset_tokens', 'invitations'
   ];
 
   -- The marker a migration puts on a SECURITY DEFINER function of this project, and the whole of

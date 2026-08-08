@@ -19,5 +19,6 @@
     "toggle": "Fold the sidebar"
   },
   "signOut": "Sign out",
+  "adminMembers": "People",
   "adminRoles": "Roles and permissions"
 }

@@ -63,6 +63,28 @@ export const DENY_REASONS = [
    * access away is deactivation, which is a different operation with a different audit trail.
    */
   'invitation_already_accepted',
+  /**
+   * The proposed manager reports, directly or through a chain, to the person being edited.
+   *
+   * A refusal rather than a validation problem: the request is well formed and the ids exist — what
+   * is wrong is the *shape it would leave the organization in*. The org chart is a tree, and every
+   * reader of it walks upwards assuming the walk ends: «кто мой руководитель», «покажи ветку», the
+   * approval route of a timesheet. One closed loop makes all of them non-terminating.
+   */
+  'manager_cycle_detected',
+
+  /**
+   * The termination date sits before the hiring date.
+   *
+   * The database refuses it (`ck_employee_profiles_employment_period`), and this exists so the
+   * refusal reaches the caller as a named 422 rather than as `23514` translated into a 500. The same
+   * reasoning as the cycle above: the request is well formed, and what is wrong is the shape it
+   * would leave the record in — an employment that ended before it began.
+   *
+   * It is checked against the **stored** row rather than against the body, because a PATCH may carry
+   * only one of the two dates and still invert the pair.
+   */
+  'employment_period_inverted',
 ] as const;
 
 export type DenyReason = (typeof DENY_REASONS)[number];

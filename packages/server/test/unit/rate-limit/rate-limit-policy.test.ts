@@ -25,11 +25,27 @@ describe('rate limit policies', () => {
     expect(RATE_LIMIT_POLICY.heavy_operation).toMatchObject({ points: 10, windowSeconds: 60 });
   });
 
+  it('matches the invitation limit of stack.md: 20 per 10 minutes', () => {
+    expect(RATE_LIMIT_POLICY.invitation_create).toMatchObject({
+      points: 20,
+      windowSeconds: 10 * 60,
+    });
+  });
+
+  it('matches the acceptance limit of stack.md: 10 per 15 minutes', () => {
+    expect(RATE_LIMIT_POLICY.invitation_accept).toMatchObject({
+      points: 10,
+      windowSeconds: 15 * 60,
+    });
+  });
+
   it('escalates the authentication limit and nothing else', () => {
     expect(RATE_LIMIT_POLICY.auth_attempt.escalation).toBeDefined();
     expect(RATE_LIMIT_POLICY.organization_registration.escalation).toBeUndefined();
     expect(RATE_LIMIT_POLICY.api_request.escalation).toBeUndefined();
     expect(RATE_LIMIT_POLICY.heavy_operation.escalation).toBeUndefined();
+    expect(RATE_LIMIT_POLICY.invitation_create.escalation).toBeUndefined();
+    expect(RATE_LIMIT_POLICY.invitation_accept.escalation).toBeUndefined();
   });
 });
 

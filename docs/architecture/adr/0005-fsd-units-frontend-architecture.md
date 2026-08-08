@@ -64,7 +64,7 @@ units/<unit>/
     queries/    *.query.ts           # queryOptions-фабрики
     mutations/  *.mutation.ts        # мутации с оптимистикой
     hooks/      use-*.hook.ts        # публичное API юнита для ui
-    stores/     *.store.ts           # zustand, если нужен
+    stores/     *.store.ts           # zustand — см. ADR-0026
   model/
     enums/ constants/ validation/    # union+label-map, константы, Zod-схемы
   lib/          utils/ …             # доменные чистые функции

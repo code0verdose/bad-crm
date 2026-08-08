@@ -7,6 +7,8 @@ import { createHealthController } from '@/presentation/http/controllers/health.c
 import { createMetaController } from '@/presentation/http/controllers/meta.controller.js';
 import { createSessionController } from '@/presentation/http/controllers/session.controller.js';
 import { createCustomRoleController } from '@/presentation/http/controllers/custom-role.controller.js';
+import { createEmployeeController } from '@/presentation/http/controllers/employee.controller.js';
+import { createInvitationController } from '@/presentation/http/controllers/invitation.controller.js';
 import { createMeController } from '@/presentation/http/controllers/me.controller.js';
 import { createPermissionOverrideController } from '@/presentation/http/controllers/permission-override.controller.js';
 import { createUserRoleController } from '@/presentation/http/controllers/user-role.controller.js';
@@ -39,6 +41,16 @@ import {
   roleIdParamsSchema,
   updateRoleBodySchema,
 } from '@/presentation/http/validators/custom-role.validator.js';
+import { acceptInvitationBodySchema } from '@/presentation/http/validators/accept-invitation.validator.js';
+import { employeeDirectoryQuerySchema } from '@/presentation/http/validators/employee-directory.validator.js';
+import {
+  employeeProfileBodySchema,
+  userIdParamsSchema as employeeUserIdParamsSchema,
+} from '@/presentation/http/validators/employee.validator.js';
+import {
+  createInvitationBodySchema,
+  invitationIdParamsSchema,
+} from '@/presentation/http/validators/invitation.validator.js';
 import {
   overrideParamsSchema,
   writeOverrideBodySchema,
@@ -128,6 +140,40 @@ export const createRouteRegistry = (
     createValidator: createRoleValidator,
     updateValidator: updateRoleValidator,
     deleteValidator: deleteRoleValidator,
+  });
+
+  const createInvitationValidator = validate({ body: createInvitationBodySchema });
+  const invitationIdValidator = validate({ params: invitationIdParamsSchema });
+  const acceptInvitationValidator = validate({ body: acceptInvitationBodySchema });
+
+  const invitations = createInvitationController({
+    listInvitations: dependencies.iam.listInvitations,
+    createInvitation: dependencies.iam.createInvitation,
+    resendInvitation: dependencies.iam.resendInvitation,
+    revokeInvitation: dependencies.iam.revokeInvitation,
+    acceptInvitation: dependencies.iam.acceptInvitation,
+    createValidator: createInvitationValidator,
+    invitationIdValidator,
+    acceptValidator: acceptInvitationValidator,
+  });
+
+  const employeeReadValidator = validate({ params: employeeUserIdParamsSchema });
+  const employeeWriteValidator = validate({
+    params: employeeUserIdParamsSchema,
+    body: employeeProfileBodySchema,
+  });
+
+  const employeeListValidator = validate({ query: employeeDirectoryQuerySchema });
+
+  const employees = createEmployeeController({
+    buildActor: dependencies.iam.buildActor,
+    readProfile: dependencies.iam.readEmployeeProfile,
+    writeProfile: dependencies.iam.writeEmployeeProfile,
+    listEmployees: dependencies.iam.listEmployees,
+    getOrgChart: dependencies.iam.getOrgChart,
+    readValidator: employeeReadValidator,
+    writeValidator: employeeWriteValidator,
+    listValidator: employeeListValidator,
   });
 
   const userRoles = createUserRoleController({
@@ -375,6 +421,93 @@ export const createRouteRegistry = (
       handlers: [revokeRoleValidator.handler, userRoles.revoke],
       permission: 'role:revoke',
       aclCheckedIn: 'RevokeRoleUseCase',
+    },
+    {
+      method: 'post',
+      path: `${API_PREFIX}/invitations/accept`,
+      handlers: [requireIdempotencyKey(), acceptInvitationValidator.handler, invitations.accept],
+      public: true,
+      publicReason:
+        'the account this would be authorised as is created by this very request: the token in the body is the whole credential, it is 32 CSPRNG bytes stored only as a SHA-256 digest, it expires in seven days and it is spent by one conditional UPDATE in AcceptInvitationUseCase; bounded by the invitation_accept budget of ten per fifteen minutes per address, spent before the digest is computed so that a guessed token costs no argon2id run (T-IAM-08)',
+    },
+    {
+      method: 'get',
+      path: `${API_PREFIX}/invitations`,
+      handlers: [invitations.list],
+      permission: 'invitation:read',
+      // Nothing narrower to decide: the answer is every open invitation of the tenant, and the
+      // tenant is the scope — so the guard's capability check is the whole decision.
+      aclCheckedIn: 'ListInvitationsQuery',
+    },
+    {
+      method: 'post',
+      path: `${API_PREFIX}/invitations`,
+      handlers: [requireIdempotencyKey(), createInvitationValidator.handler, invitations.create],
+      permission: 'invitation:create',
+      // The guard answers «may this caller invite anybody at all». Whether *this* role may be handed
+      // out — the subset rule of `T-IAM-09` — and whether the address is free are decided in the
+      // use-case, which is also the only place that can answer 404 for a role of another tenant.
+      aclCheckedIn: 'CreateInvitationUseCase',
+    },
+    {
+      method: 'post',
+      path: `${API_PREFIX}/invitations/:invitationId/resend`,
+      handlers: [invitationIdValidator.handler, invitations.resend],
+      permission: 'invitation:resend',
+      // Its own capability, not a share of `invitation:create`: re-issuing decides nothing about who
+      // gets what, and an accepted invitation is refused inside the use-case, which is the only
+      // place that has the row.
+      aclCheckedIn: 'ResendInvitationUseCase',
+    },
+    {
+      method: 'delete',
+      path: `${API_PREFIX}/invitations/:invitationId`,
+      handlers: [invitationIdValidator.handler, invitations.revoke],
+      permission: 'invitation:revoke',
+      aclCheckedIn: 'RevokeInvitationUseCase',
+    },
+    // Both literal paths come **before** `/employees/:userId`. Express matches in declaration order,
+    // so the parameter route would otherwise swallow `/employees/org-chart` and answer 422
+    // `validation_failed` for a `userId` that is not a UUID — a route shadowed by its neighbour,
+    // which no type can catch.
+    {
+      method: 'get',
+      path: `${API_PREFIX}/employees`,
+      handlers: [employeeListValidator.handler, employees.list],
+      permission: 'employee:read',
+      // The guard's capability check is the whole decision about *access*: the answer is the people
+      // of this tenant, and the tenant is the scope. What the use-case decides is different — **how
+      // much of each row** comes back, per subject, and whether the order asked for is one this
+      // caller may have (an order by a column they cannot read leaks it, one page at a time).
+      aclCheckedIn: 'ListEmployeesQuery',
+    },
+    {
+      method: 'get',
+      path: `${API_PREFIX}/employees/org-chart`,
+      handlers: [employees.orgChart],
+      permission: 'employee:view_org_chart',
+      // Its own capability rather than a share of `employee:read`: who reports to whom is a fact
+      // about the organization, and a directory of names is not one. Nothing narrower to decide —
+      // the chart is the whole tenant, and names are all it carries.
+      aclCheckedIn: 'GetOrgChartQuery',
+    },
+    {
+      method: 'get',
+      path: `${API_PREFIX}/employees/:userId`,
+      handlers: [employeeReadValidator.handler, employees.read],
+      selfService: true,
+      selfServiceReason:
+        'a person always reads their own personnel record — the dates and the contract type are on their own contract, and hiding them would be theatre; reading somebody else’s needs employee:read, and how much of it comes back is decided by employee-access.policy.ts, which answers two independent questions — may this caller see the employment half, and may they see rates',
+      ownershipCheckedIn: 'ReadEmployeeProfileQuery',
+    },
+    {
+      method: 'patch',
+      path: `${API_PREFIX}/employees/:userId`,
+      handlers: [employeeWriteValidator.handler, employees.write],
+      selfService: true,
+      selfServiceReason:
+        'a person always edits the handful of fields on their own record that nobody else is a better authority on — name, timezone, skills, emergency contact; anybody else’s record and every employment field need employee:update, which WriteEmployeeProfileUseCase checks per field rather than per route, because the same request may carry both kinds',
+      ownershipCheckedIn: 'WriteEmployeeProfileUseCase',
     },
     {
       method: 'get',

@@ -1,6 +1,7 @@
 import { type PrismaClient } from '@prisma/client';
 
 import {
+  type AuthInvitationRecord,
   type AuthLookupPort,
   type AuthPasswordResetRecord,
   type AuthSessionRecord,
@@ -18,6 +19,11 @@ interface AuthUserRow {
   readonly password_hash: string;
   readonly status: string;
   readonly permissions_version: number;
+}
+
+interface AuthInvitationRow {
+  readonly invitation_id: string;
+  readonly organization_id: string;
 }
 
 interface AuthPasswordResetRow {
@@ -107,6 +113,17 @@ export class PrismaAuthLookup implements AuthLookupPort {
           organizationId: row.organization_id,
           userId: row.user_id,
         };
+  }
+
+  async findInvitation(tokenHash: Uint8Array): Promise<AuthInvitationRecord | null> {
+    const rows = await this.client.$queryRaw<AuthInvitationRow[]>`
+      SELECT * FROM auth_lookup_invitation(${Buffer.from(tokenHash)})`;
+
+    const row = rows[0];
+
+    return row === undefined
+      ? null
+      : { invitationId: row.invitation_id, organizationId: row.organization_id };
   }
 
   async findSessionByRefreshHash(refreshTokenHash: Uint8Array): Promise<AuthSessionRecord | null> {

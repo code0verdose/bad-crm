@@ -1,0 +1,24 @@
+{
+  "title": "Personnel record",
+  "firstName": "First name",
+  "lastName": "Last name",
+  "jobTitle": "Job title",
+  "department": "Department",
+  "employmentTypeLabel": "Employment",
+  "employmentType": {
+    "FULL_TIME": "Full time",
+    "PART_TIME": "Part time",
+    "CONTRACTOR": "Contractor",
+    "INTERN": "Intern"
+  },
+  "capacity": "Hours a week",
+  "capacityHint": "What planning counts on. 0 to 80.",
+  "timezone": "Timezone",
+  "skills": "Skills",
+  "skillsHint": "Used to answer «who knows postgres». Press Enter after each one.",
+  "emergencyContact": "Emergency contact",
+  "emergencyHint": "Stored encrypted. Visible to you and to whoever may see personnel data.",
+  "save": "Save",
+  "saved": "The record is saved.",
+  "loadFailed": "This record could not be loaded."
+}

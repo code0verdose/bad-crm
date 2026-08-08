@@ -38,6 +38,7 @@ const SNAPSHOT = fileURLToPath(new URL('./__snapshots__/permission-matrix.json',
 
 const IVAN = '018f4a3b-2c1d-7a41-9f00-2b7c1d0e5a51';
 const ROLE_ID = '018f4a3b-2c1d-7a41-9f00-2b7c1d0e5a52';
+const INVITATION_ID = '018f4a3b-2c1d-7a41-9f00-2b7c1d0e5a53';
 const PASSWORD = 'correct-horse-battery';
 const IDEMPOTENCY_KEY = 'd'.repeat(32);
 const REASON = 'matrix fixture reason, long enough';
@@ -91,6 +92,26 @@ const CALLS: Readonly<Record<string, Call>> = {
     request(app)
       .delete(`/api/v1/users/${IVAN}/roles/${ROLE_ID}`)
       .set('Authorization', `Bearer ${token}`),
+  'GET /api/v1/invitations': (target, token) =>
+    request(target).get('/api/v1/invitations').set('Authorization', `Bearer ${token}`),
+  'POST /api/v1/invitations': (app, token) =>
+    request(app)
+      .post('/api/v1/invitations')
+      .set('Authorization', `Bearer ${token}`)
+      .set('Idempotency-Key', IDEMPOTENCY_KEY)
+      .send({ email: 'matrix@example.test', locale: 'en' }),
+  'POST /api/v1/invitations/:invitationId/resend': (app, token) =>
+    request(app)
+      .post(`/api/v1/invitations/${INVITATION_ID}/resend`)
+      .set('Authorization', `Bearer ${token}`),
+  'DELETE /api/v1/invitations/:invitationId': (app, token) =>
+    request(app)
+      .delete(`/api/v1/invitations/${INVITATION_ID}`)
+      .set('Authorization', `Bearer ${token}`),
+  'GET /api/v1/employees': (target, token) =>
+    request(target).get('/api/v1/employees').set('Authorization', `Bearer ${token}`),
+  'GET /api/v1/employees/org-chart': (target, token) =>
+    request(target).get('/api/v1/employees/org-chart').set('Authorization', `Bearer ${token}`),
   'PUT /api/v1/users/:userId/permission-overrides/:permission': (app, token) =>
     request(app)
       .put(`/api/v1/users/${IVAN}/permission-overrides/task%3Aread`)

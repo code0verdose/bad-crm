@@ -3,7 +3,20 @@ import { type RequestHandler } from 'express';
 import { type AssignRoleUseCase } from '@/application/iam/use-cases/assign-role.use-case.js';
 import { type BuildActorQuery } from '@/application/iam/use-cases/build-actor.query.js';
 import { type GetMyPermissionsQuery } from '@/application/iam/use-cases/get-my-permissions.query.js';
+import { type AcceptInvitationUseCase } from '@/application/iam/use-cases/accept-invitation.use-case.js';
+import { type GetOrgChartQuery } from '@/application/iam/use-cases/get-org-chart.query.js';
+import { type ListEmployeesQuery } from '@/application/iam/use-cases/list-employees.query.js';
+import {
+  type ReadEmployeeProfileQuery,
+  type WriteEmployeeProfileUseCase,
+} from '@/application/iam/use-cases/write-employee-profile.use-case.js';
+import { type ListInvitationsQuery } from '@/application/iam/use-cases/list-invitations.query.js';
 import { type ListRolesQuery } from '@/application/iam/use-cases/list-roles.query.js';
+import {
+  type CreateInvitationUseCase,
+  type ResendInvitationUseCase,
+  type RevokeInvitationUseCase,
+} from '@/application/iam/use-cases/write-invitation.use-case.js';
 import {
   type ApplyRoleChangesUseCase,
   type PreviewRoleChangesQuery,
@@ -108,6 +121,15 @@ export interface IamDependencies {
   readonly createRole: CreateCustomRoleUseCase;
   readonly updateRole: UpdateCustomRoleUseCase;
   readonly deleteRole: DeleteCustomRoleUseCase;
+  readonly listInvitations: ListInvitationsQuery;
+  readonly createInvitation: CreateInvitationUseCase;
+  readonly resendInvitation: ResendInvitationUseCase;
+  readonly revokeInvitation: RevokeInvitationUseCase;
+  readonly acceptInvitation: AcceptInvitationUseCase;
+  readonly listEmployees: ListEmployeesQuery;
+  readonly getOrgChart: GetOrgChartQuery;
+  readonly readEmployeeProfile: ReadEmployeeProfileQuery;
+  readonly writeEmployeeProfile: WriteEmployeeProfileUseCase;
 }
 
 export interface HttpServerDependencies {

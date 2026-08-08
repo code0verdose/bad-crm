@@ -11,6 +11,7 @@ import {
 } from '@/application/identity/ports/access-token.port.js';
 import { type AddressHasherPort } from '@/application/identity/ports/address-hasher.port.js';
 import {
+  type AuthInvitationRecord,
   type AuthLookupPort,
   type AuthPasswordResetRecord,
   type AuthSessionRecord,
@@ -69,6 +70,8 @@ import {
   type UnitOfWorkPort,
 } from '@/application/platform/ports/unit-of-work.port.js';
 import { ServiceUnavailableError } from '@/domain/shared/errors/app.errors.js';
+
+import { type FakeInvitationRepository } from './iam-doubles.util.js';
 import {
   type UserCredentialRecord,
   type UserRecord,
@@ -747,7 +750,13 @@ export class FakeAuthLookup implements AuthLookupPort {
 
   private resetTokens: FakePasswordResetTokens | undefined;
 
-  constructor(public users: AuthUserRecord[] = []) {}
+  private invitations: FakeInvitationRepository | undefined;
+
+  constructor(
+    public users: AuthUserRecord[] = [],
+    /** Which tenant the invitation resolver reports; one organization per test app. */
+    private readonly organizationId: string = ORGANIZATION_ID,
+  ) {}
 
   /** Point the lookup at the repository whose rows it resolves. */
   reading(store: FakeSessions): this {
@@ -799,6 +808,28 @@ export class FakeAuthLookup implements AuthLookupPort {
     this.resetTokens = store;
 
     return this;
+  }
+
+  /**
+   * Resolve invitations out of the repository that wrote them, for the reason the two readers above
+   * exist: the real resolver reads the very rows `create` inserted, and a second list here would let
+   * a suite accept a link the table no longer has.
+   */
+  readingInvitations(store: FakeInvitationRepository): this {
+    this.invitations = store;
+
+    return this;
+  }
+
+  findInvitation(tokenHash: Uint8Array): Promise<AuthInvitationRecord | null> {
+    const wanted = Buffer.from(tokenHash).toString('hex');
+    const found = [...(this.invitations?.digests.entries() ?? [])].find(
+      ([, digest]) => Buffer.from(digest).toString('hex') === wanted,
+    );
+
+    return Promise.resolve(
+      found === undefined ? null : { invitationId: found[0], organizationId: this.organizationId },
+    );
   }
 
   findPasswordResetToken(tokenHash: Uint8Array): Promise<AuthPasswordResetRecord | null> {

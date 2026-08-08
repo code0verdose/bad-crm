@@ -4,6 +4,7 @@
   "private": true,
   "license": "AGPL-3.0-or-later",
   "type": "module",
+  "sideEffects": ["*.css"],
   "scripts": {
     "dev": "vite",
     "build": "vite build && size-limit",
@@ -33,7 +34,8 @@
     "react": "19.2.8",
     "react-dom": "19.2.8",
     "react-i18next": "17.0.11",
-    "zod": "4.4.3"
+    "zod": "4.4.3",
+    "zustand": "^5.0.14"
   },
   "devDependencies": {
     "@size-limit/file": "13.0.3",

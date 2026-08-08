@@ -90,6 +90,25 @@ export const SECURITY_EVENTS = {
    * in a stream of them.
    */
   passwordNotWritten: 'password_not_written',
+  /**
+   * An invitation letter was handed to the transport — the one message this product sends to an
+   * address that has no account behind it.
+   *
+   * It is a security event rather than a delivery detail because that is exactly what makes it
+   * abusable: the recipient is chosen by the caller, so a run of these from one account is somebody
+   * using the installation as a mailer. The line carries the inviter and the organization and no
+   * address, like every other dispatch (`MailDispatchContext`).
+   */
+  invitationDispatched: 'invitation_dispatched',
+  /**
+   * An invitation link was presented. Written for **every** attempt, valid or not — a line written
+   * only on success would turn the log into the oracle the single 410 refuses to be, and «one
+   * address, four hundred refusals» is precisely the pattern worth an alert.
+   *
+   * `outcome` says which it was; the line carries the masked source network and never the address,
+   * the token or the invitee's email.
+   */
+  invitationAccepted: 'invitation_accepted',
 } as const;
 
 export type SecurityEvent = (typeof SECURITY_EVENTS)[keyof typeof SECURITY_EVENTS];

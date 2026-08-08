@@ -1,3 +1,5 @@
+import { readdirSync, readFileSync } from 'node:fs';
+
 /**
  * Bundle budgets, enforced by `pnpm --filter @bad-crm/client build` (the script runs `size-limit`
  * after `vite build`, so a regression fails the build rather than a dashboard).
@@ -7,98 +9,80 @@
  * 300 KB for the initial chunk; the stricter documented figure is used until the two are
  * reconciled — a budget that is looser than the specification measures nothing.)
  *
- * Since STORY-004-05 the routes are code-split by `@tanstack/router-plugin`, so «initial» is no
- * longer «everything in `dist/assets`». Measuring the whole directory would let a route chunk grow
- * unnoticed inside the entry budget and, worse, would report a regression on a screen that is never
- * loaded on first paint. Each line below therefore measures what one navigation actually downloads:
+ * ## What «initial» means here, and why it is read out of the HTML
  *
- * - the entry and the vendor chunk it preloads — what the browser fetches before anything renders;
- * - the authenticated shell — fetched when a signed-in user lands anywhere behind the guard;
- * - each route's own chunk — the component and loader of one screen.
+ * It used to be «everything in `dist/assets` except these names», with one exclusion added per
+ * route as the routes appeared. That worked while there were four chunks and stopped working the
+ * moment there were twelve: a chunk shared by two lazily-loaded screens counted as initial, a route
+ * chunk nobody remembered to exclude counted as initial, and — worse in the other direction — an
+ * exclusion could hide a chunk the first paint really does download. Both failures are silent.
  *
- * The negation in the first entry is the exception the same document grants: the vault crypto chunk
- * is `libsodium-wrappers-sumo`, ~375 KB gzip of audited WebAssembly, loaded once after the vault is
- * unlocked and therefore not part of the first paint. It is measured on its own line when it exists
- * (M7, EPIC-033); the pattern matches nothing today and costs nothing.
+ * So the list is **taken from the built `index.html`**: the `<script type="module">` and every
+ * `<link rel="modulepreload">`. That is, by construction, exactly what a browser fetches before
+ * anything renders — no name matching, no list to keep in step with the routes, and a shared chunk
+ * is counted if and only if the entry actually preloads it.
+ *
+ * Route chunks are then measured **individually** below, by the name Rollup takes from the route
+ * file. A chunk named by no line is a chunk that can grow without a budget noticing, and
+ * `ROUTE_CHUNK_BUDGET` is the answer for the ones that come and go with the screens.
  */
+
+const DIST = 'dist';
+const ASSETS = `${DIST}/assets`;
+
+/** Every script the entry document pulls before the first render — entry plus modulepreloads. */
+const initialScripts = () => {
+  const html = readFileSync(`${DIST}/index.html`, 'utf8');
+  const files = [...html.matchAll(/(?:src|href)="\/assets\/([^"]+\.js)"/g)].map(
+    (match) => `${ASSETS}/${match[1]}`,
+  );
+
+  if (files.length === 0) {
+    // A silent zero is the failure mode this whole file exists to prevent: `size-limit` reports 0 B
+    // for a glob that matches nothing, and the build goes green on a bundle nobody measured.
+    throw new Error('.size-limit.js: dist/index.html references no scripts — did the build run?');
+  }
+
+  return files;
+};
+
+/**
+ * What a single screen may weigh on its own.
+ *
+ * 60 kB for the authenticated shell, which carries the navigation every signed-in screen shares;
+ * 40 kB for a screen. The roles matrix is the one that actually uses its allowance — three hundred
+ * permissions against every role — and it is the reason the number is not 20.
+ */
+const ROUTE_CHUNK_BUDGET = '40 kB';
+const SHELL_CHUNK_BUDGET = '60 kB';
+
+/** Chunks the entry document does **not** preload: one screen each, measured one at a time. */
+const routeChunks = () => {
+  const preloaded = new Set(initialScripts());
+
+  return readdirSync(ASSETS)
+    .filter((file) => file.endsWith('.js'))
+    .map((file) => `${ASSETS}/${file}`)
+    .filter((file) => !preloaded.has(file))
+    .map((file) => ({
+      name: `route chunk — ${file.slice(ASSETS.length + 1)}`,
+      path: file,
+      limit: file.includes('_authenticated-') ? SHELL_CHUNK_BUDGET : ROUTE_CHUNK_BUDGET,
+      gzip: true,
+    }));
+};
+
 export default [
   {
-    /**
-     * Everything except the route chunks — the entry, the runtime and whatever shared chunks the
-     * bundler decided to split out and preload.
-     *
-     * Written as exclusions rather than as a list of chunk names on purpose: the names of shared
-     * chunks are not stable. Two consecutive builds of this very commit produced `shared-*.js` and
-     * then `breadcrumbs-*.js` for the same 70 KB of vendor code, because the name is taken from one
-     * arbitrary member of the group. A budget listing chunk names would have silently measured
-     * nothing at all after such a rename — the glob matches no file, and `size-limit` reports 0 B.
-     * Route chunk names *are* stable: they come from the route file.
-     */
     name: 'initial JS — everything the first paint pulls',
-    path: [
-      'dist/assets/*.js',
-      '!dist/assets/_authenticated-*.js',
-      '!dist/assets/dashboard-*.js',
-      '!dist/assets/login-*.js',
-      // The two public recovery screens (STORY-006-08). Reached from a link on the sign-in form and
-      // from a mail, never on a first paint — and each measured on its own line below, so leaving
-      // them out of the entry is an exclusion rather than a hiding place.
-      '!dist/assets/forgot-password-*.js',
-      // `routes/reset-password.$token.tsx`. Rollup sanitises `$` to `_`, so the chunk carries the
-      // route file's name with the parameter spelled `_token`.
-      '!dist/assets/reset-password._token-*.js',
-      // The splat route, `routes/_authenticated/$.tsx`. Rollup sanitises `$` to `_`, so the chunk
-      // is `_-<hash>.js` — a name close enough to `_authenticated-*` to be missed by eye, which is
-      // how it spent a delivery inside the initial budget it is not part of. It is downloaded only
-      // by a URL that matches nothing, so measuring it here would count a screen no first paint
-      // reaches; the `-` after the underscore is what keeps this pattern off `_authenticated-*`.
-      '!dist/assets/_-*.js',
-      '!dist/assets/vault-crypto-*.js',
-    ],
+    path: initialScripts(),
     limit: '250 kB',
     gzip: true,
   },
-  {
-    name: 'route chunk — the authenticated shell',
-    path: 'dist/assets/_authenticated-*.js',
-    limit: '60 kB',
-    gzip: true,
-  },
-  {
-    name: 'route chunk — /dashboard',
-    path: 'dist/assets/dashboard-*.js',
-    limit: '20 kB',
-    gzip: true,
-  },
-  {
-    name: 'route chunk — /login',
-    path: 'dist/assets/login-*.js',
-    limit: '20 kB',
-    gzip: true,
-  },
-  {
-    name: 'route chunk — /forgot-password',
-    path: 'dist/assets/forgot-password-*.js',
-    limit: '20 kB',
-    gzip: true,
-  },
-  {
-    name: 'route chunk — /reset-password/$token',
-    path: 'dist/assets/reset-password._token-*.js',
-    limit: '20 kB',
-    gzip: true,
-  },
-  {
-    // Excluded from the entry above, so it is measured here instead of nowhere: a chunk named by
-    // no line is a chunk that can grow without a budget noticing.
-    name: 'route chunk — the not-found splat',
-    path: 'dist/assets/_-*.js',
-    limit: '20 kB',
-    gzip: true,
-  },
+  ...routeChunks(),
   {
     name: 'initial CSS — reset, tokens and the shell',
-    path: 'dist/assets/*.css',
+    path: `${ASSETS}/*.css`,
     limit: '60 kB',
     gzip: true,
   },

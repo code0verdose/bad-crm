@@ -34,6 +34,7 @@ updated: 2026-07-26
 | Сущности дашбордов: `Dashboard`/`Widget` (`overview.md`, `glossary.md`) против `Dashboard`/`DashboardCard` (здесь, группа 15) | **`Dashboard`/`DashboardCard`** — «виджет» в этом коде занят слоем FSD `widgets`, а карточка дашборда — доменная строка. `overview.md` и `glossary.md` поправлены | 2026-07-26 |
 | `SecureLink.payloadNonce` (здесь и в SQL атомарного burn в `e2ee-design.md`) против правила «nonce внутри самодостаточного блоба» | **Nonce внутри блоба**, отдельной колонки нет — правило едино для `VaultItem.dataEnc`, `VaultItemVersion.dataEnc` и `SecureLink.payloadEnc`. SQL в `e2ee-design.md` поправлен | 2026-07-26 |
 | Источник правды о состоянии задачи: `Task.status` против `Task.boardColumnId` | **`boardColumnId`** — `status` производный и синхронизируется use-case'ом (см. группу 4) | 2026-07-26 |
+| Где живёт приглашённый, но не принявший приглашение человек: строка `User(status = INVITED)` против строки `Invitation` (вопрос, оставленный EPIC-006 на EPIC-012) | **`Invitation`**, и справочник его не джойнит: `GET /employees` — учётные записи, `GET /invitations` — открытые приглашения. Значение `INVITED` остаётся в enum'е недостижимым и входит в набор статусов по умолчанию. Разбор — в «Про `User.status = INVITED`» | 2026-08-07 |
 
 ---
 
@@ -179,10 +180,10 @@ updated: 2026-07-26
 |---|---|---|---|
 | `Organization` | [T]* | `id`, `slug` (уникален глобально), `name`, `ownerId` → `User`, `settings Json`, `timezone`, `defaultCurrency`, `createdAt`, `deletedAt?` | корень всего графа |
 | `User` | [T] | `organizationId`, `email`, `emailVerifiedAt?`, `passwordHash`, `totpSecretEnc?`, `totpEnabledAt?`, `permissionsVersion Int`, `status ACTIVE\|SUSPENDED\|INVITED`, `lastSeenAt?`, `locale`, `timezone`, `authVerifierSalt?`, `authVerifierHash?`, `deletedAt?` | → `Organization`; 1:1 `EmployeeProfile`; 1:N `Session`, `UserRole` |
-| `EmployeeProfile` | [T] | `userId @unique`, `jobTitle`, `department`, `managerId?` → `User`, `weeklyCapacityHours Int`, `employmentType`, `hiredAt`, `terminatedAt?`, `timezone`, `emergencyContactEnc?` | 1:1 `User`, self-ref через `managerId` |
+| `EmployeeProfile` | [T] | `userId @unique`, `firstName`, `lastName`, `jobTitle?`, `department?`, `managerId?` → `User`, `weeklyCapacityHours Int`, `employmentType`, `hiredAt?`, `terminatedAt?`, `timezone`, `skills String[]`, `emergencyContactEnc?` | 1:1 `User`, self-ref через `managerId` |
 | `Session` | [T] | `userId`, `familyId`, `rotatedFromId?` → `Session`, `refreshTokenHash`, `userAgent`, `ipHash`, `ipMasked`, `expiresAt`, `revokedAt?`, `revokedReason?` | → `User` |
 | `PasswordResetToken` | [T] | `userId`, `tokenHash`, `expiresAt`, `usedAt?`, `requestedIpHash?` | → `User` |
-| `Invitation` | [T] | `email`, `roleId?`, `teamIds String[]`, `tokenHash`, `invitedById`, `expiresAt`, `acceptedAt?`, `acceptedUserId?` | → `Organization`, `Role`, `User` |
+| `Invitation` | [T] | `email`, `roleId?`, `teamIds String[]`, `tokenHash`, `locale en\|ru`, `invitedById`, `expiresAt`, `acceptedAt?`, `acceptedUserId?` | → `Organization`, `Role`, `User` |
 | `Team` | [T] | `name`, `slug`, `description`, `leadId?` → `User`, `deletedAt?` | 1:N `TeamMember` |
 | `TeamMember` | [T] | `teamId`, `userId`, `teamRole MEMBER\|LEAD`, `joinedAt` | join `Team` × `User` |
 
@@ -201,8 +202,14 @@ updated: 2026-07-26
   требование задачи: e-mail уникален внутри организации, а не глобально. Один человек может иметь
   аккаунты в двух self-host организациях, и это не конфликт.
 - `idx_users_org_status (organization_id, status)` — списки сотрудников.
-- `uq_employee_profiles_user (user_id)`; `idx_employee_profiles_org_manager (organization_id, manager_id)`
-  — построение оргструктуры; `idx_employee_profiles_org_active (organization_id) WHERE terminated_at IS NULL`.
+- `uq_employee_profiles_user (organization_id, user_id)` — тенант первой колонкой, как во всех
+  составных индексах схемы (инвариант 1); человек принадлежит одной организации, поэтому пара
+  ограничивает ровно так же, как один `user_id`, и на неё же указывает связь 1:1 в Prisma;
+  `idx_employee_profiles_org_manager (organization_id, manager_id)` — построение оргструктуры;
+  `idx_employee_profiles_org_active (organization_id, last_name) WHERE terminated_at IS NULL` —
+  справочник показывает работающих сейчас, отсортированных по фамилии, и это большинство чтений
+  таблицы; `idx_employee_profiles_skills` — GIN по `skills`, потому что предикат `skills && ARRAY[…]`
+  вопрос не B-tree'вый.
 - `idx_sessions_org_user_family (organization_id, user_id, family_id)` — список активных сессий
   пользователя и внешний ключ на `users`; `idx_sessions_org_family (organization_id, family_id)` —
   отзыв **всего семейства** одним индексным апдейтом; `uq_sessions_refresh_hash
@@ -258,6 +265,21 @@ updated: 2026-07-26
 - `uq_teams_org_slug (organization_id, slug)`, `idx_teams_org_name (organization_id, name)` —
   список команд организации в алфавитном порядке.
 - `uq_team_members (team_id, user_id)`, `idx_team_members_org_user (organization_id, user_id)`.
+
+**Почему имя человека живёт здесь, а не в `User`** (уточнение 2026-08-07, STORY-012-03)
+
+`firstName`/`lastName` не было ни в этой строке, ни в `User`, и обнаружилось это дважды подряд: при
+приёме приглашения (STORY-012-02 не смогла принять имя — его некуда было положить) и здесь, где
+критерий приёмки прямо требует, чтобы человек мог поправить своё имя. Место у имени одно и то же по
+той же логике, по которой разделены сами таблицы: `User` — субъект аутентификации, и имя не
+участвует ни в одном решении о доступе; а профиль читают справочник, оргструктура и любой экран,
+показывающий человека. Имя обязательное (пустая строка — не имя), `jobTitle`, `department` и
+`hiredAt` — нет: у подрядчика и у сервисного аккаунта их не бывает.
+
+`skills String[]` — массив, а не таблица-справочник: навыки здесь нужны для поиска «кто умеет
+postgres» и для планирования загрузки, а не для отчётности по номенклатуре. Появится потребность в
+уровнях владения или в подтверждении навыка — станет таблицей; сейчас это был бы join ради
+`text[]` с GIN-индексом.
 
 **Почему `User` и `EmployeeProfile` разделены**
 
@@ -460,8 +482,23 @@ erDiagram
 **Решение EPIC-006:** инвариант — «строка `User` создаётся тогда, когда есть пароль»; человек,
 которого пригласили и который ещё не принял приглашение, живёт в `Invitation`, а не в `users`.
 Поэтому `password_hash` — `NOT NULL`, а значение `INVITED` остаётся в enum'е недостижимым до
-EPIC-012. Выбор направления (справочник джойнит `Invitation` — или `User` создаётся сразу в статусе
-`INVITED`) принимает EPIC-012 вместе с этими четырьмя историями.
+EPIC-012.
+
+**Решение STORY-012-04 (2026-08-07): два списка, а не один union.** Справочник (`GET /employees`)
+перечисляет **учётные записи**; неприня́тые приглашения живут на своём экране
+(`GET /invitations`, право `invitation:read`). Направление «справочник джойнит `Invitation`»
+отвергнуто: приглашение и сотрудник — разные сущности с разными действиями (переотправить/отозвать
+против «открыть профиль»), а объединение поставило бы одного человека в две таблицы сразу и заставило
+бы offset-пагинацию ходить по UNION двух источников с несовместимыми ключами сортировки. Направление
+«создавать `User(status = INVITED)` при отправке приглашения» отвергнуто как нарушающее инвариант
+EPIC-006 — строка учётной записи без пароля.
+
+Следствие: значение `INVITED` в enum'е **остаётся недостижимым**. Оно не удалено и названо в наборе
+статусов по умолчанию (`DEFAULT_DIRECTORY_STATUSES = ACTIVE, INVITED`) осознанно: удаление значения
+из enum'а — DDL на типе, от которого зависят все его пользователи (`rules/db-migrations.mdc`), а
+включение в дефолт означает, что в день, когда оно станет достижимым, справочник уже покажет такие
+строки, а не спрячет половину людей. [STORY-012-06](../../epics/epic-012-employee-management/stories/story-012-06-transfer-ownership.md)
+свою проверку `status = INVITED` сохраняет по той же причине: она станет значимой, а не сломается.
 
 Почему `NOT NULL` при этом ничего не цементирует — асимметрия ALTER'ов: снять ограничение
 (`ALTER COLUMN password_hash DROP NOT NULL`) — операция над каталогом, мгновенная и совместимая с

@@ -31,7 +31,23 @@ import { PrismaUserRoleRepository } from '@/infrastructure/persistence/prisma/us
 import { AssignRoleUseCase } from '@/application/iam/use-cases/assign-role.use-case.js';
 import { BuildActorQuery } from '@/application/iam/use-cases/build-actor.query.js';
 import { GetMyPermissionsQuery } from '@/application/iam/use-cases/get-my-permissions.query.js';
+import { type AuthLookupPort } from '@/application/identity/ports/auth-lookup.port.js';
+import { type PasswordHasherPort } from '@/application/identity/ports/password-hasher.port.js';
+import { type FieldEncryptionPort } from '@/application/platform/ports/field-encryption.port.js';
+import { AcceptInvitationUseCase } from '@/application/iam/use-cases/accept-invitation.use-case.js';
+import { GetOrgChartQuery } from '@/application/iam/use-cases/get-org-chart.query.js';
+import { ListEmployeesQuery } from '@/application/iam/use-cases/list-employees.query.js';
+import {
+  ReadEmployeeProfileQuery,
+  WriteEmployeeProfileUseCase,
+} from '@/application/iam/use-cases/write-employee-profile.use-case.js';
+import { ListInvitationsQuery } from '@/application/iam/use-cases/list-invitations.query.js';
 import { ListRolesQuery } from '@/application/iam/use-cases/list-roles.query.js';
+import {
+  CreateInvitationUseCase,
+  ResendInvitationUseCase,
+  RevokeInvitationUseCase,
+} from '@/application/iam/use-cases/write-invitation.use-case.js';
 import {
   ApplyRoleChangesUseCase,
   PreviewRoleChangesQuery,
@@ -75,6 +91,10 @@ import {
 } from '@/infrastructure/persistence/prisma/detached-database.adapter.js';
 import { ProvisionSystemRolesUseCase } from '@/application/iam/use-cases/provision-system-roles.use-case.js';
 import { PrismaRoleRepository } from '@/infrastructure/persistence/prisma/role.repository.js';
+import { AesFieldEncryption } from '@/infrastructure/crypto/field-encryption.adapter.js';
+import { PrismaEmployeeDirectoryRepository } from '@/infrastructure/persistence/prisma/employee-directory.repository.js';
+import { PrismaEmployeeProfileRepository } from '@/infrastructure/persistence/prisma/employee-profile.repository.js';
+import { PrismaInvitationRepository } from '@/infrastructure/persistence/prisma/invitation.repository.js';
 import { PrismaOrganizationRepository } from '@/infrastructure/persistence/prisma/organization.repository.js';
 import { PrismaPasswordResetTokenRepository } from '@/infrastructure/persistence/prisma/password-reset-token.repository.js';
 import { PrismaSessionRepository } from '@/infrastructure/persistence/prisma/session.repository.js';
@@ -341,13 +361,36 @@ export const buildContainer = (input: ContainerInput): AppContainer => {
       identity: identity.dependencies,
       // The permission layer. Built here, beside identity, because it needs the same unit of work:
       // «who is this» and «what may they do» are two reads of the same transaction boundary.
-      iam: buildIam({ database: input.database, audit }),
+      iam: buildIam({
+        database: input.database,
+        audit,
+        identityKit: identity.identityKit,
+        logger,
+        clock,
+        rateLimit,
+        mail: mailer,
+        mailDispatcher,
+        appUrl: input.env.APP_URL,
+        fields: new AesFieldEncryption(input.env.APP_ENCRYPTION_KEY),
+      }),
     },
   };
 };
 
 interface IdentityWiring {
   readonly dependencies: IdentityDependencies;
+  /**
+   * The three pieces the IAM layer borrows to accept an invitation: it creates an account and opens
+   * a session, which is identity's work done from a different door.
+   *
+   * Handed over rather than rebuilt: a second `Argon2PasswordHasher` would carry its own copy of the
+   * cost parameters, and two of those drift the day one of them is tuned.
+   */
+  readonly identityKit: {
+    readonly hasher: PasswordHasherPort;
+    readonly issueSession: IssueSessionUseCase;
+    readonly authLookup: AuthLookupPort;
+  };
   /** Present only when a second pool was opened; registered as its own shutdown step. */
   readonly closeAuthLookup?: () => Promise<void>;
   /**
@@ -378,6 +421,19 @@ interface IdentityWiring {
 const buildIam = (input: {
   readonly database: DatabaseConnection | undefined;
   readonly audit: AuditLoggerPort;
+  readonly logger: LoggerPort;
+  readonly identityKit: {
+    readonly hasher: PasswordHasherPort;
+    readonly issueSession: IssueSessionUseCase;
+    readonly authLookup: AuthLookupPort;
+  };
+  readonly clock: SystemClockAdapter;
+  readonly rateLimit: RateLimitPort;
+  readonly mail: MailPort;
+  readonly mailDispatcher: MailDispatchPort;
+  readonly appUrl: string;
+  /** Field-level encryption at rest — the emergency contact, and later every other `*_enc` column. */
+  readonly fields: FieldEncryptionPort;
 }): IamDependencies => {
   const unitOfWork =
     input.database === undefined ? detachedUnitOfWork() : new PrismaUnitOfWork(input.database.base);
@@ -385,6 +441,13 @@ const buildIam = (input: {
   const permissions = new PrismaEffectivePermissionsReader();
   const overrides = new PrismaPermissionOverrideRepository();
   const customRoles = new PrismaCustomRoleRepository();
+  const invitations = new PrismaInvitationRepository();
+  const organizations = new PrismaOrganizationRepository();
+  // The same 32 CSPRNG bytes and the same SHA-256 digest a password reset mints; an invitation link
+  // is the same kind of credential, so it is not a second implementation of one.
+  const inviteTokens = new Sha256ResetTokenAdapter();
+  const employeeProfiles = new PrismaEmployeeProfileRepository();
+  const employeeDirectory = new PrismaEmployeeDirectoryRepository();
 
   const buildActor = new BuildActorQuery(unitOfWork, permissions);
 
@@ -413,6 +476,55 @@ const buildIam = (input: {
     createRole: new CreateCustomRoleUseCase(unitOfWork, customRoles, input.audit),
     updateRole: new UpdateCustomRoleUseCase(unitOfWork, customRoles, input.audit),
     deleteRole: new DeleteCustomRoleUseCase(unitOfWork, customRoles, input.audit),
+    listInvitations: new ListInvitationsQuery(unitOfWork, invitations),
+    createInvitation: new CreateInvitationUseCase(
+      unitOfWork,
+      invitations,
+      organizations,
+      inviteTokens,
+      input.clock,
+      input.audit,
+      input.rateLimit,
+      input.mail,
+      input.mailDispatcher,
+      input.appUrl,
+    ),
+    resendInvitation: new ResendInvitationUseCase(
+      unitOfWork,
+      invitations,
+      organizations,
+      inviteTokens,
+      input.clock,
+      input.audit,
+      input.rateLimit,
+      input.mail,
+      input.mailDispatcher,
+      input.appUrl,
+    ),
+    revokeInvitation: new RevokeInvitationUseCase(unitOfWork, invitations, input.audit),
+    acceptInvitation: new AcceptInvitationUseCase(
+      input.identityKit.authLookup,
+      invitations,
+      userRoles,
+      organizations,
+      input.identityKit.issueSession,
+      input.identityKit.hasher,
+      inviteTokens,
+      unitOfWork,
+      input.rateLimit,
+      input.clock,
+      input.logger,
+      input.audit,
+    ),
+    listEmployees: new ListEmployeesQuery(unitOfWork, employeeDirectory),
+    getOrgChart: new GetOrgChartQuery(unitOfWork, employeeDirectory),
+    readEmployeeProfile: new ReadEmployeeProfileQuery(unitOfWork, employeeProfiles, input.fields),
+    writeEmployeeProfile: new WriteEmployeeProfileUseCase(
+      unitOfWork,
+      employeeProfiles,
+      input.fields,
+      input.audit,
+    ),
   };
 };
 
@@ -549,10 +661,13 @@ const buildIdentity = (input: {
     refreshTokens,
   };
 
+  const identityKit = { hasher, issueSession, authLookup };
+
   return authClient === undefined
-    ? { dependencies }
+    ? { dependencies, identityKit }
     : {
         dependencies,
+        identityKit,
         closeAuthLookup: (): Promise<void> => authClient.$disconnect(),
         authClient,
       };

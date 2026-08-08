@@ -62,6 +62,8 @@ const CODE_FOR: Readonly<
   system_role_immutable: () => 'system_role_immutable',
   owner_immutable: () => 'owner_immutable',
   invitation_already_accepted: () => 'invitation_already_accepted',
+  manager_cycle_detected: () => 'manager_cycle_detected',
+  employment_period_inverted: () => 'employment_period_inverted',
 };
 
 /**

@@ -58,3 +58,27 @@ export const applyRoleChanges = async (
     }),
   );
 };
+
+/** Whom to invite, and what they will hold once they accept. */
+export type InvitationDraft = components['schemas']['InvitationDraft'];
+
+/** The answer to creating one: the link, shown exactly once. */
+export type MintedInvitation = components['schemas']['MintedInvitation'];
+
+/**
+ * Creates an invitation. The response is the only place the link ever exists — the server stores a
+ * digest and cannot produce it again.
+ *
+ * No `signal`: this is issued by pressing a button, not by a changing query key, so there is no
+ * later request that could overtake it.
+ *
+ * The reads and the other two writes of this surface (`GET /invitations`,
+ * `POST /invitations/{id}/resend`, `DELETE /invitations/{id}`) exist on the server and are not here
+ * yet: the screen that lists open invitations is STORY-012-04, and a client function nobody calls is
+ * a contract nobody checks.
+ */
+export const createInvitation = async (draft: InvitationDraft): Promise<MintedInvitation> => {
+  const { params } = idempotencyParams();
+
+  return unwrapApiResult(await apiClient.POST('/invitations', { body: draft, params }));
+};

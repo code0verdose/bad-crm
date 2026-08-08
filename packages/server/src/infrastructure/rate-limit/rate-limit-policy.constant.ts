@@ -71,4 +71,31 @@ export const RATE_LIMIT_POLICY: Readonly<Record<RateLimitPolicy, RateLimitPolicy
     windowSeconds: 1 * MINUTE,
     blockSeconds: 1 * MINUTE,
   },
+  /**
+   * Twenty in ten minutes: onboarding a whole team on a Monday morning fits, and a script that
+   * turns one account into a mailing list does not.
+   *
+   * No escalation, and the reason is the subject. The counter is keyed on the inviter, so the
+   * subject of a lock-out is a colleague who is authenticated and known — an administrator filling
+   * a spreadsheet, not somebody guessing. Doubling their block would answer a mistake by making the
+   * next hour of their work impossible, and the ten-minute window already costs an abuser far more
+   * than it costs them.
+   */
+  invitation_create: {
+    points: 20,
+    windowSeconds: 10 * MINUTE,
+    blockSeconds: 10 * MINUTE,
+  },
+  /**
+   * Ten in fifteen minutes, and no escalation.
+   *
+   * The subject is an address, not an account, so a lock-out that grew would eventually punish an
+   * office behind one NAT for a colleague who mistyped the link twice. Ten is generous for somebody
+   * following a link from their mail and uneconomic for somebody walking a token space of 2^256.
+   */
+  invitation_accept: {
+    points: 10,
+    windowSeconds: 15 * MINUTE,
+    blockSeconds: 15 * MINUTE,
+  },
 };

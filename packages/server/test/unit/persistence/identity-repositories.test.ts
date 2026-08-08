@@ -516,6 +516,25 @@ describe('PrismaAuthLookup', () => {
     await expect(adapter.findPasswordResetToken(new Uint8Array([9]))).resolves.toBeNull();
   });
 
+  it('asks a named function where an invitation lives, and reads back two columns', async () => {
+    const { adapter, statements } = client([{ invitation_id: RESET_TOKEN, organization_id: ORG }]);
+
+    const found = await adapter.findInvitation(new Uint8Array([1, 2, 3]));
+
+    expect(statements[0]).toContain('auth_lookup_invitation(');
+    // Two columns and neither is `accepted_at` or `expires_at`: this privileged surface cannot
+    // answer «is this invitation still good» for anybody who reached the `app_auth` connection.
+    expect(found).toEqual({ invitationId: RESET_TOKEN, organizationId: ORG });
+  });
+
+  it('answers nothing for an invitation digest no row carries', async () => {
+    // Unknown, revoked and «the organization was deactivated» are one answer — the resolver joins
+    // `organizations ON deleted_at IS NULL`, so the third looks exactly like the first two.
+    const { adapter } = client([]);
+
+    await expect(adapter.findInvitation(new Uint8Array([9]))).resolves.toBeNull();
+  });
+
   /**
    * Every call is to a named function with a fixed signature — never a query this adapter composes.
    * That is what keeps the `app_auth` surface to three questions rather than to whatever a caller

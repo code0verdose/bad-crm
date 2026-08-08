@@ -1,14 +1,29 @@
+import { createStore, type StoreApi } from 'zustand/vanilla';
+
 import { refreshSession, type SessionRotation } from '@units/auth/lib';
 import { type SessionIdentity, type SessionState } from '@units/auth/types';
 
-/** One object per terminal state, so an unchanged state is an unchanged reference for `useSyncExternalStore`. */
+/** One object per terminal state, so an unchanged state is an unchanged reference for subscribers. */
 const UNKNOWN: SessionState = { status: 'unknown' };
 const ANONYMOUS: SessionState = { status: 'anonymous' };
 
-export interface AuthSessionStore {
-  /** The current state. Safe to call during render — it reads, it does not ask. */
+/** Everything the store holds. One field: the state machine every guard in the tree reads. */
+export interface AuthSessionState {
+  readonly session: SessionState;
+}
+
+/**
+ * The store plus the four operations on it.
+ *
+ * The operations are **not** in the state, which is the one place this deviates from the shape most
+ * zustand examples show. Actions in the state are convenient inside React — one `useStore` gives a
+ * component both the value and the way to change it — but this store's main reader is a router guard
+ * that never renders, and `subscribe` fires for every field of the state. Keeping the state to the
+ * one thing that changes means a subscriber is woken by a session change and by nothing else.
+ */
+export interface AuthSessionStore extends StoreApi<AuthSessionState> {
+  /** The current state. Safe to call during render and from `beforeLoad` — it reads, it does not ask. */
   readonly read: () => SessionState;
-  readonly subscribe: (listener: () => void) => () => void;
   /** The one `POST /auth/refresh` of this tab's life. Idempotent: later callers get the first answer. */
   readonly bootstrap: () => Promise<SessionState>;
   readonly start: (identity: SessionIdentity) => void;
@@ -29,6 +44,13 @@ export interface AuthSessionStoreDeps {
  * Query is the other half: `queryClient.clear()` on sign-out would otherwise wipe the session state
  * and restart the very exchange the sign-out just ended (`rules/tanstack-query.mdc` §13).
  *
+ * **`createStore` from `zustand/vanilla`, not `create`** (ADR-0026, rule 16 of
+ * `rules/frontend-fsd.mdc`): `create` returns a hook, and a hook cannot be called from a guard. The
+ * vanilla store is a plain object with `getState`/`setState`/`subscribe`, and `useStore` in
+ * `use-bootstrap-session.hook.ts` is what turns it into a subscription for components. The `Set` of
+ * listeners and the notification loop this file used to carry are now the library's — together with
+ * the case they existed for, where `StrictMode` runs a cleanup twice.
+ *
  * **`unknown` is the state this store exists to leave — but only on an answer.** Both guards let it
  * through, because between the first paint and the answer the client genuinely does not know and
  * guessing «anonymous» flashes a login form at everybody who reloads. `bootstrap()` resolves to
@@ -46,39 +68,24 @@ export interface AuthSessionStoreDeps {
  * session, and the factory is what lets a test have a store of its own instead of the tab's.
  */
 export const createAuthSessionStore = ({ refresh }: AuthSessionStoreDeps): AuthSessionStore => {
-  let state: SessionState = UNKNOWN;
-  let bootstrapped: Promise<SessionState> | null = null;
+  const store = createStore<AuthSessionState>(() => ({ session: UNKNOWN }));
 
   /**
-   * A `Set`, so that a cleanup running twice — which is what `StrictMode` does to every effect —
-   * cannot delete whichever listener had moved into the freed slot.
+   * Outside the state, deliberately: a promise is not something anybody renders, and replacing it
+   * in the state would wake every subscriber for a change none of them can see.
    */
-  const listeners = new Set<() => void>();
+  let bootstrapped: Promise<SessionState> | null = null;
 
-  const set = (next: SessionState): SessionState => {
-    state = next;
-    // A copy: a listener that unsubscribes while being notified would otherwise mutate the set
-    // mid-iteration.
-    for (const listener of [...listeners]) listener();
+  const read = (): SessionState => store.getState().session;
+
+  const settle = (next: SessionState): SessionState => {
+    store.setState({ session: next });
 
     return next;
   };
 
-  const signedIn = (identity: SessionIdentity): SessionState => ({
-    status: 'authenticated',
-    ...identity,
-  });
-
-  return {
-    read: () => state,
-
-    subscribe: (listener) => {
-      listeners.add(listener);
-
-      return () => {
-        listeners.delete(listener);
-      };
-    },
+  return Object.assign(store, {
+    read,
 
     // Memoised per *answer about the session*, not per call — and `unavailable` is not one.
     //
@@ -91,32 +98,34 @@ export const createAuthSessionStore = ({ refresh }: AuthSessionStoreDeps): AuthS
     // Staying `unknown` is the honest state and it is survivable: both guards let `unknown` through,
     // so the shell renders and its own queries surface the outage as an error, instead of a login
     // form that implies the session is gone. A rejection is treated the same way for the same
-    // reason — nothing was learned — where it used to be folded into `anonymous`.
-    bootstrap: () =>
+    // reason — nothing was learned.
+    bootstrap: (): Promise<SessionState> =>
       (bootstrapped ??= refresh().then(
         (rotation) => {
-          if (rotation.kind === 'session') return set(signedIn(rotation.identity));
-          if (rotation.kind === 'refused') return set(ANONYMOUS);
+          if (rotation.kind === 'session') {
+            return settle({ status: 'authenticated', ...rotation.identity });
+          }
+          if (rotation.kind === 'refused') return settle(ANONYMOUS);
 
           bootstrapped = null;
 
-          return state;
+          return read();
         },
         () => {
           bootstrapped = null;
 
-          return state;
+          return read();
         },
       )),
 
-    start: (identity) => {
-      set(signedIn(identity));
+    start: (identity: SessionIdentity): void => {
+      settle({ status: 'authenticated', ...identity });
     },
 
-    end: () => {
-      set(ANONYMOUS);
+    end: (): void => {
+      settle(ANONYMOUS);
     },
-  };
+  });
 };
 
 /** The session of this tab. */

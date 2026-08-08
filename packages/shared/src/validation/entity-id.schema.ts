@@ -26,6 +26,9 @@ export type TeamId = z.infer<typeof teamIdSchema>;
 export const roleIdSchema = brandedUuid<'RoleId'>();
 export type RoleId = z.infer<typeof roleIdSchema>;
 
+export const invitationIdSchema = brandedUuid<'InvitationId'>();
+export type InvitationId = z.infer<typeof invitationIdSchema>;
+
 export const projectIdSchema = brandedUuid<'ProjectId'>();
 export type ProjectId = z.infer<typeof projectIdSchema>;
 

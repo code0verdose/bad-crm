@@ -21,18 +21,19 @@ E2E-харнесс работает и проверен в CI — джоба `en
 [`epics/README.md`](epics/README.md) (генерируется из frontmatter).
 
 Про EPIC-007 стоит знать две вещи, чтобы не искать в нём недоделку. Пять критериев приёмки из восьми
-были выполнены попутно в EPIC-004 и EPIC-006 — это установлено сверкой с кодом, а не с бордом. Ещё
-два («экран с данными использует `DataState`», «ловушка фокуса в модалке») — правила соответствия для
-будущих экранов: ни экранов с данными, ни модалок в продукте нет, и тест на них был бы утверждением о
-несуществующем.
+были выполнены попутно в EPIC-004 и EPIC-006 — это установлено сверкой с кодом, а не с бордом.
+Седьмой («экран с данными использует `DataState`») закрыт EPIC-012: `DataState` стоит на профиле
+сотрудника, на справочнике и на матрице ролей. Восьмой («ловушка фокуса в модалке») остаётся
+правилом соответствия для будущих экранов — модалка в продукте есть одна, и покрыть её ловушку
+фокуса тестом стоит вместе со следующей.
 
 | Артефакт | Сколько | Где |
 |---|---|---|
-| Продуктовые и архитектурные документы | 47 файлов (включая 25 ADR) | `docs/` |
+| Продуктовые и архитектурные документы | 48 файлов (включая 26 ADR) | `docs/` |
 | Правила разработки | 34 файла `.mdc` | `rules/` |
 | Проектные агенты-ревьюеры | 9 | `.claude/agents/` |
 | Эпики | 49 (`epic.md`) | `epics/` |
-| Пользовательские истории | 131 (M1–M2 плюс EPIC-048 и EPIC-049) | `epics/*/stories/` |
+| Пользовательские истории | 132 (M1–M2 плюс EPIC-048 и EPIC-049) | `epics/*/stories/` |
 
 **Что уже работает:**
 
@@ -85,8 +86,7 @@ E2E-харнесс работает и проверен в CI — джоба `en
 уже проверяется на маршрутах назначения ролей, но ресурсного слоя пока нет ни у одного домена; переключателя организации и юнита `units/organization`; привязки `errors[].path` к полям
 формы (STORY-008-03 — нечем проверить, пока клиент и сервер валидируют одной схемой); мастерской
 компонентов (STORY-008-06 — нужен выбор инструмента и ADR; псевдолокаль при этом сделана); доменных
-юнитов (задачи, документы, время — M3+); Playwright-харнесса (`packages/e2e` — пустая заготовка,
-EPIC-010).
+юнитов (задачи, документы, время — M3+).
 
 **Следствие для любой работы в этом репозитории:** проверяй по факту, а не по этому списку — он
 устаревает быстрее кода. Не утверждай «работает», не запустив.
@@ -222,7 +222,7 @@ rootless-демоне Testcontainers отвечает «Could not find a working
 | [`docs/architecture/stack.md`](docs/architecture/stack.md) | Стек и версии, гексагональные слои, контракт API, БД, outbox, env, команды | любой серверной работе |
 | [`docs/architecture/data-model.md`](docs/architecture/data-model.md) | Сущности, таблицы, индексы, RLS-политики — **источник истины по именам** | любом изменении схемы или Prisma-модели |
 | [`docs/architecture/ux-architecture.md`](docs/architecture/ux-architecture.md) | Принципы UI, маршруты, экраны, дизайн-система, a11y, i18n, FSD клиента | любой клиентской работе |
-| [`docs/architecture/adr/`](docs/architecture/adr/) | 25 ADR: по одному решению на файл, с отвергнутыми альтернативами | попытке изменить принятое решение — сперва прочти ADR |
+| [`docs/architecture/adr/`](docs/architecture/adr/) | 26 ADR: по одному решению на файл, с отвергнутыми альтернативами | попытке изменить принятое решение — сперва прочти ADR |
 | [`docs/security/threat-model.md`](docs/security/threat-model.md) | STRIDE по контекстам, нарушители N1–N10, топ-15 угроз, каналы MCP и почты, остаточные риски | работе с любым чувствительным потоком данных |
 | [`docs/security/permission-model.md`](docs/security/permission-model.md) | Пять слоёв прав, `effectivePermission`, матрица роль × endpoint | добавлении endpoint'а, права или роли |
 | [`docs/security/rls-design.md`](docs/security/rls-design.md) | Роли БД, канонический шаблон политики, `withTenant`, isolation-тесты | добавлении таблицы, миграции, репозитория, job'а |
@@ -292,6 +292,7 @@ rootless-демоне Testcontainers отвечает «Could not find a working
 | Клиент | React + Vite + FSD «units» | 19 | [ADR-0005](docs/architecture/adr/0005-fsd-units-frontend-architecture.md) |
 | UI-kit и стили | Mantine + CSS Modules (без Tailwind) | 9.x | [ADR-0006](docs/architecture/adr/0006-mantine-css-modules-no-tailwind.md) |
 | Роутинг и дата-слой | TanStack Router + TanStack Query | v5 | [ADR-0007](docs/architecture/adr/0007-tanstack-router-and-query.md) |
+| Клиентское состояние (не серверное) | zustand — только то, что не помещается в Query и в URL | 5.x | [ADR-0026](docs/architecture/adr/0026-client-state-zustand.md) |
 | Права | RBAC + per-user overrides + resource ACL | — | [ADR-0008](docs/architecture/adr/0008-permission-model-rbac-plus-acl.md) |
 | Крипто клиента | `libsodium-wrappers-sumo` (Argon2id, XChaCha20-Poly1305, Ed25519) | — | [ADR-0009](docs/architecture/adr/0009-e2ee-vault-key-hierarchy.md) |
 | Realtime | Socket.IO + `@socket.io/redis-streams-adapter` | 4.x | [ADR-0010](docs/architecture/adr/0010-realtime-socketio-redis-adapter.md) |

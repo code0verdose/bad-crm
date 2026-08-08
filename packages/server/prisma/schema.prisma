@@ -83,6 +83,8 @@ model Organization {
   deletedAt DateTime? @map("deleted_at") @db.Timestamptz(6)
 
   teams               Team[]
+  teamMembers         TeamMember[]
+  employeeProfiles    EmployeeProfile[]
   roles               Role[]
   rolePermissions     RolePermission[]
   userRoles           UserRole[]
@@ -185,6 +187,9 @@ model User {
   passwordResetTokens PasswordResetToken[]
   roles               UserRole[]               @relation("UserRoleHolder")
   rolesGranted        UserRole[]               @relation("UserRoleGrantor")
+  teamMemberships     TeamMember[]
+  employeeProfile     EmployeeProfile? @relation("EmployeeAccount")
+  manages             EmployeeProfile[] @relation("EmployeeManager")
   permissionOverrides UserPermissionOverride[] @relation("OverrideSubject")
   invitationsSent     Invitation[]             @relation("InvitationAuthor")
   invitationAccepted  Invitation[]             @relation("InvitationAcceptor")
@@ -329,6 +334,7 @@ model Team {
   deletedAt DateTime? @map("deleted_at") @db.Timestamptz(6)
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict, map: "fk_teams_organization_id")
+  members      TeamMember[]
 
   /// Not decoration: a child table referencing a team must use the composite key
   /// `(organization_id, team_id)`, and a composite foreign key needs this unique constraint to
@@ -337,6 +343,99 @@ model Team {
   @@unique([organizationId, id], map: "uq_teams_org_id")
   @@index([organizationId, name], map: "idx_teams_org_name")
   @@map("teams")
+}
+
+/// Tenant-scoped table [T]: кадровая запись о человеке — отдельно от учётной записи.
+///
+/// Not every `User` is an employee: a contractor, a client representative with access to one project
+/// and an integration bot have no hiring date and no manager, and nullable HR columns on `users`
+/// would mean the schema does not say so (`data-model.md`, «Почему `User` и `EmployeeProfile`
+/// разделены»).
+///
+/// **The person's name lives here and nowhere else.** It takes part in no decision about access, and
+/// every screen that shows a human reads this table anyway.
+model EmployeeProfile {
+  id             String @id(map: "pk_employee_profiles") @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String @map("organization_id") @db.Uuid
+  userId         String @map("user_id") @db.Uuid
+
+  firstName  String  @map("first_name")
+  lastName   String  @map("last_name")
+  jobTitle   String? @map("job_title")
+  department String?
+  managerId  String? @map("manager_id") @db.Uuid
+
+  /// Hours a week this person is planned against. `ck_employee_profiles_capacity` bounds it 0…80 in
+  /// the database; the Zod schema answers the person editing the form.
+  weeklyCapacityHours Int    @default(40) @map("weekly_capacity_hours")
+  /// `FULL_TIME` | `PART_TIME` | `CONTRACTOR` | `INTERN`, constrained by
+  /// `ck_employee_profiles_employment_type`. Text rather than a PostgreSQL enum: adding a value to
+  /// an enum is DDL on a type every user of it depends on.
+  employmentType      String @default("FULL_TIME") @map("employment_type")
+
+  hiredAt      DateTime? @map("hired_at") @db.Date
+  /// Set on offboarding: the account is suspended, never deleted — years of time entries, tasks and
+  /// audit entries reference this person.
+  terminatedAt DateTime? @map("terminated_at") @db.Date
+
+  timezone String   @default("UTC")
+  /// Searchable «кто умеет postgres», with a GIN index. A join table the day levels or endorsements
+  /// make a skill an entity of its own.
+  skills   String[] @default([])
+
+  /// **Ciphertext only**, `v1:<iv>:<tag>:<ciphertext>` under `APP_ENCRYPTION_KEY`. There is no
+  /// plaintext column: an emergency contact is somebody else's personal data, and a dump of this
+  /// table must not be a list of relatives' phone numbers.
+  emergencyContactEnc String? @map("emergency_contact_enc")
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "fk_employee_profiles_organization_id")
+  user         User         @relation("EmployeeAccount", fields: [organizationId, userId], references: [organizationId, id], onDelete: Cascade, onUpdate: NoAction, map: "fk_employee_profiles_user_id")
+  /// `Restrict`: an account that still manages somebody is not deleted quietly — reassign first.
+  manager      User?        @relation("EmployeeManager", fields: [organizationId, managerId], references: [organizationId, id], onDelete: Restrict, onUpdate: NoAction, map: "fk_employee_profiles_manager_id")
+
+  @@unique([organizationId, userId], map: "uq_employee_profiles_user")
+  @@index([organizationId, managerId], map: "idx_employee_profiles_org_manager")
+  /// «Кто умеет postgres»: the predicate is `skills && ARRAY[…]`, which is a GIN question rather
+  /// than a B-tree one. Declared here rather than only in the migration because Prisma **can**
+  /// express it, and an index it can express but does not see is one `prisma migrate dev` offers to
+  /// drop — which `test/integration/db/schema-drift.test.ts` catches on the spot.
+  @@index([skills(ops: ArrayOps)], map: "idx_employee_profiles_skills", type: Gin)
+  /// `idx_employee_profiles_org_active` is not declared here: it is partial
+  /// (`WHERE terminated_at IS NULL`), which Prisma's datamodel cannot express. It lives in the
+  /// migration, like `uq_users_org_email`.
+  @@map("employee_profiles")
+}
+
+/// Tenant-scoped table [T]: «этот человек в этой команде».
+///
+/// The row an invitation's `team_ids` draft turns into on acceptance. A table rather than an array
+/// on either side, because everything downstream asks questions of it — кто в команде, чья это
+/// доска, кому идёт уведомление — and an array answers none of them with an index.
+model TeamMember {
+  id             String @id(map: "pk_team_members") @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String @map("organization_id") @db.Uuid
+  teamId         String @map("team_id") @db.Uuid
+  userId         String @map("user_id") @db.Uuid
+  /// `MEMBER` | `LEAD`, constrained by `ck_team_members_role` in the migration. Text rather than a
+  /// PostgreSQL enum: adding a value to an enum is DDL on a type every user of it depends on.
+  teamRole       String @default("MEMBER") @map("team_role")
+
+  joinedAt  DateTime @default(now()) @map("joined_at") @db.Timestamptz(6)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "fk_team_members_organization_id")
+  team         Team         @relation(fields: [organizationId, teamId], references: [organizationId, id], onDelete: Cascade, onUpdate: NoAction, map: "fk_team_members_team_id")
+  user         User         @relation(fields: [organizationId, userId], references: [organizationId, id], onDelete: Cascade, onUpdate: NoAction, map: "fk_team_members_user_id")
+
+  /// Joining a team twice is the same membership, not a second one — which is what makes acceptance
+  /// idempotent without the use-case reading first.
+  @@unique([teamId, userId], map: "uq_team_members")
+  @@index([organizationId, userId], map: "idx_team_members_org_user")
+  @@map("team_members")
 }
 
 /// Tenant-scoped table [T]: an invitation to join this organization.
@@ -362,7 +461,12 @@ model Invitation {
   /// `team_members` and stops being read.
   teamIds String[] @default([]) @map("team_ids") @db.Uuid
 
-  tokenHash      String    @map("token_hash")
+  tokenHash      Bytes     @map("token_hash")
+  /// Which language the letter is written in. The recipient has no account, so there is no
+  /// `users.locale` to read; the inviter's own language is the best available guess, and it is
+  /// stored rather than passed so that a resend produces the same letter as the first one.
+  /// Constrained to `en` and `ru` by `ck_invitations_locale` in the migration.
+  locale         String    @default("en")
   invitedById    String    @map("invited_by_id") @db.Uuid
   expiresAt      DateTime  @map("expires_at") @db.Timestamptz(6)
   /// `null` while it is still an invitation; a date once it became a person.

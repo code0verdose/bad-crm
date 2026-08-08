@@ -1,3 +1,5 @@
+import { randomUUID } from 'node:crypto';
+
 import { SharedPermissions } from '@bad-crm/shared';
 
 import { ConflictError } from '../../src/domain/shared/errors/app.errors.js';
@@ -22,6 +24,26 @@ import {
   type OverrideRow,
   type PermissionOverrideRepositoryPort,
 } from '../../src/application/iam/ports/permission-override-repository.port.js';
+import {
+  type EmployeeProfilePatch,
+  type EmployeeProfileRepositoryPort,
+  type EmployeeProfileRow,
+} from '../../src/application/iam/ports/employee-profile-repository.port.js';
+import {
+  type DirectoryFacets,
+  type EmployeeDirectoryFilter,
+  type EmployeeDirectoryPage,
+  type EmployeeDirectoryRepositoryPort,
+  type EmployeeDirectoryRow,
+  type OrgChartNode,
+} from '../../src/application/iam/ports/employee-directory-repository.port.js';
+import {
+  type AcceptedInvitation,
+  type InvitationDraftRow,
+  type InvitationRepositoryPort,
+  type InvitationRow,
+  type InvitedAccountDraft,
+} from '../../src/application/iam/ports/invitation-repository.port.js';
 import {
   type AssignmentDraft,
   type AssignmentResult,
@@ -354,3 +376,321 @@ export class FakeCustomRoleRepository implements CustomRoleRepositoryPort {
     );
   }
 }
+
+/**
+ * Invitations in memory, with the one behaviour the database owns: a second **open** invitation for
+ * an address is a conflict, not a second row.
+ *
+ * The partial unique index is what actually enforces that (`idx_invitations_org_email … WHERE
+ * accepted_at IS NULL`); this reproduces the refusal so the HTTP suite can assert the answer it
+ * produces. It is **not** a check that the index exists — that is the migration's business, and no
+ * test asserts the index against a live database today.
+ */
+export class FakeInvitationRepository implements InvitationRepositoryPort {
+  readonly rows = new Map<string, InvitationRow>();
+  /** Digests, kept apart from the rows exactly as the repository keeps them out of `InvitationRow`. */
+  readonly digests = new Map<string, Uint8Array>();
+  /** Who accepted which invitation — the pair the CHECK constraint keeps together. */
+  readonly accepted = new Map<string, string>();
+  /** Accounts the acceptance created, by address. */
+  readonly accounts = new Map<string, InvitedAccountDraft & { userId: string }>();
+  readonly memberships: { userId: string; teamIds: string[] }[] = [];
+
+  constructor(
+    private readonly options: {
+      /** What the role grants, for the subset rule. `null` — the role is not in this tenant. */
+      readonly rolePermissions?: readonly SharedPermissions.PermissionKey[] | null;
+      /** The address already belongs to an account. */
+      readonly userExists?: boolean;
+    } = {},
+  ) {}
+
+  create(draft: InvitationDraftRow): Promise<string> {
+    const open = [...this.rows.values()].some(
+      (row) => row.email === draft.email && row.acceptedAt === null,
+    );
+
+    if (open) return Promise.reject(new ConflictError('invitation_already_exists'));
+
+    // A UUID, because the path parameter is one: a fake that minted `invitation-1` would make every
+    // request addressing a created row fail validation instead of reaching the use-case.
+    const id = randomUUID();
+
+    this.rows.set(id, {
+      id,
+      email: draft.email,
+      roleId: draft.roleId,
+      teamIds: [...draft.teamIds],
+      locale: draft.locale,
+      invitedById: draft.invitedById,
+      expiresAt: draft.expiresAt,
+      acceptedAt: null,
+      createdAt: new Date('2026-08-07T10:00:00.000Z'),
+    });
+    this.digests.set(id, draft.tokenHash);
+
+    return Promise.resolve(id);
+  }
+
+  byId(invitationId: string): Promise<InvitationRow | null> {
+    return Promise.resolve(this.rows.get(invitationId) ?? null);
+  }
+
+  reissue(invitationId: string, tokenHash: Uint8Array, expiresAt: Date): Promise<boolean> {
+    const row = this.rows.get(invitationId);
+
+    if (row === undefined || row.acceptedAt !== null) return Promise.resolve(false);
+
+    this.rows.set(invitationId, { ...row, expiresAt });
+    this.digests.set(invitationId, tokenHash);
+
+    return Promise.resolve(true);
+  }
+
+  remove(invitationId: string): Promise<boolean> {
+    const row = this.rows.get(invitationId);
+
+    if (row === undefined || row.acceptedAt !== null) return Promise.resolve(false);
+
+    this.rows.delete(invitationId);
+    this.digests.delete(invitationId);
+
+    return Promise.resolve(true);
+  }
+
+  listOpen(): Promise<readonly InvitationRow[]> {
+    return Promise.resolve([...this.rows.values()].filter((row) => row.acceptedAt === null));
+  }
+
+  userExists(): Promise<boolean> {
+    return Promise.resolve(this.options.userExists ?? false);
+  }
+
+  rolePermissions(): Promise<readonly SharedPermissions.PermissionKey[] | null> {
+    // `??` would fold «this role is not in the tenant» into the default, and the 404 case would
+    // quietly exercise the happy path instead.
+    return Promise.resolve(
+      'rolePermissions' in this.options ? (this.options.rolePermissions ?? null) : [],
+    );
+  }
+
+  accept(
+    invitationId: string,
+    acceptedUserId: string,
+    now: Date,
+  ): Promise<AcceptedInvitation | null> {
+    const row = this.rows.get(invitationId);
+
+    // The conditional write, reproduced: accepted already or expired matches nothing, and the two
+    // are one outcome here exactly as they are in SQL.
+    if (row === undefined || row.acceptedAt !== null || row.expiresAt <= now) {
+      return Promise.resolve(null);
+    }
+
+    this.rows.set(invitationId, { ...row, acceptedAt: now });
+    this.accepted.set(invitationId, acceptedUserId);
+
+    return Promise.resolve({ email: row.email, roleId: row.roleId, teamIds: row.teamIds });
+  }
+
+  createAccount(draft: InvitedAccountDraft): Promise<string> {
+    // `uq_users_org_email`, reproduced: the second request for the same address loses, which is the
+    // guard that stands beside the conditional write.
+    if (this.accounts.has(draft.email)) {
+      return Promise.reject(new ConflictError('user_already_exists'));
+    }
+
+    const userId = randomUUID();
+
+    this.accounts.set(draft.email, { ...draft, userId });
+
+    return Promise.resolve(userId);
+  }
+
+  joinTeams(userId: string, teamIds: readonly string[]): Promise<number> {
+    this.memberships.push({ userId, teamIds: [...teamIds] });
+
+    return Promise.resolve(teamIds.length);
+  }
+
+  /**
+   * Marks an invitation as taken up without going through `accept` — the state resend and revoke
+   * refuse. Named apart from the port method on purpose: two members called `accept` is one member,
+   * and the second declaration silently wins.
+   */
+  markAccepted(invitationId: string, at = new Date('2026-08-08T10:00:00.000Z')): void {
+    const row = this.rows.get(invitationId);
+
+    if (row !== undefined) this.rows.set(invitationId, { ...row, acceptedAt: at });
+  }
+}
+
+/**
+ * Employee profiles in memory, with the one behaviour the database owns: a profile cannot exist for
+ * an account that is not in this organization.
+ *
+ * `accounts` is what stands in for that — the suite seeds it with the people the test invented, and
+ * `upsert` answers `null` for anybody else, exactly as the composite foreign key would refuse.
+ */
+export class FakeEmployeeProfileRepository implements EmployeeProfileRepositoryPort {
+  readonly rows = new Map<string, EmployeeProfileRow>();
+  /** Accounts that exist here; anybody else is «another organization», i.e. 404. */
+  readonly accounts = new Set<string>();
+
+  byUserId(userId: string): Promise<EmployeeProfileRow | null> {
+    const stored = this.rows.get(userId);
+
+    if (stored !== undefined) return Promise.resolve(stored);
+
+    // An account with no row yet is an **empty** profile, not «not found»: 404 on this endpoint
+    // means «no such person here», which is what tenancy depends on.
+    return Promise.resolve(this.accounts.has(userId) ? emptyProfile(userId) : null);
+  }
+
+  upsert(userId: string, patch: EmployeeProfilePatch): Promise<EmployeeProfileRow | null> {
+    if (!this.accounts.has(userId)) return Promise.resolve(null);
+
+    const existing = this.rows.get(userId) ?? emptyProfile(userId);
+    const next = { ...existing, ...definedOnly(patch) } as EmployeeProfileRow;
+
+    this.rows.set(userId, next);
+
+    return Promise.resolve(next);
+  }
+
+  managerLinks(): Promise<ReadonlyMap<string, string>> {
+    return Promise.resolve(
+      new Map(
+        [...this.rows.values()].flatMap((row) =>
+          row.managerId === null ? [] : [[row.userId, row.managerId] as const],
+        ),
+      ),
+    );
+  }
+}
+
+const emptyProfile = (userId: string): EmployeeProfileRow => ({
+  userId,
+  email: `${userId}@example.test`,
+  firstName: '',
+  lastName: '',
+  jobTitle: null,
+  department: null,
+  managerId: null,
+  weeklyCapacityHours: 40,
+  employmentType: 'FULL_TIME',
+  hiredAt: null,
+  terminatedAt: null,
+  timezone: 'UTC',
+  skills: [],
+  emergencyContactEnc: null,
+});
+
+/** Prisma reads an explicit `undefined` as «leave it alone»; the fake has to do the same. */
+const definedOnly = (patch: EmployeeProfilePatch): Record<string, unknown> =>
+  Object.fromEntries(Object.entries(patch).filter(([, value]) => value !== undefined));
+
+/**
+ * The directory, in memory, filtering and ordering for real.
+ *
+ * Real rather than a canned answer, because what the HTTP tests are checking is the behaviour
+ * **around** the rows — the default statuses, the refused order, the level of each line — and a
+ * double that returned everything regardless of the filter would let all three pass while broken.
+ * What it deliberately does not model is SQL: that is the job of
+ * `test/unit/persistence/employee-directory-repository.test.ts` and of the isolation suite.
+ */
+export class FakeEmployeeDirectoryRepository implements EmployeeDirectoryRepositoryPort {
+  readonly rows: EmployeeDirectoryRow[] = [];
+  /** Every call, so a test can assert what the query asked for — the order above all. */
+  readonly asked: EmployeeDirectoryFilter[] = [];
+
+  list(filter: EmployeeDirectoryFilter): Promise<EmployeeDirectoryPage> {
+    this.asked.push(filter);
+
+    const matched = this.rows
+      .filter((row) => filter.statuses.includes(row.status))
+      .filter((row) => matchesText(row, filter.query))
+      .filter(
+        (row) =>
+          filter.roleIds.length === 0 || row.roles.some((role) => filter.roleIds.includes(role.id)),
+      )
+      .filter(
+        (row) =>
+          filter.teamIds.length === 0 || row.teams.some((team) => filter.teamIds.includes(team.id)),
+      )
+      .sort(comparatorFor(filter.sort));
+    const from = (filter.page - 1) * filter.perPage;
+
+    return Promise.resolve({
+      items: matched.slice(from, from + filter.perPage),
+      total: matched.length,
+    });
+  }
+
+  facets(): Promise<DirectoryFacets> {
+    return Promise.resolve({
+      roles: dedupeById(this.rows.flatMap((row) => row.roles)),
+      teams: dedupeById(this.rows.flatMap((row) => row.teams)),
+    });
+  }
+
+  orgChart(): Promise<readonly OrgChartNode[]> {
+    return Promise.resolve(
+      this.rows.map((row) => ({
+        userId: row.userId,
+        firstName: row.firstName,
+        lastName: row.lastName,
+        jobTitle: row.jobTitle,
+        managerId: row.managerId,
+      })),
+    );
+  }
+}
+
+const matchesText = (row: EmployeeDirectoryRow, query: string): boolean => {
+  if (query === '') return true;
+
+  const needle = query.toLowerCase();
+
+  return [row.email, row.firstName, row.lastName, row.jobTitle, row.department].some(
+    (field) => field !== null && field.toLowerCase().includes(needle),
+  );
+};
+
+const comparatorFor =
+  (sort: string) =>
+  (left: EmployeeDirectoryRow, right: EmployeeDirectoryRow): number => {
+    if (sort === 'hiredAt' || sort === '-hiredAt') {
+      const difference = (left.hiredAt?.getTime() ?? 0) - (right.hiredAt?.getTime() ?? 0);
+
+      return sort === 'hiredAt' ? difference : -difference;
+    }
+
+    const difference = left.lastName.localeCompare(right.lastName);
+
+    return sort === '-name' ? -difference : difference;
+  };
+
+const dedupeById = <T extends { readonly id: string }>(values: readonly T[]): T[] => [
+  ...new Map(values.map((value) => [value.id, value])).values(),
+];
+
+/** A directory row with everything filled in, so a test states only what it is about. */
+export const directoryRow = (
+  overrides: Partial<EmployeeDirectoryRow> & { readonly userId: string },
+): EmployeeDirectoryRow => ({
+  email: `${overrides.userId}@example.test`,
+  firstName: 'Ivan',
+  lastName: 'Petrov',
+  jobTitle: 'Backend engineer',
+  department: 'Platform',
+  status: 'ACTIVE',
+  managerId: null,
+  roles: [],
+  teams: [],
+  employmentType: 'FULL_TIME',
+  hiredAt: new Date('2024-03-01T00:00:00.000Z'),
+  terminatedAt: null,
+  weeklyCapacityHours: 40,
+  ...overrides,
+});

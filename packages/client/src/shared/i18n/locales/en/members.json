@@ -1,0 +1,79 @@
+{
+  "title": "People",
+  "invite": {
+    "title": "Invite a colleague",
+    "description": "The invitation carries the role and the teams, so joining is one step rather than three.",
+    "emailLabel": "E-mail",
+    "emailPlaceholder": "ivan@acme.dev",
+    "roleLabel": "Role",
+    "roleNone": "No role for now",
+    "roleHint": "You can only hand out a role that stays within what you may do yourself.",
+    "localeLabel": "Language of the invitation",
+    "localeHint": "The letter is written in this language; the person has no account to take one from yet.",
+    "submit": "Send the invitation",
+    "sent": "The invitation to {{email}} is on its way.",
+    "created": "The invitation for {{email}} is ready.",
+    "linkLabel": "Invitation link",
+    "linkHint": "This link is shown once. Re-issuing it from the list replaces it and stops the old one working.",
+    "copy": "Copy the link",
+    "copied": "Copied.",
+    "copyFailed": "Copying failed — select the link and copy it by hand.",
+    "noMail": "This installation cannot send e-mail, so nothing was posted. Pass the link on yourself.",
+    "expires": "Works until {{date}}."
+  },
+  "language": {
+    "en": "English",
+    "ru": "Russian"
+  },
+  "accept": {
+    "title": "Join the team",
+    "description": "Choose a password and you are in. The address is the one you were invited on.",
+    "passwordLabel": "Password",
+    "confirmLabel": "Repeat the password",
+    "submit": "Create the account"
+  },
+  "filters": {
+    "search": "Search",
+    "searchPlaceholder": "Name, e-mail, job title, department",
+    "sort": "Order",
+    "status": "Status",
+    "role": "Role",
+    "team": "Team",
+    "reset": "Reset the filters"
+  },
+  "sort": {
+    "name": "By surname",
+    "nameDesc": "By surname, descending",
+    "hiredAt": "By hiring date",
+    "hiredAtDesc": "By hiring date, newest first"
+  },
+  "status": {
+    "ACTIVE": "Active",
+    "SUSPENDED": "Deactivated",
+    "INVITED": "Invited"
+  },
+  "column": {
+    "person": "Person",
+    "jobTitle": "Job title",
+    "department": "Department",
+    "roles": "Roles",
+    "teams": "Teams",
+    "status": "Status"
+  },
+  "view": {
+    "label": "How to show them",
+    "table": "Table",
+    "chart": "Org chart"
+  },
+  "empty": {
+    "title": "Nobody here yet",
+    "description": "Invite a colleague and they will appear on this list.",
+    "filtered": "Nobody matches these filters. Try widening them."
+  },
+  "list": {
+    "failed": "The directory could not be loaded."
+  },
+  "chart": {
+    "failed": "The org chart could not be loaded."
+  }
+}

@@ -332,6 +332,7 @@ describe('the documented upgrade procedure — bootstrap, then migrate', () => {
     );
 
     expect(functions.map((row) => row.signature)).toEqual([
+      'auth_lookup_invitation(bytea)',
       'auth_lookup_password_reset(bytea)',
       'auth_lookup_session(bytea)',
       'auth_lookup_user(citext,text)',

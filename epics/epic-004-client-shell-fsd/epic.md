@@ -70,3 +70,4 @@ created: 2026-07-26
 - [ ] [STORY-004-05 — TanStack Router: file-based маршруты, гарды, границы состояний](stories/story-004-05-tanstack-router-file-based-guards.md)
 - [ ] [STORY-004-06 — Типизированный API-клиент, auth-middleware, 401 → refresh с дедупом](stories/story-004-06-typed-api-client-auth-middleware.md)
 - [ ] [STORY-004-07 — Оболочка: сайдбар, шапка, переключатель организации, хлебные крошки](stories/story-004-07-app-shell-sidebar-topbar-breadcrumbs.md)
+- [ ] [STORY-004-08 — Слой клиентского состояния: zustand и граница вокруг него](stories/story-004-08-client-state-store.md) — добавлена в M2 по ADR-0026; выполняется до первого стора EPIC-015

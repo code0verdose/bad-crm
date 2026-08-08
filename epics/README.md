@@ -7,7 +7,7 @@
 | EPIC-001 | Монорепо и dev-окружение | 🔵 review | M1 | 4/7 |
 | EPIC-002 | CI и commit-гейт | 🔵 review | M1 | 0/6 |
 | EPIC-003 | Скелет сервера и контракт API | 🔵 review | M1 | 0/7 |
-| EPIC-004 | Каркас клиента на FSD | 🔵 review | M1 | 0/7 |
+| EPIC-004 | Каркас клиента на FSD | 🔵 review | M1 | 0/8 |
 | EPIC-005 | Мультиарендность и Row Level Security | 🔵 review | M1 | 0/6 |
 | EPIC-006 | Ядро аутентификации | 🔵 review | M1 | 0/9 |
 | EPIC-007 | Дизайн-система | 🔵 review | M1 | 0/5 |

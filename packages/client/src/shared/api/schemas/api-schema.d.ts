@@ -627,6 +627,285 @@ export interface paths {
         patch: operations["updateRole"];
         trace?: never;
     };
+    "/invitations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Invitations still waiting to be accepted.
+         * @description The open ones, newest first. An accepted invitation is a person and belongs to the directory
+         *     instead — the same human on two screens in two states is two screens that disagree.
+         *
+         *     Expired ones **are** here: an expired invitation is exactly the row somebody wants to resend
+         *     or revoke, and hiding it would leave it addressable by id and invisible on the screen that
+         *     addresses it.
+         */
+        get: operations["listInvitations"];
+        put?: never;
+        /**
+         * Invite somebody by e-mail.
+         * @description Onboarding as one operation: the address, the role and the teams together, rather than an
+         *     account created now and access remembered later.
+         *
+         *     Three refusals before anything is written, in this order:
+         *
+         *     * a `roleId` of another organization is **404**, like every other object of a tenant the
+         *       caller cannot see;
+         *     * a role carrying more than the inviter effectively holds is **403 `permission_not_granted`**
+         *       (`T-IAM-09`) — the account this would produce would outrank its author;
+         *     * the address has to be free: an active account is **409 `user_already_exists`**, and a
+         *       second open invitation is **409 `invitation_already_exists`**, which the partial unique
+         *       index answers rather than a read-then-insert that two callers can race.
+         *
+         *     Bounded at **20 per 10 minutes per inviter**, spent before anything is looked up: every
+         *     invitation is a letter this installation sends to an address the caller chose, and the
+         *     refusals above are answers about an address (`T-IAM-10`).
+         *
+         *     **Without SMTP this still succeeds** (NFR-9). `mailDispatched` is then `false` and the
+         *     interface shows `inviteUrl` with a warning — the link is in the response either way, and it
+         *     is shown exactly once.
+         */
+        post: operations["createInvitation"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/invitations/accept": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Take up an invitation and get an account.
+         * @description The one operation of this API that creates an account without a session: the token in the
+         *     body **is** the credential, and it is the whole of it.
+         *
+         *     **There is no `email` field, and its absence is the security property.** The account is
+         *     created on the address stored on the invitation; a body that could name one would let a
+         *     holder of somebody else's link create an account on an address of their choosing. The schema
+         *     is strict, so sending it is a 422 rather than a field that is quietly ignored.
+         *
+         *     Everything happens in **one transaction**: the account, the role the invitation carried, the
+         *     teams it drafted, and the spend. An account created without its role would be somebody
+         *     signing in on Monday to an empty workspace.
+         *
+         *     **410 `invitation_not_valid` covers five states** — unknown, revoked, already accepted,
+         *     expired, and «the organization was deactivated». Telling them apart would let a holder of a
+         *     guessed token learn whether it ever existed, and would let «already accepted» confirm that a
+         *     particular colleague joined (`T-IAM-03`).
+         *
+         *     Bounded at **10 per 15 minutes per address**, spent before the digest is computed: the caller
+         *     is anonymous, so the address is the only subject a counter can have, and a limiter checked
+         *     after an argon2id run is a memory-exhaustion vector rather than a defence (`T-IAM-08`).
+         *
+         *     Answers with the same document as sign-in and sets the same refresh cookie — the person is
+         *     signed in the moment their account exists.
+         */
+        post: operations["acceptInvitation"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/invitations/{invitationId}/resend": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Issue a new link for an invitation.
+         * @description A **new** token, and the old one dead in the same statement — an invitation with two live
+         *     links is a door somebody thinks they closed. The expiry moves out by seven days from now.
+         *
+         *     The letter goes to the address **on the row**; there is no address in this request, because
+         *     a resend that could be pointed elsewhere would be a way to have somebody else's invitation
+         *     delivered to an attacker. It is written in the language the invitation was created in.
+         *
+         *     An accepted invitation is **409 `invitation_already_accepted`** — a state conflict rather
+         *     than a refusal of the caller: it is a person now, and no capability would make minting a link
+         *     for an account that already exists sensible.
+         *
+         *     Shares the creation budget of 20 per 10 minutes: it mints a token and sends a letter, so a
+         *     separate counter would be a way around the first one.
+         */
+        post: operations["resendInvitation"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/invitations/{invitationId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Close an invitation early.
+         * @description The row goes rather than gaining a flag: the token has to stop working, and a filter
+         *     everybody has to remember is a filter somebody forgets. Presenting the link afterwards is
+         *     answered exactly like a link that never existed.
+         *
+         *     An **accepted** invitation is **409 `invitation_already_accepted`** — it is a person, and
+         *     taking their access away is deactivation, not this.
+         */
+        delete: operations["revokeInvitation"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/employees": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The directory — who works here.
+         * @description A page of people, with the values its own filters can take.
+         *
+         *     **The facets are part of this answer** rather than a call to `/roles` and `/teams`: those
+         *     need `role:read` and `team:read`, which a developer and a viewer do not hold, and the
+         *     directory is open to both. A screen able to list people but not to name the roles it lists
+         *     would have a filter with no options in it. Only what somebody actually holds appears.
+         *
+         *     **Deactivated colleagues are hidden unless asked for.** The default is
+         *     `status=ACTIVE&status=INVITED`; an account is suspended and never deleted, so without this
+         *     every search would return an ex-employee before the person meant.
+         *
+         *     **An order can be refused.** `sort=hiredAt` is a question about a column, and paging a list
+         *     ordered by it teaches the reader every hiring date one comparison at a time — so a caller
+         *     without `employee:view_personal_data` is answered by name instead. The response says which
+         *     order it used; it does not pretend.
+         *
+         *     Each row is folded to what the caller may see, **per person**: your own line carries your
+         *     employment even when your colleagues' lines do not. No key of this response begins with
+         *     `cost`.
+         */
+        get: operations["listEmployees"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/employees/org-chart": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Who reports to whom.
+         * @description Every node of the chart, flat, in one query. The tree is assembled from `managerId` by
+         *     whoever draws it: the answer is the whole organization, so the shape is a rendering decision
+         *     and nesting it here would put the same information behind a recursive schema no other caller
+         *     wants. Somebody whose manager is not in the list is drawn at the root.
+         *
+         *     **Names and edges only.** A chart is a picture of the structure; putting hiring dates or
+         *     capacity on it would hand the employment half of every record to a capability every role but
+         *     `guest` holds.
+         *
+         *     Its own permission rather than a share of `employee:read`: a directory of names is not a map
+         *     of who answers to whom.
+         */
+        get: operations["getOrgChart"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/employees/{userId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The personnel record of one person.
+         * @description **The answer has three shapes, and which one comes back is decided on the server.**
+         *
+         *     * a colleague sees who the person is and how to work with them — name, job title,
+         *       department, manager, timezone, skills;
+         *     * the person themselves, and anybody with `employee:view_personal_data`, additionally sees
+         *       the employment: contract type, hiring and termination dates, weekly capacity, and the
+         *       emergency contact (stored encrypted, decrypted only for this audience);
+         *     * `employee:view_cost_rate` is a **third, separate** audience. It is not implied by the
+         *       second: knowing somebody's hiring date is not knowing what they are paid, and an
+         *       administrator holds the first without the second (`permission-model.md` §4.1).
+         *
+         *     A field a caller may not see is **absent from the document**, not present and empty: the
+         *     client is not the filter, because anybody can read a response.
+         *
+         *     **No key of this response begins with `cost`.** Rates live in their own table (M6) with their
+         *     own permission, and the shape here is the whole answer.
+         *
+         *     A `userId` from another organization is **404**, never 403.
+         */
+        get: operations["getEmployeeProfile"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Edit a personnel record.
+         * @description One operation for two audiences, told apart per **field** rather than per route.
+         *
+         *     * anybody edits the handful of fields on their own record that nobody else is a better
+         *       authority on: `firstName`, `lastName`, `timezone`, `skills`, `emergencyContact`;
+         *     * everything else — `jobTitle`, `department`, `managerId`, `weeklyCapacityHours`,
+         *       `employmentType`, `hiredAt`, `terminatedAt` — needs **`employee:update`**, on one's own
+         *       record as much as on anybody else's. They are what planning, cost and the org chart are
+         *       computed from: a person who sets their own capacity changes what the dashboards say about
+         *       their team.
+         *
+         *     An HR field in a self-edit is **403 `permission_not_granted`**, not a silently ignored key:
+         *     dropping it would let a form claim it saved something it did not.
+         *
+         *     Two refusals are **422** rather than 409, for the same reason: the request is well formed,
+         *     and what is wrong is the shape it would leave the record in.
+         *
+         *     * `managerId` that would close a loop in the org chart — `manager_cycle_detected`. The check
+         *       walks the chart inside the same transaction that writes.
+         *     * a termination date before the hiring date — `employment_period_inverted`. Compared against
+         *       the **stored** row, not against the body: a PATCH may carry only one of the two dates and
+         *       still invert the pair. A termination on the hiring date itself is accepted — a one-day
+         *       contract is a contract, and the database draws the boundary in the same place.
+         *
+         *     A PATCH: an absent field is left alone, `null` clears it.
+         */
+        patch: operations["updateEmployeeProfile"];
+        trace?: never;
+    };
     "/me/permissions": {
         parameters: {
             query?: never;
@@ -1026,7 +1305,7 @@ export interface components {
          *     reused with a different meaning.
          * @enum {string}
          */
-        ErrorCode: "validation_failed" | "unauthenticated" | "invalid_credentials" | "account_suspended" | "registration_disabled" | "password_reset_token_invalid" | "mail_not_configured" | "route_not_found" | "payload_too_large" | "vault_locked" | "stale_version" | "idempotency_key_reuse" | "last_owner_required" | "period_locked" | "self_lockout" | "system_role_immutable" | "owner_immutable" | "invitation_already_accepted" | "confirmation_required" | "rate_limited" | "feature_disabled" | "service_unavailable" | "internal_error" | "organization_not_found" | "organization_forbidden" | "organization_already_exists" | "team_not_found" | "team_forbidden" | "team_already_exists" | "user_not_found" | "user_forbidden" | "user_already_exists" | "role_not_found" | "role_forbidden" | "role_already_exists" | "invitation_not_found" | "invitation_forbidden" | "invitation_already_exists" | "session_not_found" | "session_forbidden" | "session_already_exists" | "project_not_found" | "project_forbidden" | "project_already_exists" | "board_not_found" | "board_forbidden" | "board_already_exists" | "task_not_found" | "task_forbidden" | "task_already_exists" | "sprint_not_found" | "sprint_forbidden" | "sprint_already_exists" | "comment_not_found" | "comment_forbidden" | "comment_already_exists" | "doc_not_found" | "doc_forbidden" | "doc_already_exists" | "kb_note_not_found" | "kb_note_forbidden" | "kb_note_already_exists" | "file_not_found" | "file_forbidden" | "file_already_exists" | "vault_item_not_found" | "vault_item_forbidden" | "vault_item_already_exists" | "secure_link_not_found" | "secure_link_forbidden" | "secure_link_already_exists" | "time_entry_not_found" | "time_entry_forbidden" | "time_entry_already_exists" | "channel_not_found" | "channel_forbidden" | "channel_already_exists" | "message_not_found" | "message_forbidden" | "message_already_exists" | "dashboard_not_found" | "dashboard_forbidden" | "dashboard_already_exists";
+        ErrorCode: "validation_failed" | "unauthenticated" | "invalid_credentials" | "account_suspended" | "registration_disabled" | "password_reset_token_invalid" | "invitation_not_valid" | "mail_not_configured" | "route_not_found" | "payload_too_large" | "vault_locked" | "stale_version" | "idempotency_key_reuse" | "last_owner_required" | "period_locked" | "self_lockout" | "system_role_immutable" | "owner_immutable" | "invitation_already_accepted" | "manager_cycle_detected" | "employment_period_inverted" | "confirmation_required" | "rate_limited" | "feature_disabled" | "service_unavailable" | "internal_error" | "organization_not_found" | "organization_forbidden" | "organization_already_exists" | "team_not_found" | "team_forbidden" | "team_already_exists" | "user_not_found" | "user_forbidden" | "user_already_exists" | "role_not_found" | "role_forbidden" | "role_already_exists" | "invitation_not_found" | "invitation_forbidden" | "invitation_already_exists" | "session_not_found" | "session_forbidden" | "session_already_exists" | "project_not_found" | "project_forbidden" | "project_already_exists" | "board_not_found" | "board_forbidden" | "board_already_exists" | "task_not_found" | "task_forbidden" | "task_already_exists" | "sprint_not_found" | "sprint_forbidden" | "sprint_already_exists" | "comment_not_found" | "comment_forbidden" | "comment_already_exists" | "doc_not_found" | "doc_forbidden" | "doc_already_exists" | "kb_note_not_found" | "kb_note_forbidden" | "kb_note_already_exists" | "file_not_found" | "file_forbidden" | "file_already_exists" | "vault_item_not_found" | "vault_item_forbidden" | "vault_item_already_exists" | "secure_link_not_found" | "secure_link_forbidden" | "secure_link_already_exists" | "time_entry_not_found" | "time_entry_forbidden" | "time_entry_already_exists" | "channel_not_found" | "channel_forbidden" | "channel_already_exists" | "message_not_found" | "message_forbidden" | "message_already_exists" | "dashboard_not_found" | "dashboard_forbidden" | "dashboard_already_exists";
         /**
          * @description Why one field was rejected. The list mirrors
          *     `packages/shared/src/errors/validation-issue.enums.ts`; anything a validator produces
@@ -1046,7 +1325,7 @@ export interface components {
          *     consulted (an unparsed body, a rate limit).
          * @enum {string}
          */
-        DenyReason: "not_authenticated" | "unknown_permission" | "permission_not_granted" | "denied_by_override" | "resource_required" | "resource_not_found" | "acl_explicit_none" | "insufficient_acl_level" | "acl_resolution_failed" | "tenant_mismatch" | "vault_locked" | "period_locked" | "last_owner_required" | "self_lockout" | "self_assignment_forbidden" | "system_role_immutable" | "owner_immutable" | "invitation_already_accepted";
+        DenyReason: "not_authenticated" | "unknown_permission" | "permission_not_granted" | "denied_by_override" | "resource_required" | "resource_not_found" | "acl_explicit_none" | "insufficient_acl_level" | "acl_resolution_failed" | "tenant_mismatch" | "vault_locked" | "period_locked" | "last_owner_required" | "self_lockout" | "self_assignment_forbidden" | "system_role_immutable" | "owner_immutable" | "invitation_already_accepted" | "manager_cycle_detected" | "employment_period_inverted";
         ValidationIssue: {
             /**
              * @description The rejected field in dot notation over the request value — `title`,
@@ -1098,6 +1377,243 @@ export interface components {
              */
             isSystem: boolean;
             permissions: string[];
+        };
+        /**
+         * @description A personnel record, in the shape this caller is allowed to see. The employment fields below
+         *     the first block are present **only** for the person themselves and for
+         *     `employee:view_personal_data`; a caller without it does not receive the keys at all.
+         */
+        EmployeeProfile: {
+            /** Format: uuid */
+            userId: string;
+            /** Format: email */
+            email: string;
+            firstName: string;
+            lastName: string;
+            jobTitle: string | null;
+            department: string | null;
+            /** Format: uuid */
+            managerId: string | null;
+            timezone: string;
+            skills: string[];
+            /** @enum {string} */
+            employmentType?: "FULL_TIME" | "PART_TIME" | "CONTRACTOR" | "INTERN";
+            /**
+             * Format: date
+             * @description A calendar day, not an instant — nobody is hired at 14:32.
+             */
+            hiredAt?: string | null;
+            /** Format: date */
+            terminatedAt?: string | null;
+            weeklyCapacityHours?: number;
+            /**
+             * @description Stored encrypted at rest (`v1:<iv>:<tag>:<ciphertext>`, AES-256-GCM). Decrypted only for
+             *     a caller who may see it, and never written to a log or to the audit trail.
+             */
+            emergencyContact?: string | null;
+        };
+        /**
+         * @description `key` is what a filter matches and what the code knows a system role by; `name` is what a
+         *     person reads and what an organization may rename.
+         */
+        DirectoryRole: {
+            /** Format: uuid */
+            id: string;
+            key: string;
+            name: string;
+        };
+        DirectoryTeam: {
+            /** Format: uuid */
+            id: string;
+            name: string;
+        };
+        /**
+         * @description One line of the directory. The four employment keys are present **only** for the person
+         *     themselves and for `employee:view_personal_data` — a caller without it does not receive them
+         *     at all, because the client is not the filter.
+         *
+         *     An empty name and a `null` job title mean the personnel record has not been filled in yet:
+         *     an account exists from the moment an invitation is accepted, and the rest arrives later.
+         */
+        EmployeeListItem: {
+            /** Format: uuid */
+            userId: string;
+            /** Format: email */
+            email: string;
+            firstName: string;
+            lastName: string;
+            jobTitle: string | null;
+            department: string | null;
+            /** @enum {string} */
+            status: "ACTIVE" | "SUSPENDED" | "INVITED";
+            /** Format: uuid */
+            managerId: string | null;
+            roles: components["schemas"]["DirectoryRole"][];
+            teams: components["schemas"]["DirectoryTeam"][];
+            /** @enum {string|null} */
+            employmentType?: "FULL_TIME" | "PART_TIME" | "CONTRACTOR" | "INTERN" | null;
+            /** Format: date */
+            hiredAt?: string | null;
+            /** Format: date */
+            terminatedAt?: string | null;
+            weeklyCapacityHours?: number | null;
+        };
+        EmployeeDirectoryPage: {
+            items: components["schemas"]["EmployeeListItem"][];
+            /** @description Rows matching the same predicate as `items`, before pagination. */
+            total: number;
+            page: number;
+            perPage: number;
+            /**
+             * @description How the page **is** ordered, which is not always how it was asked to be: an employment
+             *     order asked for without `employee:view_personal_data` is answered by name.
+             * @enum {string}
+             */
+            sort: "name" | "-name" | "hiredAt" | "-hiredAt";
+            /** @description The values the filters can take in this organization — only what somebody holds. */
+            facets: {
+                roles: components["schemas"]["DirectoryRole"][];
+                teams: components["schemas"]["DirectoryTeam"][];
+            };
+        };
+        OrgChartNode: {
+            /** Format: uuid */
+            userId: string;
+            firstName: string;
+            lastName: string;
+            jobTitle: string | null;
+            /**
+             * Format: uuid
+             * @description `null` is a root of the chart — somebody who reports to nobody.
+             */
+            managerId: string | null;
+        };
+        /**
+         * @description A PATCH: an absent field is left alone, `null` clears it. Which fields a caller may send
+         *     depends on whose record it is — see the operation.
+         */
+        EmployeeProfilePatch: {
+            firstName?: string;
+            lastName?: string;
+            jobTitle?: string | null;
+            department?: string | null;
+            /** Format: uuid */
+            managerId?: string | null;
+            weeklyCapacityHours?: number;
+            /** @enum {string} */
+            employmentType?: "FULL_TIME" | "PART_TIME" | "CONTRACTOR" | "INTERN";
+            /** Format: date */
+            hiredAt?: string | null;
+            /** Format: date */
+            terminatedAt?: string | null;
+            timezone?: string;
+            skills?: string[];
+            emergencyContact?: string | null;
+        };
+        /**
+         * @description What the invited person supplies. **No address and no name.** The address comes from the
+         *     invitation; the name belongs to `EmployeeProfile`, whose table arrives with STORY-012-03 —
+         *     accepting a field with nowhere truthful to put it would drop it silently.
+         */
+        InvitationAcceptance: {
+            /** @description The value from the link, lifted out of the SPA route into the body. */
+            token: string;
+            /** @description The same policy registration and password reset apply — one schema, one set of rules. */
+            password: string;
+            /**
+             * @description What the interface was in; the account starts in that language.
+             * @enum {string}
+             */
+            locale: "en" | "ru";
+            /**
+             * @description IANA name as the browser reports it. Optional: a runtime without full ICU has none, and
+             *     `UTC` is a correct answer rather than a placeholder.
+             */
+            timezone?: string;
+        };
+        /**
+         * @description Whom to invite and what they will hold once they accept — a role assignment written in
+         *     advance, which is why the same subset rule applies to it as to an assignment.
+         */
+        InvitationDraft: {
+            /**
+             * Format: email
+             * @description The address the letter goes to. Trimmed and lower-cased before it is stored: the column
+             *     is `citext`, so two spellings of one address are one person.
+             */
+            email: string;
+            /**
+             * Format: uuid
+             * @description The role the account will hold. `null` or absent is «somebody who can sign in and nothing
+             *     else» — a legitimate invitation for a person whose access is decided after a conversation.
+             *
+             *     **May only carry what the inviter already holds** (`permission_not_granted`, 403,
+             *     threat `T-IAM-09`): the account this produces would otherwise outrank its author.
+             */
+            roleId?: string | null;
+            /** @description Teams the account joins on acceptance. Duplicates are collapsed. */
+            teamIds?: string[];
+            /**
+             * @description The language the letter is written in. Required, because the recipient has no account to
+             *     take a language from and a default would silently send English to a team that does not
+             *     read it — a defect invisible to the person who sent the invitation.
+             * @enum {string}
+             */
+            locale: "en" | "ru";
+        };
+        /**
+         * @description An invitation that has not been accepted. **Neither the token nor its digest is here**, and
+         *     no read of this API returns either: the row stores a SHA-256 digest of 32 CSPRNG bytes, and
+         *     the value itself exists once, in the response that created or re-issued it.
+         */
+        Invitation: {
+            /** Format: uuid */
+            id: string;
+            /** Format: email */
+            email: string;
+            /** Format: uuid */
+            roleId: string | null;
+            teamIds: string[];
+            /** @enum {string} */
+            locale: "en" | "ru";
+            /** Format: uuid */
+            invitedById: string;
+            /**
+             * Format: date-time
+             * @description When the link stops working. A date rather than an `expired` flag: whether it still works
+             *     is a comparison with the clock, and a boolean computed by the server is stale by the time
+             *     the screen renders it.
+             */
+            expiresAt: string;
+            /** Format: date-time */
+            createdAt: string;
+        };
+        /**
+         * @description The answer to creating or re-issuing an invitation — the **only** time the link is ever
+         *     shown. The server keeps a digest and cannot produce this URL again; a client that lost it
+         *     has to re-issue, which mints a new token and kills the previous one.
+         */
+        MintedInvitation: {
+            /** Format: uuid */
+            id: string;
+            /** Format: email */
+            email: string;
+            /**
+             * Format: uri
+             * @description Where the person accepts. The token is a **path segment**, not a query parameter: a
+             *     query string is copied into `Referer` by the next navigation and written to the access
+             *     log of every proxy in between.
+             */
+            inviteUrl: string;
+            /** Format: date-time */
+            expiresAt: string;
+            /**
+             * @description Whether the letter was handed to a transport. `false` means this installation has no
+             *     `SMTP_URL` (NFR-9) — **not** a failure: the invitation exists and the link is in this
+             *     response, so the interface shows it with a warning and the inviter passes it on
+             *     themselves. It never means «delivered»: nothing in the request learns that.
+             */
+            mailDispatched: boolean;
         };
         RoleListEntry: components["schemas"]["Role"] & {
             /** @description The role a new member gets when nobody chooses one. */
@@ -1488,6 +2004,12 @@ export interface components {
         UserId: string;
         /** @description Identifier of a role of the caller's organization. Another organization's id is 404. */
         RoleId: string;
+        /**
+         * @description Identifier of an invitation of the caller's organization. Another organization's id is 404,
+         *     and so is one that was already revoked — a revoked invitation is a deleted row, because the
+         *     token has to stop working rather than be filtered out by everybody who reads the table.
+         */
+        InvitationId: string;
         /**
          * @description Identifier of one of the caller's own sessions, as returned by `GET /auth/sessions`. An id
          *     belonging to somebody else is answered 404, not 403.
@@ -2278,6 +2800,330 @@ export interface operations {
             409: components["responses"]["Conflict"];
             422: components["responses"]["ValidationFailed"];
             428: components["responses"]["ConfirmationRequired"];
+            429: components["responses"]["RateLimited"];
+            500: components["responses"]["InternalError"];
+        };
+    };
+    listInvitations: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The open invitations of the caller's organization. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: components["schemas"]["Invitation"][];
+                    };
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            429: components["responses"]["RateLimited"];
+            500: components["responses"]["InternalError"];
+        };
+    };
+    createInvitation: {
+        parameters: {
+            query?: never;
+            header: {
+                /**
+                 * @description Client-generated key, mandatory on every unsafe operation that creates an entity, sends
+                 *     mail or spends money or tokens. A replay carrying the same request hash returns the stored
+                 *     response; the same key with a different hash is refused with 409 `idempotency_key_reuse`.
+                 *
+                 *     The client attaches it to every unsafe request without asking, so the operations that
+                 *     **declare** this parameter are the ones that store and replay a response. The rest ignore it,
+                 *     and two groups of them do so deliberately (see each operation's description): the ones that
+                 *     are idempotent by construction, where a stored response buys nothing, and `POST /auth/login`
+                 *     and `POST /auth/refresh`, where a stored response *is* a credential — replaying it would hand
+                 *     back tokens that have since been rotated or revoked and would let one key slip a repeat past
+                 *     the failed-attempt counter that the lockout depends on.
+                 */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["InvitationDraft"];
+            };
+        };
+        responses: {
+            /** @description The invitation exists, and this is the only time its link is shown. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MintedInvitation"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["ValidationFailed"];
+            429: components["responses"]["RateLimited"];
+            500: components["responses"]["InternalError"];
+        };
+    };
+    acceptInvitation: {
+        parameters: {
+            query?: never;
+            header: {
+                /**
+                 * @description Client-generated key, mandatory on every unsafe operation that creates an entity, sends
+                 *     mail or spends money or tokens. A replay carrying the same request hash returns the stored
+                 *     response; the same key with a different hash is refused with 409 `idempotency_key_reuse`.
+                 *
+                 *     The client attaches it to every unsafe request without asking, so the operations that
+                 *     **declare** this parameter are the ones that store and replay a response. The rest ignore it,
+                 *     and two groups of them do so deliberately (see each operation's description): the ones that
+                 *     are idempotent by construction, where a stored response buys nothing, and `POST /auth/login`
+                 *     and `POST /auth/refresh`, where a stored response *is* a credential — replaying it would hand
+                 *     back tokens that have since been rotated or revoked and would let one key slip a repeat past
+                 *     the failed-attempt counter that the lockout depends on.
+                 */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["InvitationAcceptance"];
+            };
+        };
+        responses: {
+            /** @description The account exists and this is its first session. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuthenticatedSession"];
+                };
+            };
+            409: components["responses"]["Conflict"];
+            /**
+             * @description The link cannot be used — unknown, revoked, already accepted, expired, or its
+             *     organization was deactivated. One answer for all five.
+             */
+            410: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            422: components["responses"]["ValidationFailed"];
+            429: components["responses"]["RateLimited"];
+            500: components["responses"]["InternalError"];
+        };
+    };
+    resendInvitation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /**
+                 * @description Identifier of an invitation of the caller's organization. Another organization's id is 404,
+                 *     and so is one that was already revoked — a revoked invitation is a deleted row, because the
+                 *     token has to stop working rather than be filtered out by everybody who reads the table.
+                 */
+                invitationId: components["parameters"]["InvitationId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A new link, shown once. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MintedInvitation"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            429: components["responses"]["RateLimited"];
+            500: components["responses"]["InternalError"];
+        };
+    };
+    revokeInvitation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /**
+                 * @description Identifier of an invitation of the caller's organization. Another organization's id is 404,
+                 *     and so is one that was already revoked — a revoked invitation is a deleted row, because the
+                 *     token has to stop working rather than be filtered out by everybody who reads the table.
+                 */
+                invitationId: components["parameters"]["InvitationId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The invitation is gone and its link no longer works. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            429: components["responses"]["RateLimited"];
+            500: components["responses"]["InternalError"];
+        };
+    };
+    listEmployees: {
+        parameters: {
+            query?: {
+                /**
+                 * @description Matched against name, e-mail, job title and department. Department is searched although
+                 *     there is no parameter for it: «кто у нас на бэкенде» is a search, not a facet, and a
+                 *     facet would need a picker of every free-text department anybody has ever typed.
+                 */
+                q?: string;
+                status?: ("ACTIVE" | "SUSPENDED" | "INVITED")[];
+                role?: string[];
+                team?: string[];
+                sort?: "name" | "-name" | "hiredAt" | "-hiredAt";
+                page?: number;
+                perPage?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description One page of the directory, each row folded to what this caller may see. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EmployeeDirectoryPage"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            422: components["responses"]["ValidationFailed"];
+            429: components["responses"]["RateLimited"];
+            500: components["responses"]["InternalError"];
+        };
+    };
+    getOrgChart: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Every node of the chart. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        nodes: components["schemas"]["OrgChartNode"][];
+                    };
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            429: components["responses"]["RateLimited"];
+            500: components["responses"]["InternalError"];
+        };
+    };
+    getEmployeeProfile: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /**
+                 * @description Identifier of a person in the caller's organization. An id from another organization is
+                 *     answered 404, not 403 — the API does not confirm what exists in tenants the caller cannot
+                 *     see.
+                 */
+                userId: components["parameters"]["UserId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The profile, folded to what this caller may see. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EmployeeProfile"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            429: components["responses"]["RateLimited"];
+            500: components["responses"]["InternalError"];
+        };
+    };
+    updateEmployeeProfile: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /**
+                 * @description Identifier of a person in the caller's organization. An id from another organization is
+                 *     answered 404, not 403 — the API does not confirm what exists in tenants the caller cannot
+                 *     see.
+                 */
+                userId: components["parameters"]["UserId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EmployeeProfilePatch"];
+            };
+        };
+        responses: {
+            /** @description The stored profile, folded to what this caller may see. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EmployeeProfile"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["ValidationFailed"];
             429: components["responses"]["RateLimited"];
             500: components["responses"]["InternalError"];
         };

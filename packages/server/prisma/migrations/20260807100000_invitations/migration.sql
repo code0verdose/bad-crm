@@ -9,9 +9,10 @@ SET LOCAL statement_timeout = '5min';
 --
 -- Three properties are the schema's rather than the code's:
 --
---   * **the token is not here.** What is stored is `token_hash` — SHA-256 of 32 CSPRNG bytes — for
---     the same reason sessions store one: a dump, a backup or a curious operator must not yield a
---     working invitation. The raw value exists once, in the link that was handed out;
+--   * **the token is not here.** What is stored is `token_hash` — SHA-256 of 32 CSPRNG bytes, as
+--     `BYTEA` like every other digest in this schema — for the same reason sessions store one: a
+--     dump, a backup or a curious operator must not yield a working invitation. The raw value exists
+--     once, in the link that was handed out;
 --   * **one open invitation per address.** The partial unique index below means the second «invite
 --     ivan@acme.dev» is a conflict rather than a second live token. Partial, because a **closed**
 --     invitation is history: inviting somebody again after they left is an ordinary thing to do;
@@ -28,7 +29,12 @@ CREATE TABLE "invitations" (
     -- A draft, not a membership: nothing references this until the invitation is accepted, and then
     -- it becomes rows in `team_members` and stops being read.
     "team_ids"         UUID[]         NOT NULL DEFAULT '{}',
-    "token_hash"       TEXT           NOT NULL,
+    "token_hash"       BYTEA          NOT NULL,
+    -- Which language the letter is written in. There is nowhere else to take it from: the recipient
+    -- has no account yet, so no `users.locale` exists to read — and the inviter's own language is
+    -- the best available guess about a colleague at the same company. Stored rather than passed,
+    -- because a resend has to produce the same letter as the first one.
+    "locale"           TEXT           NOT NULL DEFAULT 'en',
     "invited_by_id"    UUID           NOT NULL,
     "expires_at"       TIMESTAMPTZ(6) NOT NULL,
     -- `null` while it is still an invitation; a date once it became a person.
@@ -47,6 +53,9 @@ CREATE TABLE "invitations" (
     CONSTRAINT "ck_invitations_accepted_pair" CHECK (
         ("accepted_at" IS NULL) = ("accepted_user_id" IS NULL)
     ),
+    -- The two languages the product speaks (ADR-0019). A third value here would be a letter nobody
+    -- can render, discovered by the recipient rather than by the writer.
+    CONSTRAINT "ck_invitations_locale" CHECK ("locale" IN ('en', 'ru')),
     CONSTRAINT "fk_invitations_organization_id" FOREIGN KEY ("organization_id")
         REFERENCES "organizations" ("id") ON DELETE RESTRICT ON UPDATE NO ACTION,
     -- RESTRICT rather than SET NULL: a role with open invitations is a role somebody is about to

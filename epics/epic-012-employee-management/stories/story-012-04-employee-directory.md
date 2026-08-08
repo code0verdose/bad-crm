@@ -1,7 +1,7 @@
 ---
 id: STORY-012-04
 epic: EPIC-012
-status: backlog
+status: in-progress
 blocked: false
 priority: should
 estimate: M
@@ -75,24 +75,26 @@ estimate: M
 
 ## Задачи
 
-- [ ] `packages/server/src/application/iam/queries/list-employees.query.ts` — плоская read-модель,
-      keyset/offset-пагинация, фильтры, сортировка; `get-org-chart.query.ts` (рекурсивный CTE).
-- [ ] `packages/server/src/presentation/http/serializers/employee-list-item.serializer.ts` — уровни
-      по правам.
-- [ ] `packages/server/src/presentation/http/routes/registry.ts` — `employee:read`,
+- [x] `packages/server/src/application/iam/use-cases/list-employees.query.ts` — плоская read-модель,
+      offset-пагинация, фильтры, сортировка; `get-org-chart.query.ts` (**плоский ответ, не
+      рекурсивный CTE** — см. «Сделано»).
+- [x] `packages/server/src/presentation/http/serializers/employee-list-item.serializer.ts` — уровни
+      по правам, **по строке**.
+- [x] `packages/server/src/presentation/http/route-registry.factory.ts` — `employee:read`,
       `employee:view_org_chart`.
-- [ ] `packages/client/src/app/routes/_authenticated/admin/members/index.tsx` — `validateSearch`,
-      `beforeLoad: requirePermission('user:read')`, loader через `ensureQueryData`.
-- [ ] `packages/client/src/units/employee/model/validation/member-list-search.schema.ts`.
-- [ ] `packages/client/src/units/employee/service/hooks/use-employee-filters.hook.ts` (URL + debounce
+- [x] `packages/client/src/app/routes/_authenticated/admin/members/index.tsx` — `validateSearch`,
+      `beforeLoad: requirePermission('user:read')` (без loader — см. «Что отложено»).
+- [x] `packages/client/src/units/employee/model/validation/member-list-search.schema.ts`.
+- [x] `packages/client/src/units/employee/service/hooks/use-employee-filters.hook.ts` (URL + debounce
       + парсинг) и `use-employee-list.hook.ts` (композиция с query и `signal`).
-- [ ] `packages/client/src/widgets/employee-directory/employee-directory.widget.tsx` +
-      `ui/employee-filters-bar.component.tsx`, `ui/employee-table.component.tsx`,
-      `ui/org-chart.component.tsx`, `ui/employee-empty-state.component.tsx`.
-- [ ] i18n: `packages/client/src/app/i18n/{en,ru}/members.json`.
-- [ ] Тесты: `use-employee-filters.hook.spec.ts` (парсинг/whitelist/сброс страницы),
-      `list-employees.query.spec.ts` (счётчик SQL, п. 8, 9), снапшот сериализатора (п. 5),
-      e2e `members-directory.spec.ts` (п. 1, 3, 7) + axe.
+- [x] `packages/client/src/widgets/member-list/member-list.widget.tsx` (имя из `ux-architecture.md`,
+      а не из этого списка) + `ui/member-filters-bar.component.tsx`, `ui/member-table.component.tsx`,
+      `ui/member-org-chart.component.tsx`, `ui/member-org-branch.component.tsx`.
+- [x] i18n: `packages/client/src/shared/i18n/locales/{en,ru}/members.json`.
+- [x] Тесты: `use-employee-filters.hook.test.ts` (парсинг/whitelist/сброс страницы),
+      `employee-directory-repository.test.ts` (счётчик запросов, п. 8, 9),
+      `employee-list-serializer.test.ts` (п. 5), `members-directory-screen.test.tsx` (п. 1, 3, 7)
+      + axe, `employee-directory-isolation.test.ts` на живом Postgres (п. 10).
 
 ## Ссылки
 
@@ -101,11 +103,93 @@ estimate: M
 - [`permission-model.md` §3.2, §3.19 (список — это `read`, а не отдельное право)](../../../docs/security/permission-model.md)
 - PRD: NFR-2 (p95 < 300 мс), NFR-12
 
+## Сделано (2026-08-07)
+
+### Решение, которое эта история была обязана принять
+
+`data-model.md` оставлял EPIC-012 выбор: справочник джойнит `Invitation` — или `User` создаётся сразу
+со `status = INVITED`. **Принято: два списка, а не union.** Справочник перечисляет учётные записи;
+непринятые приглашения живут на своём экране за `invitation:read`. Union поставил бы одного человека
+в две таблицы сразу и заставил бы offset-пагинацию ходить по двум источникам с несовместимыми
+ключами сортировки; `User(status = INVITED)` нарушил бы инвариант EPIC-006 «строка учётной записи
+создаётся тогда, когда есть пароль». Значение `INVITED` остаётся в enum'е недостижимым и **входит в
+набор статусов по умолчанию** — чтобы в день, когда оно станет достижимым, справочник показал такие
+строки, а не спрятал половину людей. Записано в «Сведённые расхождения» и в разбор
+«Про `User.status = INVITED`» в [`data-model.md`](../../../docs/architecture/data-model.md).
+
+### Сервер
+
+- `application/iam/ports/employee-directory-repository.port.ts` — read-модель отдельным портом:
+  строка собирается из четырёх таблиц, и ни одна из них не является сущностью, которую пишет
+  `EmployeeProfileRepositoryPort`. **Базовая таблица — `users`**, кадровая запись присоединяется как
+  необязательная: принявший приглашение сегодня утром аккаунт есть, а профиля ещё нет.
+- `list-employees.query.ts` — две решения, которых гвард принять не может: **порядок может быть
+  отклонён** (сортировка по дате найма для того, кто её не видит, — боковой канал: перелистывая
+  список, её узнаёшь по одному сравнению за страницу) и **уровень считается по строке**, той же
+  `profileVisibility`, что решает одну карточку в STORY-012-03. Ответ сообщает, каким порядком он
+  **на самом деле** отсортирован.
+- `get-org-chart.query.ts` — **плоский ответ вместо рекурсивного CTE**, вопреки строчке в списке
+  задач: ответ — вся организация, поэтому CTE вернул бы те же строки ценой запроса, который нельзя
+  прочитать. Он окупится в день, когда попросят «ветку под Иваном» — это другой вопрос, и его пока
+  нет. Один запрос, независимо от размера компании.
+- `employee-list-item.serializer.ts` — форма **строится**, а не обрезается; ни один ключ ответа не
+  начинается на `cost` (проверено тестом на всех трёх уровнях).
+- `employee-directory.validator.ts` — `?role=a&role=b` и `?role=a` означают одно и то же:
+  нормализация один раз на границе. Неизвестное значение — **422, а не молчаливый дефолт**: на
+  сервере это значит, что клиент прислал то, чего не должен был.
+- Маршруты объявлены **до** `/employees/:userId`: Express сопоставляет в порядке объявления, и
+  параметрический маршрут иначе проглотил бы `/employees/org-chart`.
+
+### Клиент
+
+- `member-list-search.schema.ts` — весь фильтр в URL, каждое поле с `.catch`: отвергнутый
+  `validateSearch` подменил бы экран границей ошибки, а с `replace: true` сломанный адрес остался бы
+  в строке — перезагрузка не помогла бы.
+- `use-employee-filters.hook.ts` — одно место, которое пишет URL: любая смена фильтра сбрасывает
+  страницу, любая запись `replace`, ввод дебаунсится **в обработчике**, а не в эффекте. Хук берёт
+  `navigate` аргументом, поэтому тестируется без роутера.
+- `build-org-tree.util.ts` — дерево строит клиент, и оно переживает три вещи, которых сервер обещает
+  не присылать: руководителя не из списка, цикл и подчинение самому себе. Каждый человек рисуется
+  ровно один раз. Тест на цикл поймал реальный дефект: `filter(...).map(expand)` рисовал участника
+  цикла дважды.
+- Фильтры — `Chip`, а не `MultiSelect`: `Combobox` тянет поповер, портал и floating-движок в чанк
+  экрана, которому они не нужны. Значения ролей и команд приходят **из ответа** (`facets`), потому
+  что `role:read` и `team:read` у разработчика нет, а справочник ему открыт.
+- Вид (`table` / `chart`) — в URL: «посмотри, кто кому подчиняется» должно быть ссылкой, а запрос
+  оргструктуры делается только во включённом виде.
+
+### Бюджет бандла: `sideEffects` вместо ещё одного обхода
+
+Экран поднял начальный JS до 250.14 kB при лимите 250. Причина структурная и та же, что у barrel
+`@pages` в STORY-012-03: маршрут обязан держать `validateSearch` в первом чанке, значит он тянет
+namespace-barrel юнита, а barrel — весь юнит целиком, вместе с формой профиля и мутациями.
+
+Починка — одна строка в `packages/client/package.json`: `"sideEffects": ["*.css"]`. Модули клиента
+чисты, кроме CSS; без этой декларации сборщик обязан считать побочным эффектом каждый модуль и не
+может выбросить неиспользуемый namespace из barrel. **250.14 → 195.01 kB** — и это касается не только
+этого экрана: тот же механизм тянул `@units/iam` целиком в первый чанк с EPIC-011.
+
+## Что отложено, и почему
+
+- **`loader` через `ensureQueryData`** (строчка в списке задач) — не сделан осознанно: он даёт
+  выигрыш там, где данные нужны до первой отрисовки, а здесь первая отрисовка — это фильтры и
+  скелетон, и они не ждут сети. Добавление loader'а сейчас означало бы дублировать ключ и параметры
+  запроса в маршруте и в хуке; вернуться к этому стоит вместе с `defaultPreload: 'intent'` на
+  ссылках, когда появится, что префетчить.
+- **Отдельный пикер команд** — команд в продукте пока нельзя создать (CRUD команд — STORY-012-07).
+  Фильтр по команде работает end-to-end: параметр валидируется, уходит в SQL и покрыт тестом, а
+  список значений приходит фасетом ответа. Как только команды появятся, пикер получит те же значения.
+- **`role[]=`/`status[]=` буквально в адресной строке** — TanStack Router сериализует массивы своим
+  способом, и переопределять его глобально ради пунктуации одного экрана значило бы переписать URL
+  всех остальных. Написание в `ux-architecture.md` прочитано как «этот параметр — список».
+- **`department` как отдельный параметр** — поиск и так ищет по отделу и должности; фасет из
+  свободного текста, который кто-то когда-то ввёл, — это выпадающий список с сотней опечаток.
+
 ## Definition of Done
 
-- [ ] Тесты написаны первыми (TDD), проходят, изменённый код покрыт
+- [x] Тесты написаны первыми (TDD), проходят, изменённый код покрыт
 - [ ] Commit-гейт зелёный (test-coverage, security-auditor, db-reviewer при изменении схемы, production-readiness, commit-hygiene)
-- [ ] Документация обновлена (docs/ + запись в `docs/brain/`)
-- [ ] a11y и i18n (для UI-историй)
-- [ ] **Isolation-тест RLS** для каждой новой таблицы
-- [ ] **Permission объявлена** для каждого нового endpoint и проверяется в use-case
+- [x] Документация обновлена (`ux-architecture.md`, `data-model.md`, `openapi.yaml` + запись в `docs/brain/`)
+- [x] a11y и i18n (для UI-историй)
+- [x] **Isolation-тест RLS** — новых таблиц нет, но запрос новый: `employee-directory-isolation.test.ts` гоняет сам репозиторий на живом Postgres из двух организаций, с положительным контролем
+- [x] **Permission объявлена** для каждого нового endpoint и проверяется в use-case

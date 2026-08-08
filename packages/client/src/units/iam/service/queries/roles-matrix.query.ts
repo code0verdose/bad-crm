@@ -11,9 +11,22 @@ import { QueryKeys } from '@shared/lib';
  * A cache entry per filter would be the same rows stored several times and invalidated in some of
  * them.
  */
-export const useRolesMatrixQuery = (): UseQueryResult<readonly RoleListEntry[], Error> =>
+
+/**
+ * `enabled` exists for one caller and one reason: the invite screen needs role names but is reached
+ * with `invitation:create`, which is not `role:read`. Asking anyway would put a 403 on a screen that
+ * is working exactly as intended, so the screen that cannot read roles simply offers none.
+ */
+export interface RolesMatrixQueryOptions {
+  readonly enabled?: boolean;
+}
+
+export const useRolesMatrixQuery = (
+  options: RolesMatrixQueryOptions = {},
+): UseQueryResult<readonly RoleListEntry[], Error> =>
   useQuery({
     queryKey: QueryKeys.Roles.matrix(),
     queryFn: ({ signal }) => fetchRoles(signal),
     staleTime: 30_000,
+    enabled: options.enabled ?? true,
   });

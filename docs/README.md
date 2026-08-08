@@ -68,6 +68,7 @@ updated: 2026-07-26
 | [0023](architecture/adr/0023-csp-for-wasm-crypto.md) | CSP для WASM-криптографии и отказ от COEP |
 | [0024](architecture/adr/0024-mcp-server.md) | Bad CRM как MCP-сервер для внешних агентов |
 | [0025](architecture/adr/0025-corporate-mail-stalwart.md) | Корпоративная почта: Stalwart, а каталог пользователей наш |
+| [0026](architecture/adr/0026-client-state-zustand.md) | Клиентское состояние — zustand, и жёсткая граница вокруг него |
 
 ### Безопасность (`security/`)
 

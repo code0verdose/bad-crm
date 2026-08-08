@@ -61,6 +61,15 @@ const createUser: RowFactory = (client, organizationId) =>
     ],
   );
 
+const createTeam: RowFactory = (client, organizationId) =>
+  insert(
+    client,
+    `INSERT INTO teams (organization_id, name, slug, updated_at)
+       VALUES ($1, $2, $3, now())
+       RETURNING id`,
+    [organizationId, 'Core', `core-${randomUUID().slice(0, 8)}`],
+  );
+
 export const ROW_FACTORIES = {
   /**
    * One audit entry, written the way the application writes them — through the **parent** table.
@@ -171,7 +180,7 @@ export const ROW_FACTORIES = {
       [
         organizationId,
         `invited-${randomUUID().slice(0, 8)}@example.test`,
-        randomBytes(32).toString('hex'),
+        randomBytes(32),
         inviter.id,
       ],
     );
@@ -258,12 +267,44 @@ export const ROW_FACTORIES = {
     );
   },
 
-  teams: (client, organizationId) =>
-    insert(
+  /**
+   * A profile needs the account it describes, of the same organization: the composite key carries
+   * `organization_id`, so a fixture reusing another tenant's user would fail on the key rather than
+   * on the policy — and the isolation test would be green for the wrong reason.
+   */
+  employee_profiles: async (client, organizationId) => {
+    const user = await createUser(client, organizationId);
+
+    return insert(
       client,
-      `INSERT INTO teams (organization_id, name, slug, updated_at)
+      `INSERT INTO employee_profiles (organization_id, user_id, first_name, last_name, updated_at)
+       VALUES ($1, $2, 'Ivan', 'Petrov', now())
+       RETURNING id`,
+      [organizationId, user.id],
+    );
+  },
+
+  teams: (client, organizationId) => createTeam(client, organizationId),
+
+  /**
+   * One membership, and therefore one team **and** one person of the same organization.
+   *
+   * Both parents are created here rather than shared: the composite foreign keys carry
+   * `organization_id`, so a fixture reusing another tenant's team would fail on the key instead of
+   * on the policy, and the isolation test would be green for the wrong reason.
+   */
+  team_members: async (client, organizationId) => {
+    const [team, user] = await Promise.all([
+      createTeam(client, organizationId),
+      createUser(client, organizationId),
+    ]);
+
+    return insert(
+      client,
+      `INSERT INTO team_members (organization_id, team_id, user_id, updated_at)
        VALUES ($1, $2, $3, now())
        RETURNING id`,
-      [organizationId, 'Core', `core-${randomUUID().slice(0, 8)}`],
-    ),
+      [organizationId, team.id, user.id],
+    );
+  },
 } satisfies Record<TenantTableName, RowFactory>;

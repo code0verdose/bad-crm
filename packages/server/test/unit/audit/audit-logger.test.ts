@@ -103,6 +103,8 @@ describe('the action catalogue', () => {
       'invitation.created',
       'invitation.resent',
       'invitation.revoked',
+      'invitation.accepted',
+      'employee.updated',
       'permission.override.created',
       'permission.override.updated',
       'permission.override.deleted',

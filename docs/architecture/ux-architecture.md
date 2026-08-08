@@ -33,7 +33,33 @@ path- или search-параметрах и типизировано Zod-схе�
 идентичен. `useState` для фильтра/вкладки/открытого оверлея — ошибка ревью.
 
 **Исключения (осознанные):** несохранённый текст в редакторе, позиция скролла, состояние unlock
-хранилища секретов — они не попадают в URL по соображениям безопасности и объёма.
+хранилища секретов — они не попадают в URL по соображениям безопасности и объёма. Где они живут
+вместо URL — в разделе «Клиентское состояние» ниже.
+
+### 1.1. Клиентское состояние: четыре дома и ни одного лишнего
+
+Принцип №1 отвечает на вопрос «что в URL». Остальное состояние клиента раскладывается так —
+норматив в [ADR-0026](adr/0026-client-state-zustand.md) и правиле 16 `rules/frontend-fsd.mdc`:
+
+| Состояние | Дом | Примеры в продукте |
+|---|---|---|
+| Данные с сервера | **TanStack Query** | задачи, роли, приглашения, сообщения, файлы |
+| Всё, что пересылают ссылкой | **URL** (`validateSearch` + Zod) | фильтры, страница, вкладка, открытая карточка, выбранный тред |
+| Живёт и умирает с экраном | **`useState`** в хуке юнита | черновик матрицы ролей, состояние жеста drag-and-drop |
+| Кросс-экранное клиентское; читаемое **вне React** | **zustand-стор в юните** | сессия таба, unlock хранилища, очередь загрузки файлов, активный таймер в шапке, непрочитанные |
+| Ключевой материал E2EE | **ни один из перечисленных** | мастер-ключ, ключи хранилища — инвариант 3, `docs/security/e2ee-design.md` |
+
+Две границы стоит назвать прямо, потому что нарушают их одинаково:
+
+- **Стор — не второй кеш.** Данные, пришедшие из нашего API, живут в Query и больше нигде. Копия в
+  сторе расходится с сервером молча: инвалидация её не касается, и экран показывает вчерашнее
+  состояние, пока кто-нибудь не перезагрузит вкладку.
+- **Стор — не замена URL.** Фильтр в сторе выглядит проще ровно до первой просьбы «пришли ссылку на
+  то, что ты видишь».
+
+Почему это вообще стор, а не React-контекст: сессию и unlock читает **гард `beforeLoad`** — он
+работает до первого рендера и вне дерева компонентов. Контекста там не существует, а состояние,
+живущее в React, доходит до гарда на один коммит позже, чем принимается решение.
 
 ### 2. Ни одно разрушающее действие без подтверждения и без возможности отмены
 
@@ -421,9 +447,9 @@ flowchart TD
 |---|---|---|---|---|
 | `/admin` | `routes/_authenticated/admin/route.tsx` | `requirePermission('organization:read')` | — | `AdminLayoutWidget` |
 | `/admin/` | `routes/_authenticated/admin/index.tsx` | наследует → redirect `/admin/members` | — | — |
-| `/admin/members` | `routes/_authenticated/admin/members/index.tsx` | `requirePermission('user:read')` | `memberListSearchSchema`: `q`, `role[]`, `status[]`, `team[]`, `sort`, `page` | `MemberListWidget` |
-| `/admin/members/$userId` | `routes/_authenticated/admin/members/$userId.tsx` | `requirePermission('user:read')` | `tab=profile\|roles\|projects\|sessions\|onboarding` | `MemberDetailWidget` |
-| `/admin/members/invite` | `routes/_authenticated/admin/members/invite.tsx` | `requirePermission('user:invite')` | — | `InviteMemberWidget` |
+| `/admin/members` | `routes/_authenticated/admin/members/index.tsx` | `requirePermission('user:read')` | `memberListSearchSchema`: `q`, `role[]`, `status[]`, `team[]`, `sort`, `page`, `view=table\|chart` | `MemberListWidget` |
+| `/admin/members/$userId` | `routes/_authenticated/admin/members/$userId.tsx` | — (**см. ниже**) | — (вкладки `tab=…` — вместе со следующими разделами карточки) | `pages/employee-profile` + `EmployeeUi.EmployeeProfileForm` |
+| `/admin/members/invite` | `routes/_authenticated/admin/members/invite.tsx` | `requirePermission('invitation:create')` | — | `InviteMemberWidget` |
 | `/admin/roles` | `routes/_authenticated/admin/roles.tsx` | `requirePermission('role:read')` | `rolesSearchSchema`: `q`, `collapsed` (свёрнутые домены), `diff` (только различия) | `RoleMatrix` |
 | `/admin/roles/$roleId` | `routes/_authenticated/admin/roles/$roleId.tsx` | `requirePermission('role:read')` | `tab=permissions\|members` | `RoleDetailWidget` |
 | `/admin/ai-providers` | `routes/_authenticated/admin/ai-providers/index.tsx` | `requirePermission('ai:configure_providers')` | `provider?` | `AiProviderListWidget` |
@@ -434,6 +460,21 @@ flowchart TD
 | `/admin/organization` | `routes/_authenticated/admin/organization.tsx` | `requirePermission('organization:update')` | `tab=general\|branding\|locale\|security\|storage` | `OrganizationSettingsWidget` |
 | `/admin/onboarding-tracks` | `routes/_authenticated/admin/onboarding-tracks/index.tsx` | `requirePermission('onboarding:manage')` | `q`, `status[]` | `OnboardingTrackListWidget` |
 | `/admin/onboarding-tracks/$trackId` | `routes/_authenticated/admin/onboarding-tracks/$trackId.tsx` | `requirePermission('onboarding:manage')` | `step?` | `OnboardingTrackEditorWidget` |
+
+**Про `view` в `memberListSearchSchema`.** Справочник показывает одних и тех же людей двумя способами
+— таблицей и оргструктурой, — и выбор способа живёт в URL по той же причине, что и фильтры: «покажи
+мне, кто кому подчиняется» должно отправляться ссылкой. Плюс техническое следствие: запрос на
+оргструктуру закрыт отдельным правом (`employee:view_org_chart`) и делается **только** во включённом
+виде — в `useState` это состояние было бы неотличимо от «ещё не решили», и вкладка тратила бы запрос
+на картинку, которую никто не смотрит. Записи в URL — с `replace`, как у фильтров.
+
+**Про гард на `/admin/members/$userId`: его нет, и это решение, а не пропуск.** Кадровая запись —
+единственный экран раздела, на который человек приходит **к себе**: `GET /employees/{userId}` объявлен
+`SelfServiceRoute`, потому что свои даты и свой тип договора читает кто угодно, а сколько записи
+вернётся и что в ней можно править — решает `employee-access.policy.ts` по полям (STORY-012-03).
+`requirePermission('user:read')` здесь означал бы одно из двух: либо человек без права не попадает на
+собственный профиль, либо право выдаётся всем и перестаёт что-либо значить. Список
+(`/admin/members`) — другой случай: он показывает **чужие** записи, и `user:read` на нём остаётся.
 
 ### Служебные
 
@@ -1217,6 +1258,11 @@ export const requirePermission =
   положено видеть, сервер его не отдаёт.
 - Расхождение «UI показал, сервер отказал» логируется как продуктовый дефект — значит модель прав в
   UI разошлась с серверной.
+- **Гард экрана называет ту же permission, которую проверяет его endpoint.** Если экран закрыт одним
+  правом, а операция на нём требует другого, человек с первым правом откроет страницу и получит 403
+  на первое же действие. Поэтому `/admin/members/invite` закрыт `invitation:create`, а не
+  `user:invite`: системные роли выдают их вместе, но кастомная роль может разделить, и тогда
+  «открылось, но ничего не работает» — дефект, который никто не воспроизведёт.
 
 ---
 

@@ -346,13 +346,7 @@
 
 @media (width <= 62em) {
   .frame {
-    block-size: auto;
     max-block-size: none;
-    /*
-     * A phone is too narrow for the 16:10 box to hold the board: the ratio fixed the height at
-     * about 200px, and `overflow: hidden` cut the cards off mid-title. Off a wide screen the window
-     * is a column of real content, so it gets to be as tall as that content is.
-     */
     /*
      * Portrait, and tall enough for the board.
      *

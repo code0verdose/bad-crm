@@ -1087,6 +1087,494 @@ paths:
         '500':
           $ref: '#/components/responses/InternalError'
 
+  /invitations:
+    get:
+      operationId: listInvitations
+      summary: Invitations still waiting to be accepted.
+      description: |
+        The open ones, newest first. An accepted invitation is a person and belongs to the directory
+        instead — the same human on two screens in two states is two screens that disagree.
+
+        Expired ones **are** here: an expired invitation is exactly the row somebody wants to resend
+        or revoke, and hiding it would leave it addressable by id and invisible on the screen that
+        addresses it.
+      tags: [iam]
+      x-permission: invitation:read
+      responses:
+        '200':
+          description: The open invitations of the caller's organization.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Invitation'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+    post:
+      operationId: createInvitation
+      summary: Invite somebody by e-mail.
+      description: |
+        Onboarding as one operation: the address, the role and the teams together, rather than an
+        account created now and access remembered later.
+
+        Three refusals before anything is written, in this order:
+
+        * a `roleId` of another organization is **404**, like every other object of a tenant the
+          caller cannot see;
+        * a role carrying more than the inviter effectively holds is **403 `permission_not_granted`**
+          (`T-IAM-09`) — the account this would produce would outrank its author;
+        * the address has to be free: an active account is **409 `user_already_exists`**, and a
+          second open invitation is **409 `invitation_already_exists`**, which the partial unique
+          index answers rather than a read-then-insert that two callers can race.
+
+        Bounded at **20 per 10 minutes per inviter**, spent before anything is looked up: every
+        invitation is a letter this installation sends to an address the caller chose, and the
+        refusals above are answers about an address (`T-IAM-10`).
+
+        **Without SMTP this still succeeds** (NFR-9). `mailDispatched` is then `false` and the
+        interface shows `inviteUrl` with a warning — the link is in the response either way, and it
+        is shown exactly once.
+      tags: [iam]
+      x-permission: invitation:create
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InvitationDraft'
+      responses:
+        '201':
+          description: The invitation exists, and this is the only time its link is shown.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MintedInvitation'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /invitations/accept:
+    post:
+      operationId: acceptInvitation
+      summary: Take up an invitation and get an account.
+      description: |
+        The one operation of this API that creates an account without a session: the token in the
+        body **is** the credential, and it is the whole of it.
+
+        **There is no `email` field, and its absence is the security property.** The account is
+        created on the address stored on the invitation; a body that could name one would let a
+        holder of somebody else's link create an account on an address of their choosing. The schema
+        is strict, so sending it is a 422 rather than a field that is quietly ignored.
+
+        Everything happens in **one transaction**: the account, the role the invitation carried, the
+        teams it drafted, and the spend. An account created without its role would be somebody
+        signing in on Monday to an empty workspace.
+
+        **410 `invitation_not_valid` covers five states** — unknown, revoked, already accepted,
+        expired, and «the organization was deactivated». Telling them apart would let a holder of a
+        guessed token learn whether it ever existed, and would let «already accepted» confirm that a
+        particular colleague joined (`T-IAM-03`).
+
+        Bounded at **10 per 15 minutes per address**, spent before the digest is computed: the caller
+        is anonymous, so the address is the only subject a counter can have, and a limiter checked
+        after an argon2id run is a memory-exhaustion vector rather than a defence (`T-IAM-08`).
+
+        Answers with the same document as sign-in and sets the same refresh cookie — the person is
+        signed in the moment their account exists.
+      tags: [iam]
+      security: []
+      x-public-reason: >-
+        the account this would be authorised as is created by this very request: the token in the
+        body is the whole credential, it is 32 CSPRNG bytes stored only as a SHA-256 digest, it
+        expires in seven days and it is spent by one conditional UPDATE in AcceptInvitationUseCase;
+        bounded by the invitation_accept budget of ten per fifteen minutes per address, spent before
+        the digest is computed so that a guessed token costs no argon2id run (T-IAM-08)
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InvitationAcceptance'
+      responses:
+        '201':
+          description: The account exists and this is its first session.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthenticatedSession'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '410':
+          description: |
+            The link cannot be used — unknown, revoked, already accepted, expired, or its
+            organization was deactivated. One answer for all five.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /invitations/{invitationId}/resend:
+    post:
+      operationId: resendInvitation
+      summary: Issue a new link for an invitation.
+      description: |
+        A **new** token, and the old one dead in the same statement — an invitation with two live
+        links is a door somebody thinks they closed. The expiry moves out by seven days from now.
+
+        The letter goes to the address **on the row**; there is no address in this request, because
+        a resend that could be pointed elsewhere would be a way to have somebody else's invitation
+        delivered to an attacker. It is written in the language the invitation was created in.
+
+        An accepted invitation is **409 `invitation_already_accepted`** — a state conflict rather
+        than a refusal of the caller: it is a person now, and no capability would make minting a link
+        for an account that already exists sensible.
+
+        Shares the creation budget of 20 per 10 minutes: it mints a token and sends a letter, so a
+        separate counter would be a way around the first one.
+      tags: [iam]
+      x-permission: invitation:resend
+      parameters:
+        - $ref: '#/components/parameters/InvitationId'
+      responses:
+        '200':
+          description: A new link, shown once.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MintedInvitation'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /invitations/{invitationId}:
+    delete:
+      operationId: revokeInvitation
+      summary: Close an invitation early.
+      description: |
+        The row goes rather than gaining a flag: the token has to stop working, and a filter
+        everybody has to remember is a filter somebody forgets. Presenting the link afterwards is
+        answered exactly like a link that never existed.
+
+        An **accepted** invitation is **409 `invitation_already_accepted`** — it is a person, and
+        taking their access away is deactivation, not this.
+      tags: [iam]
+      x-permission: invitation:revoke
+      parameters:
+        - $ref: '#/components/parameters/InvitationId'
+      responses:
+        '204':
+          description: The invitation is gone and its link no longer works.
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /employees:
+    get:
+      operationId: listEmployees
+      summary: The directory — who works here.
+      description: |
+        A page of people, with the values its own filters can take.
+
+        **The facets are part of this answer** rather than a call to `/roles` and `/teams`: those
+        need `role:read` and `team:read`, which a developer and a viewer do not hold, and the
+        directory is open to both. A screen able to list people but not to name the roles it lists
+        would have a filter with no options in it. Only what somebody actually holds appears.
+
+        **Deactivated colleagues are hidden unless asked for.** The default is
+        `status=ACTIVE&status=INVITED`; an account is suspended and never deleted, so without this
+        every search would return an ex-employee before the person meant.
+
+        **An order can be refused.** `sort=hiredAt` is a question about a column, and paging a list
+        ordered by it teaches the reader every hiring date one comparison at a time — so a caller
+        without `employee:view_personal_data` is answered by name instead. The response says which
+        order it used; it does not pretend.
+
+        Each row is folded to what the caller may see, **per person**: your own line carries your
+        employment even when your colleagues' lines do not. No key of this response begins with
+        `cost`.
+      tags: [iam]
+      x-permission: employee:read
+      parameters:
+        - name: q
+          in: query
+          required: false
+          schema:
+            type: string
+            maxLength: 64
+          description: |
+            Matched against name, e-mail, job title and department. Department is searched although
+            there is no parameter for it: «кто у нас на бэкенде» is a search, not a facet, and a
+            facet would need a picker of every free-text department anybody has ever typed.
+        - name: status
+          in: query
+          required: false
+          explode: true
+          schema:
+            type: array
+            items:
+              type: string
+              enum: [ACTIVE, SUSPENDED, INVITED]
+        - name: role
+          in: query
+          required: false
+          explode: true
+          schema:
+            type: array
+            items:
+              type: string
+              format: uuid
+        - name: team
+          in: query
+          required: false
+          explode: true
+          schema:
+            type: array
+            items:
+              type: string
+              format: uuid
+        - name: sort
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [name, -name, hiredAt, -hiredAt]
+            default: name
+        - name: page
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+        - name: perPage
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 25
+      responses:
+        '200':
+          description: One page of the directory, each row folded to what this caller may see.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EmployeeDirectoryPage'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /employees/org-chart:
+    get:
+      operationId: getOrgChart
+      summary: Who reports to whom.
+      description: |
+        Every node of the chart, flat, in one query. The tree is assembled from `managerId` by
+        whoever draws it: the answer is the whole organization, so the shape is a rendering decision
+        and nesting it here would put the same information behind a recursive schema no other caller
+        wants. Somebody whose manager is not in the list is drawn at the root.
+
+        **Names and edges only.** A chart is a picture of the structure; putting hiring dates or
+        capacity on it would hand the employment half of every record to a capability every role but
+        `guest` holds.
+
+        Its own permission rather than a share of `employee:read`: a directory of names is not a map
+        of who answers to whom.
+      tags: [iam]
+      x-permission: employee:view_org_chart
+      responses:
+        '200':
+          description: Every node of the chart.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [nodes]
+                properties:
+                  nodes:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/OrgChartNode'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /employees/{userId}:
+    get:
+      operationId: getEmployeeProfile
+      summary: The personnel record of one person.
+      description: |
+        **The answer has three shapes, and which one comes back is decided on the server.**
+
+        * a colleague sees who the person is and how to work with them — name, job title,
+          department, manager, timezone, skills;
+        * the person themselves, and anybody with `employee:view_personal_data`, additionally sees
+          the employment: contract type, hiring and termination dates, weekly capacity, and the
+          emergency contact (stored encrypted, decrypted only for this audience);
+        * `employee:view_cost_rate` is a **third, separate** audience. It is not implied by the
+          second: knowing somebody's hiring date is not knowing what they are paid, and an
+          administrator holds the first without the second (`permission-model.md` §4.1).
+
+        A field a caller may not see is **absent from the document**, not present and empty: the
+        client is not the filter, because anybody can read a response.
+
+        **No key of this response begins with `cost`.** Rates live in their own table (M6) with their
+        own permission, and the shape here is the whole answer.
+
+        A `userId` from another organization is **404**, never 403.
+      tags: [iam]
+      x-self-service-reason: >-
+        a person always reads their own personnel record — the dates and the contract type are on
+        their own contract, and hiding them would be theatre; reading somebody else's needs
+        employee:read, and how much of it comes back is decided by employee-access.policy.ts
+      parameters:
+        - $ref: '#/components/parameters/UserId'
+      responses:
+        '200':
+          description: The profile, folded to what this caller may see.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EmployeeProfile'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+    patch:
+      operationId: updateEmployeeProfile
+      summary: Edit a personnel record.
+      description: |
+        One operation for two audiences, told apart per **field** rather than per route.
+
+        * anybody edits the handful of fields on their own record that nobody else is a better
+          authority on: `firstName`, `lastName`, `timezone`, `skills`, `emergencyContact`;
+        * everything else — `jobTitle`, `department`, `managerId`, `weeklyCapacityHours`,
+          `employmentType`, `hiredAt`, `terminatedAt` — needs **`employee:update`**, on one's own
+          record as much as on anybody else's. They are what planning, cost and the org chart are
+          computed from: a person who sets their own capacity changes what the dashboards say about
+          their team.
+
+        An HR field in a self-edit is **403 `permission_not_granted`**, not a silently ignored key:
+        dropping it would let a form claim it saved something it did not.
+
+        Two refusals are **422** rather than 409, for the same reason: the request is well formed,
+        and what is wrong is the shape it would leave the record in.
+
+        * `managerId` that would close a loop in the org chart — `manager_cycle_detected`. The check
+          walks the chart inside the same transaction that writes.
+        * a termination date before the hiring date — `employment_period_inverted`. Compared against
+          the **stored** row, not against the body: a PATCH may carry only one of the two dates and
+          still invert the pair. A termination on the hiring date itself is accepted — a one-day
+          contract is a contract, and the database draws the boundary in the same place.
+
+        A PATCH: an absent field is left alone, `null` clears it.
+      tags: [iam]
+      x-self-service-reason: >-
+        a person always edits the handful of fields on their own record that nobody else is a better
+        authority on — name, timezone, skills, emergency contact; anybody else's record and every
+        employment field need employee:update, which the use-case checks per field rather than per
+        route, because one request may carry both kinds
+      parameters:
+        - $ref: '#/components/parameters/UserId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EmployeeProfilePatch'
+      responses:
+        '200':
+          description: The stored profile, folded to what this caller may see.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EmployeeProfile'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
   /me/permissions:
     get:
       operationId: getMyPermissions
@@ -1691,6 +2179,7 @@ components:
         - account_suspended
         - registration_disabled
         - password_reset_token_invalid
+        - invitation_not_valid
         - mail_not_configured
         - route_not_found
         - payload_too_large
@@ -1703,6 +2192,8 @@ components:
         - system_role_immutable
         - owner_immutable
         - invitation_already_accepted
+        - manager_cycle_detected
+        - employment_period_inverted
         - confirmation_required
         - rate_limited
         - feature_disabled
@@ -1819,6 +2310,8 @@ components:
         - system_role_immutable
         - owner_immutable
         - invitation_already_accepted
+        - manager_cycle_detected
+        - employment_period_inverted
 
     ValidationIssue:
       type: object
@@ -1899,6 +2392,412 @@ components:
           type: array
           items:
             type: string
+
+    EmployeeProfile:
+      type: object
+      additionalProperties: false
+      required: [userId, email, firstName, lastName, jobTitle, department, managerId, timezone, skills]
+      description: |
+        A personnel record, in the shape this caller is allowed to see. The employment fields below
+        the first block are present **only** for the person themselves and for
+        `employee:view_personal_data`; a caller without it does not receive the keys at all.
+      properties:
+        userId:
+          type: string
+          format: uuid
+        email:
+          type: string
+          format: email
+        firstName:
+          type: string
+        lastName:
+          type: string
+        jobTitle:
+          type: string
+          nullable: true
+        department:
+          type: string
+          nullable: true
+        managerId:
+          type: string
+          format: uuid
+          nullable: true
+        timezone:
+          type: string
+        skills:
+          type: array
+          items:
+            type: string
+        employmentType:
+          type: string
+          enum: [FULL_TIME, PART_TIME, CONTRACTOR, INTERN]
+        hiredAt:
+          type: string
+          format: date
+          nullable: true
+          description: A calendar day, not an instant — nobody is hired at 14:32.
+        terminatedAt:
+          type: string
+          format: date
+          nullable: true
+        weeklyCapacityHours:
+          type: integer
+          minimum: 0
+          maximum: 80
+        emergencyContact:
+          type: string
+          nullable: true
+          description: |
+            Stored encrypted at rest (`v1:<iv>:<tag>:<ciphertext>`, AES-256-GCM). Decrypted only for
+            a caller who may see it, and never written to a log or to the audit trail.
+
+    DirectoryRole:
+      type: object
+      additionalProperties: false
+      required: [id, key, name]
+      description: |
+        `key` is what a filter matches and what the code knows a system role by; `name` is what a
+        person reads and what an organization may rename.
+      properties:
+        id:
+          type: string
+          format: uuid
+        key:
+          type: string
+        name:
+          type: string
+
+    DirectoryTeam:
+      type: object
+      additionalProperties: false
+      required: [id, name]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+
+    EmployeeListItem:
+      type: object
+      additionalProperties: false
+      required:
+        [userId, email, firstName, lastName, jobTitle, department, status, managerId, roles, teams]
+      description: |
+        One line of the directory. The four employment keys are present **only** for the person
+        themselves and for `employee:view_personal_data` — a caller without it does not receive them
+        at all, because the client is not the filter.
+
+        An empty name and a `null` job title mean the personnel record has not been filled in yet:
+        an account exists from the moment an invitation is accepted, and the rest arrives later.
+      properties:
+        userId:
+          type: string
+          format: uuid
+        email:
+          type: string
+          format: email
+        firstName:
+          type: string
+        lastName:
+          type: string
+        jobTitle:
+          type: string
+          nullable: true
+        department:
+          type: string
+          nullable: true
+        status:
+          type: string
+          enum: [ACTIVE, SUSPENDED, INVITED]
+        managerId:
+          type: string
+          format: uuid
+          nullable: true
+        roles:
+          type: array
+          items:
+            $ref: '#/components/schemas/DirectoryRole'
+        teams:
+          type: array
+          items:
+            $ref: '#/components/schemas/DirectoryTeam'
+        employmentType:
+          type: string
+          enum: [FULL_TIME, PART_TIME, CONTRACTOR, INTERN]
+          nullable: true
+        hiredAt:
+          type: string
+          format: date
+          nullable: true
+        terminatedAt:
+          type: string
+          format: date
+          nullable: true
+        weeklyCapacityHours:
+          type: integer
+          nullable: true
+
+    EmployeeDirectoryPage:
+      type: object
+      additionalProperties: false
+      required: [items, total, page, perPage, sort, facets]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/EmployeeListItem'
+        total:
+          type: integer
+          minimum: 0
+          description: Rows matching the same predicate as `items`, before pagination.
+        page:
+          type: integer
+          minimum: 1
+        perPage:
+          type: integer
+          minimum: 1
+          maximum: 100
+        sort:
+          type: string
+          enum: [name, -name, hiredAt, -hiredAt]
+          description: |
+            How the page **is** ordered, which is not always how it was asked to be: an employment
+            order asked for without `employee:view_personal_data` is answered by name.
+        facets:
+          type: object
+          additionalProperties: false
+          required: [roles, teams]
+          description: The values the filters can take in this organization — only what somebody holds.
+          properties:
+            roles:
+              type: array
+              items:
+                $ref: '#/components/schemas/DirectoryRole'
+            teams:
+              type: array
+              items:
+                $ref: '#/components/schemas/DirectoryTeam'
+
+    OrgChartNode:
+      type: object
+      additionalProperties: false
+      required: [userId, firstName, lastName, jobTitle, managerId]
+      properties:
+        userId:
+          type: string
+          format: uuid
+        firstName:
+          type: string
+        lastName:
+          type: string
+        jobTitle:
+          type: string
+          nullable: true
+        managerId:
+          type: string
+          format: uuid
+          nullable: true
+          description: '`null` is a root of the chart — somebody who reports to nobody.'
+
+    EmployeeProfilePatch:
+      type: object
+      additionalProperties: false
+      description: |
+        A PATCH: an absent field is left alone, `null` clears it. Which fields a caller may send
+        depends on whose record it is — see the operation.
+      properties:
+        firstName:
+          type: string
+          minLength: 1
+          maxLength: 120
+        lastName:
+          type: string
+          minLength: 1
+          maxLength: 120
+        jobTitle:
+          type: string
+          maxLength: 160
+          nullable: true
+        department:
+          type: string
+          maxLength: 160
+          nullable: true
+        managerId:
+          type: string
+          format: uuid
+          nullable: true
+        weeklyCapacityHours:
+          type: integer
+          minimum: 0
+          maximum: 80
+        employmentType:
+          type: string
+          enum: [FULL_TIME, PART_TIME, CONTRACTOR, INTERN]
+        hiredAt:
+          type: string
+          format: date
+          nullable: true
+        terminatedAt:
+          type: string
+          format: date
+          nullable: true
+        timezone:
+          type: string
+          maxLength: 64
+        skills:
+          type: array
+          maxItems: 50
+          items:
+            type: string
+            maxLength: 64
+        emergencyContact:
+          type: string
+          maxLength: 500
+          nullable: true
+
+    InvitationAcceptance:
+      type: object
+      additionalProperties: false
+      required: [token, password, locale]
+      description: |
+        What the invited person supplies. **No address and no name.** The address comes from the
+        invitation; the name belongs to `EmployeeProfile`, whose table arrives with STORY-012-03 —
+        accepting a field with nowhere truthful to put it would drop it silently.
+      properties:
+        token:
+          type: string
+          minLength: 32
+          maxLength: 512
+          description: The value from the link, lifted out of the SPA route into the body.
+        password:
+          type: string
+          description: |
+            The same policy registration and password reset apply — one schema, one set of rules.
+        locale:
+          type: string
+          enum: [en, ru]
+          description: What the interface was in; the account starts in that language.
+        timezone:
+          type: string
+          maxLength: 64
+          description: |
+            IANA name as the browser reports it. Optional: a runtime without full ICU has none, and
+            `UTC` is a correct answer rather than a placeholder.
+
+    InvitationDraft:
+      type: object
+      additionalProperties: false
+      required: [email, locale]
+      description: |
+        Whom to invite and what they will hold once they accept — a role assignment written in
+        advance, which is why the same subset rule applies to it as to an assignment.
+      properties:
+        email:
+          type: string
+          format: email
+          maxLength: 254
+          description: |
+            The address the letter goes to. Trimmed and lower-cased before it is stored: the column
+            is `citext`, so two spellings of one address are one person.
+        roleId:
+          type: string
+          format: uuid
+          nullable: true
+          description: |
+            The role the account will hold. `null` or absent is «somebody who can sign in and nothing
+            else» — a legitimate invitation for a person whose access is decided after a conversation.
+
+            **May only carry what the inviter already holds** (`permission_not_granted`, 403,
+            threat `T-IAM-09`): the account this produces would otherwise outrank its author.
+        teamIds:
+          type: array
+          maxItems: 20
+          items:
+            type: string
+            format: uuid
+          description: Teams the account joins on acceptance. Duplicates are collapsed.
+        locale:
+          type: string
+          enum: [en, ru]
+          description: |
+            The language the letter is written in. Required, because the recipient has no account to
+            take a language from and a default would silently send English to a team that does not
+            read it — a defect invisible to the person who sent the invitation.
+
+    Invitation:
+      type: object
+      additionalProperties: false
+      required: [id, email, roleId, teamIds, locale, invitedById, expiresAt, createdAt]
+      description: |
+        An invitation that has not been accepted. **Neither the token nor its digest is here**, and
+        no read of this API returns either: the row stores a SHA-256 digest of 32 CSPRNG bytes, and
+        the value itself exists once, in the response that created or re-issued it.
+      properties:
+        id:
+          type: string
+          format: uuid
+        email:
+          type: string
+          format: email
+        roleId:
+          type: string
+          format: uuid
+          nullable: true
+        teamIds:
+          type: array
+          items:
+            type: string
+            format: uuid
+        locale:
+          type: string
+          enum: [en, ru]
+        invitedById:
+          type: string
+          format: uuid
+        expiresAt:
+          type: string
+          format: date-time
+          description: |
+            When the link stops working. A date rather than an `expired` flag: whether it still works
+            is a comparison with the clock, and a boolean computed by the server is stale by the time
+            the screen renders it.
+        createdAt:
+          type: string
+          format: date-time
+
+    MintedInvitation:
+      type: object
+      additionalProperties: false
+      required: [id, email, inviteUrl, expiresAt, mailDispatched]
+      description: |
+        The answer to creating or re-issuing an invitation — the **only** time the link is ever
+        shown. The server keeps a digest and cannot produce this URL again; a client that lost it
+        has to re-issue, which mints a new token and kills the previous one.
+      properties:
+        id:
+          type: string
+          format: uuid
+        email:
+          type: string
+          format: email
+        inviteUrl:
+          type: string
+          format: uri
+          description: |
+            Where the person accepts. The token is a **path segment**, not a query parameter: a
+            query string is copied into `Referer` by the next navigation and written to the access
+            log of every proxy in between.
+        expiresAt:
+          type: string
+          format: date-time
+        mailDispatched:
+          type: boolean
+          description: |
+            Whether the letter was handed to a transport. `false` means this installation has no
+            `SMTP_URL` (NFR-9) — **not** a failure: the invitation exists and the link is in this
+            response, so the interface shows it with a warning and the inviter passes it on
+            themselves. It never means «delivered»: nothing in the request learns that.
 
     RoleListEntry:
       allOf:
@@ -2259,6 +3158,21 @@ components:
       examples:
         manager:
           value: 018f4a3b-2c1d-7a41-9f00-2b7c1d0e5a32
+
+    InvitationId:
+      name: invitationId
+      in: path
+      required: true
+      description: |
+        Identifier of an invitation of the caller's organization. Another organization's id is 404,
+        and so is one that was already revoked — a revoked invitation is a deleted row, because the
+        token has to stop working rather than be filtered out by everybody who reads the table.
+      schema:
+        type: string
+        format: uuid
+      examples:
+        pending:
+          value: 018f4a3b-2c1d-7a41-9f00-2b7c1d0e5a33
 
     SessionId:
       name: sessionId

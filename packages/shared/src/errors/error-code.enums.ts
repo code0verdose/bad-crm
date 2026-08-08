@@ -80,6 +80,18 @@ const GENERIC_ERROR_CODE_STATUS = {
    */
   password_reset_token_invalid: 400,
   /**
+   * The invitation link is unknown, revoked, already accepted, expired, or belongs to an
+   * organization that has been deactivated — **one code for all five**, and for the same reason as
+   * the reset token above: telling them apart would let a holder of a guessed token learn whether it
+   * ever existed, and would let «already accepted» confirm that a particular colleague joined
+   * (`T-IAM-03`).
+   *
+   * `410 Gone` rather than 400: the link was a resource with a lifetime, and it is over. The client
+   * cannot fix the request by changing it, which is exactly the distinction between 400 and 410 —
+   * and the invitation screen shows «ask for a new link» rather than «check what you typed».
+   */
+  invitation_not_valid: 410,
+  /**
    * The operation has to send mail and this installation has no `SMTP_URL`.
    *
    * Not `feature_disabled`: that one means the operator switched an optional subsystem off and the
@@ -158,6 +170,17 @@ const GENERIC_ERROR_CODE_STATUS = {
    */
   /** The invitation was accepted: a state conflict, not a missing row and not a refusal. */
   invitation_already_accepted: 409,
+  /**
+   * The proposed manager reports back to the person being edited. **422**, not 409: the conflict is
+   * not with a stored state that somebody else changed — the request as written describes an
+   * organization that cannot exist, and the fix is a different value in the field the client sent.
+   */
+  manager_cycle_detected: 422,
+  /**
+   * Termination before hiring. **422** for the same reason as the cycle above: the request is well
+   * formed, and what it describes is a record that cannot exist.
+   */
+  employment_period_inverted: 422,
   confirmation_required: 428,
   rate_limited: 429,
   /**

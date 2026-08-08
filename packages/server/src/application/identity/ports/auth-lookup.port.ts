@@ -57,6 +57,20 @@ export interface AuthPasswordResetRecord {
   readonly userId: string;
 }
 
+/**
+ * An invitation, resolved to its organization by the digest of its token.
+ *
+ * Two ids and nothing else — deliberately not `acceptedAt` or `expiresAt`. Returning them would
+ * invite the caller to decide usability from a *read*, and two clicks on one link would then both
+ * pass that decision under READ COMMITTED and create two accounts. Usability is decided by the
+ * conditional `UPDATE` that spends the row, under `app_user`, once this has said which organization
+ * it belongs to.
+ */
+export interface AuthInvitationRecord {
+  readonly invitationId: string;
+  readonly organizationId: string;
+}
+
 export interface AuthLookupPort {
   /**
    * Every account that can sign in with this address, across the organizations of the installation.
@@ -88,4 +102,15 @@ export interface AuthLookupPort {
    * `withTenant`, once this has said which organization that is.
    */
   findPasswordResetToken(tokenHash: Uint8Array): Promise<AuthPasswordResetRecord | null>;
+
+  /**
+   * The fifth org-less read, and the one whose caller has no account **at all**: `/invite/<token>`
+   * is opened by somebody the installation has never seen, so the request carries a digest and
+   * nothing else.
+   *
+   * `null` covers unknown, revoked and «the organization was deactivated» — the resolver joins
+   * `organizations ON deleted_at IS NULL`, so all three answer identically (`T-IAM-03`). Accepted
+   * and expired are indistinguishable one step later, in the conditional write.
+   */
+  findInvitation(tokenHash: Uint8Array): Promise<AuthInvitationRecord | null>;
 }

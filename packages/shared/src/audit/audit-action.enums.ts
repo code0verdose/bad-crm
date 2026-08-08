@@ -47,6 +47,23 @@ export const AUDIT_ACTIONS = [
   'invitation.created',
   'invitation.resent',
   'invitation.revoked',
+  /**
+   * An invitation was taken up: an account exists that did not exist before, holding the role and
+   * the teams the invitation drafted (STORY-012-02).
+   *
+   * Beside the three above rather than with the session events, because this is the moment the
+   * assignment written in advance takes effect — «who was given what» has to see it in one place.
+   */
+  'invitation.accepted',
+  /**
+   * A personnel record was edited — by an administrator, or by the person themselves within the
+   * self-service list (STORY-012-03).
+   *
+   * The entry names the **fields** that changed and never their values: an emergency contact in the
+   * trail would undo the column being ciphertext, and the reviewer needs «HR data was edited, by
+   * whom, about whom», not the data itself.
+   */
+  'employee.updated',
   /** A per-user exception was written, replaced or removed (STORY-011-05). */
   'permission.override.created',
   'permission.override.updated',

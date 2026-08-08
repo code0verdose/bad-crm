@@ -15,7 +15,22 @@ import { BuildActorQuery } from '@/application/iam/use-cases/build-actor.query.j
 import { GetMyPermissionsQuery } from '@/application/iam/use-cases/get-my-permissions.query.js';
 import { ProvisionSystemRolesUseCase } from '@/application/iam/use-cases/provision-system-roles.use-case.js';
 import { DeleteCustomRoleUseCase } from '@/application/iam/use-cases/delete-custom-role.use-case.js';
+import { type IamDependencies } from '@/presentation/http/http-server.types.js';
+import { AcceptInvitationUseCase } from '@/application/iam/use-cases/accept-invitation.use-case.js';
+import { GetOrgChartQuery } from '@/application/iam/use-cases/get-org-chart.query.js';
+import { ListEmployeesQuery } from '@/application/iam/use-cases/list-employees.query.js';
+import {
+  ReadEmployeeProfileQuery,
+  WriteEmployeeProfileUseCase,
+} from '@/application/iam/use-cases/write-employee-profile.use-case.js';
+import { AesFieldEncryption } from '@/infrastructure/crypto/field-encryption.adapter.js';
+import { ListInvitationsQuery } from '@/application/iam/use-cases/list-invitations.query.js';
 import { ListRolesQuery } from '@/application/iam/use-cases/list-roles.query.js';
+import {
+  CreateInvitationUseCase,
+  ResendInvitationUseCase,
+  RevokeInvitationUseCase,
+} from '@/application/iam/use-cases/write-invitation.use-case.js';
 import {
   ApplyRoleChangesUseCase,
   PreviewRoleChangesQuery,
@@ -55,6 +70,9 @@ import {
 } from './identity-doubles.util.js';
 import {
   FakeCustomRoleRepository,
+  FakeEmployeeDirectoryRepository,
+  FakeEmployeeProfileRepository,
+  FakeInvitationRepository,
   FakeEffectivePermissionsReader,
   FakePermissionOverrideRepository,
   FakeRoleRepository,
@@ -88,6 +106,10 @@ export interface AuthApp {
   readonly userRoles: FakeUserRoleRepository;
   readonly overrides: FakePermissionOverrideRepository;
   readonly customRoles: FakeCustomRoleRepository;
+  readonly invitations: FakeInvitationRepository;
+  readonly employeeProfiles: FakeEmployeeProfileRepository;
+  /** The assembled IAM use-cases, for the few cases that assert on one directly. */
+  readonly iam: IamDependencies;
   /** Every privileged action the application filed, in order — the trail as a test can read it. */
   readonly audit: FakeAuditLogger;
   /**
@@ -123,6 +145,9 @@ export interface AuthAppOptions {
   readonly overrides?: FakePermissionOverrideRepository;
   /** State the custom-role commands act on. */
   readonly customRoles?: FakeCustomRoleRepository;
+  readonly invitations?: FakeInvitationRepository;
+  readonly employeeProfiles?: FakeEmployeeProfileRepository;
+  readonly employeeDirectory?: FakeEmployeeDirectoryRepository;
   /**
    * What the reader answers about specific people, by id — the subject of an override, whose
    * ownership is the fact the `owner_immutable` rule turns on. Anybody not named here gets
@@ -281,6 +306,14 @@ export const createAuthApp = (options: AuthAppOptions = {}): AuthApp => {
   const userRoles = options.userRoles ?? new FakeUserRoleRepository();
   const overrides = options.overrides ?? new FakePermissionOverrideRepository();
   const customRoles = options.customRoles ?? new FakeCustomRoleRepository();
+  const invitations = options.invitations ?? new FakeInvitationRepository();
+  const employeeProfiles = options.employeeProfiles ?? new FakeEmployeeProfileRepository();
+  const employeeDirectory = options.employeeDirectory ?? new FakeEmployeeDirectoryRepository();
+  const fields = new AesFieldEncryption(Buffer.alloc(32, 7).toString('base64'));
+
+  // The org-less resolver reads the very rows the repository wrote, like the session and reset-token
+  // readers above: a second list here would let a suite accept a link the table no longer has.
+  lookup.readingInvitations(invitations);
   const capabilities = new FakeEffectivePermissionsReader(
     options.capabilities ?? {
       isOwner: false,
@@ -317,6 +350,55 @@ export const createAuthApp = (options: AuthAppOptions = {}): AuthApp => {
     createRole: new CreateCustomRoleUseCase(unitOfWork, customRoles, audit),
     updateRole: new UpdateCustomRoleUseCase(unitOfWork, customRoles, audit),
     deleteRole: new DeleteCustomRoleUseCase(unitOfWork, customRoles, audit),
+    listInvitations: new ListInvitationsQuery(unitOfWork, invitations),
+    createInvitation: new CreateInvitationUseCase(
+      unitOfWork,
+      invitations,
+      organizations,
+      resetTokens,
+      clock,
+      audit,
+      rateLimit,
+      mail,
+      dispatcher,
+      APP_URL,
+    ),
+    resendInvitation: new ResendInvitationUseCase(
+      unitOfWork,
+      invitations,
+      organizations,
+      resetTokens,
+      clock,
+      audit,
+      rateLimit,
+      mail,
+      dispatcher,
+      APP_URL,
+    ),
+    revokeInvitation: new RevokeInvitationUseCase(unitOfWork, invitations, audit),
+    listEmployees: new ListEmployeesQuery(unitOfWork, employeeDirectory),
+    getOrgChart: new GetOrgChartQuery(unitOfWork, employeeDirectory),
+    readEmployeeProfile: new ReadEmployeeProfileQuery(unitOfWork, employeeProfiles, fields),
+    writeEmployeeProfile: new WriteEmployeeProfileUseCase(
+      unitOfWork,
+      employeeProfiles,
+      fields,
+      audit,
+    ),
+    acceptInvitation: new AcceptInvitationUseCase(
+      lookup,
+      invitations,
+      userRoles,
+      organizations,
+      issueSession,
+      hasher,
+      resetTokens,
+      unitOfWork,
+      rateLimit,
+      clock,
+      logger,
+      audit,
+    ),
   };
 
   const testApp = createTestApp(
@@ -325,6 +407,7 @@ export const createAuthApp = (options: AuthAppOptions = {}): AuthApp => {
 
   return {
     app: createHttpServer({ ...testApp.container.http, identity, iam }),
+    iam,
     clock,
     sessions,
     users,
@@ -338,6 +421,8 @@ export const createAuthApp = (options: AuthAppOptions = {}): AuthApp => {
     resetTokens,
     userRoles,
     overrides,
+    invitations,
+    employeeProfiles,
     customRoles,
     audit,
     logLines: testApp.logLines,

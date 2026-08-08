@@ -87,6 +87,36 @@ alwaysApply: true
     чтением свойства и перестаёт сворачиваться. Условие — `import.meta.env.MODE === 'development'`,
     **не** `DEV`: `DEV` истинен и под Vitest. Эталон — `app/query-devtools.component.tsx`
     (devtools TanStack Query), монтирование — в `app/providers.tsx`.
+16. **Клиентское состояние — по таблице, а не по вкусу.** Основание — [ADR-0026](../docs/architecture/adr/0026-client-state-zustand.md).
+
+    | Состояние | Где живёт |
+    |---|---|
+    | Данные с сервера | **TanStack Query** |
+    | Фильтры, сортировка, страница, вкладка, раскрытые группы | **URL** (`validateSearch` + Zod) |
+    | Состояние одного экрана, умирающее вместе с ним | **`useState`/`useReducer`** в хуке юнита |
+    | Кросс-экранное клиентское состояние или читаемое вне React (гард `beforeLoad`) | **zustand** |
+    | Ключевой материал E2EE | **нигде из перечисленного** — `rules/e2ee-crypto.mdc` §5 |
+
+    Практически это означает:
+
+    - **Стор не хранит серверные данные.** Копия ответа в сторе расходится с сервером молча —
+      инвалидация её не касается. Если значение пришло из нашего API, его дом — Query.
+    - **Стор — сегмент юнита:** `units/<unit>/service/stores/<name>.store.ts`, наружу — только через
+      barrel. Глобального `app/store` нет: он схлопывает пять слоёв в один.
+    - **`zustand` называется только внутри `units/*/service/`** — в сторе, который его создаёт, и в
+      хуке, который на него подписывает. Виджет и страница берут хук юнита: `useStore` в виджете —
+      обращение к состоянию мимо публичного API юнита, то есть нарушение call-chain (правило 4).
+    - **Фабрика + один экземпляр модуля** (как `createAppQueryClient`): экземпляр — состояние таба,
+      фабрика — то, что даёт тесту свой стор вместо общего.
+    - **`createStore` из `zustand/vanilla` + `useStore`**, а не `create()`: гард `beforeLoad` читает
+      стор синхронно и вне рендера, и разделение «стор ≠ хук» не даёт вызвать хук из гарда.
+    - **Селектор обязателен:** `useStore(store, (s) => s.field)`; для нескольких полей —
+      `useShallow`. Подписка на весь стор перерисовывает компонент на любое изменение.
+    - **Мидлвары поштучно и осознанно.** `persist` — только для перечисленных ключей и никогда для
+      производного от секретов; `devtools` — только за `IS_DEV_SERVER` (правило 15); `immer` не
+      используем.
+    - **Стор не ходит в наш API.** Асинхронность в сторе допустима только та, что запросом за
+      данными не является: ротация сессии, прогресс загрузки в S3, таймеры.
 
 ## Примеры
 
@@ -120,6 +150,37 @@ export function BoardPage() {
 }
 ```
 
+```ts
+// units/upload/service/stores/upload-queue.store.ts — vanilla-стор + хук
+import { useStore } from 'zustand';
+import { useShallow } from 'zustand/react/shallow';
+import { createStore } from 'zustand/vanilla';
+
+interface UploadQueue {
+  readonly files: readonly UploadItem[];
+  readonly enqueue: (item: UploadItem) => void;
+  readonly progress: (fileId: string, percent: number) => void;
+}
+
+/** Фабрика — для тестов, экземпляр ниже — очередь этого таба. */
+export const createUploadQueueStore = () =>
+  createStore<UploadQueue>((set) => ({
+    files: [],
+    enqueue: (item) => set((s) => ({ files: [...s.files, item] })),
+    progress: (fileId, percent) =>
+      set((s) => ({
+        files: s.files.map((f) => (f.id === fileId ? { ...f, percent } : f)),
+      })),
+  }));
+
+export const uploadQueue = createUploadQueueStore();
+
+/** Селектор, а не весь стор: иначе перерисовка на каждый процент у каждого потребителя. */
+export const useUploadCount = (): number => useStore(uploadQueue, (s) => s.files.length);
+export const useUploads = (): readonly UploadItem[] =>
+  useStore(uploadQueue, useShallow((s) => s.files));
+```
+
 ### ❌ Неправильно
 
 ```tsx
@@ -139,6 +200,20 @@ export function BoardPage() {
 import { BoardPage } from '@pages/board';   // ❌
 ```
 
+```ts
+// ❌ серверные данные в сторе — молча разойдётся с сервером, инвалидация её не касается
+export const useTaskStore = create((set) => ({
+  tasks: [],
+  load: async () => set({ tasks: await fetchTasks() }),
+}));
+
+// ❌ подписка на весь стор: перерисовка на любое изменение, включая чужое поле
+const store = useStore(uploadQueue);
+
+// ❌ фильтры в сторе вместо URL — ссылку не переслать, back/forward сломан
+export const useFiltersStore = create(() => ({ q: '', page: 1 }));
+```
+
 ## Как проверяется
 
 | Механизм | Что ловит |
@@ -153,6 +228,7 @@ import { BoardPage } from '@pages/board';   // ❌
 | `import/no-cycle` | циклические зависимости |
 | `test/architecture/layers.test.ts` (обход графа импортов) | нарушение call-chain `ui → service → api` |
 | `size-limit` по чанкам маршрутов | потерянный code-splitting |
+| `test/architecture/state-boundaries.test.ts` | стор вне `service/stores`, `zustand` за пределами `units/*/service/`, импорт `@tanstack/react-query` в `*.store.ts` (серверные данные в сторе), `create(` вместо `createStore(`, ручной `useSyncExternalStore` |
 
 ## Исключения
 
@@ -163,3 +239,6 @@ import { BoardPage } from '@pages/board';   // ❌
   но доменная логика каждого фильтра остаётся в своём юните.
 - **Крипто-чанк `units/vault/lib/crypto`** не подчиняется общему бюджету размера ленивого чанка —
   см. `rules/e2ee-crypto.mdc`.
+- **Access-токен — модульная переменная, а не стор** (`units/auth/lib/auth-token-storage.util.ts`).
+  Из него ничего не рендерится: подписка никому не нужна, а лишний экземпляр наблюдаемого состояния
+  с секретом — лишняя поверхность. Исключение осознанное и единственное.

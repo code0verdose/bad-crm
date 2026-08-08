@@ -60,4 +60,5 @@ export const detachedAuthLookup = (): AuthLookupPort => ({
   findUserByEmailAndSlug: () => refuseAuth(),
   findSessionByRefreshHash: () => refuseAuth(),
   findPasswordResetToken: () => refuseAuth(),
+  findInvitation: () => refuseAuth(),
 });
