@@ -628,6 +628,151 @@ export interface paths {
         patch: operations["updateRole"];
         trace?: never;
     };
+    "/teams": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Every team of the organization.
+         * @description The org-structure list: each team with how many people are on it. The roster itself is
+         *     `GET /teams/{teamId}` — a list screen asks «how big is this team» before it opens one, and
+         *     the members are a second read.
+         *
+         *     **Disbanded teams are not in the answer.** They are excluded by the query rather than after
+         *     it, so the count and the rows cannot disagree.
+         */
+        get: operations["listTeams"];
+        put?: never;
+        /**
+         * Create a team.
+         * @description A `Team` is an **org-structure** entity — «who works together» — and not a group of access.
+         *     Nothing is granted by belonging to one: the `ResourceAcl` that would make a team the subject
+         *     of a grant is not part of this release, and separate access groups (`subjectType = GROUP`)
+         *     are open question 3 of `permission-model.md` §12 rather than something M2 introduces.
+         *
+         *     `slug` is unique **inside the organization** and among live teams only: disbanding a team
+         *     frees its slug for reuse. A collision is `409 team_already_exists`.
+         *
+         *     The lead is not a field here. It is a membership with `teamRole: LEAD`, written through
+         *     `POST /teams/{teamId}/members`.
+         */
+        post: operations["createTeam"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/teams/{teamId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * One team and who is on it.
+         * @description The roster carries **user ids and no names**: who these people are is `GET /employees`,
+         *     behind `user:read`. Answering it here would attach a second permission's worth of personal
+         *     data to a read that only asked which accounts are on a team.
+         *
+         *     A team of another organization — and one that has been disbanded — is `404`, never 403.
+         */
+        get: operations["getTeam"];
+        put?: never;
+        post?: never;
+        /**
+         * Disband a team.
+         * @description The team is hidden and **every membership is removed**, in one transaction. The row survives
+         *     as a soft deletion so that the trail can still name it and so that the slug is freed; the
+         *     memberships do not, because a membership is access rather than history — the same reasoning
+         *     offboarding applies when it takes somebody off every team.
+         *
+         *     Every former member's permission version is bumped in the same transaction, in one
+         *     statement, so the change applies on their next request rather than at their next sign-in.
+         */
+        delete: operations["deleteTeam"];
+        options?: never;
+        head?: never;
+        /**
+         * Rename a team, or move its slug.
+         * @description **Replace, not merge**: the body is what the team will be, and a `description` left out is
+         *     cleared. Nobody's access changes — renaming a container moves nobody between containers.
+         */
+        patch: operations["updateTeam"];
+        trace?: never;
+    };
+    "/teams/{teamId}/members": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Put somebody on a team.
+         * @description Idempotent by constraint **for a repeat with the same `teamRole`**: joining a team twice is
+         *     one membership, and the second request succeeds without filing a second trail entry, a
+         *     second version bump, or costing the person a re-authentication.
+         *
+         *     A repeat with a **different** `teamRole` is not idempotent, and is deliberately so: it is
+         *     how an existing member's role changes — `MEMBER` to `LEAD` or back — because there is no
+         *     separate endpoint for it. `teamRole: LEAD` is how a team gets a lead in the first place —
+         *     there is no `leadId` on the team itself, because two models of the same fact drift the first
+         *     time one is written without the other. That repeat files `team.member_role_changed`, not
+         *     `team.member_added`, and bumps the person's permission version again.
+         *
+         *     An account that is not `ACTIVE` — **suspended**, or still only **invited** — is refused.
+         *     Offboarding takes people off every team precisely so that a suspended person is on none;
+         *     accepting them here would undo that one row at a time. An invitation nobody has accepted is
+         *     not yet a person; the invitation itself already carries the teams they will join. Reactivate
+         *     the account, or wait for the invitation to be accepted, first.
+         *
+         *     The refusal is `409 member_not_active` **only for a caller who also holds `user:read`** —
+         *     its own code rather than the transfer's `recipient_not_active`, whose message speaks of
+         *     receiving the organization and would read as somebody else's sentence on this screen. A
+         *     caller who holds `team:manage_members` without `user:read` gets the same `404
+         *     user_not_found` an account of another organization gets instead: which inactive state a
+         *     `userId` is in is a directory fact, and holding this permission alone does not entitle a
+         *     caller to it.
+         */
+        post: operations["addTeamMember"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/teams/{teamId}/members/{userId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Take somebody off a team.
+         * @description The membership row is deleted rather than flagged — `team_members` has no `deleted_at`, and a
+         *     filter everybody has to remember is a filter somebody forgets. The person's permission version
+         *     is bumped in the same transaction.
+         *
+         *     A membership that was not there is `404`: the caller asked to remove something the
+         *     organization does not have, and reporting success would name a state that never existed.
+         */
+        delete: operations["removeTeamMember"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/invitations": {
         parameters: {
             query?: never;
@@ -1466,7 +1611,7 @@ export interface components {
          *     reused with a different meaning.
          * @enum {string}
          */
-        ErrorCode: "validation_failed" | "unauthenticated" | "invalid_credentials" | "account_suspended" | "registration_disabled" | "password_reset_token_invalid" | "invitation_not_valid" | "mail_not_configured" | "route_not_found" | "payload_too_large" | "vault_locked" | "stale_version" | "idempotency_key_reuse" | "last_owner_required" | "period_locked" | "self_lockout" | "system_role_immutable" | "owner_immutable" | "invitation_already_accepted" | "manager_cycle_detected" | "employment_period_inverted" | "recipient_not_active" | "invalid_recipient" | "not_the_owner" | "confirmation_required" | "rate_limited" | "feature_disabled" | "service_unavailable" | "internal_error" | "organization_not_found" | "organization_forbidden" | "organization_already_exists" | "team_not_found" | "team_forbidden" | "team_already_exists" | "user_not_found" | "user_forbidden" | "user_already_exists" | "role_not_found" | "role_forbidden" | "role_already_exists" | "invitation_not_found" | "invitation_forbidden" | "invitation_already_exists" | "session_not_found" | "session_forbidden" | "session_already_exists" | "project_not_found" | "project_forbidden" | "project_already_exists" | "board_not_found" | "board_forbidden" | "board_already_exists" | "task_not_found" | "task_forbidden" | "task_already_exists" | "sprint_not_found" | "sprint_forbidden" | "sprint_already_exists" | "comment_not_found" | "comment_forbidden" | "comment_already_exists" | "doc_not_found" | "doc_forbidden" | "doc_already_exists" | "kb_note_not_found" | "kb_note_forbidden" | "kb_note_already_exists" | "file_not_found" | "file_forbidden" | "file_already_exists" | "vault_item_not_found" | "vault_item_forbidden" | "vault_item_already_exists" | "secure_link_not_found" | "secure_link_forbidden" | "secure_link_already_exists" | "time_entry_not_found" | "time_entry_forbidden" | "time_entry_already_exists" | "channel_not_found" | "channel_forbidden" | "channel_already_exists" | "message_not_found" | "message_forbidden" | "message_already_exists" | "dashboard_not_found" | "dashboard_forbidden" | "dashboard_already_exists";
+        ErrorCode: "validation_failed" | "unauthenticated" | "invalid_credentials" | "account_suspended" | "registration_disabled" | "password_reset_token_invalid" | "invitation_not_valid" | "mail_not_configured" | "route_not_found" | "payload_too_large" | "vault_locked" | "stale_version" | "idempotency_key_reuse" | "last_owner_required" | "period_locked" | "self_lockout" | "system_role_immutable" | "owner_immutable" | "invitation_already_accepted" | "manager_cycle_detected" | "employment_period_inverted" | "recipient_not_active" | "member_not_active" | "invalid_recipient" | "not_the_owner" | "confirmation_required" | "rate_limited" | "feature_disabled" | "service_unavailable" | "internal_error" | "organization_not_found" | "organization_forbidden" | "organization_already_exists" | "team_not_found" | "team_forbidden" | "team_already_exists" | "user_not_found" | "user_forbidden" | "user_already_exists" | "role_not_found" | "role_forbidden" | "role_already_exists" | "invitation_not_found" | "invitation_forbidden" | "invitation_already_exists" | "session_not_found" | "session_forbidden" | "session_already_exists" | "project_not_found" | "project_forbidden" | "project_already_exists" | "board_not_found" | "board_forbidden" | "board_already_exists" | "task_not_found" | "task_forbidden" | "task_already_exists" | "sprint_not_found" | "sprint_forbidden" | "sprint_already_exists" | "comment_not_found" | "comment_forbidden" | "comment_already_exists" | "doc_not_found" | "doc_forbidden" | "doc_already_exists" | "kb_note_not_found" | "kb_note_forbidden" | "kb_note_already_exists" | "file_not_found" | "file_forbidden" | "file_already_exists" | "vault_item_not_found" | "vault_item_forbidden" | "vault_item_already_exists" | "secure_link_not_found" | "secure_link_forbidden" | "secure_link_already_exists" | "time_entry_not_found" | "time_entry_forbidden" | "time_entry_already_exists" | "channel_not_found" | "channel_forbidden" | "channel_already_exists" | "message_not_found" | "message_forbidden" | "message_already_exists" | "dashboard_not_found" | "dashboard_forbidden" | "dashboard_already_exists";
         /**
          * @description Why one field was rejected. The list mirrors
          *     `packages/shared/src/errors/validation-issue.enums.ts`; anything a validator produces
@@ -1538,6 +1683,67 @@ export interface components {
              */
             isSystem: boolean;
             permissions: string[];
+        };
+        /**
+         * @description What a team is. The whole thing, not a delta — a `description` left out of an update is
+         *     cleared, because the field is optional prose and a merge would make «clear it» unexpressible.
+         */
+        TeamDraft: {
+            /** @example Backend */
+            name: string;
+            /**
+             * @description URL-safe identifier, unique inside the organization among live teams. Disbanding a team
+             *     frees its slug: the uniqueness is partial (`WHERE deleted_at IS NULL`).
+             * @example backend
+             */
+            slug: string;
+            description?: string | null;
+        };
+        /**
+         * @description A team as stored. An **org-structure** entity: nothing is granted by belonging to one, and
+         *     access groups (`subjectType = GROUP`) are an open question rather than part of this release.
+         */
+        Team: {
+            /** Format: uuid */
+            id: string;
+            name: string;
+            slug: string;
+            description: string | null;
+        };
+        TeamListEntry: components["schemas"]["Team"] & {
+            /**
+             * @description How many people are on the team — the count, not the people. Who they are is
+             *     `GET /teams/{teamId}`.
+             */
+            memberCount: number;
+        };
+        /**
+         * @description One membership. A **user id and no name**: who this account belongs to is `GET /employees`,
+         *     behind a different permission.
+         */
+        TeamMember: {
+            /** Format: uuid */
+            userId: string;
+            /**
+             * @description `LEAD` is how a team has a lead. There is no `leadId` on the team itself — two models of
+             *     the same fact drift the first time one of them is written without the other.
+             * @enum {string}
+             */
+            teamRole: "MEMBER" | "LEAD";
+            /** Format: date-time */
+            joinedAt: string;
+        };
+        TeamDetail: components["schemas"]["TeamListEntry"] & {
+            members: components["schemas"]["TeamMember"][];
+        };
+        TeamMemberDraft: {
+            /** Format: uuid */
+            userId: string;
+            /**
+             * @default MEMBER
+             * @enum {string}
+             */
+            teamRole: "MEMBER" | "LEAD";
         };
         /**
          * @description A personnel record, in the shape this caller is allowed to see. The employment fields below
@@ -2189,6 +2395,17 @@ export interface components {
         UserId: string;
         /** @description Identifier of a role of the caller's organization. Another organization's id is 404. */
         RoleId: string;
+        /**
+         * @description Identifier of a team of the caller's organization. Another organization's id is 404, and so
+         *     is a team that has been disbanded — the row survives as a soft deletion, and confirming that
+         *     an id once named a team here would be a fact about data the caller cannot see.
+         */
+        TeamId: string;
+        /**
+         * @description The account whose membership is being removed. An id that is on no such team is 404 — the
+         *     caller asked to remove something the organization does not have.
+         */
+        TeamMemberUserId: string;
         /**
          * @description Identifier of an invitation of the caller's organization. Another organization's id is 404,
          *     and so is one that was already revoked — a revoked invitation is a deleted row, because the
@@ -3129,6 +3346,297 @@ export interface operations {
             409: components["responses"]["Conflict"];
             422: components["responses"]["ValidationFailed"];
             428: components["responses"]["ConfirmationRequired"];
+            429: components["responses"]["RateLimited"];
+            500: components["responses"]["InternalError"];
+        };
+    };
+    listTeams: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The live teams of the caller's organization. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: components["schemas"]["TeamListEntry"][];
+                    };
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            429: components["responses"]["RateLimited"];
+            500: components["responses"]["InternalError"];
+        };
+    };
+    createTeam: {
+        parameters: {
+            query?: never;
+            header: {
+                /**
+                 * @description Client-generated key, mandatory on every unsafe operation that creates an entity, sends
+                 *     mail or spends money or tokens.
+                 *
+                 *     **Today the server only requires the key; it does not yet store or replay a response.** The
+                 *     table keyed by `(key, request hash)` is a cross-cutting mechanism that has not been built —
+                 *     the open half is recorded in STORY-006-01. What the requirement buys now is that a client
+                 *     which never learned to send the header cannot be made idempotent later without a breaking
+                 *     change; what it does not buy is the convenience of getting the original `201` back instead
+                 *     of a `409` on retry. Where a lost response is genuinely ambiguous rather than merely
+                 *     inconvenient, the operation says so in its own description.
+                 *
+                 *     When the store lands: a replay carrying the same request hash will return the stored
+                 *     response, and the same key with a different hash will be refused with 409
+                 *     `idempotency_key_reuse`.
+                 *
+                 *     Declaring the parameter is not a claim that the operation will replay: the client attaches a
+                 *     key to every unsafe request, and nearly every unsafe operation therefore requires one. What
+                 *     the store will change differs per operation, and each says so in its own description:
+                 *
+                 *     * operations that create something, send mail or spend tokens are the ones a replay is *for*
+                 *       — today a lost response leaves the caller unable to tell «it did not happen» from «it
+                 *       happened and the answer was lost»;
+                 *     * operations idempotent by construction (`assignRole`, `deactivateUser`, `reactivateUser`)
+                 *       require the key but gain nothing from a stored response — asking twice for a state that is
+                 *       already there answers the same way. The key is required anyway, so a client written today
+                 *       keeps working when the store lands;
+                 *     * `POST /auth/login` and `POST /auth/refresh` will **never** replay: a stored response *is* a
+                 *       credential. Replaying it would hand back tokens that have since been rotated or revoked,
+                 *       and would let one key slip a repeat past the failed-attempt counter the lockout depends on.
+                 */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TeamDraft"];
+            };
+        };
+        responses: {
+            /** @description The team exists. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Team"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["ValidationFailed"];
+            429: components["responses"]["RateLimited"];
+            500: components["responses"]["InternalError"];
+        };
+    };
+    getTeam: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /**
+                 * @description Identifier of a team of the caller's organization. Another organization's id is 404, and so
+                 *     is a team that has been disbanded — the row survives as a soft deletion, and confirming that
+                 *     an id once named a team here would be a fact about data the caller cannot see.
+                 */
+                teamId: components["parameters"]["TeamId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The team and its members. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TeamDetail"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            429: components["responses"]["RateLimited"];
+            500: components["responses"]["InternalError"];
+        };
+    };
+    deleteTeam: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /**
+                 * @description Identifier of a team of the caller's organization. Another organization's id is 404, and so
+                 *     is a team that has been disbanded — the row survives as a soft deletion, and confirming that
+                 *     an id once named a team here would be a fact about data the caller cannot see.
+                 */
+                teamId: components["parameters"]["TeamId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The team is gone and nobody is on it. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            429: components["responses"]["RateLimited"];
+            500: components["responses"]["InternalError"];
+        };
+    };
+    updateTeam: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /**
+                 * @description Identifier of a team of the caller's organization. Another organization's id is 404, and so
+                 *     is a team that has been disbanded — the row survives as a soft deletion, and confirming that
+                 *     an id once named a team here would be a fact about data the caller cannot see.
+                 */
+                teamId: components["parameters"]["TeamId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TeamDraft"];
+            };
+        };
+        responses: {
+            /** @description The team is what the body says. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["ValidationFailed"];
+            429: components["responses"]["RateLimited"];
+            500: components["responses"]["InternalError"];
+        };
+    };
+    addTeamMember: {
+        parameters: {
+            query?: never;
+            header: {
+                /**
+                 * @description Client-generated key, mandatory on every unsafe operation that creates an entity, sends
+                 *     mail or spends money or tokens.
+                 *
+                 *     **Today the server only requires the key; it does not yet store or replay a response.** The
+                 *     table keyed by `(key, request hash)` is a cross-cutting mechanism that has not been built —
+                 *     the open half is recorded in STORY-006-01. What the requirement buys now is that a client
+                 *     which never learned to send the header cannot be made idempotent later without a breaking
+                 *     change; what it does not buy is the convenience of getting the original `201` back instead
+                 *     of a `409` on retry. Where a lost response is genuinely ambiguous rather than merely
+                 *     inconvenient, the operation says so in its own description.
+                 *
+                 *     When the store lands: a replay carrying the same request hash will return the stored
+                 *     response, and the same key with a different hash will be refused with 409
+                 *     `idempotency_key_reuse`.
+                 *
+                 *     Declaring the parameter is not a claim that the operation will replay: the client attaches a
+                 *     key to every unsafe request, and nearly every unsafe operation therefore requires one. What
+                 *     the store will change differs per operation, and each says so in its own description:
+                 *
+                 *     * operations that create something, send mail or spend tokens are the ones a replay is *for*
+                 *       — today a lost response leaves the caller unable to tell «it did not happen» from «it
+                 *       happened and the answer was lost»;
+                 *     * operations idempotent by construction (`assignRole`, `deactivateUser`, `reactivateUser`)
+                 *       require the key but gain nothing from a stored response — asking twice for a state that is
+                 *       already there answers the same way. The key is required anyway, so a client written today
+                 *       keeps working when the store lands;
+                 *     * `POST /auth/login` and `POST /auth/refresh` will **never** replay: a stored response *is* a
+                 *       credential. Replaying it would hand back tokens that have since been rotated or revoked,
+                 *       and would let one key slip a repeat past the failed-attempt counter the lockout depends on.
+                 */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                /**
+                 * @description Identifier of a team of the caller's organization. Another organization's id is 404, and so
+                 *     is a team that has been disbanded — the row survives as a soft deletion, and confirming that
+                 *     an id once named a team here would be a fact about data the caller cannot see.
+                 */
+                teamId: components["parameters"]["TeamId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TeamMemberDraft"];
+            };
+        };
+        responses: {
+            /** @description The person is on the team. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["ValidationFailed"];
+            429: components["responses"]["RateLimited"];
+            500: components["responses"]["InternalError"];
+        };
+    };
+    removeTeamMember: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /**
+                 * @description Identifier of a team of the caller's organization. Another organization's id is 404, and so
+                 *     is a team that has been disbanded — the row survives as a soft deletion, and confirming that
+                 *     an id once named a team here would be a fact about data the caller cannot see.
+                 */
+                teamId: components["parameters"]["TeamId"];
+                /**
+                 * @description The account whose membership is being removed. An id that is on no such team is 404 — the
+                 *     caller asked to remove something the organization does not have.
+                 */
+                userId: components["parameters"]["TeamMemberUserId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The person is off the team. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
             429: components["responses"]["RateLimited"];
             500: components["responses"]["InternalError"];
         };

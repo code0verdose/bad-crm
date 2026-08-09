@@ -1088,6 +1088,269 @@ paths:
         '500':
           $ref: '#/components/responses/InternalError'
 
+  /teams:
+    get:
+      operationId: listTeams
+      summary: Every team of the organization.
+      description: |
+        The org-structure list: each team with how many people are on it. The roster itself is
+        `GET /teams/{teamId}` — a list screen asks «how big is this team» before it opens one, and
+        the members are a second read.
+
+        **Disbanded teams are not in the answer.** They are excluded by the query rather than after
+        it, so the count and the rows cannot disagree.
+      tags: [iam]
+      x-permission: team:read
+      responses:
+        '200':
+          description: The live teams of the caller's organization.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/TeamListEntry'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+    post:
+      operationId: createTeam
+      summary: Create a team.
+      description: |
+        A `Team` is an **org-structure** entity — «who works together» — and not a group of access.
+        Nothing is granted by belonging to one: the `ResourceAcl` that would make a team the subject
+        of a grant is not part of this release, and separate access groups (`subjectType = GROUP`)
+        are open question 3 of `permission-model.md` §12 rather than something M2 introduces.
+
+        `slug` is unique **inside the organization** and among live teams only: disbanding a team
+        frees its slug for reuse. A collision is `409 team_already_exists`.
+
+        The lead is not a field here. It is a membership with `teamRole: LEAD`, written through
+        `POST /teams/{teamId}/members`.
+      tags: [iam]
+      x-permission: team:create
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TeamDraft'
+      responses:
+        '201':
+          description: The team exists.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Team'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /teams/{teamId}:
+    get:
+      operationId: getTeam
+      summary: One team and who is on it.
+      description: |
+        The roster carries **user ids and no names**: who these people are is `GET /employees`,
+        behind `user:read`. Answering it here would attach a second permission's worth of personal
+        data to a read that only asked which accounts are on a team.
+
+        A team of another organization — and one that has been disbanded — is `404`, never 403.
+      tags: [iam]
+      x-permission: team:read
+      parameters:
+        - $ref: '#/components/parameters/TeamId'
+      responses:
+        '200':
+          description: The team and its members.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TeamDetail'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+    patch:
+      operationId: updateTeam
+      summary: Rename a team, or move its slug.
+      description: |
+        **Replace, not merge**: the body is what the team will be, and a `description` left out is
+        cleared. Nobody's access changes — renaming a container moves nobody between containers.
+      tags: [iam]
+      x-permission: team:update
+      parameters:
+        - $ref: '#/components/parameters/TeamId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TeamDraft'
+      responses:
+        '204':
+          description: The team is what the body says.
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+    delete:
+      operationId: deleteTeam
+      summary: Disband a team.
+      description: |
+        The team is hidden and **every membership is removed**, in one transaction. The row survives
+        as a soft deletion so that the trail can still name it and so that the slug is freed; the
+        memberships do not, because a membership is access rather than history — the same reasoning
+        offboarding applies when it takes somebody off every team.
+
+        Every former member's permission version is bumped in the same transaction, in one
+        statement, so the change applies on their next request rather than at their next sign-in.
+      tags: [iam]
+      x-permission: team:delete
+      parameters:
+        - $ref: '#/components/parameters/TeamId'
+      responses:
+        '204':
+          description: The team is gone and nobody is on it.
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /teams/{teamId}/members:
+    post:
+      operationId: addTeamMember
+      summary: Put somebody on a team.
+      description: |
+        Idempotent by constraint **for a repeat with the same `teamRole`**: joining a team twice is
+        one membership, and the second request succeeds without filing a second trail entry, a
+        second version bump, or costing the person a re-authentication.
+
+        A repeat with a **different** `teamRole` is not idempotent, and is deliberately so: it is
+        how an existing member's role changes — `MEMBER` to `LEAD` or back — because there is no
+        separate endpoint for it. `teamRole: LEAD` is how a team gets a lead in the first place —
+        there is no `leadId` on the team itself, because two models of the same fact drift the first
+        time one is written without the other. That repeat files `team.member_role_changed`, not
+        `team.member_added`, and bumps the person's permission version again.
+
+        An account that is not `ACTIVE` — **suspended**, or still only **invited** — is refused.
+        Offboarding takes people off every team precisely so that a suspended person is on none;
+        accepting them here would undo that one row at a time. An invitation nobody has accepted is
+        not yet a person; the invitation itself already carries the teams they will join. Reactivate
+        the account, or wait for the invitation to be accepted, first.
+
+        The refusal is `409 member_not_active` **only for a caller who also holds `user:read`** —
+        its own code rather than the transfer's `recipient_not_active`, whose message speaks of
+        receiving the organization and would read as somebody else's sentence on this screen. A
+        caller who holds `team:manage_members` without `user:read` gets the same `404
+        user_not_found` an account of another organization gets instead: which inactive state a
+        `userId` is in is a directory fact, and holding this permission alone does not entitle a
+        caller to it.
+      tags: [iam]
+      x-permission: team:manage_members
+      parameters:
+        - $ref: '#/components/parameters/TeamId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TeamMemberDraft'
+      responses:
+        '204':
+          description: The person is on the team.
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /teams/{teamId}/members/{userId}:
+    delete:
+      operationId: removeTeamMember
+      summary: Take somebody off a team.
+      description: |
+        The membership row is deleted rather than flagged — `team_members` has no `deleted_at`, and a
+        filter everybody has to remember is a filter somebody forgets. The person's permission version
+        is bumped in the same transaction.
+
+        A membership that was not there is `404`: the caller asked to remove something the
+        organization does not have, and reporting success would name a state that never existed.
+      tags: [iam]
+      x-permission: team:manage_members
+      parameters:
+        - $ref: '#/components/parameters/TeamId'
+        - $ref: '#/components/parameters/TeamMemberUserId'
+      responses:
+        '204':
+          description: The person is off the team.
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
   /invitations:
     get:
       operationId: listInvitations
@@ -2439,6 +2702,7 @@ components:
         - manager_cycle_detected
         - employment_period_inverted
         - recipient_not_active
+        - member_not_active
         - invalid_recipient
         - not_the_owner
         - confirmation_required
@@ -2641,6 +2905,114 @@ components:
           type: array
           items:
             type: string
+
+    TeamDraft:
+      type: object
+      additionalProperties: false
+      required: [name, slug]
+      description: |
+        What a team is. The whole thing, not a delta — a `description` left out of an update is
+        cleared, because the field is optional prose and a merge would make «clear it» unexpressible.
+      properties:
+        name:
+          type: string
+          maxLength: 120
+          examples: ['Backend']
+        slug:
+          type: string
+          pattern: '^[a-z0-9]+(?:-[a-z0-9]+)*$'
+          maxLength: 64
+          description: |
+            URL-safe identifier, unique inside the organization among live teams. Disbanding a team
+            frees its slug: the uniqueness is partial (`WHERE deleted_at IS NULL`).
+          examples: ['backend']
+        description:
+          type: string
+          maxLength: 500
+          nullable: true
+
+    Team:
+      type: object
+      additionalProperties: false
+      required: [id, name, slug, description]
+      description: |
+        A team as stored. An **org-structure** entity: nothing is granted by belonging to one, and
+        access groups (`subjectType = GROUP`) are an open question rather than part of this release.
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        slug:
+          type: string
+        description:
+          type: string
+          nullable: true
+
+    TeamListEntry:
+      allOf:
+        - $ref: '#/components/schemas/Team'
+        # No `additionalProperties: false` on this branch — same reason as `RoleListEntry`: each
+        # `allOf` branch is validated against the *whole* merged instance independently, so a second
+        # branch closed to only its own `properties` would reject every field the base branch (here,
+        # `Team`) contributes. `Team` stays closed; this extension stays open.
+        - type: object
+          required: [memberCount]
+          properties:
+            memberCount:
+              type: integer
+              minimum: 0
+              description: |
+                How many people are on the team — the count, not the people. Who they are is
+                `GET /teams/{teamId}`.
+
+    TeamMember:
+      type: object
+      additionalProperties: false
+      required: [userId, teamRole, joinedAt]
+      description: |
+        One membership. A **user id and no name**: who this account belongs to is `GET /employees`,
+        behind a different permission.
+      properties:
+        userId:
+          type: string
+          format: uuid
+        teamRole:
+          type: string
+          enum: [MEMBER, LEAD]
+          description: |
+            `LEAD` is how a team has a lead. There is no `leadId` on the team itself — two models of
+            the same fact drift the first time one of them is written without the other.
+        joinedAt:
+          type: string
+          format: date-time
+
+    TeamDetail:
+      allOf:
+        - $ref: '#/components/schemas/TeamListEntry'
+        # Same reason as `TeamListEntry`'s own second branch: closing this one would reject every
+        # field `TeamListEntry` (and, through it, `Team`) contributes to the merged instance.
+        - type: object
+          required: [members]
+          properties:
+            members:
+              type: array
+              items:
+                $ref: '#/components/schemas/TeamMember'
+
+    TeamMemberDraft:
+      type: object
+      additionalProperties: false
+      required: [userId]
+      properties:
+        userId:
+          type: string
+          format: uuid
+        teamRole:
+          type: string
+          enum: [MEMBER, LEAD]
+          default: MEMBER
 
     EmployeeProfile:
       type: object
@@ -3450,6 +3822,35 @@ components:
       examples:
         manager:
           value: 018f4a3b-2c1d-7a41-9f00-2b7c1d0e5a32
+
+    TeamId:
+      name: teamId
+      in: path
+      required: true
+      description: |
+        Identifier of a team of the caller's organization. Another organization's id is 404, and so
+        is a team that has been disbanded — the row survives as a soft deletion, and confirming that
+        an id once named a team here would be a fact about data the caller cannot see.
+      schema:
+        type: string
+        format: uuid
+      examples:
+        backend:
+          value: 018f4a3b-2c1d-7a41-9f00-2b7c1d0e5a41
+
+    TeamMemberUserId:
+      name: userId
+      in: path
+      required: true
+      description: |
+        The account whose membership is being removed. An id that is on no such team is 404 — the
+        caller asked to remove something the organization does not have.
+      schema:
+        type: string
+        format: uuid
+      examples:
+        ivan:
+          value: 018f4a3b-2c1d-7a41-9f00-2b7c1d0e5a42
 
     InvitationId:
       name: invitationId

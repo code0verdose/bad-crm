@@ -86,6 +86,48 @@ export const AUDIT_ACTIONS = [
    */
   'user.suspended',
   'user.reactivated',
+  /**
+   * A team was created, renamed or removed (STORY-012-07).
+   *
+   * A `Team` is an org-structure container and **not** a group of access: no permission is derived
+   * from membership today, and the resource ACL that would make one the subject of a grant does not
+   * exist yet (STORY-011-06, blocked). The entries are therefore about the shape of the
+   * organization, which is why two of them read at `INFO` and only the deletion does not.
+   */
+  'team.created',
+  'team.updated',
+  /**
+   * A team was removed and every membership it held went with it.
+   *
+   * `team_members` has no `deleted_at`: the rows are deleted outright, so this entry is the only
+   * record that the memberships existed at all. `before` therefore carries the full roster, each
+   * person with the role they held — the same choice `user.suspended` makes for the teams an
+   * offboarded person leaves, and for the identical reason: a reviewer asking «who was on that team»
+   * has nothing else to read, and whoever re-grants access later needs to know *what* to grant, not
+   * only how many people needed it.
+   */
+  'team.deleted',
+  /**
+   * Somebody joined or left a team (STORY-012-07).
+   *
+   * Separate actions rather than one `team.members_changed`, because they are separate questions:
+   * «when did this person join» and «when were they taken off» are asked at different times by
+   * different people, and one action carrying a direction in its payload answers neither with a
+   * filter.
+   */
+  'team.member_added',
+  'team.member_removed',
+  /**
+   * An existing member's role changed — `MEMBER` to `LEAD` or back — through the same
+   * `POST /teams/{teamId}/members` a first join uses (the gate's L-3 fix: there is no separate
+   * endpoint, because the lead is `team_members.team_role` and not a column of its own).
+   *
+   * A third action beside the two above rather than a direction folded into `team.member_added`, for
+   * the identical reason those two are already separate: «when did this person become lead» is a
+   * question asked on its own, and a filter over `team.member_added` would have to also inspect
+   * `before`/`after` to answer it.
+   */
+  'team.member_role_changed',
   /** A per-user exception was written, replaced or removed (STORY-011-05). */
   'permission.override.created',
   'permission.override.updated',

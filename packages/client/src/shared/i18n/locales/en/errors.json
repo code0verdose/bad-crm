@@ -46,6 +46,7 @@
     "invitation_not_valid": "This invitation link is no longer valid. Ask whoever invited you for a new one.",
     "manager_cycle_detected": "That person reports to this one, directly or through their manager — the org chart would loop.",
     "employment_period_inverted": "The termination date is before the hiring date — an employment cannot end before it begins.",
+    "member_not_active": "That person cannot join a team while their account is switched off — reactivate them first.",
     "recipient_not_active": "That person cannot receive the organization while their account is switched off — reactivate them first.",
     "invalid_recipient": "You already own this organization; choose somebody else to hand it to.",
     "not_the_owner": "Only the organization's current owner can transfer it to somebody else.",

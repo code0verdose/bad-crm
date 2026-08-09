@@ -100,12 +100,12 @@ beforeEach(async () => {
 });
 
 describe('joining the teams an invitation named', () => {
-  it('CONTROL: puts the person in the team the invitation carried', async () => {
+  it('CONTROL: puts the person in the team the invitation carried, and hands back its id', async () => {
     const written = await inTenant((repository) =>
       repository.joinTeams(seeded.userId, [seeded.liveTeamId]),
     );
 
-    expect(written).toBe(1);
+    expect(written).toEqual([seeded.liveTeamId]);
     expect(await memberships()).toEqual([seeded.liveTeamId]);
   });
 
@@ -116,7 +116,9 @@ describe('joining the teams an invitation named', () => {
       repository.joinTeams(seeded.userId, [seeded.liveTeamId]),
     );
 
-    expect(second).toBe(0);
+    // Nothing reported the second time: `ON CONFLICT DO NOTHING` skips the row, and a skipped row is
+    // not in `RETURNING` — the retry did not re-join a team the person already held.
+    expect(second).toEqual([]);
     expect(await memberships()).toEqual([seeded.liveTeamId]);
   });
 
@@ -125,12 +127,14 @@ describe('joining the teams an invitation named', () => {
       repository.joinTeams(seeded.userId, [seeded.liveTeamId, seeded.deletedTeamId]),
     );
 
-    expect(written).toBe(1);
+    // Only the id of the team actually joined comes back — the deleted one is silently absent,
+    // exactly as it is from `memberships()` below.
+    expect(written).toEqual([seeded.liveTeamId]);
     expect(await memberships()).toEqual([seeded.liveTeamId]);
   });
 
   it('writes nothing when the invitation named no team', async () => {
-    expect(await inTenant((repository) => repository.joinTeams(seeded.userId, []))).toBe(0);
+    expect(await inTenant((repository) => repository.joinTeams(seeded.userId, []))).toEqual([]);
     expect(await memberships()).toEqual([]);
   });
 });

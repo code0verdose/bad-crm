@@ -107,7 +107,8 @@ export class ConflictError extends AppError {
       | 'self_lockout'
       // The recipient of an ownership transfer is suspended or has never signed in: a state, and
       // one with a specific next step — reactivate them, then transfer.
-      | 'recipient_not_active',
+      | 'recipient_not_active'
+      | 'member_not_active',
     details?: ErrorDetails,
   ) {
     super(code, `Conflicting request: ${code}`, details);

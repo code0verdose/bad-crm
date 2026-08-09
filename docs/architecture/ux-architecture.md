@@ -452,6 +452,8 @@ flowchart TD
 | `/admin/members/invite` | `routes/_authenticated/admin/members/invite.tsx` | `requirePermission('invitation:create')` | — | `InviteMemberWidget` |
 | `/admin/roles` | `routes/_authenticated/admin/roles.tsx` | `requirePermission('role:read')` | `rolesSearchSchema`: `q`, `collapsed` (свёрнутые домены), `diff` (только различия) | `RoleMatrix` |
 | `/admin/roles/$roleId` | `routes/_authenticated/admin/roles/$roleId.tsx` | `requirePermission('role:read')` | `tab=permissions\|members` | `RoleDetailWidget` |
+| `/admin/teams` | `routes/_authenticated/admin/teams/index.tsx` | `requirePermission('team:read')` | `teamListSearchSchema`: `q`, `sort`, `page` — **применяются к ответу, а не к запросу**: `GET /teams` параметров не принимает. Верно для 5–50 человек и является потолком | `TeamList` |
+| `/admin/teams/$teamId` | `routes/_authenticated/admin/teams/$teamId.tsx` | `requirePermission('team:read')` | — | `TeamDetail` |
 | `/admin/ai-providers` | `routes/_authenticated/admin/ai-providers/index.tsx` | `requirePermission('ai:configure_providers')` | `provider?` | `AiProviderListWidget` |
 | `/admin/ai-providers/$providerId` | `routes/_authenticated/admin/ai-providers/$providerId.tsx` | `requirePermission('ai:configure_providers')` | `tab=connection\|models\|limits` | `AiProviderDetailWidget` |
 | `/admin/integrations` | `routes/_authenticated/admin/integrations/index.tsx` | `requirePermission('integration:read')` | `kind[]` | `IntegrationListWidget` |

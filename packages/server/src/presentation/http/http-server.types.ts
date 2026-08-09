@@ -13,8 +13,19 @@ import {
   type ReadEmployeeProfileQuery,
   type WriteEmployeeProfileUseCase,
 } from '@/application/iam/use-cases/write-employee-profile.use-case.js';
+import { type DeleteTeamUseCase } from '@/application/iam/use-cases/delete-team.use-case.js';
+import { type GetTeamDetailQuery } from '@/application/iam/use-cases/get-team-detail.query.js';
 import { type ListInvitationsQuery } from '@/application/iam/use-cases/list-invitations.query.js';
 import { type ListRolesQuery } from '@/application/iam/use-cases/list-roles.query.js';
+import { type ListTeamsQuery } from '@/application/iam/use-cases/list-teams.query.js';
+import {
+  type AddTeamMemberUseCase,
+  type RemoveTeamMemberUseCase,
+} from '@/application/iam/use-cases/manage-team-members.use-case.js';
+import {
+  type CreateTeamUseCase,
+  type UpdateTeamUseCase,
+} from '@/application/iam/use-cases/write-team.use-case.js';
 import {
   type CreateInvitationUseCase,
   type ResendInvitationUseCase,
@@ -136,6 +147,13 @@ export interface IamDependencies {
   readonly getOrgChart: GetOrgChartQuery;
   readonly readEmployeeProfile: ReadEmployeeProfileQuery;
   readonly writeEmployeeProfile: WriteEmployeeProfileUseCase;
+  readonly listTeams: ListTeamsQuery;
+  readonly getTeamDetail: GetTeamDetailQuery;
+  readonly createTeam: CreateTeamUseCase;
+  readonly updateTeam: UpdateTeamUseCase;
+  readonly deleteTeam: DeleteTeamUseCase;
+  readonly addTeamMember: AddTeamMemberUseCase;
+  readonly removeTeamMember: RemoveTeamMemberUseCase;
 }
 
 export interface HttpServerDependencies {

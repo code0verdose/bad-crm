@@ -184,7 +184,7 @@ updated: 2026-07-26
 | `Session` | [T] | `userId`, `familyId`, `rotatedFromId?` → `Session`, `refreshTokenHash`, `userAgent`, `ipHash`, `ipMasked`, `expiresAt`, `revokedAt?`, `revokedReason?` | → `User` |
 | `PasswordResetToken` | [T] | `userId`, `tokenHash`, `expiresAt`, `usedAt?`, `requestedIpHash?` | → `User` |
 | `Invitation` | [T] | `email`, `roleId?`, `teamIds String[]`, `tokenHash`, `locale en\|ru`, `invitedById`, `expiresAt`, `acceptedAt?`, `acceptedUserId?` | → `Organization`, `Role`, `User` |
-| `Team` | [T] | `name`, `slug`, `description`, `leadId?` → `User`, `deletedAt?` | 1:N `TeamMember` |
+| `Team` | [T] | `name`, `slug`, `description`, `deletedAt?` | 1:N `TeamMember` |
 | `TeamMember` | [T] | `teamId`, `userId`, `teamRole MEMBER\|LEAD`, `joinedAt` | join `Team` × `User` |
 
 **Индексы:**
@@ -262,9 +262,22 @@ updated: 2026-07-26
   `idx_invitations_org_email (organization_id, email) WHERE accepted_at IS NULL` — **уникальный**
   частичный: одно открытое приглашение на адрес, при этом закрытое остаётся историей и не мешает
   пригласить человека снова.
-- `uq_teams_org_slug (organization_id, slug)`, `idx_teams_org_name (organization_id, name)` —
-  список команд организации в алфавитном порядке.
+- `uq_teams_org_slug (organization_id, slug) WHERE deleted_at IS NULL` — **уникальный частичный**:
+  slug уникален внутри организации среди живых команд, и роспуск команды освобождает её slug для
+  повторного использования. Частичность — причина, по которой индекса нет в `schema.prisma`: Prisma
+  частичные индексы не выражает, поэтому он живёт в миграции (как `uq_users_org_email` и ещё пять).
+- `idx_teams_org_name (organization_id, name)` — список команд организации в алфавитном порядке.
 - `uq_team_members (team_id, user_id)`, `idx_team_members_org_user (organization_id, user_id)`.
+
+**Почему у `Team` нет `leadId`** (уточнение 2026-08-08, STORY-012-07)
+
+Эта таблица раньше объявляла `leadId? → User`. Такой колонки нет и не будет: роль лида выражена через
+`team_members.team_role = 'LEAD'` с ограничением `ck_team_members_role`, и так с момента создания
+таблицы членств (STORY-012-02). Две модели одного факта расходятся при первой же записи мимо одной из
+них — колонка утверждает, что команду ведёт Иван, а строки членства говорят, что он в ней не состоит,
+и правила, по которому видно, какая из двух врёт, не существует. Показательный случай — офбординг: он
+удаляет `team_members`, и `lead_id` продолжал бы указывать на уволенного, пока кто-нибудь не вспомнит
+обнулить его отдельно. Лид назначается через `POST /teams/{teamId}/members` с `teamRole: 'LEAD'`.
 
 **Почему имя человека живёт здесь, а не в `User`** (уточнение 2026-08-07, STORY-012-03)
 
@@ -382,7 +395,6 @@ erDiagram
         uuid id PK
         uuid organizationId FK
         string slug
-        uuid leadId FK
     }
     TeamMember {
         uuid id PK

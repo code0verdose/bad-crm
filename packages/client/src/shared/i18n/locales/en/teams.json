@@ -1,0 +1,104 @@
+{
+  "title": "Teams",
+  "notAccessGroup": {
+    "title": "A team is org structure, not a group of access",
+    "description": "Putting somebody on a team says who they work with. It grants nothing on its own: projects, documents and vaults are shared with people and roles, and access groups are not part of this release."
+  },
+  "filters": {
+    "search": "Search",
+    "searchPlaceholder": "Name or address",
+    "sort": "Order",
+    "reset": "Reset the search"
+  },
+  "sort": {
+    "name": "By name",
+    "nameDesc": "By name, descending",
+    "members": "By size, smallest first",
+    "membersDesc": "By size, largest first"
+  },
+  "column": {
+    "name": "Team",
+    "slug": "Address",
+    "members": "People"
+  },
+  "field": {
+    "name": "Name",
+    "slug": "Address",
+    "slugHint": "Lower-case Latin letters, digits and hyphens — this is how the team appears in a link.",
+    "slugInvalid": "Only lower-case Latin letters, digits and single hyphens",
+    "slugTooLong": "Too long — at most 64 characters",
+    "nameTooLong": "Too long — at most 120 characters",
+    "description": "What this team does",
+    "descriptionTooLong": "Too long — at most 500 characters"
+  },
+  "empty": {
+    "title": "No teams here",
+    "description": "Create a team and the people who work together will be in one place.",
+    "filtered": "No team matches this search. Try a shorter phrase."
+  },
+  "list": {
+    "failed": "The teams could not be loaded."
+  },
+  "detail": {
+    "title": "Team",
+    "failed": "This team could not be loaded."
+  },
+  "created": "The team is ready.",
+  "saved": "The team is saved.",
+  "deleted": "The team is disbanded.",
+  "create": {
+    "action": "New team",
+    "title": "New team",
+    "description": "A name people recognise and an address for links. You can change both later.",
+    "submit": "Create the team",
+    "close": "Close",
+    "failed": "The team was not created"
+  },
+  "edit": {
+    "title": "Name and address",
+    "description": "The whole team is saved, so a description left empty is cleared.",
+    "submit": "Save"
+  },
+  "role": {
+    "MEMBER": "Member",
+    "LEAD": "Lead"
+  },
+  "members": {
+    "title": "Who is on the team",
+    "description": "A lead is a member marked as one — there is no separate field for it.",
+    "column": {
+      "person": "Person",
+      "role": "On the team",
+      "joined": "Joined",
+      "actions": "Actions"
+    },
+    "add": {
+      "person": "Person",
+      "choose": "Choose somebody",
+      "role": "On the team",
+      "roleHint": "Choose «Lead» to make this person the team's lead.",
+      "submit": "Add to the team",
+      "none": "Everybody in the directory is already on this team."
+    },
+    "remove": "Take {{person}} off the team",
+    "added": "Added to the team.",
+    "removed": "Taken off the team."
+  },
+  "danger": {
+    "title": "Disbanding",
+    "description": "This cannot be undone from the interface."
+  },
+  "delete": {
+    "action": "Disband the team",
+    "title": "Disband the team?",
+    "description": "«{{name}}» will stop existing as a team.",
+    "consequence": {
+      "members": "Everybody is taken off the team, in one go.",
+      "access": "Nobody loses access to anything: a team grants nothing.",
+      "slug": "The address is freed and can be used by a new team."
+    },
+    "cancel": "Cancel",
+    "submit": "Disband",
+    "failed": "The team was not disbanded"
+  }
+}

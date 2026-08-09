@@ -111,10 +111,10 @@ created: 2026-07-26
 
 ## Истории
 
-- [ ] [STORY-012-01 — Приглашение сотрудника по e-mail](stories/story-012-01-invite-employee.md)
-- [ ] [STORY-012-02 — Принятие приглашения и активация аккаунта](stories/story-012-02-accept-invitation.md)
-- [ ] [STORY-012-03 — Профиль сотрудника и аватар](stories/story-012-03-employee-profile.md)
-- [ ] [STORY-012-04 — Справочник сотрудников с фильтрами](stories/story-012-04-employee-directory.md)
-- [ ] [STORY-012-05 — Деактивация и офбординг одной операцией](stories/story-012-05-offboarding.md)
-- [ ] [STORY-012-06 — Передача владения организацией](stories/story-012-06-transfer-ownership.md)
-- [ ] [STORY-012-07 — Команды как субъект ACL](stories/story-012-07-teams.md)
+- [x] [STORY-012-01 — Приглашение сотрудника по e-mail](stories/story-012-01-invite-employee.md)
+- [x] [STORY-012-02 — Принятие приглашения и активация аккаунта](stories/story-012-02-accept-invitation.md)
+- [x] [STORY-012-03 — Профиль сотрудника и аватар](stories/story-012-03-employee-profile.md)
+- [x] [STORY-012-04 — Справочник сотрудников с фильтрами](stories/story-012-04-employee-directory.md)
+- [x] [STORY-012-05 — Деактивация и офбординг одной операцией](stories/story-012-05-offboarding.md)
+- [x] [STORY-012-06 — Передача владения организацией](stories/story-012-06-transfer-ownership.md)
+- [x] [STORY-012-07 — Команды как субъект ACL](stories/story-012-07-teams.md)

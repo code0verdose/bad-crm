@@ -47,6 +47,17 @@ import {
 } from '@/application/iam/use-cases/write-employee-profile.use-case.js';
 import { ListInvitationsQuery } from '@/application/iam/use-cases/list-invitations.query.js';
 import { ListRolesQuery } from '@/application/iam/use-cases/list-roles.query.js';
+import { ListTeamsQuery } from '@/application/iam/use-cases/list-teams.query.js';
+import { GetTeamDetailQuery } from '@/application/iam/use-cases/get-team-detail.query.js';
+import { DeleteTeamUseCase } from '@/application/iam/use-cases/delete-team.use-case.js';
+import {
+  AddTeamMemberUseCase,
+  RemoveTeamMemberUseCase,
+} from '@/application/iam/use-cases/manage-team-members.use-case.js';
+import {
+  CreateTeamUseCase,
+  UpdateTeamUseCase,
+} from '@/application/iam/use-cases/write-team.use-case.js';
 import {
   CreateInvitationUseCase,
   ResendInvitationUseCase,
@@ -98,6 +109,7 @@ import { PrismaRoleRepository } from '@/infrastructure/persistence/prisma/role.r
 import { AesFieldEncryption } from '@/infrastructure/crypto/field-encryption.adapter.js';
 import { PrismaEmployeeDirectoryRepository } from '@/infrastructure/persistence/prisma/employee-directory.repository.js';
 import { PrismaOwnershipRepository } from '@/infrastructure/persistence/prisma/ownership.repository.js';
+import { PrismaTeamRepository } from '@/infrastructure/persistence/prisma/team.repository.js';
 import { PrismaUserLifecycleRepository } from '@/infrastructure/persistence/prisma/user-lifecycle.repository.js';
 import { PrismaEmployeeProfileRepository } from '@/infrastructure/persistence/prisma/employee-profile.repository.js';
 import { PrismaInvitationRepository } from '@/infrastructure/persistence/prisma/invitation.repository.js';
@@ -458,6 +470,7 @@ const buildIam = (input: {
   const employeeDirectory = new PrismaEmployeeDirectoryRepository();
   const userLifecycle = new PrismaUserLifecycleRepository();
   const ownership = new PrismaOwnershipRepository();
+  const teams = new PrismaTeamRepository();
 
   const buildActor = new BuildActorQuery(unitOfWork, permissions);
 
@@ -486,6 +499,13 @@ const buildIam = (input: {
     createRole: new CreateCustomRoleUseCase(unitOfWork, customRoles, input.audit),
     updateRole: new UpdateCustomRoleUseCase(unitOfWork, customRoles, input.audit),
     deleteRole: new DeleteCustomRoleUseCase(unitOfWork, customRoles, input.audit),
+    listTeams: new ListTeamsQuery(unitOfWork, teams),
+    getTeamDetail: new GetTeamDetailQuery(unitOfWork, teams),
+    createTeam: new CreateTeamUseCase(unitOfWork, teams, input.audit),
+    updateTeam: new UpdateTeamUseCase(unitOfWork, teams, input.audit),
+    deleteTeam: new DeleteTeamUseCase(unitOfWork, teams, input.audit),
+    addTeamMember: new AddTeamMemberUseCase(unitOfWork, teams, input.audit),
+    removeTeamMember: new RemoveTeamMemberUseCase(unitOfWork, teams, input.audit),
     listInvitations: new ListInvitationsQuery(unitOfWork, invitations),
     createInvitation: new CreateInvitationUseCase(
       unitOfWork,

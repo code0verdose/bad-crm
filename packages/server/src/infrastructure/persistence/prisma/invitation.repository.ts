@@ -184,9 +184,9 @@ export class PrismaInvitationRepository
     });
   }
 
-  joinTeams(userId: string, teamIds: readonly string[]): Promise<number> {
+  joinTeams(userId: string, teamIds: readonly string[]): Promise<readonly string[]> {
     return this.run('joinTeams', async (tx) => {
-      if (teamIds.length === 0) return 0;
+      if (teamIds.length === 0) return [];
 
       // `INSERT … SELECT` over the teams that still exist, rather than an insert of the drafted ids:
       // `team_ids` carries no foreign key, so a team deleted while the invitation was open would
@@ -200,14 +200,21 @@ export class PrismaInvitationRepository
       // time, on **every** call rather than only on a conflict: `42704`, «constraint does not
       // exist», and the whole acceptance rolls back for anybody invited into a team. Column
       // inference matches the index instead, as `session.repository.ts` does.
-      return tx.$executeRaw`
+      //
+      // `RETURNING team_id` rather than a bare `$executeRaw`, because a count is all a row count can
+      // ever be: `team.member_added` is never filed for these memberships, so the ids returned here
+      // are the only record `invitation.accepted` can carry them in at all.
+      const written = await tx.$queryRaw<{ team_id: string }[]>`
         INSERT INTO team_members (organization_id, team_id, user_id, updated_at)
         SELECT t.organization_id, t.id, ${userId}::uuid, now()
           FROM teams t
          WHERE t.organization_id = ${this.organizationId('joinTeams')}::uuid
            AND t.id = ANY(${[...teamIds]}::uuid[])
            AND t.deleted_at IS NULL
-        ON CONFLICT (team_id, user_id) DO NOTHING`;
+        ON CONFLICT (team_id, user_id) DO NOTHING
+        RETURNING team_id`;
+
+      return written.map((row) => row.team_id);
     });
   }
 

@@ -21,10 +21,21 @@ import { QueryKeys } from '@shared/lib';
  */
 export const useEmployeeListQuery = (
   params: EmployeeListParams,
+  /**
+   * Whether to ask at all — required rather than defaulted, so every caller states it.
+   *
+   * The directory is behind `user:read`, which the screen that owns it always holds and a screen
+   * that merely *joins* against it may not: the team roster carries account ids and no names, and it
+   * asks for names only when the reader may be told them. A request certain to be refused is not a
+   * graceful fallback, it is a 403 per page view — and a default would let the next caller acquire
+   * one by not thinking about it.
+   */
+  enabled: boolean,
 ): UseQueryResult<EmployeeDirectoryPage, Error> =>
   useQuery({
     queryKey: QueryKeys.Employees.list(params),
     queryFn: ({ signal }) => fetchEmployeeList(params, signal),
+    enabled,
     placeholderData: keepPreviousData,
     staleTime: 30_000,
   });

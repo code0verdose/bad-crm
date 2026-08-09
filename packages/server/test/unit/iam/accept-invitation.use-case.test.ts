@@ -73,10 +73,10 @@ class FakeInvitations implements InvitationRepositoryPort {
     return Promise.resolve(USER);
   }
 
-  joinTeams(userId: string, teamIds: readonly string[]): Promise<number> {
+  joinTeams(userId: string, teamIds: readonly string[]): Promise<readonly string[]> {
     this.joined.push({ userId, teamIds });
 
-    return Promise.resolve(teamIds.length);
+    return Promise.resolve(teamIds);
   }
 
   create(): Promise<string> {

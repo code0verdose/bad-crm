@@ -1,0 +1,10 @@
+/**
+ * A wide table scrolls **inside its own box**, never the page.
+ *
+ * A name, a slug and a description do not fit a laptop half-screen, and a page that scrolls sideways
+ * takes the navigation and the heading with it — the reader loses the one thing that says where they
+ * are (`ux-architecture.md` → «Таблицы»).
+ */
+.scroller {
+  overflow-x: auto;
+}

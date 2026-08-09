@@ -13,6 +13,7 @@ import { createMeController } from '@/presentation/http/controllers/me.controlle
 import { createPermissionOverrideController } from '@/presentation/http/controllers/permission-override.controller.js';
 import { createOwnershipController } from '@/presentation/http/controllers/ownership.controller.js';
 import { createUserLifecycleController } from '@/presentation/http/controllers/user-lifecycle.controller.js';
+import { createTeamController } from '@/presentation/http/controllers/team.controller.js';
 import { createUserRoleController } from '@/presentation/http/controllers/user-role.controller.js';
 import { allowedOrigins } from '@/presentation/http/cors-origin.util.js';
 import { type HttpServerDependencies } from '@/presentation/http/http-server.types.js';
@@ -58,6 +59,13 @@ import {
   writeOverrideBodySchema,
 } from '@/presentation/http/validators/permission-override.validator.js';
 import { transferOwnershipBodySchema } from '@/presentation/http/validators/ownership.validator.js';
+import {
+  addTeamMemberBodySchema,
+  createTeamBodySchema,
+  teamIdParamsSchema,
+  teamMemberParamsSchema,
+  updateTeamBodySchema,
+} from '@/presentation/http/validators/team.validator.js';
 import {
   deactivateUserBodySchema,
   userLifecycleParamsSchema,
@@ -194,6 +202,30 @@ export const createRouteRegistry = (
     reactivateUser: dependencies.iam.reactivateUser,
     deactivateValidator: deactivateUserValidator,
     reactivateValidator: reactivateUserValidator,
+  });
+
+  const createTeamValidator = validate({ body: createTeamBodySchema });
+  const updateTeamValidator = validate({ params: teamIdParamsSchema, body: updateTeamBodySchema });
+  const teamIdValidator = validate({ params: teamIdParamsSchema });
+  const addTeamMemberValidator = validate({
+    params: teamIdParamsSchema,
+    body: addTeamMemberBodySchema,
+  });
+  const teamMemberValidator = validate({ params: teamMemberParamsSchema });
+
+  const teams = createTeamController({
+    listTeams: dependencies.iam.listTeams,
+    getTeamDetail: dependencies.iam.getTeamDetail,
+    createTeam: dependencies.iam.createTeam,
+    updateTeam: dependencies.iam.updateTeam,
+    deleteTeam: dependencies.iam.deleteTeam,
+    addMember: dependencies.iam.addTeamMember,
+    removeMember: dependencies.iam.removeTeamMember,
+    createValidator: createTeamValidator,
+    updateValidator: updateTeamValidator,
+    teamIdValidator,
+    addMemberValidator: addTeamMemberValidator,
+    memberValidator: teamMemberValidator,
   });
 
   const transferOwnershipValidator = validate({ body: transferOwnershipBodySchema });
@@ -448,6 +480,66 @@ export const createRouteRegistry = (
       handlers: [revokeRoleValidator.handler, userRoles.revoke],
       permission: 'role:revoke',
       aclCheckedIn: 'RevokeRoleUseCase',
+    },
+    {
+      method: 'get',
+      path: `${API_PREFIX}/teams`,
+      handlers: [teams.list],
+      permission: 'team:read',
+      // Nothing narrower to decide: the answer is every live team of the tenant, and the tenant is
+      // the scope — so the guard's capability check is the whole decision. The soft-deleted rows are
+      // excluded by the query itself rather than after it (`rules/permissions.mdc`, 8).
+      aclCheckedIn: 'ListTeamsQuery',
+    },
+    {
+      method: 'post',
+      path: `${API_PREFIX}/teams`,
+      handlers: [requireIdempotencyKey(), createTeamValidator.handler, teams.create],
+      permission: 'team:create',
+      aclCheckedIn: 'CreateTeamUseCase',
+    },
+    {
+      method: 'get',
+      path: `${API_PREFIX}/teams/:teamId`,
+      handlers: [teamIdValidator.handler, teams.detail],
+      permission: 'team:read',
+      // The guard answers «may this caller read teams at all». Whether *this* id names one — a team
+      // of another organization, or one already disbanded — is decided in the use-case, which is the
+      // only place that can answer 404 rather than 403 for somebody else's id.
+      aclCheckedIn: 'GetTeamDetailQuery',
+    },
+    {
+      method: 'patch',
+      path: `${API_PREFIX}/teams/:teamId`,
+      handlers: [updateTeamValidator.handler, teams.update],
+      permission: 'team:update',
+      aclCheckedIn: 'UpdateTeamUseCase',
+    },
+    {
+      method: 'delete',
+      path: `${API_PREFIX}/teams/:teamId`,
+      handlers: [teamIdValidator.handler, teams.remove],
+      permission: 'team:delete',
+      aclCheckedIn: 'DeleteTeamUseCase',
+    },
+    {
+      method: 'post',
+      path: `${API_PREFIX}/teams/:teamId/members`,
+      handlers: [requireIdempotencyKey(), addTeamMemberValidator.handler, teams.addMember],
+      // A separate key from `team:update`: renaming a team and deciding who is on it are different
+      // grants, which is why the catalogue carries both.
+      permission: 'team:manage_members',
+      // Three decisions the guard cannot make: the team may belong to another organization (404),
+      // the subject may belong to another organization (404), and the subject may be deactivated
+      // (409) — all of them need rows.
+      aclCheckedIn: 'AddTeamMemberUseCase',
+    },
+    {
+      method: 'delete',
+      path: `${API_PREFIX}/teams/:teamId/members/:userId`,
+      handlers: [teamMemberValidator.handler, teams.removeMember],
+      permission: 'team:manage_members',
+      aclCheckedIn: 'RemoveTeamMemberUseCase',
     },
     {
       method: 'post',

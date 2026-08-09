@@ -90,6 +90,25 @@ export interface EmployeeQueryKeys extends EntityQueryKeys<EmployeeListParams> {
   readonly orgChart: () => readonly [string, 'org-chart'];
 }
 
+/**
+ * Teams — a `list()` that takes no parameters, on purpose.
+ *
+ * `GET /teams` accepts none: it publishes every live team of the organization in one document, and
+ * the screen's phrase, order and page are applied to that answer. Giving the key the filter would
+ * keep one cache entry per phrase somebody typed, each of them a copy of the same bytes — and the
+ * `detail` of a team would then be invalidated from a list address that depends on what was in the
+ * search box at the time.
+ *
+ * `detail` is here because the roster genuinely is a second read (`GET /teams/{teamId}`), and both
+ * start with the same prefix so that adding a member invalidates the roster and the counts on the
+ * list together.
+ */
+export interface TeamQueryKeys {
+  readonly all: readonly [string];
+  readonly list: () => readonly [string, 'list'];
+  readonly detail: (id: string) => readonly [string, 'detail', string];
+}
+
 export const QueryKeys = {
   Sessions: entityQueryKeys<SessionListParams>('sessions'),
   Permissions: {
@@ -104,4 +123,9 @@ export const QueryKeys = {
     ...entityQueryKeys<EmployeeListParams>('employees'),
     orgChart: () => ['employees', 'org-chart'],
   } satisfies EmployeeQueryKeys,
+  Teams: {
+    all: ['teams'],
+    list: () => ['teams', 'list'],
+    detail: (id: string) => ['teams', 'detail', id],
+  } satisfies TeamQueryKeys,
 } as const;

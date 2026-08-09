@@ -1,6 +1,7 @@
+import i18next from 'i18next';
 import { describe, expect, it } from 'vitest';
 
-import { createI18n, LANGUAGES } from '@shared/i18n/i18n.config';
+import { createI18n, LANGUAGES, NAMESPACES } from '@shared/i18n/i18n.config';
 
 /**
  * Every namespace that has a file is actually loaded — and nothing is loaded that has no file.
@@ -42,6 +43,33 @@ const firstLeafPath = (value: unknown, trail: string[] = []): string => {
 
   return firstLeafPath(nested, [...trail, key]);
 };
+
+/**
+ * The third place the same names could be written out: the test harness.
+ *
+ * `test/setup/testing-library.setup.ts` initialises the `cimode` instance the whole client suite
+ * renders against, and it needs a namespace list of its own. It kept a hand-written one, and that
+ * one drifted too — `employee`, `members`, `offboarding` and `teams` were never added. The effect is
+ * invisible rather than red: an unregistered namespace is not a namespace, so `nsSeparator` leaves
+ * the whole key in `common` and `cimode` answers `common.teams.field.name` where the shipped build
+ * renders `teams.field.name`. Every assertion about those screens then describes a string the
+ * product cannot produce, and the unanchored regular expressions they use match it happily.
+ *
+ * So the harness is asserted against the product's derivation, not against a list repeated here —
+ * a list here would be the drift, one file further along.
+ */
+describe('the suite renders against the namespaces the product loads', () => {
+  it('registers exactly them in the harness instance', () => {
+    // CONTROL: `NAMESPACES` is derived from an object literal, and an empty one would make the
+    // comparison below true of nothing.
+    expect(NAMESPACES.length).toBeGreaterThan(5);
+
+    expect(
+      [...(i18next.options.ns ?? [])].sort(),
+      'a hand-written list in the harness resolves unlisted namespaces through `common`',
+    ).toEqual([...NAMESPACES].sort());
+  });
+});
 
 describe.each(LANGUAGES)('translations in %s', (language) => {
   const instance = createI18n(language);

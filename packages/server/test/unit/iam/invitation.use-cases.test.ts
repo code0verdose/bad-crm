@@ -114,8 +114,8 @@ class FakeInvitations implements InvitationRepositoryPort {
   createAccount(): Promise<string> {
     throw new Error('not part of creating, resending or revoking');
   }
-  joinTeams(): Promise<number> {
-    return Promise.resolve(0);
+  joinTeams(): Promise<readonly string[]> {
+    return Promise.resolve([]);
   }
 
   rolePermissions(): Promise<readonly SharedPermissions.PermissionKey[] | null> {

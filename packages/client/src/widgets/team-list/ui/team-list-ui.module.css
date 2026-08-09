@@ -1,0 +1,25 @@
+/**
+ * The search field is wider than a default input and narrower than the row.
+ *
+ * A flex basis rather than a width: Russian labels run 15–30 % longer than English ones, and a fixed
+ * width is how a filter bar clips its own placeholder in one of the two languages
+ * (`rules/i18n.mdc` §15). In `rem`, so it grows with the text at 200 % zoom.
+ */
+.search {
+  flex: 1 1 16rem;
+}
+
+/**
+ * The team name is a link inside a table cell.
+ *
+ * Underlined on hover rather than always: a column of permanently underlined names is a column of
+ * ruled lines. The colour is the anchor token, so it keeps the contrast the palette was checked for.
+ */
+.teamLink {
+  color: var(--mantine-color-anchor);
+  text-decoration: none;
+}
+
+.teamLink:hover {
+  text-decoration: underline;
+}

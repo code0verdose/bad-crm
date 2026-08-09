@@ -318,10 +318,20 @@ model PasswordResetToken {
   @@map("password_reset_tokens")
 }
 
-/// Tenant-scoped table [T]. `Organization.ownerId` and `Team.leadId` of the data model are still
-/// absent: both are foreign keys to `users`, and both are populated by the registration use-case of
-/// STORY-006-01, which is where they arrive as an expand step (nullable column, then backfill).
-/// This migration creates the table they point at, not the columns themselves.
+/// Tenant-scoped table [T]: an org-structure container — «who works together».
+///
+/// **Not a group of access** (STORY-012-07, acceptance 10). Nothing is granted by belonging to one:
+/// the `ResourceAcl` that would make a team the subject of a grant is STORY-011-06, blocked until a
+/// resource layer exists, and separate access groups (`subjectType = GROUP`) are open question 3 of
+/// `permission-model.md` §12.
+///
+/// **There is no `lead_id`, and there will not be one.** `data-model.md` §1 and STORY-012-07 both
+/// name a `leadId` here; the lead is `team_members.team_role = 'LEAD'`, constrained by
+/// `ck_team_members_role`, and has been since the membership table was created. Two models of one
+/// fact drift the first time one of them is written without the other — a column saying Ivan leads
+/// the team while no membership row says so, or the reverse, with no way to tell which is right. The
+/// membership was kept because it is the one the product already reads. Recorded in the story file
+/// under «Расхождение с этой спекой»; `data-model.md` carries the same note.
 model Team {
   id             String  @id(map: "pk_teams") @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   organizationId String  @map("organization_id") @db.Uuid
@@ -342,6 +352,11 @@ model Team {
   /// reference would happily confirm a team of another organization (rules/tenancy-rls.mdc, 7).
   @@unique([organizationId, id], map: "uq_teams_org_id")
   @@index([organizationId, name], map: "idx_teams_org_name")
+  /// `uq_teams_org_slug` is not declared here: it is partial (`WHERE deleted_at IS NULL`), which
+  /// Prisma cannot express, so it stays in the migration that created the table — and stays
+  /// invisible to `migrate diff`, which models no partial index and therefore neither demands nor
+  /// drops it. The partial clause is the whole point: it is what makes a slug freed by disbanding a
+  /// team reusable, while «unique inside the organization» still holds among live ones.
   @@map("teams")
 }
 

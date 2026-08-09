@@ -195,7 +195,7 @@ export class AcceptInvitationUseCase {
       });
     }
 
-    const joined = await this.invitations.joinTeams(userId, spent.teamIds);
+    const joinedTeamIds = await this.invitations.joinTeams(userId, spent.teamIds);
 
     const session = await this.issueSession.execute({
       userId,
@@ -217,10 +217,13 @@ export class AcceptInvitationUseCase {
       action: 'invitation.accepted',
       actor: { userId, organizationId: organization.id, ipAddress: undefined },
       target: { type: 'INVITATION', id: input.invitationId },
-      // The address, the role and how many teams were actually joined — never the token. `joined`
-      // can be fewer than the invitation drafted, because a team deleted in the meantime is skipped,
-      // and the trail says what happened rather than what was asked for.
-      after: { email: spent.email, roleId: spent.roleId, teams: joined },
+      // The address, the role and the teams actually joined — never the token. `joinedTeamIds` can
+      // be a shorter list than the invitation drafted, because a team deleted in the meantime is
+      // skipped, and the trail says what happened rather than what was asked for. Carrying the ids
+      // rather than a count closes the gap the STORY-012-07 gate found in `team.deleted`'s
+      // equivalent: `team.member_added` is never filed for a membership created this way, so this
+      // entry is the only place any of these ids is ever recorded against this account.
+      after: { email: spent.email, roleId: spent.roleId, teamIds: joinedTeamIds },
       requestId: undefined,
     });
 

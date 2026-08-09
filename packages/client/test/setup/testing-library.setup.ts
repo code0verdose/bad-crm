@@ -6,6 +6,8 @@ import '@testing-library/jest-dom/vitest';
 import { cleanup } from '@testing-library/react';
 import { afterEach, vi } from 'vitest';
 
+import { NAMESPACES } from '@shared/i18n/i18n.config.js';
+
 /**
  * One mounted tree per test.
  *
@@ -92,17 +94,12 @@ await i18next.use(initReactI18next).init({
   // `auth.login.title` — and every assertion in this suite names the full key.
   appendNamespaceToCIMode: true,
   fallbackLng: 'cimode',
-  ns: [
-    'common',
-    'validation',
-    'errors',
-    'nav',
-    'auth',
-    'filter',
-    'pagination',
-    'dashboard',
-    'roles',
-  ],
+  // The product's list, not a copy of it. Which namespaces exist decides what `cimode` answers: an
+  // unregistered `teams` is not a namespace but the first segment of a key in `common`, so
+  // `t('teams.field.name')` comes back as `common.teams.field.name` — a string no build of the
+  // application ever renders, asserted against by a suite that believes it is naming real keys. The
+  // hand-written copy that used to stand here had drifted by four namespaces before anyone looked.
+  ns: NAMESPACES,
   defaultNS: 'common',
   nsSeparator: '.',
   keySeparator: '.',

@@ -20,5 +20,6 @@
   },
   "signOut": "Sign out",
   "adminMembers": "People",
+  "adminTeams": "Teams",
   "adminRoles": "Roles and permissions"
 }

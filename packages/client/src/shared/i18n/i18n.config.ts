@@ -12,6 +12,7 @@ import enMembers from './locales/en/members.json' with { type: 'json' };
 import enOffboarding from './locales/en/offboarding.json' with { type: 'json' };
 import enNav from './locales/en/nav.json' with { type: 'json' };
 import enPagination from './locales/en/pagination.json' with { type: 'json' };
+import enTeams from './locales/en/teams.json' with { type: 'json' };
 import enValidation from './locales/en/validation.json' with { type: 'json' };
 import ruAuth from './locales/ru/auth.json' with { type: 'json' };
 import ruRoles from './locales/ru/roles.json' with { type: 'json' };
@@ -24,6 +25,7 @@ import ruMembers from './locales/ru/members.json' with { type: 'json' };
 import ruOffboarding from './locales/ru/offboarding.json' with { type: 'json' };
 import ruNav from './locales/ru/nav.json' with { type: 'json' };
 import ruPagination from './locales/ru/pagination.json' with { type: 'json' };
+import ruTeams from './locales/ru/teams.json' with { type: 'json' };
 import ruValidation from './locales/ru/validation.json' with { type: 'json' };
 
 /** The two the product ships. Order matters only for the fallback chain below. */
@@ -44,6 +46,7 @@ const RESOURCES = {
     offboarding: enOffboarding,
     nav: enNav,
     pagination: enPagination,
+    teams: enTeams,
     validation: enValidation,
   },
   ru: {
@@ -58,9 +61,26 @@ const RESOURCES = {
     offboarding: ruOffboarding,
     nav: ruNav,
     pagination: ruPagination,
+    teams: ruTeams,
     validation: ruValidation,
   },
 };
+
+/**
+ * The namespaces that exist — derived from `RESOURCES`, and the only place the list is computed.
+ *
+ * Exported rather than kept local because a second consumer needs it: the test harness
+ * (`test/setup/testing-library.setup.ts`) initialises its own `cimode` instance and has to register
+ * the same namespaces. It used to type them out, and that copy drifted exactly the way this one did
+ * — `employee`, `members`, `offboarding` and `teams` were missing from it, so under `cimode` those
+ * keys resolved through `common` and every component under test rendered `common.teams.field.name`
+ * where the product renders `teams.field.name`. Nothing failed: the assertions that touch those
+ * screens match with unanchored regular expressions, which are true of the drifted key as well.
+ *
+ * One derivation, two consumers, no list to keep in step;
+ * `test/i18n/namespace-registration.test.ts` fails if a hand-written list appears again.
+ */
+export const NAMESPACES: readonly string[] = Object.keys(RESOURCES.en);
 
 /**
  * The translation instance of this tab.
@@ -89,13 +109,12 @@ export const createI18n = (language: Language = 'en'): i18n => {
     // Derived, never typed out. A hand-kept copy of these names is a list that drifts silently: a
     // namespace present in `RESOURCES` and missing here loads nothing, and every string of that
     // feature renders as its own key — on the screen, in both languages, with the parity gate still
-    // green (it compares the JSON files with each other, not with this list). The drift happened
-    // here, in this change: `offboarding` was added to `RESOURCES` and to both catalogues while this
-    // list — written out by hand until now — still ended at `employee`. Nothing red said so; it was
-    // noticed by looking at what the dialog rendered. Deriving the list is what removes the second
-    // place to keep in step, and `test/i18n/namespace-registration.test.ts` is what notices if
-    // anyone types the names out again.
-    ns: Object.keys(RESOURCES.en),
+    // green (it compares the JSON files with each other, not with this list). That drift happened
+    // here once: `offboarding` was added to `RESOURCES` and to both catalogues while this list —
+    // written out by hand until then — still ended at `employee`. Nothing red said so; it was
+    // noticed by looking at what the dialog rendered. See `NAMESPACES` above for why the derivation
+    // is exported rather than inlined here.
+    ns: NAMESPACES,
     defaultNS: 'common',
     nsSeparator: '.',
     keySeparator: '.',

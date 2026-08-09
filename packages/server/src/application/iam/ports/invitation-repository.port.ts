@@ -129,8 +129,10 @@ export interface InvitationRepositoryPort {
    *
    * Skipping rather than failing: `team_ids` is a `uuid[]` with no foreign key — a **draft**, as the
    * column comment says — and a team removed in the meantime is not a reason to refuse somebody
-   * their first sign-in. Returns how many memberships were actually written, so the trail can say
-   * what happened rather than what was asked for.
+   * their first sign-in. Returns the ids of the teams actually joined — never merely their count —
+   * so the trail can say *what* happened rather than only how much of it: `team.member_added` is
+   * never filed for a membership created this way, which makes `invitation.accepted` the only record
+   * these ids are ever written to anywhere.
    */
-  joinTeams(userId: string, teamIds: readonly string[]): Promise<number>;
+  joinTeams(userId: string, teamIds: readonly string[]): Promise<readonly string[]>;
 }

@@ -39,6 +39,7 @@ const SNAPSHOT = fileURLToPath(new URL('./__snapshots__/permission-matrix.json',
 const IVAN = '018f4a3b-2c1d-7a41-9f00-2b7c1d0e5a51';
 const ROLE_ID = '018f4a3b-2c1d-7a41-9f00-2b7c1d0e5a52';
 const INVITATION_ID = '018f4a3b-2c1d-7a41-9f00-2b7c1d0e5a53';
+const TEAM_ID = '018f4a3b-2c1d-7a41-9f00-2b7c1d0e5a54';
 const PASSWORD = 'correct-horse-battery';
 const IDEMPOTENCY_KEY = 'd'.repeat(32);
 const REASON = 'matrix fixture reason, long enough';
@@ -107,6 +108,33 @@ const CALLS: Readonly<Record<string, Call>> = {
   'DELETE /api/v1/invitations/:invitationId': (app, token) =>
     request(app)
       .delete(`/api/v1/invitations/${INVITATION_ID}`)
+      .set('Authorization', `Bearer ${token}`),
+  'GET /api/v1/teams': (target, token) =>
+    request(target).get('/api/v1/teams').set('Authorization', `Bearer ${token}`),
+  'POST /api/v1/teams': (app, token) =>
+    request(app)
+      .post('/api/v1/teams')
+      .set('Authorization', `Bearer ${token}`)
+      .set('Idempotency-Key', IDEMPOTENCY_KEY)
+      .send({ name: 'Matrix', slug: 'matrix' }),
+  'GET /api/v1/teams/:teamId': (target, token) =>
+    request(target).get(`/api/v1/teams/${TEAM_ID}`).set('Authorization', `Bearer ${token}`),
+  'PATCH /api/v1/teams/:teamId': (app, token) =>
+    request(app)
+      .patch(`/api/v1/teams/${TEAM_ID}`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ name: 'Matrix', slug: 'matrix' }),
+  'DELETE /api/v1/teams/:teamId': (app, token) =>
+    request(app).delete(`/api/v1/teams/${TEAM_ID}`).set('Authorization', `Bearer ${token}`),
+  'POST /api/v1/teams/:teamId/members': (app, token) =>
+    request(app)
+      .post(`/api/v1/teams/${TEAM_ID}/members`)
+      .set('Authorization', `Bearer ${token}`)
+      .set('Idempotency-Key', IDEMPOTENCY_KEY)
+      .send({ userId: IVAN }),
+  'DELETE /api/v1/teams/:teamId/members/:userId': (app, token) =>
+    request(app)
+      .delete(`/api/v1/teams/${TEAM_ID}/members/${IVAN}`)
       .set('Authorization', `Bearer ${token}`),
   'GET /api/v1/employees': (target, token) =>
     request(target).get('/api/v1/employees').set('Authorization', `Bearer ${token}`),

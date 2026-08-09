@@ -42,7 +42,8 @@ export const useEmployeeDirectory = (
   showChart: boolean,
 ): EmployeeDirectory => {
   const filters = useEmployeeFilters(search, navigate);
-  const list = useEmployeeListQuery(filters.params);
+  // Always: this screen *is* the directory, and it is behind `user:read` at the route.
+  const list = useEmployeeListQuery(filters.params, true);
   const chart = useOrgChartQuery(showChart);
 
   // Rebuilt only when the answer changes, not on every keystroke in the search box above it.

@@ -1,4 +1,10 @@
-import { IconLayoutDashboard, IconShieldLock, IconUsers, type Icon } from '@tabler/icons-react';
+import {
+  IconLayoutDashboard,
+  IconShieldLock,
+  IconUsers,
+  IconUsersGroup,
+  type Icon,
+} from '@tabler/icons-react';
 import { type SharedPermissions } from '@bad-crm/shared';
 
 /**
@@ -14,7 +20,7 @@ import { type SharedPermissions } from '@bad-crm/shared';
  */
 export interface NavItem {
   /** A path of the route tree. Widening this to `string` would give up the compile-time check. */
-  readonly to: '/dashboard' | '/admin/members' | '/admin/roles';
+  readonly to: '/dashboard' | '/admin/members' | '/admin/teams' | '/admin/roles';
   readonly labelKey: string;
   readonly icon: Icon;
   /**
@@ -45,6 +51,12 @@ export const NAV_SECTIONS: readonly NavSection[] = [
         labelKey: 'nav.adminMembers',
         icon: IconUsers,
         permission: 'user:read',
+      },
+      {
+        to: '/admin/teams',
+        labelKey: 'nav.adminTeams',
+        icon: IconUsersGroup,
+        permission: 'team:read',
       },
       {
         to: '/admin/roles',

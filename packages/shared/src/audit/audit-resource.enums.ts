@@ -19,6 +19,8 @@ export const AUDIT_RESOURCE_TYPES = [
   'USER_PERMISSION_OVERRIDE',
   /** An invitation — a role assignment written in advance, and a credential until it is accepted. */
   'INVITATION',
+  /** A team: an org-structure container, not a group of access (STORY-012-07, acceptance 10). */
+  'TEAM',
 ] as const;
 
 export type AuditResourceType = (typeof AUDIT_RESOURCE_TYPES)[number];

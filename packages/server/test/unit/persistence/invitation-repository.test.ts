@@ -301,18 +301,23 @@ describe('spending an invitation and what it produces', () => {
   it('sends nothing at all when the invitation named no team', async () => {
     const recorder = recordingClient({ affected: 1 });
 
-    expect(await inScope(recorder, (repository) => repository.joinTeams('user-1', []))).toBe(0);
+    expect(await inScope(recorder, (repository) => repository.joinTeams('user-1', []))).toEqual([]);
     // `team_ids` is a draft, and an empty one is not a write: the short circuit is here, in front of
     // a statement that would otherwise cost a round trip to insert zero rows.
     expect(recorder.raw).toEqual([]);
   });
 
-  it('sends one statement when it does name a team, and reports what it wrote', async () => {
-    const recorder = recordingClient({ affected: 1 });
+  /**
+   * `RETURNING team_id`, not a bare row count — the invitation gap the STORY-012-07 gate flagged
+   * alongside `team.deleted`: `team.member_added` is never filed for a membership created this way,
+   * so the ids this statement hands back are the only record `invitation.accepted` can carry them in.
+   */
+  it('sends one statement when it does name a team, and reports which one it wrote', async () => {
+    const recorder = recordingClient({ affected: 1, raw: [{ team_id: 'team-1' }] });
 
     expect(
       await inScope(recorder, (repository) => repository.joinTeams('user-1', ['team-1'])),
-    ).toBe(1);
+    ).toEqual(['team-1']);
     // One statement for any number of teams — `INSERT … SELECT`, not a loop. What the statement
     // *says* is asserted where it can be run: `test/integration/db/invitation-join-teams.test.ts`.
     expect(recorder.raw).toHaveLength(1);

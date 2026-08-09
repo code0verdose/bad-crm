@@ -35,6 +35,19 @@ import {
   type TransferCandidate,
 } from '../../src/application/iam/ports/ownership-repository.port.js';
 import {
+  type AddMemberResult,
+  type DisbandedTeam,
+  type TeamDetail,
+  type TeamDraft,
+  type TeamListEntry,
+  type TeamRepositoryPort,
+  type TeamSummary,
+} from '../../src/application/iam/ports/team-repository.port.js';
+import {
+  type TeamScope,
+  type TeamSubject,
+} from '../../src/domain/iam/access/team-access.policy.js';
+import {
   type LeftTeamMembership,
   type UserLifecycleRepositoryPort,
   type UserLifecycleRow,
@@ -517,10 +530,10 @@ export class FakeInvitationRepository implements InvitationRepositoryPort {
     return Promise.resolve(userId);
   }
 
-  joinTeams(userId: string, teamIds: readonly string[]): Promise<number> {
+  joinTeams(userId: string, teamIds: readonly string[]): Promise<readonly string[]> {
     this.memberships.push({ userId, teamIds: [...teamIds] });
 
-    return Promise.resolve(teamIds.length);
+    return Promise.resolve([...teamIds]);
   }
 
   /**
@@ -783,6 +796,222 @@ export class FakeOwnershipRepository implements OwnershipRepositoryPort {
 
     this.transfers.push(transfer);
     this.ownerId = transfer.toUserId;
+
+    return Promise.resolve();
+  }
+}
+
+/**
+ * Teams in memory: the rows, the memberships, and every version bump the use-cases asked for.
+ *
+ * Two behaviours are modelled rather than stubbed, because a use-case reads them as decisions:
+ * `addMember` reports the three-way `AddMemberResult` the port declares — `'created'` for a pair
+ * that did not exist, `'role_changed'` for one that did but under a different `teamRole` (the
+ * gate's L-3: promoting an existing member to `LEAD` is a second call to this same method, and a
+ * boolean could not tell that apart from a genuine no-op), `'unchanged'` otherwise, with
+ * `previousRole` carried for the two outcomes that have one — and `disband` removes the memberships
+ * and returns who held them (`RETURNING`, which is the only record left of them once `team_members`
+ * has no `deleted_at`).
+ */
+export class FakeTeamRepository implements TeamRepositoryPort {
+  readonly teams = new Map<string, TeamDetail>();
+  readonly subjects = new Map<string, TeamSubject>();
+  /** Every account whose folded permission view a use-case asked to invalidate, in order. */
+  readonly versionBumps: string[] = [];
+  private next = 1;
+
+  constructor(
+    private readonly options: {
+      readonly duplicateSlug?: boolean;
+      /**
+       * The team is readable but gone by the time the write runs — the concurrent-delete window.
+       *
+       * Modelled rather than stubbed because it is a branch of the use-cases: between the decision
+       * and the statement, somebody else may disband the team, and the answer has to be the same 404
+       * a team of another organization gets. Without this there is no way to reach that branch, and
+       * an unreachable `throw` is one nobody has run.
+       */
+      readonly vanishesBeforeWrite?: boolean;
+    } = {},
+  ) {}
+
+  /** Seeds a live team and returns its id — the shape most suites start from. */
+  seed(team: Partial<TeamDetail> & { readonly teamId: string }): string {
+    this.teams.set(team.teamId, {
+      name: 'Backend',
+      slug: 'backend',
+      description: null,
+      isDeleted: false,
+      memberCount: team.members?.length ?? 0,
+      members: [],
+      ...team,
+    });
+
+    return team.teamId;
+  }
+
+  list(): Promise<readonly TeamListEntry[]> {
+    return Promise.resolve(
+      [...this.teams.values()]
+        // The `WHERE deleted_at IS NULL` of the real query: a list that showed a disbanded team
+        // would be wrong, and a fake that forgot the filter would let a suite pass on a use-case
+        // that had dropped it.
+        .filter((team) => !team.isDeleted)
+        .map((team) => ({
+          teamId: team.teamId,
+          name: team.name,
+          slug: team.slug,
+          description: team.description,
+          memberCount: team.members.length,
+        })),
+    );
+  }
+
+  scope(teamId: string): Promise<TeamScope | null> {
+    const team = this.teams.get(teamId);
+
+    return Promise.resolve(
+      team === undefined ? null : { teamId: team.teamId, isDeleted: team.isDeleted },
+    );
+  }
+
+  summary(teamId: string): Promise<TeamSummary | null> {
+    const team = this.teams.get(teamId);
+
+    return Promise.resolve(
+      team === undefined
+        ? null
+        : { teamId: team.teamId, name: team.name, slug: team.slug, isDeleted: team.isDeleted },
+    );
+  }
+
+  detail(teamId: string): Promise<TeamDetail | null> {
+    const team = this.teams.get(teamId);
+
+    return Promise.resolve(
+      team === undefined ? null : { ...team, memberCount: team.members.length },
+    );
+  }
+
+  /**
+   * `uq_teams_org_slug`, reproduced: a live team already holding this slug, wherever the write came
+   * from. `excludingTeamId` is what makes a rename that keeps its own slug not a conflict with
+   * itself — the same distinction the partial index draws by matching `id <> excluded.id` implicitly
+   * through `ON CONFLICT`.
+   */
+  private slugTaken(slug: string, excludingTeamId?: string): boolean {
+    return [...this.teams.values()].some(
+      (team) => team.slug === slug && !team.isDeleted && team.teamId !== excludingTeamId,
+    );
+  }
+
+  create(draft: TeamDraft): Promise<string> {
+    if (this.options.duplicateSlug === true || this.slugTaken(draft.slug)) {
+      return Promise.reject(new ConflictError('team_already_exists'));
+    }
+
+    const teamId = `team-${String(this.next++)}`;
+
+    this.teams.set(teamId, {
+      teamId,
+      name: draft.name,
+      slug: draft.slug,
+      description: draft.description,
+      isDeleted: false,
+      memberCount: 0,
+      members: [],
+    });
+
+    return Promise.resolve(teamId);
+  }
+
+  update(teamId: string, draft: TeamDraft): Promise<boolean> {
+    if (this.options.vanishesBeforeWrite === true) return Promise.resolve(false);
+
+    const team = this.teams.get(teamId);
+
+    if (team === undefined || team.isDeleted) return Promise.resolve(false);
+
+    if (this.slugTaken(draft.slug, teamId)) {
+      return Promise.reject(new ConflictError('team_already_exists'));
+    }
+
+    this.teams.set(teamId, { ...team, ...draft });
+
+    return Promise.resolve(true);
+  }
+
+  disband(teamId: string): Promise<DisbandedTeam | null> {
+    if (this.options.vanishesBeforeWrite === true) return Promise.resolve(null);
+
+    const team = this.teams.get(teamId);
+
+    if (team === undefined || team.isDeleted) return Promise.resolve(null);
+
+    this.teams.set(teamId, { ...team, isDeleted: true, members: [], memberCount: 0 });
+
+    return Promise.resolve({
+      name: team.name,
+      members: team.members.map((member) => ({
+        userId: member.userId,
+        teamRole: member.teamRole,
+      })),
+    });
+  }
+
+  subject(userId: string): Promise<TeamSubject | null> {
+    return Promise.resolve(this.subjects.get(userId) ?? null);
+  }
+
+  addMember(teamId: string, userId: string, teamRole: string): Promise<AddMemberResult> {
+    const team = this.teams.get(teamId);
+
+    if (team === undefined) return Promise.resolve({ outcome: 'unchanged', previousRole: null });
+
+    const existing = team.members.find((member) => member.userId === userId);
+
+    // `ON CONFLICT (team_id, user_id) DO UPDATE … WHERE team_role <> EXCLUDED.team_role`: a repeat
+    // with the same role is a true no-op, a repeat with a different one changes the row in place
+    // (the gate's L-3), and only a pair nobody has written yet is a new membership.
+    if (existing !== undefined) {
+      if (existing.teamRole === teamRole) {
+        return Promise.resolve({ outcome: 'unchanged', previousRole: null });
+      }
+
+      this.teams.set(teamId, {
+        ...team,
+        members: team.members.map((member) =>
+          member.userId === userId ? { ...member, teamRole } : member,
+        ),
+      });
+
+      return Promise.resolve({ outcome: 'role_changed', previousRole: existing.teamRole });
+    }
+
+    this.teams.set(teamId, {
+      ...team,
+      members: [...team.members, { userId, teamRole, joinedAt: new Date('2026-01-01T00:00:00Z') }],
+    });
+
+    return Promise.resolve({ outcome: 'created', previousRole: null });
+  }
+
+  removeMember(teamId: string, userId: string): Promise<boolean> {
+    const team = this.teams.get(teamId);
+
+    if (team === undefined) return Promise.resolve(false);
+
+    const remaining = team.members.filter((member) => member.userId !== userId);
+
+    if (remaining.length === team.members.length) return Promise.resolve(false);
+
+    this.teams.set(teamId, { ...team, members: remaining });
+
+    return Promise.resolve(true);
+  }
+
+  bumpPermissionsVersionOf(userIds: readonly string[]): Promise<void> {
+    this.versionBumps.push(...userIds);
 
     return Promise.resolve();
   }

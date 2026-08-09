@@ -20,5 +20,6 @@
   },
   "signOut": "Выйти",
   "adminMembers": "Сотрудники",
+  "adminTeams": "Команды",
   "adminRoles": "Роли и права"
 }

@@ -187,6 +187,7 @@ const GENERIC_ERROR_CODE_STATUS = {
    * is wrong is its state, and the fix is to reactivate them first.
    */
   recipient_not_active: 409,
+  member_not_active: 409,
   /**
    * Handing the organization to oneself. **422**: the value in the field is wrong, and no state
    * anywhere would make it right.

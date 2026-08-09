@@ -73,6 +73,31 @@ export const AUDIT_ACTION_SEVERITY: Readonly<Record<AuditAction, AuditSeverity>>
    * granted afterwards.
    */
   'user.reactivated': 'WARNING',
+  /**
+   * `INFO`: a team is an org-structure container and grants nothing. The resource ACL that would
+   * make one the subject of a grant does not exist (STORY-011-06, blocked), so creating or renaming
+   * one moves no rights — filing it at `WARNING` beside `role.created` would put an event that
+   * changes nobody's access into the list an escalation review reads first.
+   */
+  'team.created': 'INFO',
+  'team.updated': 'INFO',
+  /**
+   * `WARNING`, unlike the two above: this is the one team action that is irreversible. Every
+   * membership is deleted with the team and `team_members` has no `deleted_at`, so nothing but this
+   * entry — carrying the full roster and each person's role in `before` — records that the team had
+   * members at all.
+   */
+  'team.deleted': 'WARNING',
+  /**
+   * `INFO`, for the same reason as the creation: membership grants nothing today. It is recorded
+   * because it bumps the permission version of the person concerned — an effect a reviewer looking
+   * at «why did this account have to re-authenticate» needs to be able to find.
+   */
+  'team.member_added': 'INFO',
+  'team.member_removed': 'INFO',
+  // Same level, same reason: a role held inside a team grants nothing today either, and this entry
+  // exists because it — like the two above — bumps the permission version of the person concerned.
+  'team.member_role_changed': 'INFO',
   // An exception on one person: the layer that can take a right away, and the one whose rows an
   // escalation review reads first.
   'permission.override.created': 'WARNING',

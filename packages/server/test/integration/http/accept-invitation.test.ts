@@ -73,6 +73,25 @@ describe('POST /api/v1/invitations/accept', () => {
     ]);
   });
 
+  /**
+   * A gap the STORY-012-07 gate flagged: `team.member_added` is never filed for a membership created
+   * this way, so `invitation.accepted` naming a *count* rather than the team ids meant the trail
+   * could not answer «which teams did this account join» at all, ever, for anybody who joined through
+   * an invitation. Fixed the same way `team.deleted` was — the entry now carries the ids.
+   */
+  it('files invitation.accepted with the ids of the teams actually joined', async () => {
+    const invitations = new FakeInvitationRepository();
+    const test = createAuthApp({ invitations });
+    const { token } = await openInvitation(test, invitations);
+
+    await accept(test, token).expect(201);
+
+    expect(test.audit.events.at(-1)).toMatchObject({
+      action: 'invitation.accepted',
+      after: { email: INVITED, roleId: ROLE, teamIds: [TEAM] },
+    });
+  });
+
   it('is reachable without a session, which is the whole point', async () => {
     const invitations = new FakeInvitationRepository();
     const test = createAuthApp({ invitations });

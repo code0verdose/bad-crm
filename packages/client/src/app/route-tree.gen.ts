@@ -21,6 +21,8 @@ import { Route as AuthenticatedAdminRolesRouteImport } from './routes/_authentic
 import { Route as AuthenticatedAdminMembersIndexRouteImport } from './routes/_authenticated/admin/members/index';
 import { Route as AuthenticatedAdminMembersUserIdRouteImport } from './routes/_authenticated/admin/members/$userId';
 import { Route as AuthenticatedAdminMembersInviteRouteImport } from './routes/_authenticated/admin/members/invite';
+import { Route as AuthenticatedAdminTeamsIndexRouteImport } from './routes/_authenticated/admin/teams/index';
+import { Route as AuthenticatedAdminTeamsTeamIdRouteImport } from './routes/_authenticated/admin/teams/$teamId';
 
 const AuthenticatedRoute = AuthenticatedRouteImport.update({
   id: '/_authenticated',
@@ -84,6 +86,18 @@ const AuthenticatedAdminMembersInviteRoute =
     path: '/admin/members/invite',
     getParentRoute: () => AuthenticatedRoute,
   } as any);
+const AuthenticatedAdminTeamsIndexRoute =
+  AuthenticatedAdminTeamsIndexRouteImport.update({
+    id: '/admin/teams/',
+    path: '/admin/teams/',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any);
+const AuthenticatedAdminTeamsTeamIdRoute =
+  AuthenticatedAdminTeamsTeamIdRouteImport.update({
+    id: '/admin/teams/$teamId',
+    path: '/admin/teams/$teamId',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any);
 
 export interface FileRoutesByFullPath {
   '/': typeof AuthenticatedIndexRoute;
@@ -96,7 +110,9 @@ export interface FileRoutesByFullPath {
   '/admin/roles': typeof AuthenticatedAdminRolesRoute;
   '/admin/members/$userId': typeof AuthenticatedAdminMembersUserIdRoute;
   '/admin/members/invite': typeof AuthenticatedAdminMembersInviteRoute;
+  '/admin/teams/$teamId': typeof AuthenticatedAdminTeamsTeamIdRoute;
   '/admin/members/': typeof AuthenticatedAdminMembersIndexRoute;
+  '/admin/teams/': typeof AuthenticatedAdminTeamsIndexRoute;
 }
 export interface FileRoutesByTo {
   '/forgot-password': typeof ForgotPasswordRoute;
@@ -109,7 +125,9 @@ export interface FileRoutesByTo {
   '/admin/roles': typeof AuthenticatedAdminRolesRoute;
   '/admin/members/$userId': typeof AuthenticatedAdminMembersUserIdRoute;
   '/admin/members/invite': typeof AuthenticatedAdminMembersInviteRoute;
+  '/admin/teams/$teamId': typeof AuthenticatedAdminTeamsTeamIdRoute;
   '/admin/members': typeof AuthenticatedAdminMembersIndexRoute;
+  '/admin/teams': typeof AuthenticatedAdminTeamsIndexRoute;
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport;
@@ -124,7 +142,9 @@ export interface FileRoutesById {
   '/_authenticated/admin/roles': typeof AuthenticatedAdminRolesRoute;
   '/_authenticated/admin/members/$userId': typeof AuthenticatedAdminMembersUserIdRoute;
   '/_authenticated/admin/members/invite': typeof AuthenticatedAdminMembersInviteRoute;
+  '/_authenticated/admin/teams/$teamId': typeof AuthenticatedAdminTeamsTeamIdRoute;
   '/_authenticated/admin/members/': typeof AuthenticatedAdminMembersIndexRoute;
+  '/_authenticated/admin/teams/': typeof AuthenticatedAdminTeamsIndexRoute;
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath;
@@ -139,7 +159,9 @@ export interface FileRouteTypes {
     | '/admin/roles'
     | '/admin/members/$userId'
     | '/admin/members/invite'
-    | '/admin/members/';
+    | '/admin/teams/$teamId'
+    | '/admin/members/'
+    | '/admin/teams/';
   fileRoutesByTo: FileRoutesByTo;
   to:
     | '/forgot-password'
@@ -152,7 +174,9 @@ export interface FileRouteTypes {
     | '/admin/roles'
     | '/admin/members/$userId'
     | '/admin/members/invite'
-    | '/admin/members';
+    | '/admin/teams/$teamId'
+    | '/admin/members'
+    | '/admin/teams';
   id:
     | '__root__'
     | '/_authenticated'
@@ -166,7 +190,9 @@ export interface FileRouteTypes {
     | '/_authenticated/admin/roles'
     | '/_authenticated/admin/members/$userId'
     | '/_authenticated/admin/members/invite'
-    | '/_authenticated/admin/members/';
+    | '/_authenticated/admin/teams/$teamId'
+    | '/_authenticated/admin/members/'
+    | '/_authenticated/admin/teams/';
   fileRoutesById: FileRoutesById;
 }
 export interface RootRouteChildren {
@@ -263,6 +289,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAdminMembersInviteRouteImport;
       parentRoute: typeof AuthenticatedRoute;
     };
+    '/_authenticated/admin/teams/': {
+      id: '/_authenticated/admin/teams/';
+      path: '/admin/teams';
+      fullPath: '/admin/teams/';
+      preLoaderRoute: typeof AuthenticatedAdminTeamsIndexRouteImport;
+      parentRoute: typeof AuthenticatedRoute;
+    };
+    '/_authenticated/admin/teams/$teamId': {
+      id: '/_authenticated/admin/teams/$teamId';
+      path: '/admin/teams/$teamId';
+      fullPath: '/admin/teams/$teamId';
+      preLoaderRoute: typeof AuthenticatedAdminTeamsTeamIdRouteImport;
+      parentRoute: typeof AuthenticatedRoute;
+    };
   }
 }
 
@@ -273,7 +313,9 @@ interface AuthenticatedRouteChildren {
   AuthenticatedAdminRolesRoute: typeof AuthenticatedAdminRolesRoute;
   AuthenticatedAdminMembersUserIdRoute: typeof AuthenticatedAdminMembersUserIdRoute;
   AuthenticatedAdminMembersInviteRoute: typeof AuthenticatedAdminMembersInviteRoute;
+  AuthenticatedAdminTeamsTeamIdRoute: typeof AuthenticatedAdminTeamsTeamIdRoute;
   AuthenticatedAdminMembersIndexRoute: typeof AuthenticatedAdminMembersIndexRoute;
+  AuthenticatedAdminTeamsIndexRoute: typeof AuthenticatedAdminTeamsIndexRoute;
 }
 
 const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
@@ -283,7 +325,9 @@ const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedAdminRolesRoute: AuthenticatedAdminRolesRoute,
   AuthenticatedAdminMembersUserIdRoute: AuthenticatedAdminMembersUserIdRoute,
   AuthenticatedAdminMembersInviteRoute: AuthenticatedAdminMembersInviteRoute,
+  AuthenticatedAdminTeamsTeamIdRoute: AuthenticatedAdminTeamsTeamIdRoute,
   AuthenticatedAdminMembersIndexRoute: AuthenticatedAdminMembersIndexRoute,
+  AuthenticatedAdminTeamsIndexRoute: AuthenticatedAdminTeamsIndexRoute,
 };
 
 const AuthenticatedRouteWithChildren = AuthenticatedRoute._addFileChildren(

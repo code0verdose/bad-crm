@@ -29,6 +29,17 @@ import {
 import { AesFieldEncryption } from '@/infrastructure/crypto/field-encryption.adapter.js';
 import { ListInvitationsQuery } from '@/application/iam/use-cases/list-invitations.query.js';
 import { ListRolesQuery } from '@/application/iam/use-cases/list-roles.query.js';
+import { ListTeamsQuery } from '@/application/iam/use-cases/list-teams.query.js';
+import { GetTeamDetailQuery } from '@/application/iam/use-cases/get-team-detail.query.js';
+import { DeleteTeamUseCase } from '@/application/iam/use-cases/delete-team.use-case.js';
+import {
+  AddTeamMemberUseCase,
+  RemoveTeamMemberUseCase,
+} from '@/application/iam/use-cases/manage-team-members.use-case.js';
+import {
+  CreateTeamUseCase,
+  UpdateTeamUseCase,
+} from '@/application/iam/use-cases/write-team.use-case.js';
 import {
   CreateInvitationUseCase,
   ResendInvitationUseCase,
@@ -81,6 +92,7 @@ import {
   FakeEffectivePermissionsReader,
   FakePermissionOverrideRepository,
   FakeRoleRepository,
+  FakeTeamRepository,
   FakeUserRoleRepository,
 } from './iam-doubles.util.js';
 
@@ -115,6 +127,8 @@ export interface AuthApp {
   readonly userRoles: FakeUserRoleRepository;
   readonly overrides: FakePermissionOverrideRepository;
   readonly customRoles: FakeCustomRoleRepository;
+  /** Teams, so a suite can seed one and read back what a membership change did. */
+  readonly teams: FakeTeamRepository;
   readonly invitations: FakeInvitationRepository;
   readonly employeeProfiles: FakeEmployeeProfileRepository;
   /** The assembled IAM use-cases, for the few cases that assert on one directly. */
@@ -154,6 +168,8 @@ export interface AuthAppOptions {
   readonly overrides?: FakePermissionOverrideRepository;
   /** State the custom-role commands act on. */
   readonly customRoles?: FakeCustomRoleRepository;
+  /** State the team commands act on. */
+  readonly teams?: FakeTeamRepository;
   readonly invitations?: FakeInvitationRepository;
   readonly employeeProfiles?: FakeEmployeeProfileRepository;
   readonly employeeDirectory?: FakeEmployeeDirectoryRepository;
@@ -317,6 +333,7 @@ export const createAuthApp = (options: AuthAppOptions = {}): AuthApp => {
   const userRoles = options.userRoles ?? new FakeUserRoleRepository();
   const overrides = options.overrides ?? new FakePermissionOverrideRepository();
   const customRoles = options.customRoles ?? new FakeCustomRoleRepository();
+  const teams = options.teams ?? new FakeTeamRepository();
   const invitations = options.invitations ?? new FakeInvitationRepository();
   const employeeProfiles = options.employeeProfiles ?? new FakeEmployeeProfileRepository();
   const employeeDirectory = options.employeeDirectory ?? new FakeEmployeeDirectoryRepository();
@@ -363,6 +380,13 @@ export const createAuthApp = (options: AuthAppOptions = {}): AuthApp => {
     createRole: new CreateCustomRoleUseCase(unitOfWork, customRoles, audit),
     updateRole: new UpdateCustomRoleUseCase(unitOfWork, customRoles, audit),
     deleteRole: new DeleteCustomRoleUseCase(unitOfWork, customRoles, audit),
+    listTeams: new ListTeamsQuery(unitOfWork, teams),
+    getTeamDetail: new GetTeamDetailQuery(unitOfWork, teams),
+    createTeam: new CreateTeamUseCase(unitOfWork, teams, audit),
+    updateTeam: new UpdateTeamUseCase(unitOfWork, teams, audit),
+    deleteTeam: new DeleteTeamUseCase(unitOfWork, teams, audit),
+    addTeamMember: new AddTeamMemberUseCase(unitOfWork, teams, audit),
+    removeTeamMember: new RemoveTeamMemberUseCase(unitOfWork, teams, audit),
     listInvitations: new ListInvitationsQuery(unitOfWork, invitations),
     createInvitation: new CreateInvitationUseCase(
       unitOfWork,
@@ -449,6 +473,7 @@ export const createAuthApp = (options: AuthAppOptions = {}): AuthApp => {
     invitations,
     employeeProfiles,
     customRoles,
+    teams,
     audit,
     logLines: testApp.logLines,
   };
