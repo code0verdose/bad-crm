@@ -1,6 +1,6 @@
-import { describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it } from 'vitest';
 
-import { configForRepoFile, lintFixture } from './eslint-fixture.util.js';
+import { configForRepoFile, lintFixture, warmUpFixtureLint } from './eslint-fixture.util.js';
 
 /**
  * Every case is a file in `test/lint/fixtures/` that violates one architectural invariant, plus the
@@ -324,13 +324,19 @@ const CLEAN_FIXTURES = [
 ];
 
 /**
- * The first `lintFixture` call pays for building typescript-eslint's project service over the
- * whole fixture tree, which takes seconds — and more than five of them when the rest of the root
- * suite is running on the other workers. The default 5 s timeout therefore turned a cold cache
- * into a red build that goes green on a rerun. The budget is generous on purpose: it is a
- * one-time cost paid by whichever case happens to run first, not a per-case cost.
+ * The project service is built once, before any case runs — see `warmUpFixtureLint`.
+ *
+ * Before that, the cost landed on whichever case happened to be first, and a cold cache was
+ * indistinguishable from a broken rule: red in CI, green on a rerun. Raising the per-case budget
+ * (5 s → 30 s) moved the threshold, not the cost, and thirty seconds stopped being enough as well.
+ * With the warm-up charged separately, a case that overruns *its* budget has genuinely got slow.
  */
-const ESLINT_WARMUP_TIMEOUT_MS = 30_000;
+const ESLINT_WARMUP_TIMEOUT_MS = 120_000;
+
+/** After the warm-up a single fixture lints in milliseconds; the budget is slack, not a cost. */
+const CASE_TIMEOUT_MS = 15_000;
+
+beforeAll(warmUpFixtureLint, ESLINT_WARMUP_TIMEOUT_MS);
 
 const describeForbidden = (title: string, cases: ForbiddenCase[]): void => {
   describe(title, () => {
@@ -342,7 +348,7 @@ const describeForbidden = (title: string, cases: ForbiddenCase[]): void => {
         expect(ruleIds).toContain(rule);
         expect(messages.join('\n')).toContain(hint);
       },
-      ESLINT_WARMUP_TIMEOUT_MS,
+      CASE_TIMEOUT_MS,
     );
   });
 };
@@ -462,6 +468,6 @@ describe('positive control', () => {
 
       expect({ ruleIds, messages }).toEqual({ ruleIds: [], messages: [] });
     },
-    ESLINT_WARMUP_TIMEOUT_MS,
+    CASE_TIMEOUT_MS,
   );
 });

@@ -50,6 +50,25 @@ export interface LintOutcome {
   messages: string[];
 }
 
+/**
+ * Builds typescript-eslint's project service over the fixture tree, so no test case pays for it.
+ *
+ * The cost is real — seconds, and more when the rest of the root suite occupies the other workers —
+ * and it used to land on whichever case ran first. That made a **cold cache** indistinguishable from
+ * a broken rule: the same case went red in CI and green on a rerun, and raising its budget from 5 s
+ * to 30 s only moved the threshold rather than the cost. Thirty seconds stopped being enough too
+ * (CI run 31533848140, three failures out of three) — and because turbo aborts on the first failed
+ * task, the client suite behind it stopped running on `main` at all.
+ *
+ * Charging the warm-up to `beforeAll` fixes the category, not the number: a case that then exceeds
+ * its budget has genuinely got slow, which is a thing worth failing over.
+ */
+export const warmUpFixtureLint = async (): Promise<void> => {
+  await eslintForFixtures().lintText('export const warmUp = 1;\n', {
+    filePath: join(fixturesRoot, 'packages/shared/src/warm-up.util.ts'),
+  });
+};
+
 /** Lints a single fixture file, addressed by its path relative to the fixture root. */
 export const lintFixture = async (relativePath: string): Promise<LintOutcome> => {
   const [result] = await eslintForFixtures().lintFiles([join(fixturesRoot, relativePath)]);
