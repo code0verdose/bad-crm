@@ -1,7 +1,7 @@
 ---
 doc: permission-model
 project: bad-crm
-updated: 2026-07-26
+updated: 2026-08-11
 ---
 
 # Bad CRM — модель прав и доступов
@@ -375,18 +375,24 @@ can(user, key, resource?):
 тонкая обёртка в `domain`, добавляющая `DenyReason`:
 
 ```ts
-// packages/shared/src/permissions/can.ts
+// packages/shared/src/permissions/can.util.ts
 export interface CapabilityView {
   readonly isOwner: boolean;
   readonly permissions: ReadonlySet<PermissionKey>;   // роли + ALLOW-оверрайды, уже свёрнуто
   readonly denied: ReadonlySet<PermissionKey>;        // DENY-оверрайды
 }
 
-export function effectivePermission(view: CapabilityView, key: PermissionKey): boolean {
-  if (view.isOwner) return true;
-  if (view.denied.has(key)) return false;
-  return view.permissions.has(key);
+/** Единственная лестница capability. Всё остальное выводится отсюда. */
+export function capabilityOutcome(view: CapabilityView, key: PermissionKey): CapabilityOutcome {
+  if (view.isOwner) return 'OWNER';
+  if (view.denied.has(key)) return 'DENIED_BY_OVERRIDE';
+  return view.permissions.has(key) ? 'GRANTED' : 'NOT_GRANTED';
 }
+
+export const outcomeAllows = (o: CapabilityOutcome) => o === 'OWNER' || o === 'GRANTED';
+
+export const effectivePermission = (view: CapabilityView, key: PermissionKey): boolean =>
+  outcomeAllows(capabilityOutcome(view, key));
 
 export function can(view: CapabilityView, key: string, aclLevel?: AccessLevel): boolean {
   if (!isPermissionKey(key)) return false;            // неизвестный ключ → deny
@@ -397,6 +403,20 @@ export function can(view: CapabilityView, key: string, aclLevel?: AccessLevel): 
   return atLeast(aclLevel, need);
 }
 ```
+
+**Одна лестница, три потребителя** (нормативно). Ветвление слоёв 1–3 записано ровно один раз — в
+`capabilityOutcome`. Из него выводятся: булев `effectivePermission` (клиентская подсказка),
+`authorizeCapability` в `domain` (переводит ступень в `DenyReason`) и `capabilitySource` (называет
+ступень для экрана объяснения). Раньше первые два были двумя рукописными лестницами, которые
+совпадали случайно; расхождение в порядке ветвей — например, `DENY` раньше `isOwner` — не проявилось
+бы функционально и заблокировало бы организацию (строка 14 таблицы истинности). Гейт —
+`test/unit/domain/access/authorize.test.ts`, раздел «the domain decision and the shared ladder are
+the same ladder».
+
+`capabilitySource` **уточняет**, а не решает: ступень `GRANTED` разделяется на `ROLE` и
+`OVERRIDE_ALLOW` по множеству ключей, пришедших из ALLOW-оверрайдов. Обе половины разрешающие, и
+это свойство проверяется отдельно (`capability-source.test.ts`, «attribution is decision-neutral») —
+иначе «разложение решения на составляющие» стало бы вторым решением.
 
 **Fail-closed правила (нормативные):**
 
@@ -490,7 +510,7 @@ export function can(view: CapabilityView, key: string, aclLevel?: AccessLevel): 
 | `role:assign` | role | assign | — | **да** | iam |
 | `role:revoke` | role | revoke | — | **да** | iam |
 | `permission:read` | permission | read | — | нет | iam |
-| `permission:override_read` | permission | override_read | — | нет | iam |
+| `permission:override_read` | permission | override_read | — | **да** | iam |
 | `permission:override` | permission | override | — | **да** | iam |
 | `permission:explain` | permission | explain | — | нет | iam |
 | `acl:read` | acl | read | VIEWER | нет | iam |
@@ -848,7 +868,7 @@ Capability из этой таблицы — **необходимое, но не 
 | `job:read` | job | read | — | нет | platform |
 | `job:retry` | job | retry | — | **да** | platform |
 
-**Итого: 331 ключ, из них 110 отмечены `isDangerous`.** Числа зафиксированы тестом
+**Итого: 331 ключ, из них 111 отмечены `isDangerous`.** Числа зафиксированы тестом
 `permissions.catalog.spec.ts` (снапшот длины массива) — не чтобы охранять константу, а чтобы
 добавление права было заметно в диффе PR и требовало осознанного ревью.
 
@@ -1352,7 +1372,13 @@ RFC 9457 (спецификация их прямо разрешает), а не 
 запросе сборки Actor. Итог: человек падает обратно на права ролей. Опасная ловушка — кеш: Actor,
 собранный до истечения, живёт в Redis; поэтому TTL кеша (60 c, §8) **не больше** гранулярности,
 с которой мы обещаем отзыв по времени, а при выдаче временного ALLOW use-case ставит отложенную
-задачу инвалидации на момент `expiresAt`.
+задачу инвалидации на момент `expiresAt`. `now()` здесь — запись предиката, а не реализация: у
+Prisma-репозиториев (`effective-permissions-reader.adapter.ts`, `user-role.repository.ts`,
+`custom-role.repository.ts`) это `new Date()` — часы приложения на момент сборки запроса, а не
+`now()`, вычисленный Postgres внутри `WHERE`. Для этого деплоя (один Node-процесс, один Postgres,
+обычно один хост `docker-compose.yml`) разница между двумя часами не имеет эксплуатационного
+значения, и это окно уже накрыто TTL кеша выше — отдельного бюджета на рассинхронизацию часов не
+заводим.
 
 **2. DENY у owner.** Запрещено на записи: use-case `create-permission-override` отклоняет с
 `last_owner_required`/`owner_immutable`, плюс страховка в БД — триггер `ck_upo_not_owner`,
@@ -1744,6 +1770,52 @@ export function Can({ permission, resource, fallback = null, children }: CanProp
   пользователь может обойти её, вызвав API напрямую; авторитетное решение принимает use-case на
   каждый запрос. Расхождение «UI показал — сервер отказал» логируется как продуктовый дефект.
 
+### (ж) Чтение чужих прав — отдельная операция, а не параметр
+
+`GET /me/permissions` субъекта не принимает и не будет: endpoint, авторизация которого зависит от
+аргумента, — это форма, которая рождает «забыли проверить для этого значения». Поэтому чтение прав
+**другого** человека — другой маршрут с собственным правом:
+
+```
+GET /api/v1/users/{userId}/permissions        → permission:override_read
+```
+
+Отвечает: `{ userId, isOwner, version, roles[], permissions[] }`, где каждая запись `permissions[]` —
+`{ key, allowed, source, roleIds[], override }` для **каждого** ключа каталога.
+
+| Поле | Что значит |
+|---|---|
+| `source` | ступень, принявшая решение: `OWNER` · `OVERRIDE_DENY` · `OVERRIDE_ALLOW` · `ROLE` · `NOT_GRANTED` |
+| `allowed` | выводится из `source` тем же `sourceAllows`, а не считается рядом |
+| `roleIds` | роли, дающие ключ, **при любом `source`** — включая случай, когда его перебил DENY |
+| `override` | действующее исключение (`effect`, `reason`, `grantedById`, `grantedAt`, `expiresAt`) или `null` |
+
+Четыре решения, которые здесь нормативны:
+
+1. **Право — `permission:override_read`, а не `permission:read`.** Второе — это каталог: тот же
+   список в любой инсталляции, ни от кого не секрет, и им владеет `manager`, чтобы рисовалась матрица
+   ролей. Здесь же ответ про **человека**: его исключения и фразы, которые администратор написал
+   рядом с ними. Это `owner` и `admin` (§4.2). И не `permission:explain` — та операция отвечает на
+   «почему он дотягивается до **этого объекта**» и требует `ResourceAcl` (STORY-011-06).
+2. **Своё не исключение.** Self-service-ветки нет: свои права человек читает через `/me/permissions`,
+   который причин не отдаёт. Текст исключения — записка одного администратора другим о третьем
+   человеке.
+3. **Порядок отказов: capability → субъект.** Сначала право (403 — одинаково для существующего и
+   несуществующего id), затем резолв субъекта (404 для чужой организации). Обратный порядок
+   превращает endpoint в оракул состава организации.
+4. **Только capability, слои 1–3.** Для ключа с `requiredLevel` `allowed: true` означает «может
+   где-то в организации»; конкретный объект всё ещё может отказать. Объектную половину отдаёт
+   `permission:explain`.
+
+Просроченные исключения в ответе отсутствуют, а не помечаются неактивными: оверрайд перестаёт
+действовать в момент `expiresAt`, а не когда отработает часовой чистильщик (§5, краевой случай 1), —
+и показывать его значило бы показывать несуществующее правило.
+
+Источник ответа — тот же `capabilityOutcome`, что и у гарда; операция добавляет только атрибуцию,
+которую свёрнутый `CapabilityView` выбрасывает. Два чтения одного порта
+(`capabilitiesOf` / `attributedCapabilitiesOf`) складываются **одной** функцией над одними строками,
+чтобы предикат срока или фильтр `deprecatedAt`, добавленный в одно, не разошёлся с другим.
+
 ---
 
 ## Кеширование и инвалидация
@@ -2017,9 +2089,35 @@ type RouteDeclaration =
 | `permissions.recomputed` | `USER` | `{ userId, oldVersion, newVersion, trigger }` | `info` |
 | `vault.escrow_used` | `VAULT` | `{ vaultId, custodianIds }` | `critical` |
 | `audit.exported` | `AUDIT_LOG` | `{ filter, rowCount }` | `critical` |
+| `permission.inspected` | `USER` | нет `before`/`after` — факт чтения, а не изменения | `info` |
 
 Дополнительно: `VaultAccessLog` фиксирует `VIEW/DECRYPT/COPY/EXPORT/SHARE/REVOKE` независимо от
 `AuditLog` — у vault отдельный журнал по требованию домена (`data-model.md`, группа 7).
+
+**Почему `permission.inspected` — читающее действие в списке «что логируется всегда» (поправка
+2026-08-11, STORY-011-11).** Общее правило ниже, в «Отказы», говорит только про отказы на `GET`:
+«Отказы на чтение (`GET`) в `AuditLog` не пишутся — только метрика». Про **успешные** чтения правило
+не говорит ничего — молчание нормы, а не запрет, и до этой поправки `GET /users/{userId}/permissions`
+не аудировался просто потому, что никто не завёл для него действие, а не потому, что §10 это
+запрещал.
+
+Это чтение — не рядовой `GET`, а прямой аналог уже аудируемых чтений выше в этой же таблице:
+`audit.exported` и `vault.escrow_used` логируются именно потому, что показывают то, что одни люди
+устроили про других (кто может расшифровать чужой vault, что попало в выгрузку журнала), и то же
+самое верно здесь — `GET /users/{userId}/permissions` отдаёт персональные исключения **вместе с
+`reason`**, то есть предложения, которые один администратор написал о другом человеке, и его перебор
+по всему составу организации рисует карту того, кто кому что выдал в обход ролей. `VaultAccessLog`
+существует по той же причине для более узкого класса чтений (доступ к зашифрованному секрету); это
+действие делает то же самое для доступа к тому, что написано про права коллеги. Обычный `permission:read`
+(каталог) этой логике не подчиняется и не аудируется — он одинаков в любой инсталляции и не содержит
+ничьих персональных данных.
+
+Пишется только на успешный ответ (`{ type: 'USER', id: <субъект> }`, без `before`/`after` — читать
+нечего менять), `severity: info`: сам факт просмотра не требует внимания дежурного, но обязан
+оставлять след для ревизии. Отказ по этому же праву — другой случай: `permission:override_read`
+помечено `dangerous: true` (`permissions.catalog.ts`), и на него распространяется уже существовавшее
+правило «отказ по праву с `isDangerous` — всегда» из раздела «Отказы» ниже; два правила не
+пересекаются, потому что одно про успех, а другое про отказ.
 
 ### Что именно кладём в `before` / `after`
 
@@ -2053,7 +2151,13 @@ type RouteDeclaration =
 | События безопасности (права, vault, impersonation, escrow) | `audit:read_security` (`dangerous`) |
 | Выгрузка журнала | `audit:export` (`dangerous`, само действие логируется как `critical`) |
 | Настройка срока хранения | `audit:manage_retention` (только `owner`) |
+| Эффективные права **другого** человека с источником каждого (`GET /users/{userId}/permissions`) | `permission:override_read` |
 | «Почему у этого человека есть доступ» (explain-экран) | `permission:explain` |
+
+**Экран прав сотрудника** (`permission:override_read`) реализован в STORY-011-11 и описан в §7(ж).
+Он отвечает на «что этот человек может и кто это устроил» — capability со ступенью решения по
+каждому ключу. Отдельное право, а не доля `permission:read`: каталог прав секретом не является, а
+персональные исключения с причинами — являются.
 
 **Экран объяснения** (`permission:explain`) — прямое требование риска R-15: по паре
 (пользователь, право) показывает цепочку решения — какая роль дала, какой оверрайд перебил, какой

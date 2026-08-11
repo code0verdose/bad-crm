@@ -1,0 +1,25 @@
+/**
+ * The two headers stay on screen while the catalogue scrolls.
+ *
+ * Three hundred rows down, an unpinned header leaves a column of badges nobody can attribute to a
+ * permission — the same reasoning, and the same mechanism, as the roles matrix: `position: sticky`
+ * and nothing to keep in sync with a resize.
+ */
+.header {
+  position: sticky;
+  inset-block-start: 0;
+  z-index: 2;
+  background: var(--bc-surface);
+}
+
+.rowHeader {
+  position: sticky;
+  inset-inline-start: 0;
+  z-index: 1;
+  background: var(--bc-surface);
+}
+
+/* The corner belongs to both and has to sit above the two. */
+.corner {
+  z-index: 3;
+}

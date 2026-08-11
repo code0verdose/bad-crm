@@ -1,7 +1,7 @@
 ---
 id: STORY-011-11
 epic: EPIC-011
-status: ready
+status: review
 blocked: false
 priority: must
 estimate: L
@@ -20,10 +20,11 @@ estimate: L
 > чтения чужих эффективных прав, чего сервер сегодня не умеет (`GET /me/permissions` субъекта не
 > принимает — намеренно). Серверная половина исключений при этом готова (STORY-011-05).
 > **Разблокировано 2026-08-09.** EPIC-012 закрыт по составу: карточка сотрудника
-> (`/admin/members/{userId}`) и справочник существуют. Осталась одна настоящая задача из этой
-> блокировки — сервер по-прежнему не умеет отдавать эффективные права **чужого** пользователя, и это
-> часть работы, а не препятствие. Пункт 5 («почему есть доступ», узел ACL) остаётся отложенным до
-> EPIC-014 — `ResourceAcl` не существует.
+> (`/admin/members/{userId}`) и справочник существуют. **Закрыто 2026-08-11:**
+> `GET /api/v1/users/{userId}/permissions` (право `permission:override_read`) реализован в этой
+> истории — сервер теперь отдаёт эффективные права **чужого** пользователя с источником каждого
+> ключа, что снимает вторую половину блокировки. Пункт 5 («почему есть доступ», узел ACL) остаётся
+> отложенным до EPIC-014 — `ResourceAcl` не существует.
 
 ## Acceptance (Given/When/Then)
 
@@ -102,26 +103,128 @@ estimate: L
 
 ## Задачи
 
-- [ ] `packages/client/src/app/routes/_authenticated/admin/members/$userId.tsx` — вкладка `roles`,
-      `beforeLoad: requirePermission('user:read')`, вложенный гард на `permission:override_read`.
-- [ ] `packages/client/src/widgets/user-permissions/user-permissions.widget.tsx` +
-      `ui/permission-tri-state-toggle.component.tsx`, `ui/override-reason-form.component.tsx`,
-      `ui/permission-source-badge.component.tsx` (один компонент на файл).
+- [x] `packages/client/src/app/routes/_authenticated/admin/members/$userId.tsx` — вкладка `roles`
+      и `validateSearch`. Гарда `requirePermission` здесь нет: см. «Что отложено».
+- [x] `packages/client/src/widgets/user-permissions/user-permissions.widget.tsx` +
+      `ui/permission-choice-control.component.tsx`, `ui/permission-row.component.tsx`,
+      `ui/permission-domain-group.component.tsx`, `ui/permission-source-badge.component.tsx`,
+      `ui/permission-exception-note.component.tsx`, `ui/permission-override-dialog.component.tsx`
+      (один компонент на файл). Форма исключения — `units/iam/ui/permission-override-form.component.tsx`:
+      она знает домен, поэтому живёт в юните, а не в виджете.
 - [ ] `packages/client/src/widgets/permission-explain/permission-explain.widget.tsx` +
       `ui/explain-chain.component.tsx`.
-- [ ] `packages/client/src/units/iam/service/hooks/use-user-permissions.hook.ts`,
-      `service/queries/user-permissions.query.ts`, `permission-explain.query.ts`,
-      `service/mutations/upsert-permission-override.mutation.ts`,
-      `delete-permission-override.mutation.ts` (оптимистичный патч + rollback из
-      `shared/api/optimistic.util.ts`).
-- [ ] `packages/client/src/units/iam/model/validation/permission-override.schema.ts` (Zod, `reason`
+- [x] `packages/client/src/units/iam/service/hooks/use-user-permissions.hook.ts`,
+      `service/queries/user-permissions.query.ts`,
+      `service/mutations/{write,remove}-permission-override.mutation.ts`. **Пессимистичные**, а не
+      оптимистичные: `PUT`/`DELETE` отвечают `204`, новый `source` ключа собирает сервер из ролей,
+      оверрайдов и владения — угадать его на клиенте значило бы завести четвёртую копию лестницы
+      прав. `permission-explain.query.ts` не заведён (пункт 5).
+- [x] `packages/client/src/units/iam/model/validation/permission-override.schema.ts` (Zod, `reason`
       ≥ 10, `expiresAt`), подключение — встроенный `schemaResolver` из `@mantine/form`.
 - [ ] `packages/server/src/application/access/queries/explain-permission.query.ts` +
       маршрут `GET /permissions/explain` с `permission:explain` в `ROUTE_REGISTRY`.
-- [ ] i18n: `packages/client/src/app/i18n/{en,ru}/admin-permissions.json`.
+- [x] i18n: `packages/client/src/shared/i18n/locales/{en,ru}/permissions.json` — namespace назван
+      `permissions`, а не `admin-permissions`: гейт паритета ищет ключи регуляркой
+      `['"][a-z][a-zA-Z]+(\.…)+['"]`, в которой дефиса нет, поэтому каждый ключ такого namespace был
+      бы невидим для проверки и весь каталог считался бы неиспользуемым.
 - [ ] Тесты: `use-user-permissions.hook.spec.ts`, компонентные на п. 1, 2, 6, 7,
       `explain-permission.query.spec.ts` (совпадение с решением `can()` на всех 16 строках таблицы
       истинности), e2e `admin-user-overrides.spec.ts` + axe.
+
+## Что сделано (клиент, 2026-08-11)
+
+Критерии 1–3 и 6–8 закрыты полностью; критерий 4 — частично (причина, дата и срок показаны, имя
+выдавшего — нет; см. «Что отложено»). Вкладка `/admin/members/{userId}?tab=roles` живёт на карточке
+сотрудника.
+
+- `units/iam`: `api/iam.api.ts` (чтение прав субъекта и обе записи оверрайда),
+  `service/queries/user-permissions.query.ts`, `service/mutations/{write,remove}-permission-override.mutation.ts`,
+  `service/hooks/use-user-permissions.hook.ts`, `model/enums/permission-source.enums.ts`,
+  `model/validation/{permission-override,user-permissions-search}.schema.ts`, `types/`, `lib/utils/`.
+- `widgets/user-permissions/` — таблица прав, трёхпозиционный контрол, бейдж источника, заметка об
+  исключении, модалка формы.
+- `pages/employee-profile/page.tsx` — вкладки; `app/routes/.../$userId.tsx` — `validateSearch`.
+- i18n: namespace `permissions` в `en` и `ru`; `shared/api/problem.errors.ts` научился читать
+  `reason` из `problem+json`.
+- Тесты: `test/widgets/user-permissions.test.tsx` (33 случая), юниты на `lib/utils` и схемы,
+  дополнения в `test/routes/search-schema.test.ts` и `test/api/problem.test.ts`. Клиент — 100 %
+  строк и ветвей.
+
+## Что отложено, и почему
+
+- **Пункт 5 приёмки — экран «Почему есть доступ» (`GET /permissions/explain`).** Не реализован и
+  заглушки не заведено. Цепочка решения по нему обязана заканчиваться **узлом ACL** с записью
+  `ResourceAcl` (`grantedById`, `accessLevel`, `expiresAt`), а сущности `ResourceAcl` в продукте нет:
+  STORY-011-06 заблокирована до EPIC-014. В каталоге `requiredLevel` не `null` у 162 ключей (весь
+  `project:*`/`board:*`/`task:*`, например `organization:update` → `MANAGER`, `task:read` →
+  `VIEWER`) — но ни один из 22 permission, объявленных сегодня в `ROUTE_REGISTRY`, непустого
+  `requiredLevel` не имеет: ресурсного слоя нет ни у одного **живого** маршрута. Эндпоинт, который
+  сегодня отвечал бы «capability такая-то, узел ACL — не знаю», научил бы администратора не доверять
+  экрану ровно к тому моменту, когда узел появится. Право `permission:explain` остаётся объявленным и
+  никому не выдаётся по маршруту — это единственный оставшийся его потребитель.
+  Возвращаться сюда вместе с STORY-011-06, после EPIC-014.
+- **Capability-половина того же вопроса уже отвечена** и отложенной не является:
+  `GET /api/v1/users/{userId}/permissions` (право `permission:override_read`, §7(ж)
+  `permission-model.md`) отдаёт по каждому ключу `source` — `OWNER` / `OVERRIDE_DENY` /
+  `OVERRIDE_ALLOW` / `ROLE` / `NOT_GRANTED` — плюс роли, которые ключ дают, и действующее исключение
+  со сроком. Этого достаточно для пунктов 1 и 4 и для трёхсостоятельного переключателя; недостаёт
+  только объектной половины, то есть ровно пункта 5.
+- **Фильтрация ответа на сервере** (`?source=`, `?key=`) — не сделана осознанно: каталог
+  отдаётся целиком, клиент держит ту же копию каталога и фильтрует у себя. Схема маршрута
+  (`user-permissions.validator.ts`) объявляет только `params` (путь) — query-схемы нет вовсе, поэтому
+  такой параметр не отвергается, а молча **игнорируется**: `?source=OVERRIDE_DENY` проходит с 200 и
+  полным каталогом в ответе. Это закреплено тестом
+  (`user-permissions-endpoints.test.ts`, «ignores a query parameter rather than appearing to narrow
+  the answer») — параметр, который сервер принимает молча и не применяет, это клиент, уверенный в
+  сужении, которого не было, и именно эта форма отказа — тот риск, который тест исключает, а не сама
+  toleration параметра.
+- **Пункт 4, половина «кто выдал».** Причина, дата записи и срок показаны рядом со строкой;
+  **имени того, кто выдал, нет**. `grantedById` — идентификатор, и это осознанное решение контракта:
+  клиент резолвит его против справочника, который у него уже есть для этого экрана (обоснование —
+  `presentation/http/serializers/user-permissions.serializer.ts` и описание `grantedById` в
+  `docs/api/openapi.yaml`; `permission-model.md` не содержит этой фразы, вопреки прежней ссылке
+  здесь на несуществующий §8(ж)). У экрана `/admin/members/{userId}` такого справочника нет: список
+  людей — отдельный запрос с фильтрами, а карточка открывается и по прямой ссылке. Резолв означал бы
+  либо второй запрос за право `employee:read`, которого этот экран не требует, либо UI, зависящий от
+  того, лежит ли ответ в кеше, — то есть непроверяемый. Возвращаться сюда вместе со списком
+  исключений организации (пункт 11), где справочник на экране действительно есть.
+- **Пункт 4, «при наведении на бейдж».** Причина показана **строкой в таблице**, а не тултипом:
+  тултип — это hover, которого нет ни на тач-экране, ни у клавиатуры без обёртки, а прятать за ним
+  единственный ответ на вопрос «почему этот человек не как его роль» — ровно та потеря, ради которой
+  экран и делается (`rules/a11y.mdc` §10). Строк с исключением на карточке единицы, так что цена —
+  несколько строк на таблицу в триста.
+- **Пункт 12, `aria-checked="mixed"`.** Не используется. `mixed` описывает **чекбокс**, который
+  включён наполовину; здесь три взаимоисключающих выбора, и это радиогруппа —
+  `SegmentedControl` рендерит настоящие радио-инпуты, стрелки и объявление «2 из 3» приходят от
+  платформы. Имя группы несёт ключ права, иначе объявление читалось бы как «Запрещено, радиокнопка»
+  без указания, о чём оно.
+- **Гард маршрута `beforeLoad: requirePermission('user:read')`** из списка задач — **не сделан
+  намеренно**. Карточка сотрудника самообслуживаемая: этот гард отнял бы у каждого его собственную
+  кадровую запись (см. комментарий в `$userId.tsx`, решение EPIC-012). Вкладка закрыта как вкладка:
+  без `permission:override_read` её нет в списке, а `?tab=roles` откатывается к профилю. Экрана 403
+  из пункта 9 здесь быть не может — маршрут открыт всем по построению.
+- **Пункты 10 и 11** (отдельное подтверждение опасных прав, список исключений организации на
+  `/admin/members`) в эту поставку не входили и остаются открытыми.
+- **`ETag` / 304 на новом маршруте** — нет, в отличие от `/me/permissions`. Тот спрашивают перед
+  почти каждым рендером, и валидатор из `permissionsVersion` превращает большинство обращений в 304;
+  этот открывают осознанно несколько раз в день, а тело содержит причины исключений — поэтому
+  `private, no-store`, а не копия в дисковом кеше. `version` в теле остаётся: по нему клиент отличит
+  один ответ от более позднего. (Обнаружено при этом же ревью: Express по умолчанию всё равно
+  генерировал `ETag` из тела для этого маршрута — исправлено `app.disable('etag')` в
+  `http-server.factory.ts`, точечно не задев явный `ETag`, который ставит `/me/permissions`.)
+- **`429` в спеке без лимитера.** `GET /users/{userId}/permissions` объявляет
+  `'429': $ref: '#/components/responses/RateLimited'` рядом с `/me/permissions`, но ограничителя
+  частоты на этом пути нет — обещание в контракте, которого код не держит. Это не только неточность
+  документации: главный риск этого конкретного маршрута — перебор по коллегам, а не нагрузка, так что
+  отсутствие лимита здесь весомее, чем на большинстве путей, где `429` объявлен так же авансом.
+  Ограничитель — предмет [EPIC-045](../../epic-045-security-hardening/epic.md) («Полный набор rate
+  limits… ревизия того, что каждый публичный и анонимный путь имеет лимит»), не этой истории.
+- **Два файла из чек-листа задач не написаны.** `use-user-permissions.hook.spec.ts` и e2e
+  `admin-user-overrides.spec.ts` (раздел «Задачи», пункт «Тесты») отсутствуют — оба остаются
+  unchecked там намеренно, но названы здесь явно, чтобы «не перечислено» не читалось как «сделано».
+  Хук покрыт транзитивно через `test/widgets/user-permissions.test.tsx` (33 случая, компонент и хук
+  вместе), отдельного юнита на один хук нет; `packages/e2e/tests` сегодня содержит только `auth`,
+  `smoke`, `tenancy` — эта история своего каталога не добавила.
 
 ## Ссылки
 
@@ -130,6 +233,38 @@ estimate: L
 - [`permission-model.md` §12, расхождение №3 (трёхсостоятельность — только здесь)](../../../docs/security/permission-model.md)
 - [`ux-architecture.md`, «Права в интерфейсе», «Формы», «Скрывать или показывать disabled»](../../../docs/architecture/ux-architecture.md)
 - PRD: риск `R-15` («UI „почему у пользователя есть этот доступ“»)
+
+## Решено: чтение чужих прав аудируется (2026-08-11)
+
+Прежняя версия этого раздела обосновывала «чтение не аудируется» ссылкой на §10 модели прав. Это
+обоснование было ложным: §10 (`docs/security/permission-model.md`, «Отказы») постановляет, что не
+пишутся **отказы** на `GET` — «Отказы на чтение (`GET`) в `AuditLog` не пишутся — только метрика».
+Про **успешные** чтения раздел прежде молчал, и в том же §10 сопоставимые по чувствительности чтения
+уже аудировались: `audit.exported` (`critical`), `vault.escrow_used` (`critical`), отдельный
+`VaultAccessLog` с `VIEW`/`DECRYPT`/`COPY`/`EXPORT`. Молчание раздела про этот конкретный случай было
+пробелом нормы, а не запретом.
+
+Этот запрос отличается от рядового `GET` двумя свойствами: он показывает **персональные исключения
+вместе с причинами и сроками** — то, что администраторы написали друг про друга, — и его перебор по
+коллегам даёт карту того, как устроено администрирование организации: кому что выдано в обход ролей и
+кем.
+
+§10 дополнен новым абзацем (см. `docs/security/permission-model.md`, «Что логируется всегда» и
+пояснение сразу после таблицы), называющим `permission.inspected` — уровень `info`,
+`target: { type: 'USER', id: <субъект> }` — исключением из умолчания «чтения не аудируются», с теми
+же двумя прецедентами, что и абзацем выше. Пишется на каждый успешный ответ
+`GetUserPermissionsQuery`, не на отказ: отказ по `permission:override_read` покрыт отдельным,
+существовавшим раньше правилом того же §10 — отказ по праву с `isDangerous: true` логируется всегда,
+а `permission:override_read` помечено `dangerous: true` (`permissions.catalog.ts`: верб `override`
+по §3.19 всегда `dangerous`, и это чтение — как и `secure_link:read_any`/`channel:read_any` —
+показывает то, что устроено про других поимённо названных людей). Два правила не конфликтуют: одно
+про успех, другое про отказ, у каждого свой охват.
+
+Закреплено тестами: юнит `test/unit/iam/get-user-permissions.query.test.ts` («files
+permission.inspected for a successful read, and nothing else» / «files nothing when the read is
+refused») и интеграционный `test/integration/http/user-permissions-endpoints.test.ts` («audits a
+successful read as permission.inspected, and only a successful read»), последний — на
+`test.audit.events`, а не на факт вызова.
 
 ## Definition of Done
 

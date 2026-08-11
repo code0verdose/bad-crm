@@ -43,19 +43,31 @@ export type AclScope =
  * 1. no actor → `not_authenticated` (401), because «anonymous» is not «has no permission»;
  * 2. a key outside the catalogue → `unknown_permission`, so a typo or a permission deleted from a
  *    release never becomes «no check at all»;
- * 3. ownership → allow. Read **before** the DENY overrides on purpose: §5 forbids writing a DENY on
- *    the owner, and a row that got there anyway — an older release, a restore, a bug — must not be
- *    able to lock an organization out of itself;
- * 4. a DENY override → refuse. It beats every ALLOW below it;
- * 5. roles and ALLOW overrides → allow; anything else → refuse. Fail-closed by default.
+ * 3. the ladder itself → `SharedPermissions.capabilityOutcome`, translated to a reason here.
+ *
+ * **The rungs are not walked again in this file, and that is the point.** The order they are walked
+ * in — ownership before the DENY overrides, so that a row §5 forbids cannot lock an organization out
+ * of itself — is stated once, in `packages/shared/src/permissions/can.util.ts`, and this function
+ * only decides what each rung is *called* when it refuses. What lives here and cannot live there is
+ * the vocabulary: `shared` is imported by the browser and answers booleans, while a `DenyReason` is
+ * what the audit trail records and the 403 carries.
+ *
+ * `authorize.test.ts` asserts the agreement row by row, so reinstating a private ladder here fails
+ * by name rather than by a support ticket six months later.
  */
 export const authorizeCapability = (actor: Actor | null, key: string): Decision => {
   if (actor === null) return deny('not_authenticated');
   if (!SharedPermissions.isPermissionKey(key)) return deny('unknown_permission');
-  if (actor.isOwner) return allow();
-  if (actor.denied.has(key)) return deny('denied_by_override');
 
-  return actor.permissions.has(key) ? allow() : deny('permission_not_granted');
+  switch (SharedPermissions.capabilityOutcome(actor, key)) {
+    case 'OWNER':
+    case 'GRANTED':
+      return allow();
+    case 'DENIED_BY_OVERRIDE':
+      return deny('denied_by_override');
+    case 'NOT_GRANTED':
+      return deny('permission_not_granted');
+  }
 };
 
 /**
@@ -71,9 +83,13 @@ export const authorizeCapability = (actor: Actor | null, key: string): Decision 
  *
  * Ownership short-circuits, exactly as in `authorizeCapability`: the owner's set is empty because
  * ownership replaces the layers rather than enumerating them.
+ *
+ * Delegates rather than restating, for the reason the name of this file's other function gives: the
+ * folding is the ladder, and a subset rule that walked its own copy of it would be the third place
+ * the same question is answered.
  */
 export const holdsEffectively = (actor: Actor, key: SharedPermissions.PermissionKey): boolean =>
-  actor.isOwner || (!actor.denied.has(key) && actor.permissions.has(key));
+  SharedPermissions.effectivePermission(actor, key);
 
 /**
  * Layer 4: the resource half of the conjunction, once the capability has passed.

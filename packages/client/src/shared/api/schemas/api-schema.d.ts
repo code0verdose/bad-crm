@@ -1243,6 +1243,71 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/users/{userId}/permissions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * What one person may do, and who arranged it.
+         * @description The administration counterpart of `GET /me/permissions`: every permission of one member of
+         *     the organization, each with the layer of the model that decided it.
+         *
+         *     **`permission:override_read`, not `permission:read`.** The catalogue — which permissions the
+         *     product has — is the same list in every installation and secret from nobody, and `manager`
+         *     holds the key to it so the roles matrix renders. This answers something else: what a named
+         *     colleague may do, which exceptions were written about them, and the sentences an
+         *     administrator left beside those exceptions. `owner` and `admin` hold that.
+         *
+         *     **`source` is the answer, not a hint beside it.** `allowed` is derived from `source` by the
+         *     same function the request guard walks (`packages/shared/src/permissions/can.util.ts`), so
+         *     there is no second implementation of the permission model for the screen to disagree with:
+         *
+         *     * `OWNER` — the owner of the organization, who is not bound by the capability layers. Note
+         *       that an exception may still be reported next to it: a `DENY` on the owner is refused by
+         *       the use-case *and* by a database trigger, and one that exists anyway is an anomaly the
+         *       owner outranks and an administrator should see;
+         *     * `OVERRIDE_DENY` — a personal exception takes it away. It beats every grant below it;
+         *     * `OVERRIDE_ALLOW` — a personal exception grants it, beyond what the roles say;
+         *     * `ROLE` — inherited: at least one role the person holds grants it;
+         *     * `NOT_GRANTED` — nobody granted it. Fail-closed, and the default for most keys.
+         *
+         *     `roleIds` lists the roles that grant the key **whatever the source is** — including under a
+         *     `DENY`. That is what lets a three-state control say what lifting an exception would restore;
+         *     an empty list means «inherits nothing».
+         *
+         *     **This is the capability half of the model, layers 1–3.** For a key that carries a
+         *     `requiredLevel`, `allowed: true` means the person may do this *somewhere in the
+         *     organization*, and a particular object may still refuse: that is the conjunction with the
+         *     resource ACL, and this operation has no object to apply it to. The narrower question —
+         *     «why does this person reach *that* object» — is `permission:explain`, which waits on
+         *     `ResourceAcl` (STORY-011-06).
+         *
+         *     Expired exceptions are absent rather than reported as inactive: an exception past its
+         *     `expiresAt` grants and denies nothing from that moment, whether or not the hourly cleaner
+         *     has run, so showing one would show a rule that is not in force.
+         *
+         *     No `ETag`, unlike `/me/permissions`. That one is asked before nearly every render and a
+         *     validator turns most of those into a 304; this one is opened deliberately, a few times a
+         *     day, and its body carries what administrators write about their colleagues — hence
+         *     `private, no-store` rather than a copy left in a cache for the next person at the machine.
+         *
+         *     **`429` is declared and not yet enforced.** No rate limiter guards this route today — the
+         *     same gap as most sensitive paths before EPIC-045's sweep of rate limits, except that here it
+         *     matters more than most: the risk this endpoint carries is enumeration of colleagues, not
+         *     load, and a limiter is exactly the control that would slow that down.
+         */
+        get: operations["getUserPermissions"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/users/{userId}/permission-overrides/{permission}": {
         parameters: {
             query?: never;
@@ -2080,6 +2145,91 @@ export interface components {
             isOwner: boolean;
             /** @description `permissionsVersion`; also the second half of the `ETag`. */
             version: number;
+        };
+        /** @description One role the person holds, named as the interface shows it. */
+        HeldRole: {
+            /** Format: uuid */
+            roleId: string;
+            /**
+             * @description Stable identifier — `manager`, `developer`. Never the basis of a check.
+             * @example manager
+             */
+            key: string;
+            /** @example Manager */
+            name: string;
+        };
+        /**
+         * @description The exception in force on one key, with everything that explains it. Absent (`null`) when
+         *     there is none — and an expired one is none: it stops applying at its `expiresAt`, not when
+         *     the cleaner next runs.
+         */
+        PermissionOverrideFacts: {
+            /** @enum {string} */
+            effect: "ALLOW" | "DENY";
+            /**
+             * @description Why, as the administrator who wrote it put it. The one field that answers «why did this
+             *     person differ from their role» six months later.
+             * @example billing handed over to Pyotr during parental leave
+             */
+            reason: string;
+            /**
+             * Format: uuid
+             * @description Who wrote it — an id, not a name. The client resolves it against the directory it
+             *     already holds for this screen; a name here would put one into the response, the logs and
+             *     the caches of an operation that is about permissions. `null` where that account has since
+             *     been deleted.
+             */
+            grantedById: string | null;
+            /** Format: date-time */
+            grantedAt: string;
+            /**
+             * Format: date-time
+             * @description `null` means «until somebody removes it».
+             */
+            expiresAt: string | null;
+        };
+        /** @description One permission of one person — the answer, and the layer that produced it. */
+        PermissionState: {
+            /**
+             * @description A key of the closed catalogue, in the form `resource:action`.
+             * @example task:update
+             */
+            key: string;
+            /**
+             * @description The capability answer, derived from `source` rather than decided beside it. For a
+             *     resource-scoped key it means «somewhere in the organization»: a particular object may
+             *     still refuse.
+             */
+            allowed: boolean;
+            /**
+             * @description Which layer decided. `OWNER` and `ROLE` and `OVERRIDE_ALLOW` permit; `OVERRIDE_DENY` and
+             *     `NOT_GRANTED` refuse.
+             * @enum {string}
+             */
+            source: "OWNER" | "OVERRIDE_DENY" | "OVERRIDE_ALLOW" | "ROLE" | "NOT_GRANTED";
+            /**
+             * @description The roles that grant this key — reported whatever `source` is, so that a control offering
+             *     «back to inherited» can say what inherited would mean. Empty means «inherits nothing».
+             */
+            roleIds: string[];
+            override: components["schemas"]["PermissionOverrideFacts"] | null;
+        };
+        /**
+         * @description Every permission of one person, with its origin — the whole catalogue, including the keys
+         *     nobody granted. Absent keys would make «absent means denied» a rule living in the client.
+         */
+        UserPermissions: {
+            /** Format: uuid */
+            userId: string;
+            /** @description The owner of the organization, who is not bound by the capability layers. */
+            isOwner: boolean;
+            /**
+             * @description `permissionsVersion` of the subject — bumped inside the transaction of every change to
+             *     their rights, so a client can tell one answer from a later one.
+             */
+            version: number;
+            roles: components["schemas"]["HeldRole"][];
+            permissions: components["schemas"]["PermissionState"][];
         };
         /** @description One exception, for one person, on the permission named in the path. */
         PermissionOverride: {
@@ -4258,6 +4408,40 @@ export interface operations {
                 content?: never;
             };
             401: components["responses"]["Unauthenticated"];
+            404: components["responses"]["NotFound"];
+            429: components["responses"]["RateLimited"];
+            500: components["responses"]["InternalError"];
+        };
+    };
+    getUserPermissions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /**
+                 * @description Identifier of a person in the caller's organization. An id from another organization is
+                 *     answered 404, not 403 — the API does not confirm what exists in tenants the caller cannot
+                 *     see.
+                 */
+                userId: components["parameters"]["UserId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Every permission of that person, with the origin of each. */
+            200: {
+                headers: {
+                    /** @description Always `private, no-store` — the body is about one person, by name. */
+                    "Cache-Control": string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UserPermissions"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
             429: components["responses"]["RateLimited"];
             500: components["responses"]["InternalError"];

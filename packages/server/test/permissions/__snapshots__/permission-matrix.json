@@ -26,6 +26,7 @@
       "POST /api/v1/organization/transfer-ownership": "deny:user_not_found",
       "POST /api/v1/users/:userId/deactivate": "deny:user_not_found",
       "POST /api/v1/users/:userId/reactivate": "deny:user_not_found",
+      "GET /api/v1/users/:userId/permissions": "allow",
       "PUT /api/v1/users/:userId/permission-overrides/:permission": "allow",
       "DELETE /api/v1/users/:userId/permission-overrides/:permission": "allow"
     },
@@ -54,6 +55,7 @@
       "POST /api/v1/organization/transfer-ownership": "deny:permission_not_granted",
       "POST /api/v1/users/:userId/deactivate": "deny:user_not_found",
       "POST /api/v1/users/:userId/reactivate": "deny:user_not_found",
+      "GET /api/v1/users/:userId/permissions": "allow",
       "PUT /api/v1/users/:userId/permission-overrides/:permission": "allow",
       "DELETE /api/v1/users/:userId/permission-overrides/:permission": "allow"
     },
@@ -82,6 +84,7 @@
       "POST /api/v1/organization/transfer-ownership": "deny:permission_not_granted",
       "POST /api/v1/users/:userId/deactivate": "deny:permission_not_granted",
       "POST /api/v1/users/:userId/reactivate": "deny:permission_not_granted",
+      "GET /api/v1/users/:userId/permissions": "deny:permission_not_granted",
       "PUT /api/v1/users/:userId/permission-overrides/:permission": "deny:permission_not_granted",
       "DELETE /api/v1/users/:userId/permission-overrides/:permission": "deny:permission_not_granted"
     },
@@ -110,6 +113,7 @@
       "POST /api/v1/organization/transfer-ownership": "deny:permission_not_granted",
       "POST /api/v1/users/:userId/deactivate": "deny:permission_not_granted",
       "POST /api/v1/users/:userId/reactivate": "deny:permission_not_granted",
+      "GET /api/v1/users/:userId/permissions": "deny:permission_not_granted",
       "PUT /api/v1/users/:userId/permission-overrides/:permission": "deny:permission_not_granted",
       "DELETE /api/v1/users/:userId/permission-overrides/:permission": "deny:permission_not_granted"
     },
@@ -138,6 +142,7 @@
       "POST /api/v1/organization/transfer-ownership": "deny:permission_not_granted",
       "POST /api/v1/users/:userId/deactivate": "deny:permission_not_granted",
       "POST /api/v1/users/:userId/reactivate": "deny:permission_not_granted",
+      "GET /api/v1/users/:userId/permissions": "deny:permission_not_granted",
       "PUT /api/v1/users/:userId/permission-overrides/:permission": "deny:permission_not_granted",
       "DELETE /api/v1/users/:userId/permission-overrides/:permission": "deny:permission_not_granted"
     },
@@ -166,6 +171,7 @@
       "POST /api/v1/organization/transfer-ownership": "deny:permission_not_granted",
       "POST /api/v1/users/:userId/deactivate": "deny:permission_not_granted",
       "POST /api/v1/users/:userId/reactivate": "deny:permission_not_granted",
+      "GET /api/v1/users/:userId/permissions": "deny:permission_not_granted",
       "PUT /api/v1/users/:userId/permission-overrides/:permission": "deny:permission_not_granted",
       "DELETE /api/v1/users/:userId/permission-overrides/:permission": "deny:permission_not_granted"
     },
@@ -194,6 +200,7 @@
       "POST /api/v1/organization/transfer-ownership": "deny:permission_not_granted",
       "POST /api/v1/users/:userId/deactivate": "deny:permission_not_granted",
       "POST /api/v1/users/:userId/reactivate": "deny:permission_not_granted",
+      "GET /api/v1/users/:userId/permissions": "deny:permission_not_granted",
       "PUT /api/v1/users/:userId/permission-overrides/:permission": "deny:permission_not_granted",
       "DELETE /api/v1/users/:userId/permission-overrides/:permission": "deny:permission_not_granted"
     }

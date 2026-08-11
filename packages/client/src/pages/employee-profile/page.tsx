@@ -1,4 +1,4 @@
-import { Button, Stack } from '@mantine/core';
+import { Button, Stack, Tabs } from '@mantine/core';
 import { useDisclosure } from '@mantine/hooks';
 import { getRouteApi } from '@tanstack/react-router';
 import { useTranslation } from 'react-i18next';
@@ -7,6 +7,7 @@ import { SharedLib, SharedUi } from '@shared';
 
 import { Breadcrumbs } from '@widgets/breadcrumbs';
 import { OffboardingDialog } from '@widgets/offboarding';
+import { UserPermissions } from '@widgets/user-permissions';
 import { EmployeeService, EmployeeUi, type EmployeeApi } from '@units/employee';
 import { IamService } from '@units/iam';
 
@@ -23,10 +24,35 @@ const route = getRouteApi('/_authenticated/admin/members/$userId');
 export function EmployeeProfilePage() {
   const { t } = useTranslation();
   const { userId } = route.useParams();
+  const search = route.useSearch();
+  const navigate = route.useNavigate();
   const query = EmployeeService.EmployeeQueries.useEmployeeProfileQuery(userId);
   const save = EmployeeService.EmployeeMutations.useUpdateEmployeeProfile();
   const { can } = IamService.IamHooks.useCan();
   const [dialogOpened, dialogControls] = useDisclosure(false);
+
+  /**
+   * Whether this card has a second face at all.
+   *
+   * **A hint, not a gate.** The route itself carries no permission guard on purpose — a person
+   * always reads their own personnel record — so the tab is what appears and disappears rather than
+   * the page. Every request behind it is authorised again on the server, and the panel behind the
+   * tab is never mounted for a caller without it (`keepMounted={false}` below), so the query it
+   * holds never starts — a caller without the permission neither sees the tab nor spends a
+   * guaranteed 403 on it.
+   */
+  const canReadPermissions = can('permission:override_read');
+
+  /**
+   * Derived at render, never mirrored into state (`rules/frontend-fsd.mdc` rule 11).
+   *
+   * `?tab=roles` reaching somebody without the permission falls back to the profile instead of
+   * rendering a card with no body: the address is a link somebody shared, and «you may not read
+   * this» is not what the page behind it is. There is nothing to conceal — the tab's absence is
+   * already visible to them — and the alternative, a 403 screen over a personnel record the person
+   * may otherwise read, would lock people out of a page they are entitled to.
+   */
+  const tab = search.tab === 'roles' && canReadPermissions ? 'roles' : 'profile';
 
   /**
    * Who the offboarding would be about — and `undefined` whenever there is nobody to offer it for.
@@ -68,33 +94,83 @@ export function EmployeeProfilePage() {
         />
       )}
 
-      <SharedUi.DataState
-        // A key, not the error object: choosing the sentence from the `code` belongs to whoever
-        // knows what the operation was (`rules/errors-and-toasts.mdc` §10).
-        errorMessageKey="employee.loadFailed"
-        onRetry={() => {
-          void query.refetch();
+      {/*
+        `keepMounted={false}` states in the tree what must be true: the permissions tab issues a
+        request when it mounts, and a card opened on the profile must not spend one on a table
+        nobody has asked to see.
+
+        It is **not** what makes that true today — Mantine's default `keepMountedMode: 'activity'`
+        already destroys the effects of a hidden panel, so the query would not start either way, and
+        removing this prop leaves the suite green. It stays because the property belongs to this
+        screen rather than to a default of the UI kit, and because what is asserted is the
+        behaviour, not the prop: `test/widgets/user-permissions.test.tsx` counts the reads before
+        and after the tab is clicked.
+
+        The tab itself is the only state of this screen that belongs in the URL — it is what makes
+        «look at what Ivan may do» a link (`rules/frontend-fsd.mdc` rule 16).
+      */}
+      <Tabs
+        keepMounted={false}
+        onChange={(next) => {
+          void navigate({
+            search: (previous) => ({ ...previous, tab: next === 'roles' ? 'roles' : 'profile' }),
+            replace: true,
+          });
         }}
-        // The form is a column of text fields; the text skeleton is what it looks like while it
-        // loads, and a bespoke one would be a second thing to keep in step with the form.
-        skeleton={<SharedUi.TextSkeleton lines={8} />}
-        status={query.status}
+        value={tab}
       >
-        {query.data === undefined ? null : (
-          <EmployeeUi.EmployeeProfileForm
-            canEditEmployment={can('employee:update')}
-            // «Did the document carry it», not «may this caller edit it»: the contact is
-            // self-service, and the key is absent exactly when the server placed this caller
-            // outside the personal audience for this person.
-            carriesEmergencyContact={'emergencyContact' in query.data}
-            initialValues={initialValuesOf(query.data)}
-            isPending={save.isPending}
-            onSubmit={(values) => {
-              save.mutate({ userId, patch: values });
+        <Tabs.List>
+          <Tabs.Tab value="profile">{t('employee.tab.profile')}</Tabs.Tab>
+          {canReadPermissions && <Tabs.Tab value="roles">{t('permissions.tab')}</Tabs.Tab>}
+        </Tabs.List>
+
+        <Tabs.Panel value="profile">
+          <SharedUi.DataState
+            // A key, not the error object: choosing the sentence from the `code` belongs to whoever
+            // knows what the operation was (`rules/errors-and-toasts.mdc` §10).
+            errorMessageKey="employee.loadFailed"
+            onRetry={() => {
+              void query.refetch();
             }}
+            // The form is a column of text fields; the text skeleton is what it looks like while it
+            // loads, and a bespoke one would be a second thing to keep in step with the form.
+            skeleton={<SharedUi.TextSkeleton lines={8} />}
+            status={query.status}
+          >
+            {query.data === undefined ? null : (
+              <EmployeeUi.EmployeeProfileForm
+                canEditEmployment={can('employee:update')}
+                // «Did the document carry it», not «may this caller edit it»: the contact is
+                // self-service, and the key is absent exactly when the server placed this caller
+                // outside the personal audience for this person.
+                carriesEmergencyContact={'emergencyContact' in query.data}
+                initialValues={initialValuesOf(query.data)}
+                isPending={save.isPending}
+                onSubmit={(values) => {
+                  save.mutate({ userId, patch: values });
+                }}
+              />
+            )}
+          </SharedUi.DataState>
+        </Tabs.Panel>
+
+        <Tabs.Panel value="roles">
+          <UserPermissions
+            exceptionsOnly={search.exceptions}
+            onExceptionsChange={(value) => {
+              void navigate({
+                search: (previous) => ({ ...previous, exceptions: value }),
+                replace: true,
+              });
+            }}
+            onSearchChange={(value) => {
+              void navigate({ search: (previous) => ({ ...previous, q: value }), replace: true });
+            }}
+            search={search.q}
+            userId={userId}
           />
-        )}
-      </SharedUi.DataState>
+        </Tabs.Panel>
+      </Tabs>
     </Stack>
   );
 }

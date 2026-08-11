@@ -50,6 +50,9 @@ export const useCan = (): CanController => {
   );
 
   return {
+    // Fail-closed while loading: `view` is `undefined` until the caller's own capabilities have
+    // arrived, and offering a button before the answer exists is the "appears, then vanishes"
+    // annoyance the docstring above rules out.
     can: (permission, accessLevel) =>
       view !== undefined && SharedPermissions.can(view, permission, accessLevel),
     isLoading: query.isPending,

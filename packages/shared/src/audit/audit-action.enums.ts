@@ -141,6 +141,23 @@ export const AUDIT_ACTIONS = [
    * bypass is indistinguishable from an intrusion.
    */
   'rls.bypassed',
+  /**
+   * An administrator read another person's effective permissions —
+   * `GET /users/{userId}/permissions` (STORY-011-11).
+   *
+   * The one **read** this catalogue records. `docs/security/permission-model.md` §10 files a 403 on
+   * a dangerous key and a denied write, and deliberately does not file a plain `GET`: a click on
+   * every hidden button would flood the trail. This operation is the exception to that default, not
+   * a second rule — it names the person who did the looking and the colleague who was looked at, and
+   * a run of it across the roster is a fact its own severity (`INFO`) does not raise, but a reviewer
+   * asking «who has been looking at whom» needs it to exist at all. Two properties of the *answer*
+   * are why it earns the exception where an ordinary `GET` does not: it hands back the sentences one
+   * administrator wrote about a colleague under a `reason`, and reading it about everyone in turn
+   * draws the map of how the organization is actually administered — the same reasoning that makes
+   * `audit.exported`, `vault.escrow_used` and `VaultAccessLog`'s own `VIEW` entry logged reads
+   * instead of silent ones.
+   */
+  'permission.inspected',
 ] as const;
 
 export type AuditAction = (typeof AUDIT_ACTIONS)[number];

@@ -31,6 +31,7 @@ import { PrismaUserRoleRepository } from '@/infrastructure/persistence/prisma/us
 import { AssignRoleUseCase } from '@/application/iam/use-cases/assign-role.use-case.js';
 import { BuildActorQuery } from '@/application/iam/use-cases/build-actor.query.js';
 import { GetMyPermissionsQuery } from '@/application/iam/use-cases/get-my-permissions.query.js';
+import { GetUserPermissionsQuery } from '@/application/iam/use-cases/get-user-permissions.query.js';
 import { type AuthLookupPort } from '@/application/identity/ports/auth-lookup.port.js';
 import { type SessionRepositoryPort } from '@/application/identity/ports/session-repository.port.js';
 import { type PasswordHasherPort } from '@/application/identity/ports/password-hasher.port.js';
@@ -477,6 +478,7 @@ const buildIam = (input: {
   return {
     buildActor,
     getMyPermissions: new GetMyPermissionsQuery(buildActor),
+    getUserPermissions: new GetUserPermissionsQuery(unitOfWork, permissions, input.audit),
     assignRole: new AssignRoleUseCase(unitOfWork, userRoles, input.audit),
     revokeRole: new RevokeRoleUseCase(unitOfWork, userRoles, input.audit),
     writeOverride: new WritePermissionOverrideUseCase(

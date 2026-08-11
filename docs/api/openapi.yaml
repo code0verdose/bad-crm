@@ -2140,6 +2140,85 @@ paths:
         '500':
           $ref: '#/components/responses/InternalError'
 
+  /users/{userId}/permissions:
+    get:
+      operationId: getUserPermissions
+      summary: What one person may do, and who arranged it.
+      description: |
+        The administration counterpart of `GET /me/permissions`: every permission of one member of
+        the organization, each with the layer of the model that decided it.
+
+        **`permission:override_read`, not `permission:read`.** The catalogue — which permissions the
+        product has — is the same list in every installation and secret from nobody, and `manager`
+        holds the key to it so the roles matrix renders. This answers something else: what a named
+        colleague may do, which exceptions were written about them, and the sentences an
+        administrator left beside those exceptions. `owner` and `admin` hold that.
+
+        **`source` is the answer, not a hint beside it.** `allowed` is derived from `source` by the
+        same function the request guard walks (`packages/shared/src/permissions/can.util.ts`), so
+        there is no second implementation of the permission model for the screen to disagree with:
+
+        * `OWNER` — the owner of the organization, who is not bound by the capability layers. Note
+          that an exception may still be reported next to it: a `DENY` on the owner is refused by
+          the use-case *and* by a database trigger, and one that exists anyway is an anomaly the
+          owner outranks and an administrator should see;
+        * `OVERRIDE_DENY` — a personal exception takes it away. It beats every grant below it;
+        * `OVERRIDE_ALLOW` — a personal exception grants it, beyond what the roles say;
+        * `ROLE` — inherited: at least one role the person holds grants it;
+        * `NOT_GRANTED` — nobody granted it. Fail-closed, and the default for most keys.
+
+        `roleIds` lists the roles that grant the key **whatever the source is** — including under a
+        `DENY`. That is what lets a three-state control say what lifting an exception would restore;
+        an empty list means «inherits nothing».
+
+        **This is the capability half of the model, layers 1–3.** For a key that carries a
+        `requiredLevel`, `allowed: true` means the person may do this *somewhere in the
+        organization*, and a particular object may still refuse: that is the conjunction with the
+        resource ACL, and this operation has no object to apply it to. The narrower question —
+        «why does this person reach *that* object» — is `permission:explain`, which waits on
+        `ResourceAcl` (STORY-011-06).
+
+        Expired exceptions are absent rather than reported as inactive: an exception past its
+        `expiresAt` grants and denies nothing from that moment, whether or not the hourly cleaner
+        has run, so showing one would show a rule that is not in force.
+
+        No `ETag`, unlike `/me/permissions`. That one is asked before nearly every render and a
+        validator turns most of those into a 304; this one is opened deliberately, a few times a
+        day, and its body carries what administrators write about their colleagues — hence
+        `private, no-store` rather than a copy left in a cache for the next person at the machine.
+
+        **`429` is declared and not yet enforced.** No rate limiter guards this route today — the
+        same gap as most sensitive paths before EPIC-045's sweep of rate limits, except that here it
+        matters more than most: the risk this endpoint carries is enumeration of colleagues, not
+        load, and a limiter is exactly the control that would slow that down.
+      tags: [iam]
+      x-permission: permission:override_read
+      parameters:
+        - $ref: '#/components/parameters/UserId'
+      responses:
+        '200':
+          description: Every permission of that person, with the origin of each.
+          headers:
+            Cache-Control:
+              description: Always `private, no-store` — the body is about one person, by name.
+              required: true
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserPermissions'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
   /users/{userId}/permission-overrides/{permission}:
     put:
       operationId: writePermissionOverride
@@ -3600,6 +3679,122 @@ components:
         version:
           type: integer
           description: '`permissionsVersion`; also the second half of the `ETag`.'
+
+    HeldRole:
+      type: object
+      additionalProperties: false
+      required: [roleId, key, name]
+      description: One role the person holds, named as the interface shows it.
+      properties:
+        roleId:
+          type: string
+          format: uuid
+        key:
+          type: string
+          description: Stable identifier — `manager`, `developer`. Never the basis of a check.
+          examples: ['manager']
+        name:
+          type: string
+          examples: ['Manager']
+
+    PermissionOverrideFacts:
+      type: object
+      additionalProperties: false
+      required: [effect, reason, grantedById, grantedAt, expiresAt]
+      description: |
+        The exception in force on one key, with everything that explains it. Absent (`null`) when
+        there is none — and an expired one is none: it stops applying at its `expiresAt`, not when
+        the cleaner next runs.
+      properties:
+        effect:
+          type: string
+          enum: [ALLOW, DENY]
+        reason:
+          type: string
+          description: |
+            Why, as the administrator who wrote it put it. The one field that answers «why did this
+            person differ from their role» six months later.
+          examples: ['billing handed over to Pyotr during parental leave']
+        grantedById:
+          type: string
+          format: uuid
+          nullable: true
+          description: |
+            Who wrote it — an id, not a name. The client resolves it against the directory it
+            already holds for this screen; a name here would put one into the response, the logs and
+            the caches of an operation that is about permissions. `null` where that account has since
+            been deleted.
+        grantedAt:
+          type: string
+          format: date-time
+        expiresAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: '`null` means «until somebody removes it».'
+
+    PermissionState:
+      type: object
+      additionalProperties: false
+      required: [key, allowed, source, roleIds, override]
+      description: One permission of one person — the answer, and the layer that produced it.
+      properties:
+        key:
+          type: string
+          description: A key of the closed catalogue, in the form `resource:action`.
+          examples: ['task:update']
+        allowed:
+          type: boolean
+          description: |
+            The capability answer, derived from `source` rather than decided beside it. For a
+            resource-scoped key it means «somewhere in the organization»: a particular object may
+            still refuse.
+        source:
+          type: string
+          enum: [OWNER, OVERRIDE_DENY, OVERRIDE_ALLOW, ROLE, NOT_GRANTED]
+          description: |
+            Which layer decided. `OWNER` and `ROLE` and `OVERRIDE_ALLOW` permit; `OVERRIDE_DENY` and
+            `NOT_GRANTED` refuse.
+        roleIds:
+          type: array
+          description: |
+            The roles that grant this key — reported whatever `source` is, so that a control offering
+            «back to inherited» can say what inherited would mean. Empty means «inherits nothing».
+          items:
+            type: string
+            format: uuid
+        override:
+          allOf:
+            - $ref: '#/components/schemas/PermissionOverrideFacts'
+          nullable: true
+
+    UserPermissions:
+      type: object
+      additionalProperties: false
+      required: [userId, isOwner, version, roles, permissions]
+      description: |
+        Every permission of one person, with its origin — the whole catalogue, including the keys
+        nobody granted. Absent keys would make «absent means denied» a rule living in the client.
+      properties:
+        userId:
+          type: string
+          format: uuid
+        isOwner:
+          type: boolean
+          description: The owner of the organization, who is not bound by the capability layers.
+        version:
+          type: integer
+          description: |
+            `permissionsVersion` of the subject — bumped inside the transaction of every change to
+            their rights, so a client can tell one answer from a later one.
+        roles:
+          type: array
+          items:
+            $ref: '#/components/schemas/HeldRole'
+        permissions:
+          type: array
+          items:
+            $ref: '#/components/schemas/PermissionState'
 
     PermissionOverride:
       type: object

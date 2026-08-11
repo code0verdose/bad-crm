@@ -67,11 +67,18 @@ afterAll(async () => {
 
 beforeEach(async () => {
   await asMaintenance(pools.owner, async (client) => {
-    // The grants first, and not because this file writes any: the catalogue is referenced **by
-    // name** from `role_permissions`, and every organization seeded by an earlier file in this
-    // shared database left a few hundred of those rows behind. Wiping the catalogue under them is
-    // a foreign-key violation, which is how this suite went red in CI while passing on a laptop
-    // where the integration files had run in a different order (run 30974845572).
+    // The referencing rows first, and not because this file writes any: the catalogue is referenced
+    // **by name** from two tables, and every organization seeded by an earlier file in this shared
+    // database leaves rows in them. Wiping the catalogue underneath is a foreign-key violation,
+    // which is how this suite went red in CI while passing on a laptop where the integration files
+    // had run in a different order (run 30974845572).
+    //
+    // Both tables, not one. The first version of this block cleared `role_permissions` alone and
+    // read as complete; `user_permission_overrides` carries the same `REFERENCES permissions(key)`
+    // (`20260805130000_user_permission_overrides/migration.sql:49`) and would reintroduce exactly
+    // the failure the paragraph above describes, from a different file. A cleanup that names one of
+    // two parents is the same defect as no cleanup — it just takes a rarer ordering to show it.
+    await client.query('DELETE FROM user_permission_overrides');
     await client.query('DELETE FROM role_permissions');
     await client.query('DELETE FROM permissions');
   });
@@ -133,7 +140,9 @@ describe('seeding the permission catalogue', () => {
 
     await seed();
 
-    const revived = await asMigrator.permission.findUniqueOrThrow({ where: { key: 'task:update' } });
+    const revived = await asMigrator.permission.findUniqueOrThrow({
+      where: { key: 'task:update' },
+    });
 
     expect(revived.deprecatedAt).toBeNull();
   });
@@ -171,7 +180,10 @@ describe('what the application may do with the catalogue', () => {
       async (): Promise<unknown> =>
         asApplication.permission.delete({ where: { key: 'task:read' } }),
     ],
-  ])('cannot %s: an application that could would grant itself a permission', async (_case, write) => {
-    await expect(write()).rejects.toThrow(/permission denied/i);
-  });
+  ])(
+    'cannot %s: an application that could would grant itself a permission',
+    async (_case, write) => {
+      await expect(write()).rejects.toThrow(/permission denied/i);
+    },
+  );
 });

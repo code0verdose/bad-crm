@@ -49,6 +49,20 @@ export interface SessionListParams {
 export interface PermissionQueryKeys {
   readonly all: readonly [string];
   readonly mine: () => readonly [string, 'mine'];
+  /**
+   * What **one other person** may do, with the layer that decided each key
+   * (`GET /users/{userId}/permissions`, `permission-model.md` §7(ж)).
+   *
+   * A sibling of `mine()` under the same `all` prefix rather than a group of its own, and that is
+   * the whole reason it is here: writing an exception changes the subject's `permissionsVersion`,
+   * and the subject may be the caller — denying oneself `invoice:issue` is a supported shape
+   * (`permission-override.policy.ts`, `governsRights` is deliberately narrow). One
+   * `invalidateQueries({ queryKey: QueryKeys.Permissions.all })` therefore has to reach both this
+   * address **and** `mine()`, which is what the guards and every `can(...)` in the shell read. Two
+   * separate prefixes would leave the caller's own sidebar showing an action they had just taken
+   * away from themselves, until a reload.
+   */
+  readonly ofUser: (userId: string) => readonly [string, 'user', string];
 }
 
 /**
@@ -114,6 +128,7 @@ export const QueryKeys = {
   Permissions: {
     all: ['permissions'],
     mine: () => ['permissions', 'mine'],
+    ofUser: (userId: string) => ['permissions', 'user', userId],
   } satisfies PermissionQueryKeys,
   Roles: {
     all: ['roles'],

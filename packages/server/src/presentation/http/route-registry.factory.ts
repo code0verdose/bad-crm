@@ -11,6 +11,7 @@ import { createEmployeeController } from '@/presentation/http/controllers/employ
 import { createInvitationController } from '@/presentation/http/controllers/invitation.controller.js';
 import { createMeController } from '@/presentation/http/controllers/me.controller.js';
 import { createPermissionOverrideController } from '@/presentation/http/controllers/permission-override.controller.js';
+import { createUserPermissionsController } from '@/presentation/http/controllers/user-permissions.controller.js';
 import { createOwnershipController } from '@/presentation/http/controllers/ownership.controller.js';
 import { createUserLifecycleController } from '@/presentation/http/controllers/user-lifecycle.controller.js';
 import { createTeamController } from '@/presentation/http/controllers/team.controller.js';
@@ -58,6 +59,7 @@ import {
   overrideParamsSchema,
   writeOverrideBodySchema,
 } from '@/presentation/http/validators/permission-override.validator.js';
+import { userPermissionsParamsSchema } from '@/presentation/http/validators/user-permissions.validator.js';
 import { transferOwnershipBodySchema } from '@/presentation/http/validators/ownership.validator.js';
 import {
   addTeamMemberBodySchema,
@@ -134,6 +136,13 @@ export const createRouteRegistry = (
     removeOverride: dependencies.iam.removeOverride,
     writeValidator: writeOverrideValidator,
     removeValidator: removeOverrideValidator,
+  });
+
+  const userPermissionsValidator = validate({ params: userPermissionsParamsSchema });
+
+  const userPermissions = createUserPermissionsController({
+    getUserPermissions: dependencies.iam.getUserPermissions,
+    validator: userPermissionsValidator,
   });
 
   const me = createMeController({ getMyPermissions: dependencies.iam.getMyPermissions });
@@ -676,6 +685,18 @@ export const createRouteRegistry = (
       selfServiceReason:
         'the caller reading their own permissions; a capability here would be meaningless in both directions — taking it away would not stop them knowing what they may do, and granting it to somebody else would give access to nothing, because the operation takes no subject and can only answer about the caller',
       ownershipCheckedIn: 'GetMyPermissionsQuery',
+    },
+    {
+      method: 'get',
+      path: `${API_PREFIX}/users/:userId/permissions`,
+      handlers: [userPermissionsValidator.handler, userPermissions.read],
+      permission: 'permission:override_read',
+      // Not `permission:read`, which is the catalogue — the same list in every installation and
+      // secret from nobody, held by `manager` so the roles matrix renders. This answers «what may
+      // this person do, and who arranged it»: their exceptions and the sentences an administrator
+      // wrote beside them. Whether the subject exists in this tenant is decided inside the query,
+      // which is also the only place that can answer 404 rather than 403 for somebody else's id.
+      aclCheckedIn: 'GetUserPermissionsQuery',
     },
     {
       method: 'put',

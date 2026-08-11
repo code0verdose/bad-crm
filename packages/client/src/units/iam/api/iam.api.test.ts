@@ -53,6 +53,42 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+const USER_ID = '018f4a3b-2c1d-7a41-9f00-2b7c1d0e5af1';
+
+const userPermissions = {
+  userId: USER_ID,
+  isOwner: false,
+  version: 7,
+  roles: [],
+  permissions: [],
+};
+
+const respondUserPermissionsSlowly = (request: Request): Promise<Response> =>
+  new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      resolve(new Response(JSON.stringify(userPermissions), { status: 200 }));
+    }, 50);
+
+    request.signal.addEventListener('abort', () => {
+      clearTimeout(timer);
+      reject(new DOMException('The operation was aborted.', 'AbortError'));
+    });
+  });
+
+describe('reading one other person’s permissions', () => {
+  it('passes the abort signal through, so navigating to another card cancels the stale request', async () => {
+    vi.stubGlobal('fetch', (input: Request) => respondUserPermissionsSlowly(input));
+
+    const { fetchUserPermissions } = await import('./iam.api.js');
+    const controller = new AbortController();
+    const pending = fetchUserPermissions(USER_ID, controller.signal);
+
+    controller.abort();
+
+    await expect(pending).rejects.toThrow(/abort/i);
+  });
+});
+
 describe('reading one’s own permissions', () => {
   it('passes the abort signal through, so a superseded request is cancelled', async () => {
     vi.stubGlobal('fetch', (input: Request) => respondSlowly(input));

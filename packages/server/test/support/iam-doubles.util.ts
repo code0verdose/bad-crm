@@ -5,8 +5,11 @@ import { SharedPermissions } from '@bad-crm/shared';
 import { ConflictError } from '../../src/domain/shared/errors/app.errors.js';
 
 import {
+  type AttributedCapabilityFacts,
   type CapabilityFacts,
   type EffectivePermissionsReaderPort,
+  type HeldRole,
+  type OverrideFacts,
 } from '../../src/application/iam/ports/effective-permissions-reader.port.js';
 import {
   type RoleRepositoryPort,
@@ -185,14 +188,17 @@ export class FakeUserRoleRepository implements UserRoleRepositoryPort {
 }
 
 /**
- * What the guard reads to build an actor, and what a use-case reads about the person it is acting
- * on.
+ * The origin of one subject's permissions, as a suite seeds it.
  *
- * Two answers rather than one, because the two are different questions and the override rules turn
- * on the second: the caller's capabilities decide whether they may write an exception, while the
- * *subject's* ownership decides whether a DENY is allowed at all. `subject` absent means «the same
- * as the caller», which is what the assignment suites need.
+ * Only the parts the folded facts throw away — the facts themselves come from `capabilitiesByUser`,
+ * so the two halves of the port cannot be seeded into disagreement.
  */
+export interface FakeAttribution {
+  readonly roles?: readonly HeldRole[];
+  readonly grantedByRole?: Readonly<Record<string, readonly string[]>>;
+  readonly overrides?: Readonly<Record<string, OverrideFacts>>;
+}
+
 export class FakeEffectivePermissionsReader implements EffectivePermissionsReaderPort {
   constructor(
     private readonly facts: CapabilityFacts | null,
@@ -202,10 +208,52 @@ export class FakeEffectivePermissionsReader implements EffectivePermissionsReade
      * counted calls would answer the wrong person on the second request of the same test.
      */
     private readonly byUser: Readonly<Record<string, CapabilityFacts | null>> = {},
+    /** Where each grant came from, for the one screen that has to explain rather than decide. */
+    private readonly attribution: Readonly<Record<string, FakeAttribution>> = {},
   ) {}
 
   capabilitiesOf(userId: string): Promise<CapabilityFacts | null> {
-    return Promise.resolve(userId in this.byUser ? (this.byUser[userId] ?? null) : this.facts);
+    return Promise.resolve(this.factsFor(userId));
+  }
+
+  /**
+   * The same facts, narrated with whatever attribution the suite seeded.
+   *
+   * `facts` is taken from the *same* lookup `capabilitiesOf` uses rather than seeded a second time,
+   * for the reason the real adapter folds once: a double whose two answers could be seeded to
+   * disagree would let a suite pass while asserting a decision the guard never makes.
+   *
+   * A subject with no attribution seeded is answered honestly — no roles, no exceptions — so every
+   * grant reports `ROLE` with an empty `roleIds`. That is what a suite that only cares about
+   * allow/deny is asking for, and it is not a claim about which role granted anything.
+   */
+  attributedCapabilitiesOf(userId: string): Promise<AttributedCapabilityFacts | null> {
+    const facts = this.factsFor(userId);
+
+    if (facts === null) return Promise.resolve(null);
+
+    const seeded: FakeAttribution = this.attribution[userId] ?? {};
+
+    return Promise.resolve({
+      facts,
+      roles: seeded.roles ?? [],
+      grantedByRole: new Map(
+        Object.entries(seeded.grantedByRole ?? {}) as [
+          SharedPermissions.PermissionKey,
+          readonly string[],
+        ][],
+      ),
+      overrides: new Map(
+        Object.entries(seeded.overrides ?? {}) as [
+          SharedPermissions.PermissionKey,
+          OverrideFacts,
+        ][],
+      ),
+    });
+  }
+
+  private factsFor(userId: string): CapabilityFacts | null {
+    return userId in this.byUser ? (this.byUser[userId] ?? null) : this.facts;
   }
 }
 

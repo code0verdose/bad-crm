@@ -118,6 +118,7 @@ describe('the action catalogue', () => {
       'permission.override.updated',
       'permission.override.deleted',
       'rls.bypassed',
+      'permission.inspected',
     ]);
   });
 

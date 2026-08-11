@@ -14,6 +14,83 @@ export type MyPermissions = components['schemas']['MyPermissions'];
 export const fetchMyPermissions = async (signal?: AbortSignal): Promise<MyPermissions> =>
   unwrapApiResult(await apiClient.GET('/me/permissions', signal === undefined ? {} : { signal }));
 
+/**
+ * What **one other person** may do, with the layer of the model that decided each key.
+ *
+ * The administration counterpart of `MyPermissions` above, and a different shape on purpose: that
+ * one is folded to two sets because a guard only needs an answer, this one carries the answer *and*
+ * its origin because a screen has to explain it (`permission-model.md` §7(ж)).
+ */
+export type UserPermissions = components['schemas']['UserPermissions'];
+
+/** One key of the catalogue as it stands for this person: the answer, and who arranged it. */
+export type PermissionState = components['schemas']['PermissionState'];
+
+/** The exception in force on one key — reason, author, dates. `null` when there is none. */
+export type PermissionOverrideFacts = components['schemas']['PermissionOverrideFacts'];
+
+/** A role the person holds, named as the interface shows it. */
+export type HeldRole = components['schemas']['HeldRole'];
+
+/** What writing an exception carries: which way it points, why, and until when. */
+export type PermissionOverride = components['schemas']['PermissionOverride'];
+
+/**
+ * Every permission of one person, with the origin of each.
+ *
+ * The signal is required rather than optional, like the other queries here: the key carries the
+ * subject, so navigating from one card to another changes it, and a late answer about the previous
+ * person must not overwrite a fresh one (`rules/tanstack-query.mdc` §4).
+ */
+export const fetchUserPermissions = async (
+  userId: string,
+  signal: AbortSignal,
+): Promise<UserPermissions> =>
+  unwrapApiResult(
+    await apiClient.GET('/users/{userId}/permissions', { params: { path: { userId } }, signal }),
+  );
+
+/**
+ * Writes the exception on one key — `PUT`, because the pair (person, permission) *is* the row.
+ *
+ * No `signal`: this is issued by confirming a form, not by a changing query key, so there is no
+ * later request that could overtake it — and an option nobody passes is a branch nobody tests.
+ *
+ * It answers `204` and nothing else, which is why the mutation above it invalidates rather than
+ * writing the answer into the cache: the new `source` of the key is a fact only the server can
+ * assemble, and guessing it here would be the second permission ladder this screen exists to avoid.
+ */
+export const writePermissionOverride = async (
+  userId: string,
+  permission: string,
+  override: PermissionOverride,
+): Promise<void> => {
+  // No `idempotencyParams()`, unlike the two writes next door, and it is not an omission: this
+  // operation declares no `Idempotency-Key` parameter (`header?: never` in the generated
+  // operation), because `PUT` on the pair (person, permission) is already idempotent — the same
+  // exception written twice is the same exception. The middleware still attaches the header to
+  // every unsafe request; what would be wrong here is a call site claiming a parameter the contract
+  // does not have.
+  unwrapApiResult(
+    await apiClient.PUT('/users/{userId}/permission-overrides/{permission}', {
+      body: override,
+      params: { path: { userId, permission } },
+    }),
+  );
+};
+
+/** Removes the exception, putting the person back on whatever their roles say. */
+export const removePermissionOverride = async (
+  userId: string,
+  permission: string,
+): Promise<void> => {
+  unwrapApiResult(
+    await apiClient.DELETE('/users/{userId}/permission-overrides/{permission}', {
+      params: { path: { userId, permission } },
+    }),
+  );
+};
+
 /** Every role of the organization with what it grants — the matrix, in one read. */
 export type RoleListEntry = components['schemas']['RoleListEntry'];
 

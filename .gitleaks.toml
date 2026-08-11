@@ -107,3 +107,16 @@ deleting one marker cannot quietly change the verdict.\
 """
 regexTarget = "line"
 regexes = ['''password: .qwertyuiop12.''']
+
+[[allowlists]]
+description = """
+A fixed test-fixture password, not a secret — the XKCD-292 phrase, used across the server and \
+client suites as the account password `signedIn()`/`createAuthApp()`-style helpers register and log \
+in with. Never an account anybody can reach: every occurrence is either a literal in a test file or \
+a value seeded into an in-memory double for the duration of one test process. Named here because \
+the perl fallback in `~/.claude/security/scan-secrets.sh` flags a `PASSWORD = '…'` assignment on \
+entropy alone and disagrees with gitleaks' default ruleset, which does not — the same gap the \
+`qwertyuiop12` entry above closes for a different fixture.\
+"""
+regexTarget = "line"
+regexes = ['''correct-horse-battery''']

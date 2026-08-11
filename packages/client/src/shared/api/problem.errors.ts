@@ -1,4 +1,4 @@
-import { SharedErrors } from '@bad-crm/shared';
+import { SharedErrors, SharedPermissions } from '@bad-crm/shared';
 
 /**
  * `application/problem+json` (RFC 9457) on the wire, one typed error in the application.
@@ -19,6 +19,20 @@ export interface ApiErrorInit {
   readonly issues: readonly SharedErrors.ValidationIssue[];
   /** Seconds left on a `rate_limited` counter, from `Retry-After`; absent for every other code. */
   readonly retryAfterSeconds?: number;
+  /**
+   * Why the permission layer refused — present only when it is the layer that refused.
+   *
+   * **The client translates by `code` and explains by `reason`**
+   * (`docs/security/permission-model.md` §«Слой 5», `problem.serializer.ts`). The two are not
+   * interchangeable and neither replaces the other: the fifteen refusal reasons collapse into a
+   * handful of codes on the way out — `permission_not_granted` and `insufficient_acl_level` are
+   * both `user_forbidden` to a client choosing a sentence — so a screen that has a better sentence
+   * for one particular refusal can only find it here. `errorMessage()` deliberately does not read
+   * it: a generic mapping over reasons would change the wording of every existing toast, and the
+   * caller that wants the precise sentence is the caller that knows what its operation was
+   * (`rules/errors-and-toasts.mdc` §10).
+   */
+  readonly reason?: SharedPermissions.DenyReason;
 }
 
 export class ApiError extends Error {
@@ -27,6 +41,7 @@ export class ApiError extends Error {
   readonly requestId: string;
   readonly issues: readonly SharedErrors.ValidationIssue[];
   readonly retryAfterSeconds?: number;
+  readonly reason?: SharedPermissions.DenyReason;
 
   constructor(init: ApiErrorInit) {
     // Deliberately not the server `detail`: this string reaches logs and failing tests, and a
@@ -39,6 +54,7 @@ export class ApiError extends Error {
     this.requestId = init.requestId;
     this.issues = init.issues;
     if (init.retryAfterSeconds !== undefined) this.retryAfterSeconds = init.retryAfterSeconds;
+    if (init.reason !== undefined) this.reason = init.reason;
   }
 }
 
@@ -48,6 +64,7 @@ interface ProblemDocument {
   readonly code: SharedErrors.ErrorCode;
   readonly requestId: string;
   readonly errors?: readonly SharedErrors.ValidationIssue[];
+  readonly reason?: SharedPermissions.DenyReason;
 }
 
 /**
@@ -61,7 +78,12 @@ interface ProblemDocument {
 const asProblemDocument = (body: unknown): ProblemDocument | undefined => {
   if (typeof body !== 'object' || body === null) return undefined;
 
-  const candidate = body as { code?: unknown; requestId?: unknown; errors?: unknown };
+  const candidate = body as {
+    code?: unknown;
+    requestId?: unknown;
+    errors?: unknown;
+    reason?: unknown;
+  };
 
   if (typeof candidate.code !== 'string' || !SharedErrors.isErrorCode(candidate.code)) {
     return undefined;
@@ -73,6 +95,13 @@ const asProblemDocument = (body: unknown): ProblemDocument | undefined => {
     requestId: candidate.requestId,
     ...(Array.isArray(candidate.errors)
       ? { errors: candidate.errors as readonly SharedErrors.ValidationIssue[] }
+      : {}),
+    // Guarded by the catalogue for the same reason `code` is: a reason this build has never heard
+    // of selects no sentence, and letting it through would put an unknown string in front of code
+    // that switches on it. Unknown reads as «the permission layer said nothing», which is what a
+    // refusal from any other layer looks like anyway.
+    ...(typeof candidate.reason === 'string' && SharedPermissions.isDenyReason(candidate.reason)
+      ? { reason: candidate.reason }
       : {}),
   };
 };
@@ -109,5 +138,6 @@ export const apiErrorOf = (body: unknown, response: Response): ApiError => {
     requestId: problem?.requestId ?? response.headers.get('x-request-id') ?? '',
     issues: problem?.errors ?? [],
     ...(retryAfterSeconds === undefined ? {} : { retryAfterSeconds }),
+    ...(problem?.reason === undefined ? {} : { reason: problem.reason }),
   });
 };

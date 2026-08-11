@@ -47,6 +47,20 @@ export const createHttpServer = (dependencies: HttpServerDependencies): Express 
 
   app.disable('x-powered-by');
   /**
+   * Express computes a weak `ETag` from the response body by default (the `etag` package, on by
+   * default since Express 4). Left on, `user-permissions.controller.ts` — which sets
+   * `Cache-Control: private, no-store` and deliberately no validator — got one anyway: the header
+   * survives `no-store` because it is a different header, and a hash of the body is a fingerprint of
+   * one person's exceptions. Two requests a minute apart compare tags without either side reading the
+   * body, which is exactly what `no-store` was set to prevent.
+   *
+   * `me.controller.ts` sets its own `ETag` explicitly, from `permissionsVersion` rather than a body
+   * hash, and Express only generates one `if (!this.get('ETag'))` — so disabling generation here does
+   * not touch a header a handler already set. `test/integration/http/me-permissions.test.ts` pins
+   * that down.
+   */
+  app.disable('etag');
+  /**
    * Whose word to take for the caller's address, from configuration and never from a constant.
    *
    * `X-Forwarded-For` is a request header, so it is evidence only where a proxy the operator runs

@@ -106,6 +106,10 @@ export const AUDIT_ACTION_SEVERITY: Readonly<Record<AuditAction, AuditSeverity>>
   // Row-level security deliberately bypassed. Nothing in normal operation raises it, and an
   // untraced bypass is indistinguishable from an intrusion.
   'rls.bypassed': 'CRITICAL',
+  // `INFO`, deliberately not `WARNING`: the read grants and takes away nothing, so it does not
+  // belong beside the entries an escalation review reads first. It exists so the review can be run
+  // at all — a trail, not an alarm.
+  'permission.inspected': 'INFO',
 };
 
 /** The severity of an action, for a caller that has a validated action and nothing else. */

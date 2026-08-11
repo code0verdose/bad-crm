@@ -7,6 +7,7 @@ import { SharedLib } from '@shared';
 import { AuthModel } from '@units/auth';
 import { DashboardModel } from '@units/dashboard';
 import { EmployeeModel } from '@units/employee';
+import { IamModel } from '@units/iam';
 import { TeamModel } from '@units/team';
 
 /**
@@ -252,6 +253,62 @@ describe('the login search', () => {
 });
 
 /**
+ * The permissions tab of a personnel card (STORY-011-11): which face is open, and how the catalogue
+ * of three hundred keys is narrowed. Every field falls back rather than failing, for the reason the
+ * directory's does — this is what a shared link carries.
+ */
+describe('the personnel card search', () => {
+  it('opens the profile when the URL says nothing', () => {
+    expect(IamModel.userPermissionsSearchSchema.parse({})).toEqual({
+      tab: 'profile',
+      q: '',
+      exceptions: false,
+    });
+  });
+
+  it('opens the permissions tab when the URL asks for it', () => {
+    expect(IamModel.userPermissionsSearchSchema.parse({ tab: 'roles' }).tab).toBe('roles');
+  });
+
+  it('falls back to the profile on a tab that does not exist, rather than rendering no body', () => {
+    expect(IamModel.userPermissionsSearchSchema.parse({ tab: 'salary' }).tab).toBe('profile');
+  });
+
+  it('trims the phrase and drops one somebody pasted an essay into', () => {
+    expect(IamModel.userPermissionsSearchSchema.parse({ q: '  task:up ' }).q).toBe('task:up');
+    expect(
+      IamModel.userPermissionsSearchSchema.parse({ q: 'x'.repeat(500) }).q,
+      'a phrase past the cap falls back to «no filter», it does not truncate to something nobody typed',
+    ).toBe('');
+  });
+
+  it.each([
+    ['the string true', 'true', true],
+    ['the string false', 'false', false],
+    // The case `z.coerce.boolean()` gets wrong: every non-empty string is truthy, so `?exceptions=no`
+    // would switch the filter **on** — the opposite of what it says.
+    ['a word that is neither', 'no', false],
+    ['a number', '1', false],
+  ])('reads %s as a decision the URL can actually carry', (_case, exceptions, expected) => {
+    expect(IamModel.userPermissionsSearchSchema.parse({ exceptions }).exceptions).toBe(expected);
+  });
+
+  /**
+   * The property that keeps `Link to="/admin/members/$userId"` compiling in the directory, which has
+   * no opinion about tabs: `catch` handles a value that is present and wrong, `default` one that is
+   * absent, and without the second every field would be required of every caller.
+   */
+  it('asks nothing of a caller who links to the card without any of it', () => {
+    expect(IamModel.userPermissionsSearchSchema.parse({})).toBeDefined();
+    expect(Object.keys(IamModel.userPermissionsSearchSchema.parse({})).sort()).toEqual([
+      'exceptions',
+      'q',
+      'tab',
+    ]);
+  });
+});
+
+/**
  * The homes `rules/zod-validation.mdc` rule 11 gives these schemas: reusable primitives in
  * `shared/lib/validation`, domain schemas in the model of the unit that owns them. Asserted against
  * the tree, because the imports above would keep resolving from anywhere — including the
@@ -275,6 +332,9 @@ describe('where the search schemas live', () => {
     expect(existsSync(`${CLIENT_SRC}/units/team/model/validation/team-list-search.schema.ts`)).toBe(
       true,
     );
+    expect(
+      existsSync(`${CLIENT_SRC}/units/iam/model/validation/user-permissions-search.schema.ts`),
+    ).toBe(true);
   });
 
   it('leaves nothing behind in app/search', () => {

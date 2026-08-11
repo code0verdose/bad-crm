@@ -13,6 +13,7 @@ import { RequestPasswordResetUseCase } from '@/application/identity/use-cases/re
 import { AssignRoleUseCase } from '@/application/iam/use-cases/assign-role.use-case.js';
 import { BuildActorQuery } from '@/application/iam/use-cases/build-actor.query.js';
 import { GetMyPermissionsQuery } from '@/application/iam/use-cases/get-my-permissions.query.js';
+import { GetUserPermissionsQuery } from '@/application/iam/use-cases/get-user-permissions.query.js';
 import { ProvisionSystemRolesUseCase } from '@/application/iam/use-cases/provision-system-roles.use-case.js';
 import { DeleteCustomRoleUseCase } from '@/application/iam/use-cases/delete-custom-role.use-case.js';
 import { type IamDependencies } from '@/presentation/http/http-server.types.js';
@@ -181,6 +182,8 @@ export interface AuthAppOptions {
    * `capabilities`.
    */
   readonly capabilitiesByUser?: ConstructorParameters<typeof FakeEffectivePermissionsReader>[1];
+  /** Which role or exception each permission of a subject came from — for the explain screen. */
+  readonly attributionByUser?: ConstructorParameters<typeof FakeEffectivePermissionsReader>[2];
 }
 
 /** `APP_URL` of the application these suites build; the reset links are absolute against it. */
@@ -353,11 +356,13 @@ export const createAuthApp = (options: AuthAppOptions = {}): AuthApp => {
       permissionsVersion: 1,
     },
     options.capabilitiesByUser,
+    options.attributionByUser,
   );
   const buildActor = new BuildActorQuery(unitOfWork, capabilities);
   const iam = {
     buildActor,
     getMyPermissions: new GetMyPermissionsQuery(buildActor),
+    getUserPermissions: new GetUserPermissionsQuery(unitOfWork, capabilities, audit),
     assignRole: new AssignRoleUseCase(unitOfWork, userRoles, audit),
     revokeRole: new RevokeRoleUseCase(unitOfWork, userRoles, audit),
     writeOverride: new WritePermissionOverrideUseCase(

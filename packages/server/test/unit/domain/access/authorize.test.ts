@@ -5,6 +5,7 @@ import {
   authorize,
   authorizeCapability,
   authorizeWith,
+  holdsEffectively,
   type AclScope,
 } from '@/domain/access/authorize.util.js';
 import { type Actor } from '@/domain/access/actor.types.js';
@@ -176,7 +177,10 @@ describe('the resource layer (4)', () => {
       allowed: true,
       reason: null,
     });
-    expect(authorize(owner, RESOURCE_SCOPED, scope('NONE'))).toEqual({ allowed: true, reason: null });
+    expect(authorize(owner, RESOURCE_SCOPED, scope('NONE'))).toEqual({
+      allowed: true,
+      reason: null,
+    });
   });
 
   it('stops the owner at the vault, where a permission does not replace a key', () => {
@@ -262,5 +266,47 @@ describe('the order of the two layers', () => {
       reason: null,
     });
     expect(resolve).toHaveBeenCalledTimes(1);
+  });
+});
+
+/**
+ * There is one capability ladder, and this is the assertion that keeps it that way.
+ *
+ * `authorizeCapability` answers with a `DenyReason` and `SharedPermissions.effectivePermission`
+ * answers with a boolean, and for most of this repository's life those were two hand-written branch
+ * ladders that happened to agree. They are now one: the domain function maps the outcome of the
+ * shared one onto a reason. This suite is what makes the collapse permanent — reinstate a private
+ * ladder here and every disagreeing row fails by name.
+ *
+ * `holdsEffectively` is checked against the same source, because it is the third place the same
+ * question used to be answered: «you may not grant what you do not have» has to mean exactly what
+ * the guard means, or an administrator can hand out a key a DENY took away from them.
+ */
+describe('the domain decision and the shared ladder are the same ladder', () => {
+  const VIEWS: readonly (readonly [string, Actor])[] = [
+    ['nothing granted', actorWith()],
+    ['granted by a role', actorWith({ permissions: new Set([ORG_SCOPED]) })],
+    [
+      'granted and denied — the exception wins',
+      actorWith({ permissions: new Set([ORG_SCOPED]), denied: new Set([ORG_SCOPED]) }),
+    ],
+    ['denied without a grant', actorWith({ denied: new Set([ORG_SCOPED]) })],
+    ['the owner, whose set is empty', actorWith({ isOwner: true })],
+    [
+      'the owner with a DENY row that should never exist',
+      actorWith({ isOwner: true, denied: new Set([ORG_SCOPED]) }),
+    ],
+  ];
+
+  it.each(VIEWS)('%s — authorizeCapability agrees with effectivePermission', (_name, actor) => {
+    expect(authorizeCapability(actor, ORG_SCOPED).allowed).toBe(
+      SharedPermissions.effectivePermission(actor, ORG_SCOPED),
+    );
+  });
+
+  it.each(VIEWS)('%s — holdsEffectively agrees with effectivePermission', (_name, actor) => {
+    expect(holdsEffectively(actor, ORG_SCOPED)).toBe(
+      SharedPermissions.effectivePermission(actor, ORG_SCOPED),
+    );
   });
 });

@@ -68,6 +68,50 @@ describe('a problem document becomes a typed error', () => {
   });
 });
 
+/**
+ * The extension member the permission layer adds, and why a client bothers to read it.
+ *
+ * `code` is what the interface translates; `reason` is what it *explains* with
+ * (`docs/security/permission-model.md` §«Слой 5», `problem.serializer.ts`). The two are not
+ * interchangeable: fifteen refusal reasons collapse into a handful of codes on the way out, so
+ * «you cannot hand out a permission you do not hold» and «this object is not yours» arrive as the
+ * same `user_forbidden`. A screen with a better sentence for one of them can only tell them apart
+ * here.
+ */
+describe('why the permission layer refused', () => {
+  const refusal = {
+    type: 'https://bad-crm.dev/problems/user-forbidden',
+    title: 'User forbidden',
+    status: 403,
+    code: 'user_forbidden',
+    requestId: '01J8Z2F5Q3K9V6N0R4T7YB3XQD',
+    reason: 'permission_not_granted',
+  };
+
+  it('is carried through to the call site', () => {
+    expect(apiErrorOf(refusal, problemResponse(403, refusal)).reason).toBe(
+      'permission_not_granted',
+    );
+  });
+
+  it('is absent when the refusal did not come from the permission layer', () => {
+    const problem = { ...refusal, reason: undefined, code: 'task_not_found', status: 404 };
+
+    expect(apiErrorOf(problem, problemResponse(404, problem)).reason).toBeUndefined();
+  });
+
+  it('is dropped when it is not a reason this build knows', () => {
+    // Guarded by the catalogue for the same reason `code` is: an unknown string would reach code
+    // that switches on it and select a sentence that does not exist. «Unknown» has to read as
+    // «the permission layer said nothing», which is what every other layer's refusal looks like.
+    const problem = { ...refusal, reason: 'because_i_said_so' };
+
+    expect(apiErrorOf(problem, problemResponse(403, problem)).reason).toBeUndefined();
+    // CONTROL: the rest of the document still parsed, so the assertion above is about the reason.
+    expect(apiErrorOf(problem, problemResponse(403, problem)).code).toBe('user_forbidden');
+  });
+});
+
 describe('a body that is not a problem document', () => {
   it.each([
     ['no body at all', undefined],

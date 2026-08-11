@@ -83,6 +83,8 @@ const CALLS: Readonly<Record<string, Call>> = {
       .send({ name: 'Matrix', permissions: [] }),
   'DELETE /api/v1/roles/:roleId': (app, token) =>
     request(app).delete(`/api/v1/roles/${ROLE_ID}`).set('Authorization', `Bearer ${token}`),
+  'GET /api/v1/users/:userId/permissions': (app, token) =>
+    request(app).get(`/api/v1/users/${IVAN}/permissions`).set('Authorization', `Bearer ${token}`),
   'POST /api/v1/users/:userId/roles': (app, token) =>
     request(app)
       .post(`/api/v1/users/${IVAN}/roles`)

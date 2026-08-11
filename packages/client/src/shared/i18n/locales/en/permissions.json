@@ -1,0 +1,73 @@
+{
+  "tab": "Rights",
+  "tableCaption": "Every permission of this person, and the layer of the model that decided it.",
+  "loadFailed": "Could not load what this person may do.",
+  "empty": "No permission matches the filters.",
+  "column": {
+    "permission": "Permission",
+    "effect": "Personal exception",
+    "source": "Decided by",
+    "exception": "Why"
+  },
+  "searchLabel": "Find a permission",
+  "searchPlaceholder": "task:update",
+  "onlyExceptions": "Only exceptions",
+  "rolesHeld": "Roles held:",
+  "rolesHeldNone": "No role. Everything below comes from personal exceptions, or from nowhere.",
+  "dangerous": "dangerous",
+  "controlLabel": "Personal exception for {{permission}}",
+  "inheritsFrom": "Inherited from {{roles}}",
+  "inheritsNothing": "Inherits nothing",
+  "owner": {
+    "title": "The owner of the organization",
+    "description": "The owner is not bound by roles or exceptions and cannot be denied anything: a DENY on them is refused by the server and by the database, because one such row would leave the organization with nobody able to administer it. Nothing here can be taken away — hand the organization to somebody else first."
+  },
+  "readOnly": {
+    "title": "You may read this, not change it",
+    "description": "Writing an exception needs permission:override. Everything below is shown in full; there is simply nothing to press."
+  },
+  "choice": {
+    "allow": "Allow",
+    "deny": "Deny",
+    "inherited": "Inherited"
+  },
+  "source": {
+    "owner": "Owner",
+    "overrideDeny": "Personal deny",
+    "overrideAllow": "Personal allow",
+    "role": "Role",
+    "notGranted": "Nobody granted it"
+  },
+  "exception": {
+    "reason": "Reason: {{reason}}",
+    "granted": "Written",
+    "expires": "Until {{date}}",
+    "neverExpires": "Until somebody removes it"
+  },
+  "form": {
+    "allowTitle": "Grant beyond the roles",
+    "denyTitle": "Take away what the roles grant",
+    "allowIntro": "This person will hold {{permission}} even if none of their roles grants it.",
+    "denyIntro": "This person will not hold {{permission}} even though a role grants it.",
+    "reasonLabel": "Reason",
+    "reasonHint": "In six months this sentence is the only thing that explains why this person differs from their role. At least ten characters.",
+    "expiresLabel": "Stops applying on",
+    "expiresHint": "At the start of that day, UTC. Leave it and tick the box below to make it permanent.",
+    "neverExpires": "Until somebody removes it",
+    "cancel": "Cancel",
+    "submit": "Write the exception",
+    "refused": "Not written — nothing was changed"
+  },
+  "field": {
+    "reasonTooShort": "Write at least ten characters — this is what somebody reads in six months.",
+    "reasonTooLong": "Too long for a note. Keep it under five hundred characters.",
+    "expiryRequired": "Pick a date, or tick «until somebody removes it».",
+    "expiryInPast": "That day has passed. An exception that has already expired grants nothing."
+  },
+  "refusal": {
+    "permissionNotGranted": "You cannot hand out a permission you do not hold yourself.",
+    "selfAssignmentForbidden": "Somebody else has to lift a deny from you — that is what it was written to prevent."
+  },
+  "saved": "The exception is in place.",
+  "removed": "The exception is gone. The roles decide again."
+}

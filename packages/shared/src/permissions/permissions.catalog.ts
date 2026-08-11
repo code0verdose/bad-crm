@@ -847,7 +847,17 @@ export const PERMISSION_META: Readonly<Record<PermissionKey, PermissionMeta>> = 
     action: 'override_read',
     domain: 'iam',
     requiredLevel: null,
-    dangerous: false,
+    // `true`, and it was `false` until the matrix audit caught the deviation. §3.19 of the permission
+    // model says the `override` verb is always dangerous, and every sibling that reads what was
+    // arranged about *other named people* — `secure_link:read_any`, `channel:read_any`,
+    // `api_token:read_any` — carries the flag. This one reads the personal exceptions granted to a
+    // colleague **with the reasons somebody typed about them**; enumerated across an organization it
+    // draws the map of how that organization is administered.
+    //
+    // The flag is not decoration: it makes composing a custom role that contains this key require an
+    // explicit second request, and files `role.dangerous_granted` at `critical`. Reading is not
+    // writing — but a read nobody is told about is how the write gets planned.
+    dangerous: true,
     descriptionKey: 'permission.permission.override_read',
   },
   'permission:override': {
