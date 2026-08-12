@@ -1,7 +1,7 @@
 ---
 doc: data-model
 project: bad-crm
-updated: 2026-07-26
+updated: 2026-08-12
 ---
 
 # Bad CRM — доменная модель данных
@@ -293,6 +293,26 @@ updated: 2026-07-26
   ≤10 строк. Цена при этом была настоящей: `used_at` входит в предикат, поэтому погашение кода не
   может быть HOT-обновлением и правит оба индекса, а выдача набора пишет двадцать индексных кортежей
   вместо десяти.
+
+  **Права и политика этой таблицы — не «как у журнала».** `GRANT SELECT, INSERT, UPDATE, DELETE …
+  TO app_user` (плюс `SELECT` для `backup_role`), то есть с `UPDATE` и `DELETE`, которых
+  чек-лист новой таблицы журнальным таблицам не даёт, — и оба нужны по существу: погашение кода это
+  **и есть** `UPDATE … SET used_at = now() WHERE id = $1 AND used_at IS NULL RETURNING id`
+  (атомарный расход, десять параллельных попыток тратят один код), а перевыпуск удаляет прошлый
+  набор целиком в той же транзакции, в которой выдаёт новый (STORY-013-02, критерий 7). Политики —
+  канонические, обе с `USING`+`WITH CHECK`: `tenant_isolation` на `app_user` и `maintenance_access`
+  на `app_migrator` (см. «Шаблон политики»), плюс `ENABLE` и `FORCE`.
+
+  **Действия внешних ключей — итог трёх миграций, а не первой.** Оба ключа
+  (`fk_mfa_recovery_codes_organization_id` → `organizations`, составной
+  `fk_mfa_recovery_codes_user_id (organization_id, user_id)` → `users`) объявлены
+  `ON UPDATE NO ACTION` миграцией `20260812090000_mfa_recovery_codes_fk_actions`; заводящая таблицу
+  миграция приняла умолчание Prisma `ON UPDATE CASCADE`, и на ключе, чья целевая пара включает
+  `organization_id`, это был перенос второго фактора человека в чужого арендатора при любом
+  `UPDATE users SET organization_id = …` — невидимый для RLS, потому что проверки FK исполняются от
+  имени владельца таблицы. `ON DELETE` не менялся: `RESTRICT` на организацию, `CASCADE` на учётную
+  запись. В списке «остаток, не переведённый на `NoAction`» (раздел «Первичные и внешние ключи»)
+  этих двух ключей поэтому нет и быть не должно.
 - `uq_invitations_token (token_hash)` — **уникальный глобально**: значение и есть предъявляемая
   учётная запись, коллизия между организациями была бы коллизией самого токена;
   `idx_invitations_org_email (organization_id, email) WHERE accepted_at IS NULL` — **уникальный**
@@ -635,9 +655,14 @@ rolling deploy (старый код всегда писал значение); �
   **Имя функции — `auth_lookup_password_reset(bytea)`**, заведена миграцией
   `20260729140000_password_reset_resolver`. Названа здесь потому, что этот документ — источник истины
   по именам объектов БД: предыдущая редакция описывала функцию, не называя её, и читалась как
-  обещание на будущее («заводится в STORY-006-08»), хотя объект уже существовал. Полный список
-  резолверов — четыре: `auth_lookup_user`, `auth_lookup_users_by_email`, `auth_lookup_session`,
-  `auth_lookup_password_reset`.
+  обещание на будущее («заводится в STORY-006-08»), хотя объект уже существовал. Списка резолверов
+  здесь нет числом: он растёт вместе с резолверами (EPIC-012 добавил `auth_lookup_invitation`
+  миграцией `20260807150000_team_members_and_invitation_resolver`, и записанное здесь «четыре» стало
+  враньём в тот же день). Актуальный печатает
+
+  ```bash
+  grep -rho 'auth_lookup_[a-z_]*' packages/server/prisma/ | sort -u
+  ```
 - `requestedIpHash` — тот же хеш IP, что и у `Session.ipHash` (полный адрес не хранится); нуллабелен,
   потому что запрос может прийти из окружения, где адрес недоступен.
 
@@ -763,8 +788,18 @@ salt (`saltB`), а сервер хранит `argon2id(authVerifier, serverSalt)
 | `Role` | [T] | `organizationId`, `key`, `name`, `description`, `isSystem Bool`, `isDefault Bool`, `priority Int` | 1:N `RolePermission`, `UserRole` |
 | `RolePermission` | [T] | `roleId`, `permissionKey` → `Permission.key` | только **ALLOW**, DENY не существует |
 | `UserRole` | [T] | `userId`, `roleId`, `grantedById`, `grantedAt`, `expiresAt?` | join |
-| `UserPermissionOverride` | [T] | `userId`, `permissionKey`, `effect ALLOW\|DENY`, `reason` (обязателен), `grantedById`, `expiresAt?` | точечное исключение |
-| `ResourceAcl` | [T] | `resourceType ORGANIZATION\|PROJECT\|BOARD\|TASK\|DOC_PAGE\|KB_SPACE\|KB_NOTE\|FILE\|FILE_FOLDER\|CHANNEL\|VAULT\|DASHBOARD`, `resourceId`, `subjectType USER\|ROLE\|TEAM`, `subjectId`, `accessLevel`, `grantedById`, `expiresAt?` | полиморфная |
+| `UserPermissionOverride` | [T] | `userId`, `permissionKey`, `effect ALLOW\|DENY`, `reason` (обязателен, `ck_user_permission_overrides_reason`: `length(btrim(reason)) >= 10`), `grantedById`, `expiresAt?` | точечное исключение |
+| `ResourceAcl` — **таблицы ещё нет** | [T] | `resourceType ORGANIZATION\|PROJECT\|BOARD\|TASK\|DOC_PAGE\|KB_SPACE\|KB_NOTE\|FILE\|FILE_FOLDER\|CHANNEL\|VAULT\|DASHBOARD`, `resourceId`, `subjectType USER\|ROLE\|TEAM`, `subjectId`, `accessLevel`, `grantedById`, `expiresAt?` | полиморфная |
+
+**`ResourceAcl` пока не существует — это единственная строка таблицы в будущем времени.** Остальные
+пять отгружены (EPIC-011, миграции `20260805090000_permission_catalog` …
+`20260805130000_user_permission_overrides`); ACL на
+ресурс — [STORY-011-06](../../epics/epic-011-rbac-permissions/stories/story-011-06-resource-acl.md),
+помеченная `blocked: true`: доступ *к ресурсу* нужен домену с наследованием, а первым таким доменом
+станет проект (EPIC-014). Пока миграции нет, всё, что ниже сказано про `ResourceAcl` — её поля,
+уникальность по четвёрке, три индекса, слой 3 модели разрешения и `resolveAcl` на узлах цепочки —
+это **проект**, а не описание схемы. По той же причине отложены три критерия STORY-012-07 (команда
+как субъект гранта), и заглушек они не получили.
 
 **Почему `Permission` — [G] и без tenancy.** Каталог прав определяется **кодом**, а не данными:
 право `vault_item:decrypt` существует потому, что в приложении есть соответствующий use-case. Тенант
@@ -3442,9 +3477,30 @@ ALTER TABLE tasks ENABLE ROW LEVEL SECURITY;
 ALTER TABLE tasks FORCE  ROW LEVEL SECURITY;   -- иначе владелец таблицы обходит политику
 
 CREATE POLICY tenant_isolation ON tasks
+  AS PERMISSIVE
+  FOR ALL
+  TO app_user                                  -- на роль, а не на PUBLIC
   USING      (organization_id = current_setting('app.organization_id')::uuid)
   WITH CHECK (organization_id = current_setting('app.organization_id')::uuid);
+
+CREATE POLICY maintenance_access ON tasks
+  AS PERMISSIVE
+  FOR ALL
+  TO app_migrator
+  USING      (current_setting('app.maintenance', true) = 'on')
+  WITH CHECK (current_setting('app.maintenance', true) = 'on');
 ```
+
+Что предыдущая редакция шаблона опускала, а миграции пишут все до одной:
+
+- **`TO app_user`.** Политика без `TO` действует на `PUBLIC`, то есть в том числе на роли, которым
+  она ничего не должна разрешать; инвариант №1 (`CLAUDE.md`) требует именно роли.
+- **`FOR ALL`** — читается как явное «и на чтение, и на запись», а не выводится из умолчания.
+- **`maintenance_access` для `app_migrator`.** `FORCE RLS` распространяется и на владельца, поэтому
+  без второй политики обслуживание (бэкфилл, ремонт данных, кросс-организационный джоб) не может
+  прочитать собственную таблицу вообще. Ключ — не «роль `app_migrator`», а **`app.maintenance = on`**,
+  выставленный явно в этой транзакции: обычный прогон миграции его не ставит, и молча тенант-скоуп
+  не обходит.
 
 **Обе части обязательны, и это не формальность.** `USING` фильтрует читаемые строки (`SELECT`,
 `UPDATE`, `DELETE`), `WITH CHECK` проверяет записываемые (`INSERT`, `UPDATE`). Политика только с
@@ -3461,6 +3517,9 @@ CREATE POLICY tenant_isolation ON tasks
 
 ```sql
 CREATE POLICY tenant_self ON organizations
+  AS PERMISSIVE
+  FOR ALL
+  TO app_user
   USING      (id = current_setting('app.organization_id')::uuid)
   WITH CHECK (id = current_setting('app.organization_id')::uuid);
 ```
@@ -3522,15 +3581,34 @@ RLS отвечает ровно на один вопрос: **«принадле
 
 ### Роли базы данных
 
+Ролей пять, и заводит их `prisma/sql/00-bootstrap-roles.sql` (он же переутверждает атрибуты на
+**каждом** прогоне: роль могла существовать до нас, и условный `CREATE ROLE` промолчал бы). Норматив
+по ролям и правам — [`../security/rls-design.md`](../security/rls-design.md); ниже — то, что нужно
+знать, читая модель данных.
+
 | Роль | Назначение | RLS | Ключевые права |
 |---|---|---|---|
-| `app_user` | обычные запросы приложения | **подчиняется** | `SELECT/INSERT/UPDATE/DELETE` на доменных таблицах; на `audit_logs` только `INSERT/SELECT`; не владелец объектов |
+| `app_user` | обычные запросы приложения | **подчиняется** (`NOBYPASSRLS`) | `SELECT/INSERT/UPDATE/DELETE` на доменных таблицах; на `audit_logs` только `INSERT/SELECT`; не владелец объектов |
 | `app_migrator` | миграции, DDL, обслуживание партиций | владелец (RLS обходит, поэтому все таблицы с `FORCE`) | `CREATE`, `ALTER`, `DROP`; используется только миграциями и операционными скриптами, не приложением |
-| `app_auth` | логин до определения организации | ограниченный `BYPASSRLS` | `EXECUTE` на нескольких `SECURITY DEFINER`-функциях; прямого `SELECT` на таблицы **нет** |
+| `app_auth` | логин до определения организации; это то, что держит `DATABASE_AUTH_URL` | **`NOBYPASSRLS`** | `EXECUTE` на `SECURITY DEFINER`-резолверах `auth_lookup_*`; привилегий на таблицы **нет ни одной** |
+| `app_auth_definer` | владелец этих резолверов — роль, от имени которой они исполняются | `BYPASSRLS` | `SELECT` на таблицах, которые читают резолверы (`01-grants.sql`, список `definer_reads`); `NOLOGIN` — подключиться как она нельзя |
+| `backup_role` | снятие дампов | `BYPASSRLS` | `SELECT` на таблицах; `FORCE RLS` иначе вырезал бы из бэкапа всё, кроме текущего тенанта |
 
-Разделение ролей — не украшение: единственная роль с `BYPASSRLS` в системе (`app_auth`) не имеет
-доступа ни к одной доменной таблице, а роль, ходящая в доменные таблицы (`app_user`), не может
-обойти RLS ни при каких условиях. Компрометация приложения не даёт доступа к чужим данным.
+Разделение ролей — не украшение, и оно тоньше, чем «одна роль с `BYPASSRLS`». Атрибут держат
+**`app_auth_definer` и `backup_role`**, и ни одна из них не является учётными данными приложения:
+первая `NOLOGIN` и достижима только *через* функции, вторая живёт в конвейере бэкапов. Роль, которую
+предъявляет вход (`app_auth`), — `NOBYPASSRLS` и не имеет привилегий на таблицы: сегодня это ничего
+не меняет (читать ей нечего), а завтра любой `GRANT … TO app_auth` — от миграции, от оператора, от
+восстановления, расширившего ACL, — стал бы чтением поверх всех организаций, и ни один поведенческий
+тест не заметил бы разницы. Роль, ходящая в доменные таблицы (`app_user`), обойти RLS не может ни при
+каких условиях. Плюс к этому ни одна роль не может `SET ROLE` в другую: все `NOINHERIT`, взаимные
+членства снимаются тем же файлом (единственное исключение — `app_migrator` в `app_auth_definer`
+`WITH INHERIT FALSE`, без которого миграция не может передать функциям владельца). Каталог сверяется
+тестом `test/integration/db/role-catalog.test.ts`, а не глазами.
+
+Предыдущая редакция этой таблицы перечисляла три роли и называла `app_auth` «ограниченным
+`BYPASSRLS`» и единственным носителем атрибута — неверно в обеих половинах; исправлено 2026-08-12 по
+`00-bootstrap-roles.sql`.
 
 Подключение приложения — строго `app_user`. Проверка «под какой ролью мы работаем» — в health-check
 при старте: если `current_user = app_migrator`, приложение отказывается стартовать.
