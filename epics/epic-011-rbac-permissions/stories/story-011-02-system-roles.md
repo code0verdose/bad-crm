@@ -26,8 +26,9 @@ estimate: M
 2. **Матрица кода совпадает с матрицей документа.**
    Given `SYSTEM_ROLE_PERMISSIONS` в `packages/shared`;
    When гоняется `system-roles.spec.ts`;
-   Then `SYSTEM_ROLE_PERMISSIONS.owner.length === PERMISSIONS.length` (владелец имеет все 307
-   ключей), каждый ключ в каждой роли существует в каталоге, а снапшот матрицы совпадает с §4
+   Then `SYSTEM_ROLE_PERMISSIONS.owner.length === PERMISSIONS.length` (владелец имеет **все** ключи
+   каталога — сверка идёт с `PERMISSIONS.length`, поэтому число здесь не записано и разойтись не
+   может), каждый ключ в каждой роли существует в каталоге, а снапшот матрицы совпадает с §4
    `permission-model.md`.
 
 3. **Разделение обязанностей проверяется явно.**

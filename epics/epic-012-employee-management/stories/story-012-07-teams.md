@@ -263,7 +263,8 @@ denyAccess(...)` стоит **до** `audit.record`: промах (`404 user_not
 
 **`ipAddress: undefined` в записях аудита команд.** Оба use-case (`AddTeamMemberUseCase`,
 `RemoveTeamMemberUseCase`) пишут `actor.ipAddress: undefined` в `AuditLog` — паттерн, действующий
-по всему серверу (26 вхождений на сегодня), не специфичный для этой истории. `AuditLoggerPort`
+по всему серверу (29 вхождений на 2026-08-12; счёт растёт с каждым use-case'ом, актуальное печатает
+`grep -rn "ipAddress: undefined" packages/server/src | wc -l`), не специфичный для этой истории. `AuditLoggerPort`
 сегодня заготовка (STORY-009-06); реальный IP из запроса начнёт доходить до актора аудита, когда
 [EPIC-016](../../epic-016-audit-log/epic.md) («Журнал действий», M2) построит настоящий журнал —
 [NFR-6](../../../docs/product/prd.md#nfr-6-безопасность) явно требует IP в каждой записи. Владеющий

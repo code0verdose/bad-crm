@@ -30,9 +30,11 @@ estimate: M
    а `resource`/`action` в `PERMISSION_META` обязаны совпадать с частями ключа до и после двоеточия.
 
 3. **Размер каталога зафиксирован снапшотом.**
-   Given в каталоге 307 ключей, из них 100 с `dangerous: true`;
+   Given каталог зафиксирован снапшотом `test/permissions/__snapshots__/permission-matrix.json`
+   (на 2026-08-12 — `catalogSize: 331`, из них 111 с `dangerous: true`; актуальное печатает сам
+   снапшот, здесь число справочное);
    When разработчик добавляет ключ `report:read_secret`, не обновив снапшот;
-   Then CI падает с диффом `catalogSize: 307 → 308` — добавление права остаётся заметным в ревью.
+   Then CI падает с диффом `catalogSize: N → N+1` — добавление права остаётся заметным в ревью.
 
 4. **Сид пишет справочник в транзакции миграции.**
    Given чистая БД и `prisma/seed/permissions.seed.ts`;
@@ -74,7 +76,8 @@ estimate: M
 ## Задачи
 
 - [x] `packages/shared/src/permissions/access-level.ts` — `ACCESS_LEVELS`, `ACCESS_LEVEL_RANK`, `atLeast()`.
-- [x] `packages/shared/src/permissions/permissions.catalog.ts` — 307 ключей, `PERMISSION_META`,
+- [x] `packages/shared/src/permissions/permissions.catalog.ts` — каталог целиком (331 ключ на
+      2026-08-12, число живёт в снапшоте), `PERMISSION_META`,
       `PERMISSION_DOMAINS`, `PERMISSION_SET`, `isPermissionKey`, `requiredLevel` (перенос §3 документа).
 - [x] `packages/shared/src/permissions/deny-reason.ts` — `DENY_REASONS`, `DenyReason`.
 - [x] `packages/shared/src/permissions/index.ts` — barrel; экспорт наружу через `@bad-crm/shared`.
@@ -133,6 +136,12 @@ estimate: M
 1. **История говорила «307 ключей», документ — 331.** Документ старше и авторитетнее (плюс он
    пополнялся 2026-08-05 ключами MCP и почты); цифра в истории исправлена, а не наоборот. Заодно это
    ровно тот случай, ради которого гейт сверяет числа, названные прозой.
+   **Дописано 2026-08-12:** правка тогда была неполной — «307» и «100 dangerous» остались в критерии
+   приёмки 3 и в списке задач, то есть абзац о починке числа сам стал ложным. Оставшиеся вхождения
+   приведены к факту (331 и 111) с оговоркой, что источник — снапшот, а не проза; заодно исправлены
+   [STORY-011-02](story-011-02-system-roles.md) и
+   [STORY-012-06](../../epic-012-employee-management/stories/story-012-06-transfer-ownership.md),
+   где то же «307» пережило правку.
 2. **`global_read` в `01-grants.sql` вёл в ветку тенант-таблиц**, то есть выдавал `INSERT/UPDATE/
    DELETE` на «таблицы, которые приложение читает». Ни одна таблица его ещё не использовала, поэтому
    ничего не ломалось — сломалась бы первая. Теперь у списка своя ветка, только на чтение, и в ней
