@@ -2028,7 +2028,7 @@ export interface components {
          *     reused with a different meaning.
          * @enum {string}
          */
-        ErrorCode: "validation_failed" | "unauthenticated" | "invalid_credentials" | "account_suspended" | "registration_disabled" | "password_reset_token_invalid" | "invitation_not_valid" | "mail_not_configured" | "route_not_found" | "payload_too_large" | "vault_locked" | "stale_version" | "idempotency_key_reuse" | "last_owner_required" | "period_locked" | "self_lockout" | "system_role_immutable" | "owner_immutable" | "invitation_already_accepted" | "manager_cycle_detected" | "employment_period_inverted" | "recipient_not_active" | "member_not_active" | "invalid_recipient" | "not_the_owner" | "confirmation_required" | "invalid_totp_code" | "totp_code_replayed" | "mfa_already_enabled" | "reauthentication_required" | "recovery_code_invalid" | "rate_limited" | "feature_disabled" | "service_unavailable" | "internal_error" | "organization_not_found" | "organization_forbidden" | "organization_already_exists" | "team_not_found" | "team_forbidden" | "team_already_exists" | "user_not_found" | "user_forbidden" | "user_already_exists" | "role_not_found" | "role_forbidden" | "role_already_exists" | "invitation_not_found" | "invitation_forbidden" | "invitation_already_exists" | "session_not_found" | "session_forbidden" | "session_already_exists" | "project_not_found" | "project_forbidden" | "project_already_exists" | "board_not_found" | "board_forbidden" | "board_already_exists" | "task_not_found" | "task_forbidden" | "task_already_exists" | "sprint_not_found" | "sprint_forbidden" | "sprint_already_exists" | "comment_not_found" | "comment_forbidden" | "comment_already_exists" | "doc_not_found" | "doc_forbidden" | "doc_already_exists" | "kb_note_not_found" | "kb_note_forbidden" | "kb_note_already_exists" | "file_not_found" | "file_forbidden" | "file_already_exists" | "vault_item_not_found" | "vault_item_forbidden" | "vault_item_already_exists" | "secure_link_not_found" | "secure_link_forbidden" | "secure_link_already_exists" | "time_entry_not_found" | "time_entry_forbidden" | "time_entry_already_exists" | "channel_not_found" | "channel_forbidden" | "channel_already_exists" | "message_not_found" | "message_forbidden" | "message_already_exists" | "dashboard_not_found" | "dashboard_forbidden" | "dashboard_already_exists";
+        ErrorCode: "validation_failed" | "unauthenticated" | "invalid_credentials" | "account_suspended" | "registration_disabled" | "password_reset_token_invalid" | "invitation_not_valid" | "mail_not_configured" | "route_not_found" | "payload_too_large" | "vault_locked" | "stale_version" | "idempotency_key_reuse" | "last_owner_required" | "period_locked" | "self_lockout" | "system_role_immutable" | "owner_immutable" | "invitation_already_accepted" | "manager_cycle_detected" | "employment_period_inverted" | "recipient_not_active" | "member_not_active" | "invalid_recipient" | "not_the_owner" | "confirmation_required" | "invalid_totp_code" | "totp_code_replayed" | "mfa_already_enabled" | "reauthentication_required" | "recovery_code_invalid" | "mfa_token_expired" | "mfa_invalid_code" | "mfa_code_replayed" | "rate_limited" | "feature_disabled" | "service_unavailable" | "internal_error" | "organization_not_found" | "organization_forbidden" | "organization_already_exists" | "team_not_found" | "team_forbidden" | "team_already_exists" | "user_not_found" | "user_forbidden" | "user_already_exists" | "role_not_found" | "role_forbidden" | "role_already_exists" | "invitation_not_found" | "invitation_forbidden" | "invitation_already_exists" | "session_not_found" | "session_forbidden" | "session_already_exists" | "project_not_found" | "project_forbidden" | "project_already_exists" | "board_not_found" | "board_forbidden" | "board_already_exists" | "task_not_found" | "task_forbidden" | "task_already_exists" | "sprint_not_found" | "sprint_forbidden" | "sprint_already_exists" | "comment_not_found" | "comment_forbidden" | "comment_already_exists" | "doc_not_found" | "doc_forbidden" | "doc_already_exists" | "kb_note_not_found" | "kb_note_forbidden" | "kb_note_already_exists" | "file_not_found" | "file_forbidden" | "file_already_exists" | "vault_item_not_found" | "vault_item_forbidden" | "vault_item_already_exists" | "secure_link_not_found" | "secure_link_forbidden" | "secure_link_already_exists" | "time_entry_not_found" | "time_entry_forbidden" | "time_entry_already_exists" | "channel_not_found" | "channel_forbidden" | "channel_already_exists" | "message_not_found" | "message_forbidden" | "message_already_exists" | "dashboard_not_found" | "dashboard_forbidden" | "dashboard_already_exists";
         /**
          * @description Why one field was rejected. The list mirrors
          *     `packages/shared/src/errors/validation-issue.enums.ts`; anything a validator produces
@@ -2860,6 +2860,69 @@ export interface components {
          *     names its refusal, and listed as deferred surface in STORY-013-02.
          */
         RecoveryCodeInvalid: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/problem+json": components["schemas"]["Problem"];
+            };
+        };
+        /**
+         * @description The intermediate token of the second-factor step is gone: expired, never issued, already
+         *     spent by a successful verification, or voided after too many failed attempts. One answer for
+         *     all four — telling them apart would say whether a particular sign-in was completed, and how
+         *     long ago it started.
+         *
+         *     `401`, and the whole reason a separate code exists rather than reusing one of the `confirm`
+         *     codes: this refusal is reached before any session exists, so the second factor *is* the
+         *     credential being judged (the same reasoning `RecoveryCodeInvalid` above records). The client
+         *     answers it by sending the person back to the password step, which issues a fresh token.
+         *
+         *     **Not referenced by any operation yet.** Its only caller is `POST /auth/2fa/verify`
+         *     (STORY-013-03), which is not published yet; declared here so the sign-in step lands against
+         *     a contract that already names its refusals.
+         */
+        MfaTokenExpired: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/problem+json": components["schemas"]["Problem"];
+            };
+        };
+        /**
+         * @description The second factor presented on the sign-in step did not match. A separate code from
+         *     `invalid_totp_code`, which stays `422` on `POST /auth/2fa/confirm`, because the two mean
+         *     different things to a client: `confirm` is called with a live session and a wrong field,
+         *     while here the code is the credential and there is no session to keep. A single code cannot
+         *     answer both statuses — `AppError` derives the status from the code
+         *     (`packages/server/src/domain/shared/errors/app.errors.ts`) — and moving the existing one to
+         *     `401` would make a typo during enrolment log the person out, since `401` tells the client to
+         *     refresh and then drop its session.
+         *
+         *     **Not referenced by any operation yet**, for the same reason as `MfaTokenExpired` above.
+         */
+        MfaInvalidCode: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/problem+json": components["schemas"]["Problem"];
+            };
+        };
+        /**
+         * @description The code presented on the sign-in step matches the time step that was already accepted once
+         *     (`totp_last_counter`). Kept apart from `mfa_invalid_code` for the reason
+         *     `totp_code_replayed` is kept apart from `invalid_totp_code`: this one is reachable only by
+         *     presenting a code that *was* correct, so the anti-replay predicate is the cause rather than
+         *     a typo, and the client says «that code was already used» instead of «check the app».
+         *
+         *     `401` rather than the `422` its enrolment-time twin carries — same step, same reasoning as
+         *     `MfaInvalidCode` above.
+         *
+         *     **Not referenced by any operation yet**, for the same reason as `MfaTokenExpired` above.
+         */
+        MfaCodeReplayed: {
             headers: {
                 [name: string]: unknown;
             };

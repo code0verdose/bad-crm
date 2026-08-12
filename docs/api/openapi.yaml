@@ -3274,6 +3274,9 @@ components:
         - mfa_already_enabled
         - reauthentication_required
         - recovery_code_invalid
+        - mfa_token_expired
+        - mfa_invalid_code
+        - mfa_code_replayed
         - rate_limited
         - feature_disabled
         - service_unavailable
@@ -4889,6 +4892,84 @@ components:
                 title: Recovery code is not usable
                 status: 401
                 code: recovery_code_invalid
+                requestId: 01J8Z2F5Q3K9V6N0R4T7YB3XQD
+
+    MfaTokenExpired:
+      description: |
+        The intermediate token of the second-factor step is gone: expired, never issued, already
+        spent by a successful verification, or voided after too many failed attempts. One answer for
+        all four — telling them apart would say whether a particular sign-in was completed, and how
+        long ago it started.
+
+        `401`, and the whole reason a separate code exists rather than reusing one of the `confirm`
+        codes: this refusal is reached before any session exists, so the second factor *is* the
+        credential being judged (the same reasoning `RecoveryCodeInvalid` above records). The client
+        answers it by sending the person back to the password step, which issues a fresh token.
+
+        **Not referenced by any operation yet.** Its only caller is `POST /auth/2fa/verify`
+        (STORY-013-03), which is not published yet; declared here so the sign-in step lands against
+        a contract that already names its refusals.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+          examples:
+            expired:
+              value:
+                type: https://bad-crm.dev/problems/mfa-token-expired
+                title: Second-factor session is over
+                status: 401
+                code: mfa_token_expired
+                requestId: 01J8Z2F5Q3K9V6N0R4T7YB3XQD
+
+    MfaInvalidCode:
+      description: |
+        The second factor presented on the sign-in step did not match. A separate code from
+        `invalid_totp_code`, which stays `422` on `POST /auth/2fa/confirm`, because the two mean
+        different things to a client: `confirm` is called with a live session and a wrong field,
+        while here the code is the credential and there is no session to keep. A single code cannot
+        answer both statuses — `AppError` derives the status from the code
+        (`packages/server/src/domain/shared/errors/app.errors.ts`) — and moving the existing one to
+        `401` would make a typo during enrolment log the person out, since `401` tells the client to
+        refresh and then drop its session.
+
+        **Not referenced by any operation yet**, for the same reason as `MfaTokenExpired` above.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+          examples:
+            wrong:
+              value:
+                type: https://bad-crm.dev/problems/mfa-invalid-code
+                title: Second factor was refused
+                status: 401
+                code: mfa_invalid_code
+                requestId: 01J8Z2F5Q3K9V6N0R4T7YB3XQD
+
+    MfaCodeReplayed:
+      description: |
+        The code presented on the sign-in step matches the time step that was already accepted once
+        (`totp_last_counter`). Kept apart from `mfa_invalid_code` for the reason
+        `totp_code_replayed` is kept apart from `invalid_totp_code`: this one is reachable only by
+        presenting a code that *was* correct, so the anti-replay predicate is the cause rather than
+        a typo, and the client says «that code was already used» instead of «check the app».
+
+        `401` rather than the `422` its enrolment-time twin carries — same step, same reasoning as
+        `MfaInvalidCode` above.
+
+        **Not referenced by any operation yet**, for the same reason as `MfaTokenExpired` above.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+          examples:
+            replayed:
+              value:
+                type: https://bad-crm.dev/problems/mfa-code-replayed
+                title: Second factor was already used
+                status: 401
+                code: mfa_code_replayed
                 requestId: 01J8Z2F5Q3K9V6N0R4T7YB3XQD
 
     ServiceUnavailable:

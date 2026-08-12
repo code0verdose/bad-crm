@@ -253,6 +253,41 @@ const GENERIC_ERROR_CODE_STATUS = {
    */
   recovery_code_invalid: 401,
   /**
+   * The three refusals of the second-factor step of sign-in (`POST /auth/2fa/verify`), all **401**.
+   *
+   * They exist as their own codes rather than reusing `invalid_totp_code` / `totp_code_replayed`
+   * because those two are **422** and have to stay that way. A code carries exactly one status —
+   * `AppError` derives it and refuses to take one from the caller
+   * (`packages/server/src/domain/shared/errors/app.errors.ts`) — so one code cannot answer 422 on
+   * `POST /auth/2fa/confirm` and 401 here. Both statuses are right for their own step: on `confirm`
+   * the caller already holds a session and what is wrong is the field they submitted, while here no
+   * session exists yet and the second factor *is* the credential being judged. That is the same
+   * sentence `recovery_code_invalid` above already carries for the very same step.
+   *
+   * Moving the enrolment codes to 401 instead was rejected: the client's contract for 401 is
+   * "refresh, and on a second 401 clear the session"
+   * (`presentation/http/middleware/authenticate.middleware.ts`), so a mistyped digit while turning
+   * 2FA on would sign the person out of the product (STORY-013-03, «Решения, принятые до начала
+   * работы»).
+   *
+   * - `mfa_token_expired` — the intermediate token is expired, unknown, already spent by a
+   *   successful verification, or voided after five failed attempts: **one code for all four**, on
+   *   the reasoning `password_reset_token_invalid` documents above. Telling them apart would say
+   *   whether a particular sign-in was ever started and whether somebody finished it. The client
+   *   answers it by returning to the password step (STORY-013-03, acceptance 4).
+   * - `mfa_invalid_code` — the second factor did not match (STORY-013-03, acceptance 5). It hides
+   *   nothing further on its own: reaching it at all requires holding a live intermediate token,
+   *   which requires the password.
+   * - `mfa_code_replayed` — the presented code matches the step already accepted once
+   *   (`totp_last_counter`). Kept apart from `mfa_invalid_code` for the reason `totp_code_replayed`
+   *   is kept apart from `invalid_totp_code`: this one is reachable only by presenting a code that
+   *   *was* correct, so the client can say «that code was already used» rather than «check the app»
+   *   (STORY-013-03, acceptance 6).
+   */
+  mfa_token_expired: 401,
+  mfa_invalid_code: 401,
+  mfa_code_replayed: 401,
+  /**
    * An optional subsystem is switched off in this installation, and the honest answer is "this
    * installation does not do that": search without Meilisearch, the assistant with `AI_ENABLED`
    * off.

@@ -42,6 +42,15 @@ describe('error code catalog', () => {
     ['registration_disabled', 403],
     ['password_reset_token_invalid', 400],
     ['mail_not_configured', 503],
+    // The second factor, added by EPIC-013, at its two steps. The pairs below are the whole point
+    // of the split and are asserted rather than described: enrolment (`POST /auth/2fa/confirm`) is
+    // reached with a live session and answers 422, sign-in (`POST /auth/2fa/verify`) is reached
+    // with none and answers 401. A future edit that "unifies" either pair changes a number here.
+    ['invalid_totp_code', 422],
+    ['totp_code_replayed', 422],
+    ['mfa_invalid_code', 401],
+    ['mfa_code_replayed', 401],
+    ['mfa_token_expired', 401],
   ] as const)('maps %s to HTTP %i (stack.md, «Формат ошибок»)', (code, status) => {
     expect(errorCodeStatus(code)).toBe(status);
   });
@@ -69,12 +78,37 @@ describe('error code catalog', () => {
    * screens; it would not remove a second place the login enumeration oracle could reappear, because
    * a recovery code carries no account identifier for an oracle to leak in the first place.
    */
-  it('offers exactly one code for a refused credential, per credential', () => {
+  /**
+   * The three `mfa_*` codes (STORY-013-03) joined in this reviewed diff for the reason the list
+   * exists: every one of them answers the second-factor step of sign-in, where no session exists
+   * yet, and a code carries exactly one status — `AppError` derives it and refuses to take one from
+   * the caller — so they could not be the 422 codes `POST /auth/2fa/confirm` already uses.
+   *
+   * None of them reopens the enumeration oracle this assertion guards. All three are reachable only
+   * by holding a live intermediate token, which is issued only after a correct password: by the
+   * time any of them can be seen, the account is known to exist and to have 2FA on, so nothing they
+   * distinguish is news to whoever is reading them.
+   *
+   * - `mfa_token_expired` is not a credential refusal at all — it is the step itself being over,
+   *   and it deliberately says nothing about *which* of its four causes ended it.
+   * - `mfa_invalid_code` and `mfa_code_replayed` are two codes for one credential, on the same
+   *   reasoning that keeps `totp_code_replayed` apart from `invalid_totp_code` at 422: the replay
+   *   answer is reachable only with a code that *was* correct, and the client says «already used»
+   *   rather than «check the app». The pair is already accepted at the enrolment step; refusing it
+   *   here would leave the same person two different explanations for the same event.
+   */
+  it('answers 401 only with the codes reviewed one by one in this file', () => {
     const refusals = ERROR_CODES.filter(
       (code) => ERROR_CODE_STATUS[code] === 401 && code !== 'unauthenticated',
     );
 
-    expect(refusals).toEqual(['invalid_credentials', 'recovery_code_invalid']);
+    expect(refusals).toEqual([
+      'invalid_credentials',
+      'recovery_code_invalid',
+      'mfa_token_expired',
+      'mfa_invalid_code',
+      'mfa_code_replayed',
+    ]);
   });
 
   /**
