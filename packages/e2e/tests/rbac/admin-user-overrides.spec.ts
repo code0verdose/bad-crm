@@ -1,11 +1,4 @@
-import { AxeBuilder } from '@axe-core/playwright';
-import {
-  expect,
-  request,
-  test as apiTest,
-  type APIRequestContext,
-  type Page,
-} from '@playwright/test';
+import { expect, request, test as apiTest, type APIRequestContext } from '@playwright/test';
 import { randomUUID } from 'node:crypto';
 
 import {
@@ -14,6 +7,7 @@ import {
   SEED_PASSWORD,
 } from '../../fixtures/seed-data.js';
 import { test } from '../../fixtures/session.fixture.js';
+import { audit } from '../support/audit.util.js';
 
 /**
  * The one scenario STORY-011-11 promises and the checklist never delivered: a full pass through the
@@ -28,24 +22,14 @@ import { test } from '../../fixtures/session.fixture.js';
  * would be dishonest without.
  */
 
-const WCAG = ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'];
-
 const apiURL = (): string => process.env['E2E_API_URL'] ?? 'http://localhost:3000';
 const browserOrigin = (): string =>
   new URL(process.env['E2E_BASE_URL'] ?? 'http://localhost:5173').origin;
 
-const audit = async (page: Page): Promise<void> => {
-  const { violations } = await new AxeBuilder({ page }).withTags(WCAG).analyze();
-
-  expect(
-    violations.map((violation) => `${violation.id}: ${violation.help}`),
-    JSON.stringify(violations, null, 2),
-  ).toEqual([]);
-};
-
 interface ApiSession {
   readonly context: APIRequestContext;
-  readonly headers: { readonly authorization: string; readonly origin: string };
+  /** `authorization` is replaceable: `reauthenticate` re-mints it once the rights behind it change. */
+  readonly headers: { authorization: string; readonly origin: string };
   readonly userId: string;
 }
 
@@ -67,6 +51,42 @@ const signInApi = async (email: string, password: string): Promise<ApiSession> =
     headers: { authorization: `Bearer ${body.accessToken}`, origin: browserOrigin() },
     userId: body.user.id,
   };
+};
+
+/**
+ * What `GET /teams` answers this person with the access token they are holding right now.
+ *
+ * Two different facts are read through this one call below, and keeping them apart is the point of
+ * splitting it from `reauthenticate`. Writing or removing a personal exception bumps
+ * `users.permissions_version` (`write-permission-override.use-case.ts:79`,
+ * `remove-permission-override.use-case.ts:58`), an access token carries that number as its `pv`
+ * claim, and `AuthenticateSessionQuery` compares the two and refuses a token left behind — with
+ * **401**, not 403. So the first answer after either operation is 401, and that 401 *is* the bump:
+ * it is what stops a token minted a second ago from spending rights it no longer has. Absorbing it
+ * silently would make this file pass with the bump deleted — the case `rules/testing.mdc` names as
+ * «побочный эффект без ассерта — это отсутствующий тест», and measured: with
+ * `bumpPermissionsVersion` commented out the absorbing version of this helper stayed green.
+ */
+const teamsStatus = async (session: ApiSession): Promise<number> => {
+  const response = await session.context.get('/api/v1/teams', { headers: session.headers });
+
+  return response.status();
+};
+
+/**
+ * The exchange a browser performs for itself on 401: the refresh cookie for a fresh access token
+ * carrying the current `pv`. After it, the status of `teamsStatus` is an answer about the
+ * **permission** rather than about the age of the token — which is what «applies on the next
+ * request… without a re-login» means, and it is not the same as «without re-authenticating».
+ */
+const reauthenticate = async (session: ApiSession): Promise<void> => {
+  const refreshed = await session.context.post('/api/v1/auth/refresh');
+
+  expect(refreshed.ok(), await refreshed.text()).toBe(true);
+
+  const { accessToken } = (await refreshed.json()) as { accessToken: string };
+
+  session.headers.authorization = `Bearer ${accessToken}`;
 };
 
 interface RoleEntry {
@@ -240,35 +260,32 @@ test.describe('an owner writes and lifts a personal exception', () => {
       await expect(row.getByText('Inherited from developer', { exact: true })).toBeVisible();
 
       // 6. THE REASON THIS SCREEN EXISTS, and the one assertion a component test cannot make: the
-      // colleague really did lose the permission, not just the row's label. `expect.poll` rather
-      // than one call — nothing in this operation's contract promises the change is synchronous,
-      // only that it needs no re-login (the documented case next to it, `assignRole`: «applies on
-      // the next request… without a re-login»).
-      await expect
-        .poll(async () => {
-          const response = await colleague.context.get('/api/v1/teams', {
-            headers: colleague.headers,
-          });
+      // colleague really did lose the permission, not just the row's label. Two answers, because
+      // two mechanisms carry it and either one alone can be broken while the other still looks
+      // right (see `teamsStatus`).
+      //
+      // 6a. The token they were already holding stops being believed. `expect.poll` rather than one
+      // call — nothing in this operation's contract promises the change is synchronous, only that it
+      // needs no re-login (the documented case next to it, `assignRole`: «applies on the next
+      // request… without a re-login»).
+      await expect.poll(async () => teamsStatus(colleague)).toBe(401);
 
-          return response.status();
-        })
-        .toBe(403);
+      // 6b. And with a token minted after the write — the one a browser fetches for itself, without
+      // anybody signing in again — the permission itself is gone.
+      await reauthenticate(colleague);
+      expect(await teamsStatus(colleague)).toBe(403);
 
       // 5. The owner lifts the exception; the row returns to what the role says.
       await control.getByText('Inherited', { exact: true }).click();
       await expect(row.getByRole('radio', { name: 'Inherited' })).toBeChecked();
       await expect(row.getByText('Role', { exact: true })).toBeVisible();
 
-      // And access is really back, not just the label — the pair to step 6's control.
-      await expect
-        .poll(async () => {
-          const response = await colleague.context.get('/api/v1/teams', {
-            headers: colleague.headers,
-          });
-
-          return response.status();
-        })
-        .toBe(200);
+      // And access is really back, not just the label — the pair to step 6's control, read the same
+      // way: lifting an exception bumps the version too, so the token minted at 6b is refused first
+      // and the one after it succeeds.
+      await expect.poll(async () => teamsStatus(colleague)).toBe(401);
+      await reauthenticate(colleague);
+      expect(await teamsStatus(colleague)).toBe(200);
     } finally {
       await Promise.all([owner.context.dispose(), colleague.context.dispose()]);
     }

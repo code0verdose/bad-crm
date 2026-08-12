@@ -1,8 +1,8 @@
-import { AxeBuilder } from '@axe-core/playwright';
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test } from '@playwright/test';
 
 import { SEED_ORGANIZATION_A, SEED_PASSWORD } from '../../fixtures/seed-data.js';
 import { LoginPage } from '../../pages/login.page.js';
+import { audit } from '../support/audit.util.js';
 
 /**
  * The accessibility audit of the two screens every installation shows: the sign-in form and the
@@ -17,18 +17,7 @@ import { LoginPage } from '../../pages/login.page.js';
  * are deliberately not included: they are advice, and a suite that fails on advice gets muted.
  */
 
-const WCAG = ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'];
-
 test.use({ storageState: { cookies: [], origins: [] } });
-
-const audit = async (page: Page): Promise<void> => {
-  const { violations } = await new AxeBuilder({ page }).withTags(WCAG).analyze();
-
-  expect(
-    violations.map((violation) => `${violation.id}: ${violation.help}`),
-    JSON.stringify(violations, null, 2),
-  ).toEqual([]);
-};
 
 test.describe('accessibility', () => {
   test('the sign-in screen has no A or AA violation', async ({ page }) => {

@@ -3,7 +3,10 @@
   "compilerOptions": {
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
-    "lib": ["ES2023"],
+    // `DOM` because callbacks handed to `page.evaluate`/`page.waitForFunction` are compiled here and
+    // executed in the browser: without it `document` and `Animation` are unknown names, and the way
+    // around that is a stringified expression the compiler cannot check at all.
+    "lib": ["ES2023", "DOM"],
     "types": ["node"],
     "noEmit": true
   },

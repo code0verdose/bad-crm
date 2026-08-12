@@ -1,9 +1,9 @@
-import { AxeBuilder } from '@axe-core/playwright';
-import { expect, request, test, type APIRequestContext, type Page } from '@playwright/test';
+import { expect, request, test, type APIRequestContext } from '@playwright/test';
 import { randomUUID } from 'node:crypto';
 
 import { SEED_ORGANIZATION_A, SEED_PASSWORD } from '../../fixtures/seed-data.js';
 import { currentTotpCode } from '../../fixtures/totp.util.js';
+import { audit } from '../support/audit.util.js';
 
 /**
  * STORY-013-01, the one happy path `rules/testing.mdc` §6 requires of EPIC-013 and the one the
@@ -40,20 +40,9 @@ import { currentTotpCode } from '../../fixtures/totp.util.js';
  * exactly the drift this spec exists to catch and would be missed by matching on the key.
  */
 
-const WCAG = ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'];
-
 const apiURL = (): string => process.env['E2E_API_URL'] ?? 'http://localhost:3000';
 const browserOrigin = (): string =>
   new URL(process.env['E2E_BASE_URL'] ?? 'http://localhost:5173').origin;
-
-const audit = async (page: Page): Promise<void> => {
-  const { violations } = await new AxeBuilder({ page }).withTags(WCAG).analyze();
-
-  expect(
-    violations.map((violation) => `${violation.id}: ${violation.help}`),
-    JSON.stringify(violations, null, 2),
-  ).toEqual([]);
-};
 
 interface ApiSession {
   readonly context: APIRequestContext;
@@ -205,9 +194,15 @@ test.describe('enabling two-factor authentication with a TOTP app', () => {
       // asserting only two: the widget renders them from one shared list
       // (`totp-lockout-warnings.component.tsx`), and a regression there is as likely to drop the
       // third as either of the two named in the acceptance criteria.
+      //
+      // The first sentence is the one STORY-013-04 rewrote: while the way out did not exist this
+      // read «there is no way to turn it off yet», and the day disabling shipped the widget's own
+      // docstring recorded that the old wording «stopped being true». It is still a warning — the
+      // cost of the feature is that leaving needs both proofs — so it stays asserted here, in the
+      // words the build actually ships.
       await expect(
         page.getByText(
-          'There is no way to turn it off yet. Switching it off, and an administrator reset, are still being built — until they arrive, this is a one-way change.',
+          'Turning it off later needs the same two things signing in will: your current password and a code — from the app, or an unused recovery code. A stolen browser session cannot do it; neither can you, without one of the two.',
         ),
       ).toBeVisible();
       await expect(
