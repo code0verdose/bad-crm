@@ -1,7 +1,7 @@
 ---
 doc: ux-architecture
 project: bad-crm
-updated: 2026-07-26
+updated: 2026-08-12
 ---
 
 # UX-архитектура Bad CRM
@@ -262,9 +262,14 @@ flowchart TD
 Конвенции:
 
 - Файлы — `src/app/routes/**`, file-based, дерево генерируется в `routeTree.gen.ts`.
-- Гарды — переиспользуемые функции из `units/auth/lib/guards`: `redirectIfAuthed`, `requireSession`,
-  `requireProjectMember`, `requirePermission(p)`, `requireAnyPermission(...p)`,
-  `requireVaultUnlocked`. Все бросают `redirect({...})` или `notFound()` из `beforeLoad`.
+- Гарды — переиспользуемые функции юнита, который владеет решением, а не общего `app/`. Существуют
+  два: `redirectIfAuthed` и `requireSession` в `units/auth/lib/guards` (сессия — забота `units/auth`)
+  и `requirePermission(p)` в `units/iam/service/guards` (`IamService.IamGuards.requirePermission`),
+  потому что права приехали с EPIC-011 и живут в `units/iam`. Гард сессии бросает
+  `redirect({ to: '/login', search: { redirect } })`, гард права — `notFound()` (см. «403 vs 404»).
+  `requireProjectMember`, `requireAnyPermission(...p)`, `requireVaultUnlocked` в таблицах ниже —
+  **проектируемые**: их заведут эпики своих доменов (проекты — EPIC-014, vault — M4+), в коде их
+  пока нет.
 - Search-схемы — Zod, лежат в `units/<unit>/model/validation/*.schema.ts`, подключаются
   `validateSearch: zodValidator(schema)`.
 - Каждый маршрут с данными объявляет `pendingComponent`, `errorComponent`; секции — `notFoundComponent`.
@@ -300,8 +305,27 @@ flowchart TD
 | `/settings/profile` | `routes/_authenticated/settings/profile.tsx` | `requireSession` | — | `ProfileFormWidget` |
 | `/settings/appearance` | `routes/_authenticated/settings/appearance.tsx` | `requireSession` | — | `AppearanceFormWidget` |
 | `/settings/notifications` | `routes/_authenticated/settings/notifications.tsx` | `requireSession` | — | `NotificationPrefsWidget` |
-| `/settings/security` | `routes/_authenticated/settings/security.tsx` | `requireSession` | — | `SecuritySessionsWidget` |
+| `/settings/security` | `routes/_authenticated/settings/security.tsx` | — (только `requireSession` ветки `_authenticated`) | — | `TotpSetup` + `RecoveryCodes` |
 | `/settings/tokens` | `routes/_authenticated/settings/tokens.tsx` | `requireSession` | — | `ApiTokensWidget` |
+
+**Из этой таблицы построен один маршрут — `/settings/security`** (EPIC-013). Остальные пять
+проектируются: ни layout-маршрута `/settings`, ни его листьев в `src/app/routes/**` нет, поэтому
+`/settings/security` сегодня — лист без своего layout'а, и пункт ведёт на него прямо из сайдбара
+(секция «Личное», `widgets/app-shell/model/nav-sections.constant.ts`), а не из меню аватара.
+
+**Про отсутствие гарда на `/settings/security`: его нет, и это решение, а не пропуск.** Все операции
+экрана — self-service (в реестре маршрутов, `presentation/http/route-registry.factory.ts`, все
+четыре — `POST /auth/2fa/setup`, `/confirm`, `GET /auth/2fa/recovery-codes`, `.../regenerate` —
+помечены `selfService: true`): право защищать собственный вход нельзя не выдать. Гард сессии на `_authenticated` — весь гейт. `loader` тоже нет:
+экран читает один счётчик, и два его главных действия — мутации.
+
+**Чего на этом экране пока нет — списка сессий.** Виджет `SecuritySessionsWidget`, который прежняя
+редакция этой таблицы называла основным для маршрута, не существует; сервер свою половину отгрузил
+(`GET /auth/sessions`, `DELETE /auth/sessions/{sessionId}`, `POST /auth/sessions/revoke-others` —
+EPIC-006), а клиентский экран остаётся невыполненной задачей
+[STORY-006-04](../../epics/epic-006-auth-core/stories/story-006-04-logout-and-active-sessions.md)
+(«Реализовать клиентский экран `/settings/security`: список сессий, действия, `ConfirmDialog`»).
+Когда он появится, он встанет третьим блоком на этот же маршрут.
 
 ### Проекты
 
@@ -447,9 +471,9 @@ flowchart TD
 |---|---|---|---|---|
 | `/admin` | `routes/_authenticated/admin/route.tsx` | `requirePermission('organization:read')` | — | `AdminLayoutWidget` |
 | `/admin/` | `routes/_authenticated/admin/index.tsx` | наследует → redirect `/admin/members` | — | — |
-| `/admin/members` | `routes/_authenticated/admin/members/index.tsx` | `requirePermission('user:read')` | `memberListSearchSchema`: `q`, `role[]`, `status[]`, `team[]`, `sort`, `page`, `view=table\|chart` | `MemberListWidget` |
-| `/admin/members/$userId` | `routes/_authenticated/admin/members/$userId.tsx` | — (**см. ниже**) | — (вкладки `tab=…` — вместе со следующими разделами карточки) | `pages/employee-profile` + `EmployeeUi.EmployeeProfileForm` |
-| `/admin/members/invite` | `routes/_authenticated/admin/members/invite.tsx` | `requirePermission('invitation:create')` | — | `InviteMemberWidget` |
+| `/admin/members` | `routes/_authenticated/admin/members/index.tsx` | `requirePermission('user:read')` | `memberListSearchSchema`: `q`, `role[]`, `status[]`, `team[]`, `sort`, `page`, `view=table\|chart` | `MemberList` |
+| `/admin/members/$userId` | `routes/_authenticated/admin/members/$userId.tsx` | — (**см. ниже**) | `userPermissionsSearchSchema`: `tab=profile\|roles`, `q`, `exceptions` | `pages/employee-profile` + `EmployeeUi.EmployeeProfileForm`, `UserPermissions` |
+| `/admin/members/invite` | `routes/_authenticated/admin/members/invite.tsx` | `requirePermission('invitation:create')` | — | `InviteMember` |
 | `/admin/roles` | `routes/_authenticated/admin/roles.tsx` | `requirePermission('role:read')` | `rolesSearchSchema`: `q`, `collapsed` (свёрнутые домены), `diff` (только различия) | `RoleMatrix` |
 | `/admin/roles/$roleId` | `routes/_authenticated/admin/roles/$roleId.tsx` | `requirePermission('role:read')` | `tab=permissions\|members` | `RoleDetailWidget` |
 | `/admin/teams` | `routes/_authenticated/admin/teams/index.tsx` | `requirePermission('team:read')` | `teamListSearchSchema`: `q`, `sort`, `page` — **применяются к ответу, а не к запросу**: `GET /teams` параметров не принимает. Верно для 5–50 человек и является потолком | `TeamList` |
@@ -462,6 +486,11 @@ flowchart TD
 | `/admin/organization` | `routes/_authenticated/admin/organization.tsx` | `requirePermission('organization:update')` | `tab=general\|branding\|locale\|security\|storage` | `OrganizationSettingsWidget` |
 | `/admin/onboarding-tracks` | `routes/_authenticated/admin/onboarding-tracks/index.tsx` | `requirePermission('onboarding:manage')` | `q`, `status[]` | `OnboardingTrackListWidget` |
 | `/admin/onboarding-tracks/$trackId` | `routes/_authenticated/admin/onboarding-tracks/$trackId.tsx` | `requirePermission('onboarding:manage')` | `step?` | `OnboardingTrackEditorWidget` |
+
+**Из этой таблицы построены** (EPIC-011 и EPIC-012): `/admin/members`,
+`/admin/members/$userId`, `/admin/members/invite`, `/admin/roles`, `/admin/teams` и
+`/admin/teams/$teamId`. Layout-маршрута `/admin` (`admin/route.tsx`) и редиректа `/admin/` в коде
+нет — гард стоит на каждом листе, см. «Гарды в `beforeLoad`». Остальные строки — проектируемые.
 
 **Про `view` в `memberListSearchSchema`.** Справочник показывает одних и тех же людей двумя способами
 — таблицей и оргструктурой, — и выбор способа живёт в URL по той же причине, что и фильтры: «покажи
@@ -477,6 +506,17 @@ flowchart TD
 `requirePermission('user:read')` здесь означал бы одно из двух: либо человек без права не попадает на
 собственный профиль, либо право выдаётся всем и перестаёт что-либо значить. Список
 (`/admin/members`) — другой случай: он показывает **чужие** записи, и `user:read` на нём остаётся.
+
+**Вторая вкладка карточки (`?tab=roles`) закрыта не гардом, а самой вкладкой** (STORY-011-11).
+Чтение чужих эффективных прав требует `permission:override_read`; без него вкладка не рендерится,
+поэтому запрос за её спиной не стартует (`keepMounted={false}` в `pages/employee-profile/page.tsx`
+закрепляет это свойство в дереве, хотя сегодня то же самое даёт и умолчание Mantine), а `?tab=roles`
+в присланной ссылке откатывается к `profile`
+(`.catch('profile')` в `userPermissionsSearchSchema`). Гард маршрута этого сделать не мог бы: он
+закрыл бы и первую вкладку, на которую человек приходит к себе. Содержимое вкладки — виджет
+`UserPermissions`: каждое право с источником — `OWNER`, `OVERRIDE_DENY`, `OVERRIDE_ALLOW`, `ROLE`,
+`NOT_GRANTED` (`CapabilitySource` из `packages/shared`; клиент источник **показывает**, а не
+вычисляет) — и фильтры `q`/`exceptions` в URL.
 
 ### Служебные
 
@@ -733,6 +773,189 @@ inline (`1:30`, `1.5`, `90m` — парсинг через Zod-схему с `tr
 **Оптимистично.** Ничего (экран только на чтение).
 **Пессимистично.** Экспорт отчёта (тост-`loading`, обновляемый по тому же id, затем ссылка на файл).
 
+### Справочник сотрудников (`/admin/members`)
+
+**Назначение.** Кто вообще есть в организации: живые учётные записи и приглашённые-но-ещё-не-принятые,
+одной таблицей или оргструктурой.
+
+**Ключевые элементы.** Виджет `MemberList` (`widgets/member-list/member-list.widget.tsx`) — тонкая
+композиция: хук `EmployeeService.EmployeeHooks.useEmployeeDirectory` отдаёт страницу и (если разрешено)
+дерево оргструктуры, компонент раскладывает `MemberFiltersBar` + переключатель `SegmentedControl`
+«Таблица / Оргструктура» + `MemberTable`/`MemberOrgChart` + `PaginationBar`. Таблица — колонки «Человек»
+(имя-ссылка на карточку + email под ним; у ещё не заполнившего профиль вместо пустого имени показан
+email — `nameOf()` в `member-table.component.tsx`), должность, отдел, роли-бейджи, команды-бейджи,
+статус (`Активен`/`Приостановлен`/`Приглашён` — три состояния из каталога, не два). Строка кликабельна
+через `Link` на `/admin/members/$userId`. Фильтр-бар — `Chip`-группы (не `MultiSelect`: список
+статусов/ролей/команд организации в 5–50 человек короткий, а `Combobox` тянет в бандл лишний
+попап-движок), значения ролей/команд для чипов берутся **из фасета ответа** (`page.facets`), а не из
+отдельных запросов `/roles`/`/teams` — экран открыт и разработчику без `role:read`/`team:read`.
+Оргструктура (`MemberOrgChart` + `MemberOrgBranch`) — вложенные `ul`/`li`, не canvas: дерево уже
+доступно táбом и скринридеру без отдельного табличного дубля, который остальные графы продукта обязаны
+иметь (см. граф KB выше) — здесь дублировать нечего, разметка и есть таблица. Человек без менеджера
+(уволен/удалён/не указан) рисуется корнем, а не выпадает из дерева.
+
+**Права.** Список — `user:read` (гард маршрута, чужие записи). Оргструктура — отдельное право
+`employee:view_org_chart`: переключатель «Оргструктура» в принципе не рендерится без него (а не
+`disabled` — 403 по клику был бы тупиком), запрос за деревом стартует только когда вид фактически
+включён (`view=chart` в URL **и** право есть), поэтому вкладка, на которую никто не смотрит, не тратит
+запрос. Кнопка «Пригласить» в `PageHeader` — за `invitation:create`, той же permission, что проверяет
+`/admin/members/invite`.
+
+**Состояния.** Loading (таблица и график) — `TextSkeleton`. Empty — «сотрудников не найдено»/«не
+подошёл фильтр» с раздельными текстами. Error — inline `DataState` с retry, отдельно для таблицы и для
+графика (переключение вида не тянет за собой состояние другого). No-access к разделу — 404 (гард
+`requirePermission('user:read')`, см. врезку «403 vs 404» выше — тот же нерешённый вопрос).
+
+**В URL.** `memberListSearchSchema` — `q`, `status[]` (пусто = дефолт «активные и приглашённые», который
+решает **сервер**), `role[]`, `team[]` (id, до 20), `sort=name|-name|hiredAt|-hiredAt`, `page`,
+`view=table|chart`. Все поля — `.catch(...)`, не `.default(...)` (присланная ссылка с мусором не должна
+падать в error boundary).
+
+**Мутаций на самом экране нет** — список только читает и ведёт на карточку/приглашение/офбординг.
+
+### Кадровая карточка (`/admin/members/$userId`)
+
+**Назначение.** Личное дело одного человека: анкетные данные + (по праву) его эффективные права.
+
+**Гарда на маршруте нет — это решение, а не пропуск** (см. раздел «Гарды в `beforeLoad`» и комментарий
+в `routes/_authenticated/admin/members/$userId.tsx`): свою запись читает кто угодно,
+`GET /employees/{userId}` — self-service, а сколько полей вернётся и что из них редактируемо, решает
+`employee-access.policy.ts` на сервере построчно. Вкладка `?tab=roles` — не третий гард, а условие
+рендера: без `permission:override_read` вкладки нет в списке, её панель не монтируется
+(`keepMounted={false}` на `Tabs`), а `?tab=roles`, присланный без права, откатывается к `profile`.
+
+**Ключевые элементы.** Две вкладки: «Профиль» (`EmployeeUi.EmployeeProfileForm`) и «Права» (виджет
+`UserPermissions`, описан в разделе «Управление ролями и правами» ниже — тот же компонент, что и
+переопределения per-user). Форма профиля: имя/фамилия (обязательны, редактирует любой владелец
+записи), должность/отдел/тип занятости/недельная норма часов/навыки — **`disabled`, если сервер не
+прислал соответствующий ключ** (а не если у смотрящего просто нет права: поле, которого нет в
+документе, нельзя было бы сохранить пустым поверх настоящего значения — форма различает «мне не
+показали» и «человек не заполнил»), таймзона и контакт для экстренной связи — self-service, контакт
+`disabled`, только если ключ `emergencyContact` отсутствует в ответе. Кнопка «Офбординг» в
+`PageHeader` рисуется, только когда одновременно есть право `user:suspend` **и** уже загружен документ
+(разрешение — необходимое, но не достаточное условие: кнопка, кликабельная в момент, когда карточка ещё
+в пути, была бы тупиком). Открывает `OffboardingDialog` — чек-лист последствий **до** кнопки, ввод
+**email** (не фамилии: `EmployeeProfile` почти никогда не имеет заполненной фамилии на момент
+принятия приглашения, и сверка с пустой строкой разблокировала бы кнопку сразу — расхождение,
+осознанно исправленное в STORY-012-05 и не совпадающее с более ранней формулировкой той же истории),
+причина обязательна. После успеха диалог не закрывается, а показывает `OffboardingReport`: счётчики
+отозванных сессий/покинутых команд либо, при повторном запуске, баннер «уже деактивирован» — и отдельно
+список `pending`-шагов, которые эта установка выполнить не может (участие в проектах — EPIC-014,
+разрыв WS — M5, отзыв ссылок и пометка vault — M7), без ложных нулей.
+
+**Отгружено не полностью: экрана реактивации нет.** `POST /users/{userId}/reactivate` существует на
+сервере и закрыт тестами, но ни один клиентский экран его не вызывает — клиентская функция
+`reactivateUser` была написана и **удалена** (`packages/client/src/units/employee/api/employee.api.ts`,
+комментарий над `deactivateUser`): кнопка «Восстановить» должна стоять на карточке приостановленного
+человека, а документ профиля `EmployeeProfile` сегодня не несёт `status` (он есть только в строке
+справочника) — это правка контракта, которую решили не делать попутно. Зафиксировано владеющей
+историей — [STORY-012-05](../../epics/epic-012-employee-management/stories/story-012-05-offboarding.md),
+раздел «Что отложено, и почему», критерий 7. До тех пор приостановленный сотрудник виден в справочнике
+статусом «Приостановлен» без пути обратно из интерфейса.
+
+**Состояния.** Loading — `TextSkeleton` на 8 строк (форма — колонка текстовых полей, отдельный скелет
+не заводили). Error загрузки — inline `DataState` с retry. Empty — не бывает (документ всегда приходит,
+пусть даже с частью полей). No-access к разделу целиком не существует по конструкции (см. выше про
+отсутствие гарда).
+
+**В URL.** `userPermissionsSearchSchema` — `tab=profile|roles` (с откатом к `profile` без права),
+`q` и `exceptions` — состояние вкладки «Права» (см. ниже).
+
+**Оптимистично.** Ничего. **Пессимистично.** Сохранение профиля, офбординг — оба создают/меняют
+серверное состояние с последствиями (инкремент `permissionsVersion`, отзыв сессий), которое нельзя
+правдоподобно угадать на клиенте.
+
+### Приглашение сотрудника (`/admin/members/invite`)
+
+**Назначение.** Позвать нового человека в организацию: email, необязательная роль, язык письма.
+
+**Ключевые элементы.** Виджет `InviteMember` — `IamUi.InviteForm` (email, `NativeSelect` роли с явным
+пунктом «Без роли» вместо пустого выбора, `NativeSelect` языка письма, дефолт которого выводится из
+текущего языка интерфейса: `ru`, если он начинается с `ru`, иначе `en`) и, после успешной отправки,
+`IamUi.InvitationLink` — карточка с самой ссылкой (`Code`), кнопкой «Копировать» (буфер +
+тост-подтверждение с тем же `id`, чтобы повторное копирование обновляло тост, а не плодило новый) и
+сроком действия. Список ролей запрашивается **только если** у пригласившего есть `role:read` — без
+этого права селект просто пуст, приглашать всё равно можно (в этом случае — без роли).
+
+**Отгружено не полностью: ссылку нельзя переслать повторно, и нет списка приглашений.**
+`GET /invitations`, `POST /invitations/{id}/resend`, `DELETE /invitations/{id}` существуют на сервере и
+закрыты тестами, но у клиента нет ни одной вызывающей их функции — экран истории/управления
+приглашениями сознательно не заведён:
+[STORY-012-01](../../epics/epic-012-employee-management/stories/story-012-01-invite-employee.md),
+раздел «Осталось за пределами этой истории», прямо называет это «осознанной дырой, а не забытой
+строчкой» — справочник (`/admin/members`) сознательно не взял эту роль на себя, потому что непринятое
+приглашение не учётная запись (см. `data-model.md`, «Про `User.status = INVITED`»), а отдельный экран
+нужно заводить своей историей. До тех пор ссылка показывается ровно один раз, в ответе на создание;
+если пригласивший закрыл вкладку не скопировав её — переотправить из интерфейса нельзя, только создать
+новое приглашение.
+
+**Права.** Маршрут закрыт `invitation:create` — не `user:invite`, хотя системные роли выдают их вместе:
+гард экрана называет то же право, что проверяет `POST /invitations`, иначе кастомная роль, разделившая
+эту пару, открывала бы страницу, на которой ничего не работает (см. «Клиентская проверка — только
+подсказка» выше).
+
+**Состояния.** Формы — стандартные inline-ошибки `@mantine/form`. Отдельного loading/empty/error у
+экрана нет (нечего загружать до отправки формы); ошибка отправки — `409`/`422` от `POST /invitations`
+мапится в общий тост (единственный сигнал, без локального `onError` поверх глобального).
+
+**В URL.** Ничего — состояние формы и минтованное приглашение живут в компоненте (ссылка существует
+ровно в одном ответе, повторно её взять неоткуда, поэтому URL не имеет смысла).
+
+**Оптимистично.** Ничего. **Пессимистично.** Отправка приглашения.
+
+### Команды (`/admin/teams`, `/admin/teams/$teamId`)
+
+**Назначение.** Состав команд организации и их состав участников с ролью `LEAD`/`MEMBER` внутри.
+
+**Важная оговорка прямо на экране.** Команда — **не** субъект ACL: `TeamAccessNotice` (алерт синего,
+не жёлтого цвета — это устройство продукта, а не предупреждение о неполадке) стоит и на списке, и на
+карточке команды и прямо говорит, что членство в команде ничего не даёт с точки зрения доступа —
+ресурсный ACL с `subjectType = TEAM` не входит в этот релиз (`STORY-011-06`, заблокирована до
+EPIC-014), а группы-субъекты доступа (`subjectType = GROUP`) — открытый вопрос
+`permission-model.md` §12. Три критерия STORY-012-07 (команда как субъект ACL) отложены по той же
+причине и заглушек не получили — см. `CLAUDE.md`, «Текущее состояние». Без этой строки на экране
+интерфейс выглядел бы так, будто прибавление человека в команду что-то ему открывает.
+
+**Список (`/admin/teams`, виджет `TeamList`).** `TeamFiltersBar` (поиск + сортировка по имени/числу
+участников) и таблица `TeamTable`. **`GET /teams` не принимает параметров вовсе** — эндпоинт публикует
+все живые команды организации одним документом, и поиск/сортировка/страница применяются к уже
+полученному ответу, а не уходят в запрос (это уже отмечено в карте маршрутов при описании
+`teamListSearchSchema` и верно ровно для организаций в 5–50 человек — потолок продукта, а не временное
+упрощение). Кнопка «Создать команду» — за `team:create`, открывает `TeamCreateDialog` (модалка на три
+поля: имя, `slug` по паттерну `^[a-z0-9]+(-[a-z0-9]+)*$`, описание; форма перемонтируется при каждом
+открытии, поэтому «закрыли-открыли» стартует с нуля без отдельного эффекта сброса; конфликт слага —
+`409 team_already_exists`, показан целым предложением, а не под одним полем, потому что ограничение
+проверяется на паре полей, а не на одном).
+
+**Карточка (`/admin/teams/$teamId`, виджет `TeamDetail`).** Заголовок и `slug`, описание, ростер
+(`TeamMemberTable`) с формой добавления `AddTeamMemberForm` (за `team:manage_members` **и** только
+когда уже загружен справочник людей — без права `user:read` второй запрос не делается вовсе, потому
+что ответ всё равно `403`; при отсутствии кандидатов форма схлопывается до предложения, а не рисует
+пустой селект). Имена в ростере приходят **не** из ответа команды: `GET /teams/{teamId}` отдаёт только
+`userId` и роль в команде — имена запрашиваются у справочника отдельно и только если он доступен, иначе
+ростер показывает id. Секция переименования — за `team:update`, использует тот же `TeamUi.TeamForm`,
+что и создание. `DangerZone`-подобная секция роспуска — за `team:delete`: `TeamDeleteDialog` перечисляет
+три последствия **до** кнопки — участники будут исключены разом, доступа при этом никто не теряет
+(команда прав не даёт — та же мысль `TeamAccessNotice`, повторённая ровно там, где решение необратимо),
+адрес (`slug`) освобождается для новой команды — но **без** ввода имени команды обратно — единственный экран из трёх уровней подтверждения (см. «Подтверждение разрушающих
+действий» выше), где выбран средний, а не верхний уровень: это удаление контейнера, а не доступа
+человека ко всему сразу, аккаунты и аудит остаются.
+
+**Мутации.** Создание команды, переименование, роспуск, добавление/снятие участника — **все
+пессимистичны**, включая добавление/удаление участника, которое `rules/tanstack-query.mdc` §6 в общем
+случае называет кандидатом на оптимизм: членство — вход в `permissionsVersion`, и оптимистичная строка
+показала бы доступ раньше, чем сервер его действительно дал, а типовой отказ (`409
+member_not_active` для приостановленного, `404` для чужой организации) — как раз случаи, где оптимизм
+пришлось бы откатывать. Оба явно документируют это отклонение в самих файлах мутаций.
+
+**Состояния.** Список — Loading `TextSkeleton`, Empty (нет команд / не подошёл фильтр — разные тексты),
+Error inline retry. Карточка — Loading `TextSkeleton`, Error inline retry с `errorMessageKey`, No-access
+и «команда другой организации или расформирована» — оба `404` от сервера, экран показывает это как
+единую ошибку без второго состояния под неё.
+
+**В URL.** Список — `teamListSearchSchema`: `q`, `sort=name|-name|members|-members`, `page` (не в
+query-key запроса — см. выше). Карточка — только `$teamId`, своих search-параметров нет.
+
 ### Управление ролями и правами (`/admin/roles`) — матрица
 
 **Назначение.** Понять и изменить, кто что может, не читая документацию.
@@ -749,23 +972,37 @@ KB, Chat, Files, Vault, Time, Delivery, Admin), колонки = роли. Яч�
 **Где появляется третье состояние.** Трёхсостоятельность (ALLOW / DENY / «наследовано от роли») —
 только на экране **пер-пользовательских переопределений** (per-user overrides, слой 3 модели прав):
 там для конкретного человека право можно явно выдать (ALLOW), явно отобрать (DENY) или оставить как
-есть — унаследованным от роли. **DENY имеет приоритет над ALLOW роли.** Каждое переопределение
-требует обязательной причины и срока действия; матрица ролей этих состояний не показывает и не
-редактирует.
+есть — унаследованным от роли. **DENY имеет приоритет над ALLOW роли.** Матрица ролей этих состояний
+не показывает и не редактирует.
 
-**Безопасные ограничения.** Нельзя снять с себя право `role:update` (переключатель заблокирован с
-объяснением). Нельзя оставить организацию без единого владельца. Изменения не применяются
-поштучно: правки копятся в локальном черновике, внизу появляется панель «N изменений» с кнопками
-«Сохранить» и «Отменить»; при сохранении показывается сводка «Что изменится» с числом затронутых
-пользователей и требуется подтверждение. Попытка уйти со страницы с несохранёнными правками
-перехватывается dirty-guard.
+Этот экран отгружен (STORY-011-05, STORY-011-11) и живёт **не отдельным маршрутом**, а вкладкой
+`?tab=roles` кадровой карточки `/admin/members/$userId` — виджет `UserPermissions`, диалог
+`permission-override-dialog`. Условия на переопределение — не «причина и срок», а причина и
+**решение** о сроке: `permissionOverrideFormSchema` требует причину от 10 непробельных символов
+(та же граница стоит в БД — `ck_user_permission_overrides_reason`) и либо дату окончания, либо явно
+отмеченный чекбокс «бессрочно». Пустая дата — ошибка, а не молчаливое «навсегда»: по умолчанию
+чекбокс снят, а дата предзаполнена месяцем вперёд, чтобы дешёвый путь был обратимым.
+
+**Безопасные ограничения.** Заблокированы (`disabled` + тултип с причиной) ячейки **системных
+ролей** целиком: системная роль не редактируется. Самоблокировка — правило **сервера**, а не
+переключателя: попытка снять с себя `role:update`/`role:delete` отвергается на сохранении кодом
+`self_lockout` (409, `domain/iam/access/role-batch.policy.ts`), потому что ответ на вопрос «что у
+меня останется от остальных ролей» знает только он. Изменения не применяются поштучно: правки копятся
+в локальном черновике (в памяти, не в URL), внизу появляется панель «N изменений» с кнопками
+«Сохранить» и «Отменить»; при сохранении показывается сводка «Что изменится», посчитанная сервером
+(`useRoleChangesPreview`), и набор, задевающий опасные права, уходит только с `confirmDangerous`.
+Попытка уйти со страницы с несохранёнными правками перехватывается `useBlocker` TanStack Router.
 
 **Состояния.** Loading — skeleton-матрица. Empty — не бывает (системные роли есть всегда).
 Error сохранения — inline-баннер над панелью с перечнем непринятых изменений (черновик не теряется).
 No-access — 403-страница.
 
-**В URL.** `?q=`, `?group[]`, `?role=` (подсветка колонки), `?diff=1`. Черновик изменений в URL не
-пишется.
+**В URL.** `rolesSearchSchema` — `?q=` (по **ключу** права, не по переведённой подписи),
+`?collapsed[]` (свёрнутые домены; пусто = все раскрыты), `?diff=true|false`. Подсветки колонки
+(`?role=`) в схеме нет. Каждое поле — `.catch(…)`, а не
+`.default(…)`: значения приходят из адресной строки, и присланная ссылка с мусором обязана
+отрисовать экран, а не границу ошибки. Черновик изменений в URL не пишется — его бы переслали как
+правду и восстановили кнопкой «назад», которую нажимали как «отменить».
 
 **Оптимистично.** Переключение ячейки внутри черновика (это локальное состояние, не сеть).
 **Пессимистично.** Сохранение пачки изменений, создание/удаление роли, назначение роли пользователю.
@@ -961,7 +1198,7 @@ Error — inline `DataState` с retry, не тост. No-access: без `materia
 | `ConfirmDialog` | `confirm-dialog.component.tsx` | подтверждение с уровнем `normal \| danger`, опциональным вводом имени объекта и списком последствий |
 | `Toaster` | `toaster/` | обёртка над `@mantine/notifications`: `notify.success/error/loading/update/dismiss`, дедуп по `id` |
 | Skeleton-набор | `skeletons/` | `TextSkeleton`, `TableSkeleton`, `CardGridSkeleton`, `BoardSkeleton`, `ChatSkeleton`, `EditorSkeleton`, `CalendarSkeleton`, `MatrixSkeleton` |
-| `Can` | `can.component.tsx` | декларативный гейт по праву (см. раздел прав) |
+| ~~`Can`~~ | — | **не в этом слое:** гейт по праву знает про каталог прав, то есть про домен, поэтому живёт в `units/iam/ui/can.component.tsx` (см. раздел прав). Строка оставлена, чтобы его здесь не искали и не заводили второй |
 | `CopyToClipboard` | `copy-to-clipboard.component.tsx` | копирование с подтверждением и опциональной авто-очисткой |
 | `RelativeTime` | `relative-time.component.tsx` | «5 минут назад» с точной датой в `title` и корректным `<time datetime>` |
 | `UserAvatar` / `UserChip` | `user-avatar.component.tsx` | единый вид пользователя (аватар, инициалы, статус) |
@@ -970,6 +1207,16 @@ Error — inline `DataState` с retry, не тост. No-access: без `materia
 | `PaginationBar` | `pagination-bar.component.tsx` | страницы + размер страницы + «показано N из M» |
 | `DangerZone` | `danger-zone.component.tsx` | блок разрушающих настроек в конце страниц настроек |
 | `KeyboardHint` | `keyboard-hint.component.tsx` | отображение сочетаний клавиш (`Cmd+K`) с учётом платформы |
+
+Таблица — **целевой состав слоя**, а не опись отгруженного: часть строк заводится вместе с экраном,
+которому компонент понадобится (`Toolbar`, `ConfirmDialog`, `CopyToClipboard`, `DangerZone`,
+`KeyboardHint`, `UserAvatar`/`UserChip`, `StatusBadge` и все скелетоны, кроме `TextSkeleton`, в коде
+пока отсутствуют; `SplitPane`, `CenteredScreen` и `LanguageControl`, наоборот, отгружены EPIC-007 и
+EPIC-008 и в таблицу не попали). Числа здесь нет намеренно — актуальный состав печатает
+
+```bash
+git ls-files 'packages/client/src/shared/ui/*/index.ts'
+```
 
 ### Правила использования Mantine
 
@@ -1163,17 +1410,29 @@ Error — inline `DataState` с retry, не тост. No-access: без `materia
 `timesheet:approve`, `report:read_team`, `vault:share`. **Закрытый каталог и единственный источник
 правды — [`../security/permission-model.md`](../security/permission-model.md)** (раздел «Полный
 каталог permissions»); права вне каталога не существует, свободных строк в коде нет.
-Набор прав пользователя приходит один раз при бутстрапе сессии
-и лежит в `units/auth` (`session.permissions` + `session.projectRoles`). Он же кладётся в контекст
-роутера, чтобы `beforeLoad` мог проверять права без ожидания React.
+Набор прав пользователя **в сессии не приезжает**: `SessionIdentity` — это ровно `userId` и
+`organizationId` (`units/auth/model/validation/session-identity.schema.ts`), и полей
+`session.permissions`/`session.projectRoles`, которые предписывала предыдущая редакция, нет.
+Права — отдельный ресурс `GET /users/me/permissions` под ключом `QueryKeys.Permissions.mine()`
+(`units/iam`), и это то же самое, чем пользуется `beforeLoad`: гард берёт их через
+`ensureQueryData` из **того же** кеша, который читают компоненты, поэтому гард и экран платят за
+один запрос на двоих. Отдельная копия в контексте роутера не заводится — она была бы вторым ответом
+на вопрос «что мне можно», расходящимся с первым при каждой инвалидации.
 
 ### API
 
 ```ts
-// units/auth/service/hooks/use-can.hook.ts
-const canEdit = useCan('task:update', { projectId });      // boolean
-const { can, reason } = useCanWithReason('timesheet:approve'); // reason для тултипа
+// units/iam/service/hooks/use-can.hook.ts
+const { can, isLoading } = IamHooks.useCan();
+can('task:update');                       // boolean
+can('vault_item:read', 'EDITOR');         // второй аргумент — accessLevel на объекте
 ```
+
+`useCan()` не принимает право: он один раз читает запрос прав и возвращает предикат. Пока ответ не
+пришёл, `can` отвечает `false` — fail-closed направление: кнопка, появившаяся с опозданием, это
+мелкое неудобство, а появившаяся и исчезнувшая — клик по тому, что пропало из-под курсора.
+`useCanWithReason` (причина отказа для тултипа) — **проектируемое API**, в коде его нет; тултип
+«почему нельзя» пишется на месте.
 
 ```tsx
 <Can permission="invoice:create">
@@ -1185,7 +1444,10 @@ const { can, reason } = useCanWithReason('timesheet:approve'); // reason для 
 </Can>
 ```
 
-`Can` — тонкая обёртка над `useCan`, не содержит логики; сама проверка живёт в юните `auth`.
+`Can` — тонкая обёртка над `useCan`, не содержит логики; живёт в `units/iam/ui/can.component.tsx`,
+**не** в `shared/ui`: компонент, знающий про каталог прав, знает про домен, а `shared/ui` о доменах
+не знает (архитектурный тест EPIC-007). `fallback` по умолчанию — пусто, а не объяснение: экран,
+перечисляющий, чего вам нельзя, — это карта структуры организации, отданная тому, кто её изучает.
 
 ### Скрывать или показывать disabled
 
@@ -1218,26 +1480,48 @@ const { can, reason } = useCanWithReason('timesheet:approve'); // reason для 
 Правило: если пользователь может узнать о существовании ресурса легальным путём (он есть в
 оргструктуре, в списке разделов) — 403; если ресурс принадлежит закрытому контуру — 404.
 
+> **Расхождение, не закрытое решением (зафиксировано 2026-08-12).** Отгруженный
+> `requirePermission` (`units/iam/service/guards/require-permission.guard.ts`, EPIC-011) на **любой**
+> нехватке права бросает `notFound()`, в том числе на `/admin/members`, `/admin/teams`,
+> `/admin/roles` — то есть ровно на разделах, которым абзац выше предписывает 403. Комментарий в
+> самом гарде ссылается при этом на **этот** раздел как на обоснование 404. Компонента
+> `ForbiddenState` в `shared/ui` нет вовсе, поэтому 403-ветку сегодня нечем отрисовать.
+> Правило и код надо свести — либо разделы админки переводятся на 403 вместе с появлением
+> `ForbiddenState`, либо правило признаёт 404 единым ответом гарда, — но выбор здесь не сделан и
+> молча в документ не вписывается (`CLAUDE.md`, «Порядок источников истины»).
+
 ### Гарды в `beforeLoad`
 
 ```ts
-// units/auth/lib/guards/require-permission.guard.ts
+// units/iam/service/guards/require-permission.guard.ts — как это отгружено
 export const requirePermission =
-  (permission: Permission) =>
-  ({ context, location }: GuardArgs) => {
-    if (!context.auth.isAuthed) {
-      throw redirect({ to: '/login', search: { redirect: location.href } });
-    }
-    if (!hasPermission(context.auth, permission)) {
-      throw forbidden(permission); // → errorComponent → ForbiddenState
-    }
+  (permission: SharedPermissions.PermissionKey) =>
+  async ({ context }: PermissionGuardArgs): Promise<void> => {
+    // Тот же кеш, из которого читают компоненты: гард и экран спрашивают один раз на двоих.
+    const view = await context.queryClient.ensureQueryData({
+      queryKey: QueryKeys.Permissions.mine(),
+      queryFn: () => fetchMyPermissions(),
+    });
+
+    // Та же лестница `can()` из `packages/shared`, которую считает сервер, — второй реализации нет.
+    // (В коде ответ сперва приводится к `CapabilityView`: ключи ответа фильтруются через
+    // `isPermissionKey` в два `Set` — `permissions` и `denied` — плюс флаг `isOwner`.)
+    if (SharedPermissions.can(view, permission)) return;
+
+    throw notFound(); // см. врезку «403 vs 404» выше: это расхождение, а не решение
   };
 ```
 
+Сессию гард права не проверяет — это делает `requireSession` на `_authenticated`, а до него ветка
+не доходит.
+
 - Гард на pathless layout `_authenticated.tsx` покрывает всю ветку — не дублируем `requireSession`
   в каждом дочернем маршруте (в таблице выше он указан для читаемости).
-- Секционные гарды вешаем на layout-маршрут секции (`admin/route.tsx`, `delivery/route.tsx`,
-  `projects/$projectId/route.tsx`), а не на каждый лист.
+- Секционные гарды вешаем на layout-маршрут секции — так задумано; в коде такого layout'а нет ни у
+  одной секции (`admin/route.tsx` не существует), поэтому `requirePermission` стоит на каждом листе
+  `/admin/**` отдельно, и права там **разные** (`user:read`, `team:read`, `role:read`,
+  `invitation:create`) — общего права у раздела сегодня нет, а `organization:read` из таблицы выше
+  не проверяет никто. Пока это так, лист — единственное честное место для гарда.
 - После логина/логаута/смены роли — `router.invalidate()`, чтобы гарды перепроверились, и
   `queryClient.clear()` при смене пользователя.
 - Данные о правах на конкретный объект приходят вместе с объектом (`permissions: { canEdit,
