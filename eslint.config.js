@@ -223,8 +223,22 @@ const NO_PARENT_RELATIVE = {
 };
 
 // ─── server: hexagonal layers (rules/hexagonal-backend.mdc, rules/tenancy-rls.mdc) ────────────
+/**
+ * The module specifiers a real `@prisma/client` import uses today.
+ *
+ * Exported — not just declared — so that `packages/server/test/unit/architecture/layers.test.ts` can
+ * import the same array instead of keeping a second copy of the string. ADR-0027 (wave 3) schedules a
+ * client relocation (`prisma-client` generator, `output` inside `infrastructure/persistence/prisma/
+ * generated`) that is expected to change the specifier real code imports Prisma by; a test that wrote
+ * `'@prisma/client'` a second time would go on searching for a string nothing imports any more and
+ * stay green for the wrong reason (`rules/testing.mdc`, «Тест, который не видели красным»). A single
+ * array, read from both places, means the test either starts matching the new specifier the day this
+ * changes or fails loudly instead of quietly testing nothing.
+ */
+export const PRISMA_MODULE_SPECIFIERS = ['@prisma/client', '@prisma/client/*'];
+
 const PRISMA_OUTSIDE_PERSISTENCE = {
-  group: ['@prisma/client', '@prisma/client/*'],
+  group: PRISMA_MODULE_SPECIFIERS,
   message:
     'Prisma is an infrastructure detail: `@prisma/client` may only be imported inside `src/infrastructure/persistence/**`. Everything else talks to a `*-repository.port.ts` (rules/hexagonal-backend.mdc, rules/tenancy-rls.mdc).',
 };

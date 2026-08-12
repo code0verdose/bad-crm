@@ -1,5 +1,13 @@
 import { describe, expect, it } from 'vitest';
 
+// The specifiers a real `@prisma/client` import uses today, read from the same array
+// `PRISMA_OUTSIDE_PERSISTENCE.group` in `eslint.config.js` is built from — see the export's docstring
+// there. Importing it here, rather than writing `'@prisma/client'` a second time, is what
+// ADR-0027 wave 3 asks for: when the Prisma client relocates, this suite either starts matching the
+// new specifier automatically or breaks loudly, instead of continuing to search shipped code for a
+// string nothing imports any more (`rules/testing.mdc`, «Тест, который не видели красным»).
+import { PRISMA_MODULE_SPECIFIERS } from '../../../../../eslint.config.js';
+
 import { importsOf, sourceFiles } from './source-tree.util.js';
 
 const filesIn = (layer: string): string[] =>
@@ -17,6 +25,16 @@ const startsWithAny =
   (...prefixes: string[]) =>
   (specifier: string): boolean =>
     prefixes.some((prefix) => specifier === prefix || specifier.startsWith(`${prefix}/`));
+
+/**
+ * `PRISMA_MODULE_SPECIFIERS` carries ESLint's own glob shape, `['@prisma/client',
+ * '@prisma/client/*']`: the trailing `/*` is `no-restricted-imports` syntax for "or any submodule of
+ * this", which `startsWithAny` already expresses by matching the bare prefix plus a trailing `/`.
+ * Feeding the glob entry to `startsWithAny` unmodified would look for the literal substring `/*` in
+ * an import specifier and never match anything — so it is stripped here, once, rather than assumed
+ * correct at every call site.
+ */
+const PRISMA_PREFIXES = [...new Set(PRISMA_MODULE_SPECIFIERS.map((s) => s.replace(/\/\*$/, '')))];
 
 /**
  * The dependency rule of `rules/hexagonal-backend.mdc`, checked against the tree rather than
@@ -47,6 +65,28 @@ describe('dependencies point inwards', () => {
     ).toEqual([]);
   });
 
+  /**
+   * Positive control for `PRISMA_PREFIXES` itself, in the same spirit as the "extracts imports" case
+   * above: an empty (or emptied-by-mutation) array would make the two `startsWithAny(...PRISMA_PREFIXES)`
+   * checks below vacuously true, and both offender lists would read `[]` for the wrong reason.
+   */
+  it('reads a non-empty Prisma ban out of eslint.config.js, so the checks below are not vacuous', () => {
+    expect(PRISMA_MODULE_SPECIFIERS.length).toBeGreaterThan(0);
+    expect(PRISMA_PREFIXES.length).toBeGreaterThan(0);
+  });
+
+  /**
+   * Ties the imported ban back to the one file the ban exists to allow: `infrastructure/persistence`
+   * is where `@prisma/client` is actually imported (`prisma.client.ts`). If a future migration moves
+   * that import to a specifier `PRISMA_PREFIXES` no longer names, this fails here — loudly, on the
+   * side of "the detector stopped matching real code" — instead of the domain/application checks
+   * below just quietly finding nothing to flag.
+   */
+  it('matches the specifier a real Prisma import in infrastructure/persistence actually uses', () => {
+    const realImports = importsOf('infrastructure/persistence/prisma/prisma.client.ts');
+    expect(realImports.some(startsWithAny(...PRISMA_PREFIXES))).toBe(true);
+  });
+
   it('keeps domain free of I/O: no Node built-ins, HTTP, Redis, Prisma or a logger', () => {
     expect(
       offenders(
@@ -56,7 +96,7 @@ describe('dependencies point inwards', () => {
           startsWithAny(
             'express',
             'ioredis',
-            '@prisma/client',
+            ...PRISMA_PREFIXES,
             'pino',
             'socket.io',
             'bullmq',
@@ -72,7 +112,7 @@ describe('dependencies point inwards', () => {
   });
 
   it('keeps application unaware of the transport it was called over', () => {
-    expect(offenders('application', startsWithAny('express', '@prisma/client', 'pino'))).toEqual(
+    expect(offenders('application', startsWithAny('express', ...PRISMA_PREFIXES, 'pino'))).toEqual(
       [],
     );
   });
