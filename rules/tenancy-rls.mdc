@@ -153,8 +153,10 @@ await tx.$executeRawUnsafe(`SET app.organization_id = '${orgId}'`);   // ❌ в�
 
 | Механизм | Что ловит |
 |---|---|
-| ESLint `no-restricted-imports` на `@prisma/client` вне `infrastructure/persistence/**` | утечку Prisma в domain/application/presentation |
-| ESLint `no-restricted-syntax` на `MemberExpression[object.name='prisma'\|'tx']` | прямые вызовы вне слоя |
+| ESLint `no-restricted-imports` на `@prisma/client` вне `infrastructure/persistence/**` | утечку Prisma в domain/application/presentation — ключ: строка спецификатора `@prisma/client`, **не переживает** переезд пути импорта (ADR-0027, волна B); см. раздел «Устойчивость» ниже |
+| `packages/server/test/unit/architecture/layers.test.ts` (`dependencies point inwards`) — независимая от ESLint проверка дерева импортов через `startsWithAny('@prisma/client')` для `domain` и `application` | тот же запрет вторым, самостоятельным каналом: остаётся красным, даже если ESLint-паттерн выше выключат по ошибке. Ключ тот же — строка `@prisma/client`, поэтому оба канала теряют покрытие при одном и том же переезде пути, не только один из двух |
+| `test/lint/architecture-rules.test.ts` → `configForRepoFile` на реальных файлах `packages/server/src/domain/**`, `application/**`, `presentation/**` | наведение обоих серверных Prisma-запретов на отгружаемый код, а не только на фикстуры (по образцу клиентского блока «the shipped client tree is really covered»): проверяет, что реальные файлы этих трёх слоёв несут `no-restricted-imports` с `group`, буквально содержащим `@prisma/client`, и `no-restricted-syntax` с селектором на `prisma`/`tx`, а `infrastructure/persistence/**` — не несёт ни того, ни другого. Ловит именно переезд пути импорта, на который фикстура `test/lint/fixtures/packages/server/src/domain/task/prisma.entity.ts` вхолостую остаётся зелёной |
+| ESLint `no-restricted-syntax` на `MemberExpression[object.name='prisma'\|'tx']` | прямые вызовы вне слоя — ключ: идентификатор `prisma`/`tx`, не путь импорта; **переживает** переезд сгенерированного клиента (ADR-0027) |
 | ESLint `no-restricted-syntax` на `$queryRawUnsafe` / `$executeRawUnsafe` | небезопасный SQL |
 | ESLint `no-restricted-syntax` на `$transaction([...])` (первый аргумент — массив) | батч вместо интерактивной транзакции: `withTenant` негде выставить `app.organization_id` |
 | ESLint `no-restricted-syntax` в `**/*.repository.ts` на параметр/поле `organizationId` | второй источник истины о тенанте: расхождение со скоупом не отказ, а молча пустая выборка |
@@ -167,6 +169,46 @@ await tx.$executeRawUnsafe(`SET app.organization_id = '${orgId}'`);   // ❌ в�
 | Типы: `tenant-tables.constant.ts` + `ROW_FACTORIES` как `satisfies` | таблицу, забытую в реестре — не компилируется |
 | Агент `db-reviewer` в commit-гейте | миграции, индексы, риск потери данных |
 | Агент `tenancy-rls-auditor` | семантику политик и обходы контекста, которых не видит регулярка |
+
+### Устойчивость запретов Prisma к переезду пути импорта
+
+Пункт 9 этого правила («прямой вызов `prisma.*`/`tx.*` запрещён вне `infrastructure/persistence/**`»)
+проверяется **несколькими независимыми механизмами**, и они не одинаково устойчивы к тому, что
+`ADR-0027` («Миграция на Prisma 7») называет волной B: сгенерированный клиент уезжает из
+`node_modules`, и реальный импорт меняется с `@prisma/client` на путь до сгенерированного каталога.
+
+- **Переживает переезд.** Запрет прямого обращения `prisma.*`/`tx.*` (ESLint `no-restricted-syntax`,
+  селектор `MemberExpression[object.name='prisma'\|'tx']`) ключуется на **идентификатор**, а не на путь
+  импорта. Он продолжит ловить нарушение независимо от того, откуда `PrismaClient` в файл попал.
+- **Не переживает переезд без правки.** Запрет самого импорта ключуется на **строку спецификатора**
+  `@prisma/client` и продублирован в трёх местах, которые обязаны меняться синхронно: ESLint-паттерн
+  `PRISMA_OUTSIDE_PERSISTENCE` в `eslint.config.js`, независимая проверка дерева импортов в
+  `packages/server/test/unit/architecture/layers.test.ts` (строковые сравнения для слоёв `domain` и
+  `application`), и формулировка в этом самом правиле (строка 156 таблицы выше). ADR-0027 (волна B)
+  требует **добавить** новый спецификатор рядом со старым, а не заменить — `test/rules/declared-checks.test.ts`
+  проверяет, что этот документ и код продолжают называть `@prisma/client` буквально, поэтому тихо
+  убрать старый паттерн незаметно нельзя.
+- **Наведение против фикстур.** До этого правила ни один из серверных запретов не проверялся против
+  реального дерева — только против выдуманных путей `test/lint/fixtures/**`, которые продолжают
+  импортировать `@prisma/client` даже после переезда и остаются зелёными вхолостую (см.
+  `test/lint/eslint-fixture.util.ts`, `configForRepoFile`, и её описание ловушки). Наведение для
+  клиентских правил уже было; `test/lint/architecture-rules.test.ts` → describe-блок «the shipped
+  server tree is really covered against Prisma leaking out of persistence» закрывает эту дыру для
+  ESLint-стороны серверных Prisma-запретов, проверяя реальные файлы `packages/server/src/domain`,
+  `application`, `presentation` и `infrastructure/persistence`. Он **не** закрывает вторую копию
+  запрета в `layers.test.ts` — та по-прежнему сверяется только с фикстурами собственного набора
+  (`source-tree.util.ts`), не с `configForRepoFile`, и её строка `'@prisma/client'` (`layers.test.ts:59,75`)
+  остаётся выведенной вручную, а не из общего источника конфигурации — это открытый пункт волны 3
+  ADR-0027, п. 3.
+
+Число мест, где `@prisma/client` встречается как **ключ** запрета, а не как обычный импорт,
+намеренно не зафиксировано числом — оно вырастет минимум на единицу в волне B (новый спецификатор
+рядом со старым) и не должно тихо сократиться до неё. Актуальный список печатает:
+
+```bash
+grep -rn "'@prisma/client'" --include='*.js' --include='*.ts' --include='*.mdc' . \
+  | grep -v node_modules | grep -v "from '@prisma/client'" | grep -v 'test/lint/fixtures/'
+```
 
 ## Исключения
 
