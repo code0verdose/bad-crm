@@ -14,9 +14,10 @@ import { axeViolationsIn } from '../support/axe-scan.util.js';
  *
  * The properties, and the reason each of them is a property rather than a detail:
  *
- *   * **the consequences are on screen before the button that causes them.** Enabling cannot be
- *     undone on this build — disabling and administrator reset are STORY-013-04 — so the three
- *     sentences that say so are part of the control, not documentation of it;
+ *   * **the consequences are on screen before the button that causes them.** Enabling is reversible
+ *     now (`widgets/disable-totp`, STORY-013-04), but only by somebody who still holds the password
+ *     *and* a code — so the three sentences that say what it costs are part of the control, not
+ *     documentation of it;
  *   * **the secret is legible without a camera.** A QR code is a picture; a desktop browser cannot
  *     photograph its own screen, a hardware token has no camera, and a screen reader cannot read
  *     one. The base32 string beside it is the same secret, and it is what makes the screen usable;
@@ -159,14 +160,14 @@ describe('the enrolment screen before anything is drafted', () => {
 
     // Every one of the three, named individually: this is the set of things a person cannot find
     // out afterwards, and «two of the three» is the failure this case exists to catch.
-    expect(screen.getByText(/security\.totp\.warning\.noDisable/)).toBeInTheDocument();
+    expect(screen.getByText(/security\.totp\.warning\.disable/)).toBeInTheDocument();
     expect(screen.getByText(/security\.totp\.warning\.recoveryOnly/)).toBeInTheDocument();
     expect(screen.getByText(/security\.totp\.warning\.lostAnswer/)).toBeInTheDocument();
 
     // Above it in the document, not merely somewhere on the page: a warning under the button is a
     // warning read after the decision.
     expect(
-      screen.getByText(/security\.totp\.warning\.noDisable/).compareDocumentPosition(button) &
+      screen.getByText(/security\.totp\.warning\.disable/).compareDocumentPosition(button) &
         Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
   });
@@ -512,9 +513,10 @@ describe('accessibility of every state of the enrolment screen', () => {
  * The one property `cimode` cannot state.
  *
  * Every assertion above matches a **key**, which is what makes them readable and what makes them
- * blind: `security.totp.warning.noDisable` matches whether the sentence says there is no way back
- * or says nothing at all. These three sentences are the entire reason this screen warns anybody, so
- * both catalogues are rendered for real and what is asserted is that a person is actually told.
+ * blind: `security.totp.warning.disable` matches whether the sentence says what turning it off
+ * costs or says nothing at all. These three sentences are the entire reason this screen warns
+ * anybody, so both catalogues are rendered for real and what is asserted is that a person is
+ * actually told.
  */
 describe.each(['en', 'ru'] as const)('what the screen says in %s', (language) => {
   it('spells out all three consequences, in three different sentences', async () => {
@@ -525,7 +527,7 @@ describe.each(['en', 'ru'] as const)('what the screen says in %s', (language) =>
     await screen.findByRole('button', { name: i18n.t('security.totp.enable') });
 
     const sentences = [
-      i18n.t('security.totp.warning.noDisable'),
+      i18n.t('security.totp.warning.disable'),
       i18n.t('security.totp.warning.recoveryOnly'),
       i18n.t('security.totp.warning.lostAnswer'),
     ];

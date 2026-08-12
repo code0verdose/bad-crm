@@ -8,6 +8,9 @@
     "too_short": "Too short — at least 12 characters"
   },
   "required": "This field cannot be empty",
+  "second_factor": {
+    "required": "Enter a code from your authenticator app, or one of your recovery codes"
+  },
   "number": {
     "invalid": "Enter a number"
   },

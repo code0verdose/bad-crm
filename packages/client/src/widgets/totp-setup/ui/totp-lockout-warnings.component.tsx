@@ -7,8 +7,12 @@ import { useTranslation } from 'react-i18next';
  * Every one of them was established by looking at what this installation can actually do, and each
  * one is a door that closes behind the person:
  *
- * 1. **There is no way to turn 2FA off.** Disabling and administrator reset are STORY-013-04, which
- *    has not been built. Whoever enables it today is enabling it permanently, on this build.
+ * 1. **Turning it off costs the same two proofs as signing in.** Disabling exists now (STORY-013-04,
+ *    `/settings/security`) and it asks for the current password *and* a second-factor code — a live
+ *    one or an unused recovery code. This used to read «there is no way to turn it off», which was
+ *    true of the build that shipped enrolment and stopped being true the day the way out landed. It
+ *    is still a warning rather than a reassurance: somebody with no password and no code has no exit
+ *    from this screen, and an administrator reset has no interface yet.
  * 2. **The recovery codes are the only way back.** The database holds argon2id hashes and nothing
  *    else; a lost phone with unsaved codes is an account nobody — including the person who runs the
  *    server — can hand back.
@@ -30,7 +34,7 @@ export function TotpLockoutWarnings() {
     <Alert color="yellow" title={t('security.totp.warning.title')} variant="light">
       <List size="sm" spacing="xs">
         <List.Item>
-          <Text size="sm">{t('security.totp.warning.noDisable')}</Text>
+          <Text size="sm">{t('security.totp.warning.disable')}</Text>
         </List.Item>
         <List.Item>
           <Text size="sm">{t('security.totp.warning.recoveryOnly')}</Text>

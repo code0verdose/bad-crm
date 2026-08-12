@@ -3,6 +3,7 @@ import { Stack } from '@mantine/core';
 import { SharedUi } from '@shared';
 
 import { Breadcrumbs } from '@widgets/breadcrumbs';
+import { DisableTotp } from '@widgets/disable-totp';
 import { RecoveryCodes } from '@widgets/recovery-codes';
 import { TotpSetup } from '@widgets/totp-setup';
 import { AuthService, AuthUi } from '@units/auth';
@@ -50,6 +51,12 @@ export function SettingsSecurityPage() {
         <Stack gap="md">
           <TotpSetup enrolment={enrolment} isEnrolled={codes.isEnrolled} />
           {codes.isEnrolled && <RecoveryCodes codes={codes} />}
+          {/*
+            Last, and only while there is something to switch off. The order is the argument: every
+            section above is about keeping the second factor usable, and the one that destroys it
+            comes after them rather than beside «it is on» (`rules/design-system.mdc` §17).
+          */}
+          {codes.isEnrolled && <DisableTotp />}
         </Stack>
       </SharedUi.DataState>
 

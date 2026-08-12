@@ -33,10 +33,37 @@
     },
     "warning": {
       "title": "Worth knowing before you turn it on",
-      "noDisable": "There is no way to turn it off yet. Switching it off, and an administrator reset, are still being built — until they arrive, this is a one-way change.",
+      "disable": "Turning it off later needs the same two things signing in will: your current password and a code — from the app, or an unused recovery code. A stolen browser session cannot do it; neither can you, without one of the two.",
       "recoveryOnly": "The recovery codes you get next are the only way back in if the phone is lost. They are stored as hashes, so nobody can look them up for you — not support, not whoever runs this server.",
       "lostAnswer": "The codes are shown once, in the answer to the confirmation. If that answer never arrives — the connection drops, the tab closes — two-factor authentication is on and the codes are gone. A new set can still be issued from this page with your password and a code from the app."
     }
+  },
+  "disable": {
+    "title": "Turn off two-factor authentication",
+    "description": "Removes the second factor from this account. Signing in goes back to your password alone.",
+    "trigger": "Turn off two-factor authentication",
+    "close": "Close",
+    "dialog": {
+      "title": "Turn off two-factor authentication?"
+    },
+    "consequence": {
+      "passwordOnly": "Your password becomes the only thing between your account and anybody who learns it.",
+      "codes": "Every recovery code you still have stops working and is deleted. The same ones cannot be brought back.",
+      "again": "You can turn it on again whenever you like, but it starts from scratch: a new QR code to scan and a new set of ten codes to save."
+    },
+    "password": {
+      "label": "Your current password"
+    },
+    "code": {
+      "label": "Code from the app, or a recovery code",
+      "description": "Six digits from your authenticator app — or, if the app is gone, one of the recovery codes you have not used yet."
+    },
+    "cancel": "Keep it on",
+    "submit": "Turn it off",
+    "failed": {
+      "title": "Two-factor authentication was not turned off"
+    },
+    "done": "Two-factor authentication is off. Your password is now the only thing that signs you in."
   },
   "codes": {
     "title": "Recovery codes",

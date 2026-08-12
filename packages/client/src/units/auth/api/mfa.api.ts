@@ -1,7 +1,7 @@
 import { apiClient, idempotencyParams, unwrapApiResult, type components } from '@shared/api';
 
 /**
- * The four calls of the second factor, one per operation, with no cache and no state above them
+ * The five calls of the second factor, one per operation, with no cache and no state above them
  * (`rules/frontend-fsd.mdc` rule 9).
  *
  * They live beside `auth.api.ts` rather than inside it because the file is a different subject —
@@ -39,6 +39,16 @@ export type TotpConfirmation = components['schemas']['ConfirmTotpRequest'];
 
 /** The same two proofs the reissue has always demanded. */
 export type RecoveryCodesReissue = components['schemas']['RegenerateRecoveryCodesRequest'];
+
+/**
+ * The password and **one** second-factor proof — a live TOTP code or an unused recovery code.
+ *
+ * One `code` field rather than two, because the server decides which check to run from the shape of
+ * what arrives and refuses every failure with the same `403 reauthentication_required`. A client
+ * that split the field would have to guess first, and the guess would be wrong for exactly the
+ * person this operation exists for: the one whose authenticator is gone.
+ */
+export type TotpDisableRequest = components['schemas']['DisableTotpRequest'];
 
 /**
  * Drafts a secret. Repeated before confirmation, it replaces the draft rather than adding one — so
@@ -82,3 +92,19 @@ export const regenerateRecoveryCodes = async (
       body: reissue,
     }),
   );
+
+/**
+ * Turns 2FA off and deletes every remaining recovery code, in one transaction on the server.
+ *
+ * `204` and nothing to read, which is the point: once the factor is off there is no secret material
+ * left to hand back. The return type is `void` rather than the `undefined` the transport produces,
+ * so nothing downstream is tempted to render an answer that does not exist.
+ *
+ * No signal, for the same reason `confirmTotp` has none: this is a command whose effect is a
+ * transaction, not a read something later can overtake. A recovery code presented here is spent.
+ */
+export const disableTotp = async (disposal: TotpDisableRequest): Promise<void> => {
+  unwrapApiResult(
+    await apiClient.POST('/auth/2fa/disable', { ...idempotencyParams(), body: disposal }),
+  );
+};

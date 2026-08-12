@@ -1,3 +1,4 @@
+export * from './disable-totp-form.schema.js';
 export * from './forgot-password-form.schema.js';
 export * from './login-form.schema.js';
 export * from './regenerate-recovery-codes-form.schema.js';
