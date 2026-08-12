@@ -14,7 +14,14 @@ import { createPrismaClient } from '@/infrastructure/persistence/prisma/prisma.c
 import { PrismaUnitOfWork } from '@/infrastructure/persistence/prisma/unit-of-work.adapter.js';
 import { withTenant } from '@/infrastructure/persistence/prisma/tenant.context.js';
 
-import { asMaintenance, closePools, createPools, truncateAll, type HarnessPools } from './db-harness.util.js';
+import {
+  asMaintenance,
+  closePools,
+  createPools,
+  insertOrganizationWithOwner,
+  truncateAll,
+  type HarnessPools,
+} from './db-harness.util.js';
 
 /**
  * The seven roles an organization starts with, against a real PostgreSQL.
@@ -97,7 +104,9 @@ describe('an organization gets its roles when it is created', () => {
     const organizationId = await createOrganization('acme');
     const roles = await rolesOf(organizationId);
 
-    expect(roles.map((role) => role.key).sort()).toEqual([...SharedPermissions.SYSTEM_ROLE_KEYS].sort());
+    expect(roles.map((role) => role.key).sort()).toEqual(
+      [...SharedPermissions.SYSTEM_ROLE_KEYS].sort(),
+    );
 
     const owner = roles.find((role) => role.key === 'owner');
 
@@ -128,7 +137,9 @@ describe('an organization gets its roles when it is created', () => {
     expect(mine).toHaveLength(SharedPermissions.SYSTEM_ROLE_KEYS.length);
     expect(theirs).toHaveLength(SharedPermissions.SYSTEM_ROLE_KEYS.length);
 
-    const visibleToFirst = await withTenant(base, { organizationId: first, userId: null }, (tx) => tx.role.count());
+    const visibleToFirst = await withTenant(base, { organizationId: first, userId: null }, (tx) =>
+      tx.role.count(),
+    );
 
     expect(visibleToFirst).toBe(SharedPermissions.SYSTEM_ROLE_KEYS.length);
   });
@@ -167,15 +178,17 @@ describe('re-provisioning, which is what an upgrade does', () => {
       new ProvisionSystemRolesUseCase(new PrismaRoleRepository()).execute(),
     );
 
-    const stray = await asMaintenance(pools.owner, async (client) =>
-      (
-        await client.query(
-          `SELECT rp.id FROM role_permissions rp
+    const stray = await asMaintenance(
+      pools.owner,
+      async (client) =>
+        (
+          await client.query(
+            `SELECT rp.id FROM role_permissions rp
              JOIN roles r ON r.id = rp.role_id
             WHERE r.organization_id = $1 AND r.key = 'admin' AND rp.permission_key = 'invoice:issue'`,
-          [organizationId],
-        )
-      ).rowCount,
+            [organizationId],
+          )
+        ).rowCount,
     );
 
     expect(stray).toBe(0);
@@ -209,5 +222,112 @@ describe('re-provisioning, which is what an upgrade does', () => {
     const custom = (await rolesOf(organizationId)).find((role) => role.key === 'reviewer');
 
     expect(custom).toEqual({ key: 'reviewer', grants: 1 });
+  });
+
+  /**
+   * The upgrade scenario: an organization created without roles (e.g., restored from an old backup,
+   * or bootstrapped with a broken version) gets them back when `ProvisionSystemRolesUseCase` runs
+   * again. This simulates the call that `pnpm db:provision-roles` will make in the upgrade flow.
+   */
+  it('adds missing system roles to an organization that has none', async () => {
+    const organizationId = randomUUID();
+    const ownerId = randomUUID();
+
+    // Create an organization and owner without system roles, simulating a broken installation
+    // (e.g., restored from a backup predating EPIC-011)
+    await asMaintenance(pools.owner, async (client) => {
+      // Create both in order: user first, then organization with owner reference
+      await client.query(
+        `WITH created_organization AS (
+           INSERT INTO organizations (id, owner_id, slug, name, updated_at)
+           VALUES ($1::uuid, $2::uuid, 'orphan', 'Orphan Org', now())
+           RETURNING id
+         )
+         INSERT INTO users (id, organization_id, email, password_hash, status, updated_at)
+         VALUES ($2::uuid, $1::uuid, 'owner@example.test', 'placeholder-not-a-credential', 'ACTIVE', now())`,
+        [organizationId, ownerId],
+      );
+    });
+
+    // Verify it has no roles before provisioning
+    const before = await rolesOf(organizationId);
+    expect(before).toHaveLength(0);
+
+    // Provision roles as the upgrade procedure would
+    await withTenant(base, { organizationId, userId: null }, () =>
+      new ProvisionSystemRolesUseCase(new PrismaRoleRepository()).execute(),
+    );
+
+    // Verify all seven system roles are now present
+    const after = await rolesOf(organizationId);
+    expect(after.map((role) => role.key).sort()).toEqual(
+      [...SharedPermissions.SYSTEM_ROLE_KEYS].sort(),
+    );
+
+    // Verify grants are correct (owner has all permissions)
+    const owner = after.find((role) => role.key === 'owner');
+    expect(owner?.grants).toBe(SharedPermissions.PERMISSIONS.length);
+
+    // Verify the default role is marked
+    const defaults = await asMaintenance(pools.owner, async (client) =>
+      (
+        await client.query<{ key: string }>(
+          'SELECT key FROM roles WHERE organization_id = $1 AND is_default',
+          [organizationId],
+        )
+      ).rows.map((row) => row.key),
+    );
+    expect(defaults).toEqual([SharedPermissions.DEFAULT_SYSTEM_ROLE]);
+  });
+});
+
+/**
+ * The step above provisions **one** organization it was handed. `pnpm db:provision-roles` has to
+ * find them all first, and that half is where this feature actually broke.
+ *
+ * Enumerating organizations is a read across tenants, and `USING` governs reads: without the
+ * maintenance switch the query is not "unfiltered because it is only a read" — it returns nothing.
+ * The first implementation left the switch out on exactly that reasoning, printed
+ * «✓ system roles provisioned for 0 organizations» against a database holding five, and exited 0.
+ * Every assertion in the describe block above stayed green throughout, because each one hands the
+ * use-case an id it already knows.
+ *
+ * So the property under test here is the one no per-organization test can see: that the list is
+ * empty without the switch and complete with it. A regression turns the upgrade back into a no-op
+ * that reports success, which is worse than a failure — the operator has no reason to look again.
+ */
+describe('finding the organizations an upgrade has to visit', () => {
+  const idsIn = async (maintenance: boolean): Promise<string[]> => {
+    const read = async (client: {
+      query: (sql: string) => Promise<{ rows: { id: string }[] }>;
+    }): Promise<string[]> =>
+      (await client.query('SELECT id FROM organizations')).rows.map((row) => row.id);
+
+    if (maintenance) return asMaintenance(pools.owner, read);
+
+    const client = await pools.owner.connect();
+
+    try {
+      return await read(client);
+    } finally {
+      client.release();
+    }
+  };
+
+  it('sees every organization under the maintenance switch, and none without it', async () => {
+    const first = randomUUID();
+    const second = randomUUID();
+
+    await asMaintenance(pools.owner, async (client) => {
+      await insertOrganizationWithOwner(client, first, { slug: `up-a-${first.slice(0, 8)}` });
+      await insertOrganizationWithOwner(client, second, { slug: `up-b-${second.slice(0, 8)}` });
+    });
+
+    // The positive control comes first: without it, a harness that inserted nothing would satisfy
+    // "invisible without the switch" perfectly, and the assertion below would be measuring an empty
+    // database rather than row-level security.
+    expect((await idsIn(true)).sort()).toEqual([first, second].sort());
+
+    expect(await idsIn(false)).toEqual([]);
   });
 });

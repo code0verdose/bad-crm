@@ -85,8 +85,10 @@ export class PrismaOwnershipRepository
         const role = roles.find((candidate) => candidate.key === key);
 
         // A system role missing from a provisioned organization is a broken installation, not a bad
-        // request: `ProvisionSystemRolesUseCase` writes them on registration and re-applies on
-        // upgrade. Failing loudly here beats handing the organization to somebody with no role.
+        // request: `ProvisionSystemRolesUseCase` writes them on registration (via
+        // `BootstrapOrganizationUseCase`), and re-applies on every upgrade via the `pnpm
+        // db:provision-roles` step. Failing loudly here beats handing the organization to somebody
+        // with no role.
         if (role === undefined) {
           throw new Error(`ownership.repository: the organization has no \`${key}\` role`);
         }
