@@ -122,6 +122,19 @@ export const RATE_LIMIT_POLICY: Readonly<Record<RateLimitPolicy, RateLimitPolicy
     blockSeconds: 15 * MINUTE,
   },
   /**
+   * Guessing a TOTP code at `POST /auth/2fa/verify`, counted against the `mfaToken` itself
+   * (`rate-limit.port.ts` works through why `jti` and not `userId`). Five guesses, and the window
+   * matches the token's own life: STORY-013-03 acceptance 1 gives `mfaToken` a five-minute TTL, and
+   * a window longer than that would guard a `jti` the token store has already forgotten. No
+   * escalation — a `jti` this policy has not exhausted within its own five minutes is never
+   * presented again either way, so a growing block would never have a second occurrence to grow on.
+   */
+  mfa_verify_attempt: {
+    points: 5,
+    windowSeconds: 5 * MINUTE,
+    blockSeconds: 5 * MINUTE,
+  },
+  /**
    * Presenting a recovery code during the second-factor step. STORY-013-02 acceptance 10 states the
    * number directly: five attempts, fifteen minutes.
    */

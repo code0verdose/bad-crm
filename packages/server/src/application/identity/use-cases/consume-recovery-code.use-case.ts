@@ -87,6 +87,7 @@ export class ConsumeRecoveryCodeUseCase {
   async execute(input: ConsumeRecoveryCodeInput): Promise<string> {
     const decision = await this.rateLimit.consume('mfa_recovery_consume_attempt', {
       userId: input.actor.userId,
+      ipAddress: input.ipAddress,
     });
 
     if (!decision.allowed) throw new RateLimitedError(decision.retryAfterSeconds);
@@ -114,7 +115,10 @@ export class ConsumeRecoveryCodeUseCase {
       throw new RecoveryCodeInvalidError();
     }
 
-    await this.rateLimit.reset('mfa_recovery_consume_attempt', { userId: input.actor.userId });
+    await this.rateLimit.reset('mfa_recovery_consume_attempt', {
+      userId: input.actor.userId,
+      ipAddress: input.ipAddress,
+    });
 
     return spent;
   }

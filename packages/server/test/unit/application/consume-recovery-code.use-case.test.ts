@@ -108,9 +108,12 @@ describe('consuming a valid code', () => {
     harness.seedCode(VALID_CODE);
     await harness.useCase.execute({ actor: ACTOR, code: VALID_CODE, ipAddress: IP_ADDRESS });
 
+    // Both halves of the subject, asserted literally rather than with `objectContaining`: the
+    // address is what STORY-013-02 acceptance 10 added to this budget, and a partial match would
+    // keep passing if it were dropped again on the way to the limiter.
     expect(harness.rateLimit.cleared).toContainEqual({
       policy: 'mfa_recovery_consume_attempt',
-      subject: { userId: USER_ID },
+      subject: { userId: USER_ID, ipAddress: IP_ADDRESS },
     });
   });
 

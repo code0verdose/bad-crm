@@ -59,13 +59,57 @@ export const RATE_LIMIT_POLICIES = [
    */
   'mfa_reauth_attempt',
   /**
-   * Presenting a recovery code — the atomic building block `ConsumeRecoveryCodeUseCase` exercises
-   * today and the budget `POST /auth/2fa/verify` will spend from once STORY-013-03 wires the
-   * second-factor sign-in step to it. Keyed on `userId` alone (`RateLimitSubjects.mfa_recovery_consume_attempt`
-   * is `UserSubject`, rendered by `rateLimitKeyOf` as `user=${userId}` — there is no separate
-   * "pending sign-in" subject anywhere in this codebase), not on IP and email the way `auth_attempt`
-   * is: there is no email at this point in the flow, only a userId that `auth_attempt` already
-   * bounded reaching. 5 / 15 minutes (STORY-013-02, acceptance 10).
+   * Presenting a TOTP code at `POST /auth/2fa/verify` — the step STORY-013-03 acceptance 5 names
+   * directly. Keyed on the `jti` of the `mfaToken` the caller is holding, **not** on `userId`.
+   *
+   * **Why `userId` is not enough.** Acceptance 5 asks for a specific shape: five wrong codes kill
+   * the token outright, and the only way back is paying for a new one — presenting the password
+   * again at `/auth/login`. A `userId`-keyed budget cannot deliver that shape, because it does not
+   * die with the token that exhausted it. The fifth wrong guess against token A would leave the
+   * budget spent for token B too — the one a legitimate re-login just bought with a fresh Argon2id
+   * verification — so somebody who fat-fingers a code five times, then correctly re-enters their
+   * password exactly as the design asks, would still find `verify` refused for the length of the
+   * block. That is the specific failure "reauthenticate for a fresh start" exists to rule out, not
+   * a milder version of the same protection. It would also need active maintenance to avoid: unlike
+   * `auth_attempt`, which `LoginUseCase` explicitly clears with `reset()` on a successful sign-in,
+   * nothing resets a `userId`-keyed verify budget when a fresh `mfaToken` is minted — that reset
+   * would have to be wired by hand from the login step into this policy, a second thing to
+   * remember and a second thing to get wrong. Keying on `jti` needs no such wiring: a new token is
+   * a new key by construction, because it is a different string, the same way a new `Session` gets
+   * a clean slate without anyone resetting the old one.
+   *
+   * **Why `jti` does not hand an attacker a free reset.** A `jti` is not a value a caller picks. It
+   * exists only because the server minted a signed `mfaToken`, and the server mints one only after
+   * `LoginUseCase` accepts a password — argon2id at the configured cost, spent behind the
+   * `auth_attempt` budget on the identical `IpEmailSubject` pair, consulted before that cost is
+   * paid (acceptance 9, "the budget comes first"). "Reset the counter" therefore means "pass the
+   * password check again", the same cost every other candidate on this path already pays — not a
+   * client-controlled value an attacker varies for nothing, the way a header nobody signs would be.
+   *
+   * 5 attempts, 5 minutes: the same TTL acceptance 1 gives the token itself, because a `jti` this
+   * policy has not refused within its own token's life will never be presented again either way —
+   * a longer window would guard a counter nothing outlives to reuse.
+   */
+  'mfa_verify_attempt',
+  /**
+   * Presenting a recovery code on `POST /auth/2fa/verify`'s recovery path — the atomic building
+   * block `ConsumeRecoveryCodeUseCase` implements, and, as of STORY-013-03, the step that actually
+   * calls it. Keyed on the pair `RateLimitSubjects.mfa_recovery_consume_attempt` now declares —
+   * `IpUserSubject`: the caller's address together with the `userId` the pending `mfaToken` already
+   * carries in its `pending:{userId}` subject. Not `userId` alone, and not `email` the way
+   * `auth_attempt` is keyed — there is no email at this point in the flow, and the pending sign-in
+   * this policy had no way to see before STORY-013-03 is exactly what supplies the `userId` now.
+   *
+   * The property is `IpEmailSubject`'s "both halves", with `userId` standing in for `email`: an
+   * address-only key would let one network burn through the five guesses of every account it tries,
+   * one guess per account, for free — and the `userId`-only key this policy shipped with before this
+   * story gives a fixed account five guesses no matter how many networks they arrive from, but
+   * measures nothing at all about one address working through many accounts. That second gap is the
+   * one STORY-013-02's own acceptance 10 recorded as open — "IP-половины нет" — pending this story;
+   * closing it here does not add a defence against the distributed case (one address, many
+   * accounts) either, only against the single-account case the pair now shares fault for with
+   * `auth_attempt` on purpose. `ipAddress` may be absent for the reasons `IpEmailSubject` gives.
+   * 5 / 15 minutes (STORY-013-02, acceptance 10).
    */
   'mfa_recovery_consume_attempt',
   /**
@@ -110,6 +154,26 @@ export interface IpEmailSubject {
   readonly email: string;
 }
 
+/**
+ * The pair a recovery-code presentation is counted against, once a pending sign-in gives it a
+ * `userId` to pair with — `IpEmailSubject`'s "both halves" property with `userId` standing in for
+ * `email`, for the same reason: neither half alone is a limit an attacker cannot walk around by
+ * varying the other (`mfa_recovery_consume_attempt`'s own catalog entry above works through this in
+ * full). `ipAddress` may be absent for the reasons `IpEmailSubject` gives.
+ *
+ * **Not to be confused with `ActorSubject` below, even though a value of one can look exactly like
+ * a value of the other.** `{ userId: '01J…', ipAddress: '203.0.113.42' }` is a legal `ActorSubject`
+ * *and* a legal `IpUserSubject` — same fields, same runtime shape — and the two are rendered
+ * differently on purpose: `ActorSubject` drops the address once a user is known, `IpUserSubject`
+ * never drops either half. Nothing about the value itself says which rule applies; only the policy
+ * does, which is why `rate-limit-key.util.ts` dispatches on the policy rather than inspecting the
+ * subject (see `SUBJECT_RENDERERS` there).
+ */
+export interface IpUserSubject {
+  readonly ipAddress: string | undefined;
+  readonly userId: string;
+}
+
 /** An anonymous caller identified only by where the request came from. */
 export interface IpSubject {
   readonly ipAddress: string | undefined;
@@ -124,6 +188,16 @@ export interface UserSubject {
 export interface ActorSubject {
   readonly userId: string | undefined;
   readonly ipAddress: string | undefined;
+}
+
+/**
+ * The intermediate `mfaToken` presented at the second-factor step of sign-in — the credential *at
+ * this point*, the way an invitation link's token is the credential for `invitation_accept` above.
+ * There is no session and no `userId` an ordinary request would carry; there is only the token, and
+ * `jti` is the part of it this subsystem is allowed to see without decoding the JWT itself.
+ */
+export interface MfaTokenSubject {
+  readonly jti: string;
 }
 
 /**
@@ -143,7 +217,8 @@ export interface RateLimitSubjects {
   readonly invitation_accept: IpSubject;
   readonly mfa_setup_attempt: UserSubject;
   readonly mfa_reauth_attempt: UserSubject;
-  readonly mfa_recovery_consume_attempt: UserSubject;
+  readonly mfa_verify_attempt: MfaTokenSubject;
+  readonly mfa_recovery_consume_attempt: IpUserSubject;
   readonly mfa_admin_reset_attempt: UserSubject;
 }
 

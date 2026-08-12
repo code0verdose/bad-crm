@@ -41,6 +41,7 @@ const harness = (): Harness => {
     invitation_accept: policy,
     mfa_setup_attempt: policy,
     mfa_reauth_attempt: policy,
+    mfa_verify_attempt: policy,
     mfa_recovery_consume_attempt: policy,
     mfa_admin_reset_attempt: policy,
   } satisfies WindowLimiters;

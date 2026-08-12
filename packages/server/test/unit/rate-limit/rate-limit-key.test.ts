@@ -81,3 +81,90 @@ describe('rate limit key', () => {
     expect(key.label).toContain('01JQ0000000000000000000002');
   });
 });
+
+describe('mfa verify attempt — keyed on the mfaToken jti, not on a userId', () => {
+  it('gives two tokens different keys and the same token the same key twice', () => {
+    const tokenA = rateLimitKeyOf('mfa_verify_attempt', { jti: 'jti-aaaa' }).value;
+    const tokenB = rateLimitKeyOf('mfa_verify_attempt', { jti: 'jti-bbbb' }).value;
+    const tokenAAgain = rateLimitKeyOf('mfa_verify_attempt', { jti: 'jti-aaaa' }).value;
+
+    expect(tokenA).not.toBe(tokenB);
+    expect(tokenA).toBe(tokenAAgain);
+  });
+
+  it('carries the jti in the label, the same way a userId is carried unmasked', () => {
+    const key = rateLimitKeyOf('mfa_verify_attempt', { jti: 'jti-aaaa' });
+
+    expect(key.label).toContain('jti-aaaa');
+  });
+});
+
+describe('mfa recovery consume attempt — keyed on the pair, not on the userId alone', () => {
+  const USER_ID = '01JQ0000000000000000000009';
+  const OTHER_USER_ID = '01JQ0000000000000000000010';
+  const OTHER_IP = '198.51.100.7';
+
+  it('changes when the address changes for the same user — the case the old UserSubject key missed', () => {
+    const first = rateLimitKeyOf('mfa_recovery_consume_attempt', {
+      userId: USER_ID,
+      ipAddress: IP,
+    }).value;
+    const second = rateLimitKeyOf('mfa_recovery_consume_attempt', {
+      userId: USER_ID,
+      ipAddress: OTHER_IP,
+    }).value;
+
+    expect(first).not.toBe(second);
+  });
+
+  it('changes when the user changes for the same address', () => {
+    const first = rateLimitKeyOf('mfa_recovery_consume_attempt', {
+      userId: USER_ID,
+      ipAddress: IP,
+    }).value;
+    const second = rateLimitKeyOf('mfa_recovery_consume_attempt', {
+      userId: OTHER_USER_ID,
+      ipAddress: IP,
+    }).value;
+
+    expect(first).not.toBe(second);
+  });
+
+  it('puts every request without a readable address into one shared bucket, not one per malformed value', () => {
+    const missing = rateLimitKeyOf('mfa_recovery_consume_attempt', {
+      userId: USER_ID,
+      ipAddress: undefined,
+    }).value;
+    const unreadable = rateLimitKeyOf('mfa_recovery_consume_attempt', {
+      userId: USER_ID,
+      ipAddress: 'not-an-address',
+    }).value;
+
+    expect(missing).toBe(unreadable);
+  });
+});
+
+describe('actor subject regression — unaffected by the pair-subject rendering', () => {
+  it('still prefers the authenticated user over the address on the shared API limit', () => {
+    const byUser = rateLimitKeyOf('api_request', { userId: 'user-1', ipAddress: IP }).value;
+    const byOtherAddress = rateLimitKeyOf('api_request', {
+      userId: 'user-1',
+      ipAddress: '198.51.100.9',
+    }).value;
+
+    expect(byUser).toBe(byOtherAddress);
+  });
+
+  it('still falls back to the address when there is no user, on client_error_report', () => {
+    const anonA = rateLimitKeyOf('client_error_report', {
+      userId: undefined,
+      ipAddress: IP,
+    }).value;
+    const anonB = rateLimitKeyOf('client_error_report', {
+      userId: undefined,
+      ipAddress: '198.51.100.9',
+    }).value;
+
+    expect(anonA).not.toBe(anonB);
+  });
+});

@@ -3,13 +3,14 @@ import { createHash } from 'node:crypto';
 import {
   type ActorSubject,
   type IpEmailSubject,
+  type IpSubject,
+  type IpUserSubject,
+  type MfaTokenSubject,
   type RateLimitPolicy,
   type RateLimitSubjects,
+  type UserSubject,
 } from '@/application/platform/ports/rate-limit.port.js';
 import { maskIpAddress } from '@/domain/identity/mask-ip-address.util.js';
-
-/** Any of the four subject shapes, narrowed structurally below rather than by policy name. */
-type AnyRateLimitSubject = RateLimitSubjects[RateLimitPolicy];
 
 export interface RateLimitKey {
   /** What the counter is stored under. Contains no address and no email in clear. */
@@ -33,6 +34,110 @@ const digest = (value: string): string => createHash('sha256').update(value).dig
  */
 const normalizeEmail = (email: string): string => email.trim().toLowerCase();
 
+interface SubjectPart {
+  readonly name: string;
+  readonly key: string;
+  readonly label: string;
+}
+
+/** `userId` is neither hashed nor masked: it is an opaque identifier, and identifiers are exactly
+ * what the observability rule says logs are *for*. */
+const userPart = (userId: string): SubjectPart => ({ name: 'user', key: userId, label: userId });
+
+/**
+ * An unreadable or absent address is one shared bucket, not one bucket per malformed value: the
+ * alternative lets a caller mint a fresh budget by varying a header nobody can parse. `maskIpAddress`
+ * is what decides readable from not, so there is one parser, not two — every subject that carries an
+ * address renders it through this one function.
+ */
+const ipPart = (ipAddress: string | undefined): SubjectPart => {
+  const masked = maskIpAddress(ipAddress);
+
+  return {
+    name: 'ip',
+    key:
+      ipAddress === undefined || masked === UNKNOWN_ADDRESS ? UNKNOWN_ADDRESS : digest(ipAddress),
+    label: masked,
+  };
+};
+
+const emailPart = (email: string): SubjectPart => {
+  const hashed = digest(normalizeEmail(email));
+
+  return { name: 'email', key: hashed, label: `sha256:${hashed.slice(0, LABEL_DIGEST_LENGTH)}` };
+};
+
+/**
+ * A `jti` is an opaque identifier the server itself mints inside a signed JWT — never a value a
+ * caller supplies — which puts it in the same category `userId` is in, not the category `email` and
+ * `ipAddress` are. Written to the key and the label unhashed, for the same reason `userId` is: there
+ * is no personal data to protect and nothing outside this process could have chosen the value.
+ */
+const jtiPart = (jti: string): SubjectPart => ({ name: 'jti', key: jti, label: jti });
+
+type SubjectRenderer<S> = (subject: S) => readonly SubjectPart[];
+
+/** The user when there is one, the address otherwise — never both at once. */
+const renderActor: SubjectRenderer<ActorSubject> = ({ userId, ipAddress }) =>
+  userId !== undefined ? [userPart(userId)] : [ipPart(ipAddress)];
+
+/** Both halves, always — an address-only or email-only counter is not the limit this pair is for. */
+const renderIpEmail: SubjectRenderer<IpEmailSubject> = ({ ipAddress, email }) => [
+  ipPart(ipAddress),
+  emailPart(email),
+];
+
+/** The `IpEmailSubject` pair with `userId` in place of `email` — see `IpUserSubject`'s own doc. */
+const renderIpUser: SubjectRenderer<IpUserSubject> = ({ ipAddress, userId }) => [
+  ipPart(ipAddress),
+  userPart(userId),
+];
+
+const renderIp: SubjectRenderer<IpSubject> = ({ ipAddress }) => [ipPart(ipAddress)];
+
+const renderUser: SubjectRenderer<UserSubject> = ({ userId }) => [userPart(userId)];
+
+const renderMfaToken: SubjectRenderer<MfaTokenSubject> = ({ jti }) => [jtiPart(jti)];
+
+/**
+ * Which renderer each policy uses — keyed on the **policy**, not sniffed from the subject's runtime
+ * shape.
+ *
+ * It used to be the other way around: one function read whichever fields the value happened to
+ * carry and decided from that alone. That held up as long as every "combine both fields, always"
+ * subject was structurally distinct from every "prefer one field over the other" subject — a
+ * coincidence that broke the moment `IpUserSubject` was added for `mfa_recovery_consume_attempt`.
+ * `{ userId: '01J…', ipAddress: '203.0.113.42' }` is a value `ActorSubject` and `IpUserSubject` can
+ * both produce, byte for byte, and the two are supposed to render *different* keys from it —
+ * `ActorSubject` drops the address once a user is known, `IpUserSubject` never drops either half.
+ * No inspection of that one object recovers which rule applies; the shape alone is genuinely
+ * ambiguous. Only the policy name disambiguates it, and the policy is closed and known at every call
+ * site, so it is the dispatch key.
+ *
+ * The mapped type below is what makes this a type-level guarantee rather than a convention: it
+ * forces each entry's renderer to accept exactly the subject shape `RateLimitSubjects` declares for
+ * that policy, so wiring `renderActor` where `mfa_recovery_consume_attempt` needs `renderIpUser`
+ * does not compile — swapping the two is exactly the mistake the ambiguity above invites. That is
+ * what "express the difference in types, not a comment" means in practice here: this table is the
+ * type, the paragraph above only explains why it has to exist.
+ */
+const SUBJECT_RENDERERS: {
+  readonly [P in RateLimitPolicy]: SubjectRenderer<RateLimitSubjects[P]>;
+} = {
+  auth_attempt: renderIpEmail,
+  organization_registration: renderIp,
+  api_request: renderActor,
+  heavy_operation: renderUser,
+  client_error_report: renderActor,
+  invitation_create: renderUser,
+  invitation_accept: renderIp,
+  mfa_setup_attempt: renderUser,
+  mfa_reauth_attempt: renderUser,
+  mfa_verify_attempt: renderMfaToken,
+  mfa_recovery_consume_attempt: renderIpUser,
+  mfa_admin_reset_attempt: renderUser,
+};
+
 /**
  * The subject of a limit, as a storage key and as a loggable label.
  *
@@ -46,68 +151,15 @@ const normalizeEmail = (email: string): string => email.trim().toLowerCase();
  * address is not written anywhere). The label carries the masked network, which is what a person
  * reading the log can act on, and a short digest of the address, which is what lets them see that
  * the same account is being hammered from three networks.
- *
- * `userId` is neither hashed nor masked: it is an opaque identifier, and identifiers are exactly
- * what the observability rule says logs are *for*.
  */
 export const rateLimitKeyOf = <P extends RateLimitPolicy>(
   policy: P,
   subject: RateLimitSubjects[P],
 ): RateLimitKey => {
-  const parts = subjectParts(subject);
+  const parts = SUBJECT_RENDERERS[policy](subject);
 
   return {
     value: `${policy}:${parts.map((part) => `${part.name}=${part.key}`).join('|')}`,
     label: parts.map((part) => `${part.name}=${part.label}`).join(' '),
   };
-};
-
-interface SubjectPart {
-  readonly name: string;
-  readonly key: string;
-  readonly label: string;
-}
-
-/**
- * Which fields the key is built from, decided by what the subject carries rather than by the policy.
- *
- * An authenticated caller is counted as that caller, whatever address they came from — a phone that
- * switches from wifi to mobile data must not get a second budget. An anonymous caller is counted by
- * address, and a sign-in attempt by **both** address and account, which is the property the port
- * documents at length.
- */
-const subjectParts = (subject: AnyRateLimitSubject): readonly SubjectPart[] => {
-  // Read as optionals rather than narrowed with `in`: every shape that has no `userId` has an
-  // `ipAddress`, so an `in` guard for the address would be a branch no input can take — dead code
-  // in the one file where "which fields decide the key" has to stay readable.
-  const { userId, ipAddress, email } = subject as Partial<IpEmailSubject & ActorSubject>;
-
-  if (userId !== undefined) {
-    return [{ name: 'user', key: userId, label: userId }];
-  }
-
-  const masked = maskIpAddress(ipAddress);
-  const parts: SubjectPart[] = [
-    {
-      name: 'ip',
-      // An unreadable address is one shared bucket, not one bucket per malformed value: the
-      // alternative lets a caller mint a fresh budget by varying a header nobody can parse.
-      // `maskIpAddress` is what decides readable from not, so there is one parser, not two.
-      key:
-        ipAddress === undefined || masked === UNKNOWN_ADDRESS ? UNKNOWN_ADDRESS : digest(ipAddress),
-      label: masked,
-    },
-  ];
-
-  if (email !== undefined) {
-    const hashed = digest(normalizeEmail(email));
-
-    parts.push({
-      name: 'email',
-      key: hashed,
-      label: `sha256:${hashed.slice(0, LABEL_DIGEST_LENGTH)}`,
-    });
-  }
-
-  return parts;
 };
