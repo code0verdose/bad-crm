@@ -7,6 +7,13 @@ import { type i18n as I18n } from 'i18next';
 
 import { SharedI18n } from '@shared';
 
+import {
+  expectFocusInside,
+  expectFocusReturnedTo,
+  tabWrapFailures,
+  focusEscapes,
+} from '../support/focus-trap.util.js';
+
 /**
  * `/admin/teams` — the org structure as a list.
  *
@@ -436,6 +443,78 @@ describe('creating a team', () => {
         name: /teams\.create\.close/,
       }),
     );
+
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog')).toBeNull();
+    });
+    await waitFor(() => {
+      expectFocusReturnedTo(trigger, 'the control that opens the create dialog');
+    });
+  });
+});
+
+/**
+ * `rules/a11y.mdc` §6 against this dialog, one sentence per case.
+ *
+ * Nothing about creating a team is unusual here — which is the point of stating it: this is the
+ * plain arrangement the other four dialogs are compared against, and the only one of the five whose
+ * trap had no assertion at all before. The screen is mounted whole rather than the component alone,
+ * because two of the four properties are not the component's: the focus goes back to a **trigger**,
+ * and the control behind it that must stay unreachable is the list's own filter.
+ */
+describe('the create dialog, from the keyboard', () => {
+  it('moves the focus into itself when it opens', async () => {
+    const user = userEvent.setup();
+
+    await startAt();
+
+    const dialog = await openCreateDialog(user);
+
+    await waitFor(() => {
+      // The header cross is the first tabbable node Mantine finds, and it is named: a dialog that
+      // opened with focus still on the page behind it is one a screen reader never announces.
+      expect(expectFocusInside(dialog)).toHaveAccessibleName(/teams\.create\.close/);
+    });
+  });
+
+  it('keeps the focus inside itself, in both directions', async () => {
+    const user = userEvent.setup();
+
+    await startAt();
+
+    const dialog = await openCreateDialog(user);
+
+    expect(
+      await focusEscapes(user, dialog, await screen.findByLabelText(/teams\.filters\.search/)),
+    ).toEqual([]);
+  });
+
+  it('wraps at both ends rather than swallowing the key', async () => {
+    const user = userEvent.setup();
+
+    await startAt();
+
+    expect(await tabWrapFailures(user, await openCreateDialog(user))).toEqual([]);
+  });
+
+  /**
+   * `Esc` closes it, and closing by `Esc` returns the focus exactly as closing by the cross does.
+   *
+   * Both halves in one case on purpose: «Escape closed something» is satisfied by a dialog that
+   * unmounted and left a keyboard user on `<body>`, which is the failure the rule is about. Nothing
+   * is lost by dismissing this one — the form is remounted on every open — so unlike the recovery
+   * codes next door it takes the default.
+   */
+  it('closes on Escape, and puts the focus back on the trigger', async () => {
+    const user = userEvent.setup();
+
+    await startAt();
+
+    const trigger = await screen.findByRole('button', { name: /teams\.create\.action/ });
+
+    await user.click(trigger);
+    await screen.findByRole('dialog');
+    await user.keyboard('{Escape}');
 
     await waitFor(() => {
       expect(screen.queryByRole('dialog')).toBeNull();

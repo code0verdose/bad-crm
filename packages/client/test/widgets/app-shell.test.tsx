@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event';
 import axe from 'axe-core';
 import { beforeEach, describe, expect, it } from 'vitest';
 
+import { expectFocusInside, focusEscapes, tabWrapFailures } from '../support/focus-trap.util.js';
 import { renderApp } from '../support/render-app.util.js';
 
 /**
@@ -145,8 +146,19 @@ describe('the sidebar', () => {
   });
 });
 
+/**
+ * The drawer is a trap surface like every dialog in the product, and `rules/a11y.mdc` §7 asks it for
+ * the same four sentences §6 asks a modal — so it is asserted with the same helpers.
+ *
+ * It is not on the list `CLAUDE.md` prints for modals (`grep -iE 'modal|dialog'` over the file
+ * names) because it is neither: it is the mobile navigation, and it lives in `app-shell.widget.tsx`.
+ * That is exactly why it is here. The component's own docstring claims «`Drawer` traps focus, closes
+ * on `Esc` and returns focus to the burger»; of those three only the last two were checked, and the
+ * case that claimed the first asserted only that the focus had **arrived** — which a drawer with
+ * `trapFocus={false}` also does, since Mantine still places the initial focus.
+ */
 describe('the mobile drawer', () => {
-  it('opens from the burger and traps focus inside itself', async () => {
+  it('opens from the burger with the focus inside itself', async () => {
     const user = userEvent.setup();
     renderApp({ path: '/dashboard' });
     await screen.findByRole('main');
@@ -154,9 +166,40 @@ describe('the mobile drawer', () => {
     await user.click(screen.getByRole('button', { name: 'nav.drawer.toggle' }));
 
     const drawer = await screen.findByRole('dialog');
+
     await waitFor(() => {
-      expect(drawer).toContainElement(document.activeElement as HTMLElement | null);
+      expectFocusInside(drawer);
     });
+    // The premise the shell behind it relies on: while this is open, nothing outside it is in the
+    // tree a screen reader is confined to (`rules/a11y.mdc` §7).
+    expect(drawer).toHaveAttribute('aria-modal', 'true');
+  });
+
+  it('keeps the focus inside itself, in both directions', async () => {
+    const user = userEvent.setup();
+    renderApp({ path: '/dashboard' });
+    await screen.findByRole('main');
+
+    await user.click(screen.getByRole('button', { name: 'nav.drawer.toggle' }));
+
+    // The collapse control in the header: enabled, tabbable, and behind the drawer in the document.
+    expect(
+      await focusEscapes(
+        user,
+        await screen.findByRole('dialog'),
+        screen.getByRole('button', { name: 'nav.sidebar.toggle' }),
+      ),
+    ).toEqual([]);
+  });
+
+  it('wraps at both ends rather than swallowing the key', async () => {
+    const user = userEvent.setup();
+    renderApp({ path: '/dashboard' });
+    await screen.findByRole('main');
+
+    await user.click(screen.getByRole('button', { name: 'nav.drawer.toggle' }));
+
+    expect(await tabWrapFailures(user, await screen.findByRole('dialog'))).toEqual([]);
   });
 
   it('closes on Escape and gives the focus back to the burger', async () => {

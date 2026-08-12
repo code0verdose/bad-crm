@@ -7,6 +7,13 @@ import { type i18n as I18n } from 'i18next';
 
 import { SharedI18n, SharedLib } from '@shared';
 
+import {
+  expectFocusInside,
+  expectFocusReturnedTo,
+  tabWrapFailures,
+  focusEscapes,
+} from '../support/focus-trap.util.js';
+
 /**
  * `/admin/teams/$teamId` — who is on a team, and the three things one can do about it.
  *
@@ -592,17 +599,78 @@ describe('disbanding the team', () => {
     ).toBeGreaterThan(0);
   });
 
-  it('traps focus inside the dialog', async () => {
+  /**
+   * `rules/a11y.mdc` §6 against a **destructive** dialog, one sentence per case.
+   *
+   * What is different here is where the focus lands on open. §6 asks a `danger` dialog to open on
+   * «Отмена», and it does — but not because anything aims it there: Mantine focuses the first
+   * tabbable node, and the first one in this dialog is the header cross, which carries the *cancel*
+   * label rather than a «close» of its own. That is the arrangement being pinned. A cross relabelled
+   * «close», or a confirm button moved above the cancel, would keep every other case in this file
+   * green while opening a disband dialog with the red button under the keyboard.
+   */
+  it('opens with the focus on a control that cancels, not on the one that disbands', async () => {
     const user = userEvent.setup();
 
     await startAt();
 
     const dialog = await openDeleteDialog(user);
 
-    for (let step = 0; step < 10; step += 1) {
-      await user.tab();
-      expect(dialog.contains(document.activeElement)).toBe(true);
-    }
+    await waitFor(() => {
+      expect(expectFocusInside(dialog)).toHaveAccessibleName(/teams\.delete\.cancel/);
+    });
+    // The other half of the sentence, and the one that would break first: the focused control is not
+    // the one that ends the team.
+    expect(document.activeElement).not.toBe(
+      within(dialog).getByRole('button', { name: /teams\.delete\.submit/ }),
+    );
+  });
+
+  it('keeps the focus inside itself, in both directions', async () => {
+    const user = userEvent.setup();
+
+    await startAt();
+
+    const dialog = await openDeleteDialog(user);
+
+    expect(
+      await focusEscapes(user, dialog, await screen.findByLabelText(/teams\.field\.name/)),
+    ).toEqual([]);
+  });
+
+  it('wraps at both ends rather than swallowing the key', async () => {
+    const user = userEvent.setup();
+
+    await startAt();
+
+    expect(await tabWrapFailures(user, await openDeleteDialog(user))).toEqual([]);
+  });
+
+  /**
+   * `Esc` cancels, and cancelling is the whole of what it does.
+   *
+   * The absence of the request is the point rather than a bonus: on a confirmation dialog «Escape
+   * closed it» and «Escape confirmed it» look identical from the outside once the dialog is gone,
+   * and the second is how a team gets disbanded by a keystroke aimed at the page behind it.
+   */
+  it('cancels on Escape without disbanding anything, and gives the focus back', async () => {
+    const user = userEvent.setup();
+
+    await startAt();
+
+    const trigger = await screen.findByRole('button', { name: /teams\.delete\.action/ });
+
+    await user.click(trigger);
+    await screen.findByRole('dialog');
+    await user.keyboard('{Escape}');
+
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog')).toBeNull();
+    });
+    await waitFor(() => {
+      expectFocusReturnedTo(trigger, 'the control that opens the disband dialog');
+    });
+    expect(sent.some((call) => call.method === 'DELETE')).toBe(false);
   });
 
   it('returns focus to the trigger when it closes', async () => {

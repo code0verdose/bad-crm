@@ -7,6 +7,14 @@ import { type i18n as I18n } from 'i18next';
 
 import { SharedI18n } from '@shared';
 
+import {
+  expectFocusInside,
+  expectFocusReturnedTo,
+  tabWrapFailures,
+  focusEscapes,
+  tabbablesOf,
+} from '../support/focus-trap.util.js';
+
 /**
  * Offboarding from the personnel screen.
  *
@@ -446,19 +454,84 @@ describe('the offboarding dialog', () => {
     ).toBeInTheDocument();
   });
 
-  it('traps focus inside the dialog', async () => {
-    // The open compliance item from EPIC-007. Tabbing out of a modal that ends somebody's access is
-    // how a confirmation gets confirmed by a keystroke meant for the page behind it.
+  /**
+   * The open compliance item from EPIC-007, in four sentences (`rules/a11y.mdc` §6). Tabbing out of
+   * a modal that ends somebody's access is how a confirmation gets confirmed by a keystroke meant
+   * for the page behind it.
+   */
+  it('moves the focus into itself, and not onto the button that deactivates', async () => {
     const user = userEvent.setup();
 
     await startAt();
 
     const dialog = await openDialog(user);
 
-    for (let step = 0; step < 12; step += 1) {
-      await user.tab();
-      expect(dialog.contains(document.activeElement)).toBe(true);
-    }
+    await waitFor(() => {
+      // The header cross: the first tabbable node in the dialog, and the safe one. The red button
+      // below is `disabled` until both fields are filled, so it is not merely «not first» — it is
+      // not reachable at all yet, which is what the assertion after this one pins.
+      expect(expectFocusInside(dialog)).toHaveAccessibleName(/offboarding\.close/);
+    });
+    expect(
+      tabbablesOf(dialog).includes(
+        within(dialog).getByRole('button', { name: /offboarding\.submit/ }),
+      ),
+    ).toBe(false);
+  });
+
+  it('keeps the focus inside itself, in both directions', async () => {
+    const user = userEvent.setup();
+
+    await startAt();
+
+    const dialog = await openDialog(user);
+
+    expect(
+      await focusEscapes(user, dialog, await screen.findByLabelText(/employee\.firstName/)),
+    ).toEqual([]);
+  });
+
+  it('wraps at both ends rather than swallowing the key', async () => {
+    const user = userEvent.setup();
+
+    await startAt();
+
+    expect(await tabWrapFailures(user, await openDialog(user))).toEqual([]);
+  });
+
+  /**
+   * `Esc` abandons the confirmation, and abandoning is the whole of what it does.
+   *
+   * The absence of the request is the assertion, not decoration: once the dialog is gone, «Escape
+   * closed it» and «Escape submitted it» look the same from outside, and the second would end
+   * somebody's access to everything from a keystroke aimed at the page behind.
+   */
+  it('abandons on Escape without deactivating anybody, and gives the focus back', async () => {
+    const user = userEvent.setup();
+
+    await startAt();
+
+    const trigger = await screen.findByRole('button', { name: /offboarding\.action/ });
+
+    await user.click(trigger);
+
+    const dialog = await screen.findByRole('dialog');
+
+    // Filled in first, so the case is about `Esc` on an **armed** dialog rather than on one whose
+    // button was disabled anyway — the only state in which a stray submission is possible at all.
+    await user.type(within(dialog).getByLabelText(/offboarding\.reasonLabel/), 'left the company');
+    await user.type(within(dialog).getByLabelText(/offboarding\.confirmLabel/), EMAIL);
+    expect(within(dialog).getByRole('button', { name: /offboarding\.submit/ })).toBeEnabled();
+
+    await user.keyboard('{Escape}');
+
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog')).toBeNull();
+    });
+    await waitFor(() => {
+      expectFocusReturnedTo(trigger, 'the control that opens the offboarding dialog');
+    });
+    expect(sent.some((call) => call.url.endsWith('/deactivate'))).toBe(false);
   });
 
   /**

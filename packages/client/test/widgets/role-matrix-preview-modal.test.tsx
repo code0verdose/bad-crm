@@ -3,13 +3,23 @@ import userEvent, { type UserEvent } from '@testing-library/user-event';
 import axe from 'axe-core';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+import {
+  expectFocusInside,
+  tabWrapFailures,
+  focusEscapes,
+  tabbablesOf,
+} from '../support/focus-trap.util.js';
+
 /**
- * The keyboard and the screen reader against «кого затронет» — the second modal in the product.
+ * The keyboard and the screen reader against «кого затронет».
  *
  * The rules it answers to are not about roles at all. `rules/a11y.mdc` §6 states the whole of it in
  * one sentence — focus enters the dialog, stays in it, `Esc` closes it and the focus goes back to
- * the control that opened it — and `CLAUDE.md` has carried «ловушка фокуса в модалке» as an open
- * EPIC-007 item since the offboarding dialog closed the first half of it. This file is the second.
+ * the control that opened it — and `CLAUDE.md` carried «ловушка фокуса в модалке» as an open
+ * EPIC-007 item for as long as this file was the only one asserting it. It is no longer: the same
+ * four sentences are now asserted about every dialog the product ships, through the shared
+ * assertions in `test/support/focus-trap.util.ts`, and the list is
+ * `git ls-files 'packages/client/src/**' | grep -iE 'modal|dialog'`.
  *
  * Why the whole screen and not the component alone. Two of the five properties are not the
  * component's at all: the focus goes back to a **trigger**, and the trigger here is the Review
@@ -134,34 +144,6 @@ const openSummary = async (
   return { dialog: await screen.findByRole('dialog'), trigger };
 };
 
-/** Enough of the focused node to identify it in a failure, and not the whole document. */
-const focused = (): string => {
-  const element = document.activeElement;
-
-  if (element === null) return 'nothing';
-
-  return `<${element.tagName.toLowerCase()}> ${
-    element.getAttribute('aria-label') ?? element.textContent?.trim().slice(0, 40) ?? ''
-  }`;
-};
-
-/**
- * The tabbable controls of an element, in the order the browser walks them.
- *
- * Selector and filter are Mantine's own (`@mantine/hooks/use-focus-trap/tabbable`), because the
- * question these cases ask is «where does the trap take the focus at its own boundary» — computing
- * the boundary differently from the code under test would be asking about a different boundary.
- */
-const tabbablesOf = (dialog: HTMLElement): HTMLElement[] =>
-  [
-    ...dialog.querySelectorAll<HTMLElement>(
-      'a, input, select, textarea, button, object, [tabindex]',
-    ),
-  ]
-    .filter((element) => !element.hasAttribute('aria-hidden') && !element.hasAttribute('hidden'))
-    .filter((element) => !(element as HTMLButtonElement).disabled)
-    .filter((element) => Number(element.getAttribute('tabindex') ?? 0) >= 0);
-
 afterEach(() => {
   vi.stubGlobal('fetch', platformFetch);
 });
@@ -188,45 +170,40 @@ describe('the role-change summary as a keyboard reaches it', () => {
     ).toEqual(['roles.preview.close', 'roles.preview.cancel', 'roles.preview.confirm']);
   });
 
-  it('wraps Tab from the last control back into the dialog, not out of it', async () => {
+  /**
+   * The focus enters the dialog at all — the sentence `rules/a11y.mdc` §6 puts first and the one
+   * every case below silently assumes.
+   *
+   * It is not idle. The trigger of *this* dialog is `loading` at the moment it opens, so the focus
+   * has already been taken off it by the browser: if the trap failed to place the focus, it would
+   * sit on `<body>` and the first `Tab` would enter the dialog anyway — which is exactly why a loop
+   * that begins by tabbing cannot tell a working trap from a missing one.
+   */
+  it('moves the focus into itself when it opens', async () => {
     const user = userEvent.setup();
 
     await startAt();
 
     const { dialog } = await openSummary(user);
-    const tabbables = tabbablesOf(dialog);
-    const first = tabbables[0] as HTMLElement;
-    const last = tabbables[tabbables.length - 1] as HTMLElement;
 
-    last.focus();
-    expect(last).toHaveFocus();
-
-    await user.tab();
-
-    expect(first).toHaveFocus();
+    await waitFor(() => {
+      expect(expectFocusInside(dialog)).toHaveAccessibleName('roles.preview.close');
+    });
   });
 
-  it('wraps Shift+Tab from the first control back to the last', async () => {
+  it('wraps at both ends rather than swallowing the key', async () => {
     const user = userEvent.setup();
 
     await startAt();
 
     const { dialog } = await openSummary(user);
-    const tabbables = tabbablesOf(dialog);
-    const first = tabbables[0] as HTMLElement;
-    const last = tabbables[tabbables.length - 1] as HTMLElement;
 
-    first.focus();
-    expect(first).toHaveFocus();
-
-    await user.tab({ shift: true });
-
-    expect(last).toHaveFocus();
+    expect(await tabWrapFailures(user, dialog)).toEqual([]);
   });
 
   /**
-   * The property the two cases above imply and neither states: a full lap in each direction never
-   * lands on the screen behind the dialog.
+   * The property the case above implies and does not state: a full lap in each direction never lands
+   * on the screen behind the dialog.
    *
    * The control is the search box — a real, enabled, tabbable input that sits before the dialog in
    * the document. Without naming something the focus could have reached, «focus stayed inside» is
@@ -238,27 +215,10 @@ describe('the role-change summary as a keyboard reaches it', () => {
     await startAt();
 
     const { dialog } = await openSummary(user);
-    const behind = screen.getByLabelText('roles.searchLabel');
 
-    expect(tabbablesOf(document.body).includes(behind as HTMLElement)).toBe(true);
-
-    for (let step = 0; step < 8; step += 1) {
-      await user.tab();
-      // Named rather than left as `expected false to be true`: what a reader of the failure needs is
-      // which control outside the dialog the focus escaped to.
-      expect(
-        dialog.contains(document.activeElement),
-        `Tab #${step + 1} left the dialog, on ${focused()}`,
-      ).toBe(true);
-    }
-
-    for (let step = 0; step < 8; step += 1) {
-      await user.tab({ shift: true });
-      expect(
-        dialog.contains(document.activeElement),
-        `Shift+Tab #${step + 1} left the dialog, on ${focused()}`,
-      ).toBe(true);
-    }
+    expect(await focusEscapes(user, dialog, screen.getByLabelText('roles.searchLabel'))).toEqual(
+      [],
+    );
   });
 });
 

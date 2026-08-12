@@ -3,6 +3,7 @@ import userEvent, { type UserEvent } from '@testing-library/user-event';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { axeViolationsIn } from '../support/axe-scan.util.js';
+import { expectFocusInside, focusEscapes, tabWrapFailures } from '../support/focus-trap.util.js';
 
 /**
  * What is left of the way back in, on `/settings/security`, once 2FA is on.
@@ -274,14 +275,56 @@ describe('the fresh set on screen', () => {
     expect(dialog.getByText(/security\.codes\.dialog\.onceTitle/)).toBeInTheDocument();
   });
 
-  it('keeps the focus inside itself', async () => {
+  /**
+   * The entry half of `rules/a11y.mdc` §6, and the one place in the product where it is not the
+   * header cross that receives the focus.
+   *
+   * The cross is `disabled` until the codes are saved, so Mantine's trap skips it and lands on the
+   * first control that *is* reachable — «download». That is the right first stop and not an accident
+   * worth leaving unstated: this dialog's whole argument for refusing `Esc` is that the way out is
+   * inside it and reachable by keyboard, and the way out begins with taking the codes away.
+   */
+  it('opens with the focus on the first way of taking the codes away', async () => {
     const user = userEvent.setup();
     const dialog = await reissue(user);
 
-    for (let step = 0; step < 12; step += 1) {
-      await user.tab();
-      expect(dialog.contains(document.activeElement)).toBe(true);
-    }
+    await waitFor(() => {
+      expect(expectFocusInside(dialog)).toHaveAccessibleName(/security\.codes\.dialog\.download/);
+    });
+    // The premise, asserted rather than assumed: the cross is skipped because it is disabled, not
+    // because it is absent. A cross that became enabled would take this focus and change the answer.
+    expect(
+      within(dialog).getByRole('button', { name: /security\.codes\.dialog\.close/ }),
+    ).toBeDisabled();
+  });
+
+  it('keeps the focus inside itself, in both directions', async () => {
+    const user = userEvent.setup();
+    const dialog = await reissue(user);
+
+    // The reissue form is still on the screen behind, and its password field is a real, enabled,
+    // tabbable input — without naming something the focus *could* have reached, «stayed inside» is
+    // equally true of a page with nothing else on it.
+    expect(
+      await focusEscapes(
+        user,
+        dialog,
+        screen.getByLabelText(/security\.codes\.regenerate\.password\.label/),
+      ),
+    ).toEqual([]);
+  });
+
+  /**
+   * Wrapping, and here it carries more weight than anywhere else.
+   *
+   * A trap that swallowed `Tab` without moving the focus would satisfy every «stayed inside» loop
+   * and leave a keyboard user pinned to one control — inside the one dialog in the product that also
+   * refuses `Esc`. That combination is the WCAG 2.1.2 keyboard trap this dialog argues it is not.
+   */
+  it('wraps at both ends rather than swallowing the key', async () => {
+    const user = userEvent.setup();
+
+    expect(await tabWrapFailures(user, await reissue(user))).toEqual([]);
   });
 
   it('cannot be dismissed by Escape, or by either close control, until they are saved', async () => {
@@ -325,6 +368,33 @@ describe('the fresh set on screen', () => {
     // CONTROL: nowhere is the failure this replaces — focus on `<body>`, which is what a return to a
     // detached or disabled trigger actually produces.
     expect(document.activeElement).not.toBe(document.body);
+  });
+
+  /**
+   * And `Esc` works again the moment it is safe to — the `saved` half of `closeOnEscape={saved}`,
+   * which nothing exercised.
+   *
+   * Both halves of that expression are the same decision seen from two sides, and only the refusal
+   * had a case. A `closeOnEscape={false}` would have kept it green while turning a documented,
+   * temporary refusal into a permanent one — a dialog that never answers `Esc` is the keyboard trap
+   * the component's own docstring argues this is not.
+   */
+  it('answers Escape again once the codes are saved', async () => {
+    const user = userEvent.setup();
+    const dialog = await reissue(user);
+
+    await user.click(within(dialog).getByLabelText(/security\.codes\.dialog\.saved/));
+    await user.keyboard('{Escape}');
+
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog')).toBeNull();
+    });
+    // The same landing as the «done» button's, because it is the same `close`: the page's `h1`, not
+    // `<body>`. `rules/a11y.mdc` §6 asks for the trigger; this dialog says at length why the trigger
+    // is either disabled or gone by then, and §21 is where the focus goes instead.
+    await waitFor(() => {
+      expect(document.activeElement).toBe(screen.getByRole('heading', { level: 1 }));
+    });
   });
 
   it('takes the codes with it when it goes', async () => {

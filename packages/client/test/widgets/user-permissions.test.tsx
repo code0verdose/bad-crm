@@ -7,6 +7,13 @@ import { type i18n as I18n } from 'i18next';
 
 import { SharedI18n } from '@shared';
 
+import {
+  expectFocusInside,
+  expectFocusReturnedTo,
+  tabWrapFailures,
+  focusEscapes,
+} from '../support/focus-trap.util.js';
+
 /**
  * The permissions tab of a personnel card — `/admin/members/{userId}?tab=roles`.
  *
@@ -952,7 +959,7 @@ describe.each([
 
 /** The dialog is its own document, and the one with a focus trap to honour. */
 describe('the exception dialog', () => {
-  it('has no accessibility violation, and traps focus', async () => {
+  it('has no accessibility violation', async () => {
     const user = userEvent.setup();
 
     await startAt();
@@ -974,11 +981,115 @@ describe('the exception dialog', () => {
 
     expect(violations.map((violation) => violation.id)).toEqual([]);
     expect(dialog).toHaveAttribute('aria-modal', 'true');
+  });
 
-    for (let step = 0; step < 10; step += 1) {
-      await user.tab();
-      expect(dialog.contains(document.activeElement)).toBe(true);
-    }
+  /**
+   * `rules/a11y.mdc` §6 against this dialog, one sentence per case.
+   *
+   * The trigger is what makes this one worth stating separately from the other four: it is not a
+   * button but **a radio in a table row of three hundred**, and it is the position of that row that
+   * a keyboard user has to get back to. «Focus went back somewhere» is no answer here — a return to
+   * the top of the table is, in practice, a return to nothing.
+   *
+   * The component's own docstring already asserted, in prose, that «the focus trap, `Esc`, and the
+   * return of focus to the control that opened it are Mantine's — nothing here overrides them».
+   * Nothing checked it: the trap had a forward-only loop, and `Esc` and the return had no case at
+   * all. Prose about behaviour is not behaviour.
+   */
+  it('moves the focus into itself when it opens', async () => {
+    const user = userEvent.setup();
+
+    await startAt();
+    await table();
+    await choose(user, 'task:read', 'deny');
+
+    const dialog = await screen.findByRole('dialog');
+
+    await waitFor(() => {
+      expect(expectFocusInside(dialog)).toHaveAccessibleName(/permissions\.form\.cancel/);
+    });
+  });
+
+  it('keeps the focus inside itself, in both directions', async () => {
+    const user = userEvent.setup();
+
+    await startAt();
+    await table();
+    await choose(user, 'task:read', 'deny');
+
+    expect(
+      await focusEscapes(
+        user,
+        await screen.findByRole('dialog'),
+        screen.getByLabelText(/permissions\.searchLabel/),
+      ),
+    ).toEqual([]);
+  });
+
+  it('wraps at both ends rather than swallowing the key', async () => {
+    const user = userEvent.setup();
+
+    await startAt();
+    await table();
+    await choose(user, 'task:read', 'deny');
+
+    expect(await tabWrapFailures(user, await screen.findByRole('dialog'))).toEqual([]);
+  });
+
+  /**
+   * `Esc` abandons the exception, and puts the keyboard back on the row it was composed from.
+   *
+   * The absent `PUT` is the half that would otherwise be unfalsifiable: nothing on screen
+   * distinguishes «closed without writing» from «closed having written», because the table is
+   * refetched either way.
+   */
+  it('closes on Escape without writing anything, and gives the focus back to the row', async () => {
+    const user = userEvent.setup();
+
+    await startAt();
+    await table();
+
+    const row = await rowOf('task:read');
+    const trigger = within(row).getByRole('radio', { name: 'permissions.choice.deny' });
+
+    await user.click(trigger);
+    await screen.findByRole('dialog');
+    await user.keyboard('{Escape}');
+
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog')).toBeNull();
+    });
+    await waitFor(() => {
+      expectFocusReturnedTo(trigger, 'the three-position control on the task:read row');
+    });
+    expect(sent.some((call) => call.method === 'PUT')).toBe(false);
+  });
+
+  it('gives the focus back to the row when it is closed by the cross', async () => {
+    const user = userEvent.setup();
+
+    await startAt();
+    await table();
+
+    const row = await rowOf('task:read');
+    const trigger = within(row).getByRole('radio', { name: 'permissions.choice.deny' });
+
+    await user.click(trigger);
+
+    // Two controls close this dialog and share a label on purpose — the header cross and the button
+    // under the form. The first one is the cross, and it is a different code path from `Esc`.
+    const closers = within(await screen.findByRole('dialog')).getAllByRole('button', {
+      name: /permissions\.form\.cancel/,
+    });
+
+    await user.click(closers[0] as HTMLElement);
+
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog')).toBeNull();
+    });
+    await waitFor(() => {
+      expectFocusReturnedTo(trigger, 'the three-position control on the task:read row');
+    });
   });
 
   it('starts empty again when it is reopened on another permission', async () => {
