@@ -43,8 +43,8 @@ interface ToastStyle {
 
 const STYLES: Record<ToastKind, ToastStyle> = {
   // A failure that closes itself is a failure the user can miss while reading something else.
-  error: { color: 'red', loading: false, autoClose: false, role: 'alert' },
-  success: { color: 'green', loading: false, autoClose: AUTO_CLOSE_MS, role: 'status' },
+  error: { color: 'danger', loading: false, autoClose: false, role: 'alert' },
+  success: { color: 'success', loading: false, autoClose: AUTO_CLOSE_MS, role: 'status' },
   loading: { loading: true, autoClose: false, role: 'status' },
 };
 

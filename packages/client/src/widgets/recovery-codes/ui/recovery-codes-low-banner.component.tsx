@@ -26,14 +26,14 @@ export function RecoveryCodesLowBanner({ remaining }: RecoveryCodesLowBannerProp
 
   if (remaining === 0) {
     return (
-      <Alert color="red" role="status" title={t('security.codes.none.title')} variant="light">
+      <Alert color="danger" role="status" title={t('security.codes.none.title')} variant="light">
         <Text size="sm">{t('security.codes.none.description')}</Text>
       </Alert>
     );
   }
 
   return (
-    <Alert color="yellow" role="status" title={t('security.codes.low.title')} variant="light">
+    <Alert color="warning" role="status" title={t('security.codes.low.title')} variant="light">
       <Text size="sm">{t('security.codes.low.description', { count: remaining })}</Text>
     </Alert>
   );

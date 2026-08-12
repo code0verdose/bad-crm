@@ -73,7 +73,7 @@ export function TeamDeleteDialog({
         {failureKey !== undefined && (
           // `role="alert"`, so it is announced rather than merely drawn: the operator's attention is
           // on the button they just pressed (`rules/a11y.mdc` §13).
-          <Alert color="red" role="alert" title={t('teams.delete.failed')} variant="light">
+          <Alert color="danger" role="alert" title={t('teams.delete.failed')} variant="light">
             <Text size="sm">{t(failureKey)}</Text>
           </Alert>
         )}
@@ -83,7 +83,7 @@ export function TeamDeleteDialog({
             {t('teams.delete.cancel')}
           </Button>
           <Button
-            color="red"
+            color="danger"
             loading={disband.isPending}
             onClick={() => {
               disband.mutate(teamId, { onSuccess: onDeleted });

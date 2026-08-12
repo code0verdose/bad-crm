@@ -262,12 +262,128 @@ const noEffectForDerivedState = {
   },
 };
 
+/** Mantine props that put a colour on an element: the style props and the palette selector. */
+const COLOUR_PROPS = new Set(['color', 'c', 'bg', 'bd']);
+
+/**
+ * The palettes a screen is allowed to name, declared in `app/theme/app-theme.config.ts` and
+ * measured pair by pair in `test/theme/tokens.test.ts`. Mantine's own hue names are absent on
+ * purpose — that is the whole point of the rule.
+ */
+const SEMANTIC_PALETTES = new Set(['brand', 'danger', 'warning', 'success', 'info', 'neutral']);
+
+/** Keywords that resolve to no colour at all, so they cannot fail a contrast check. */
+const COLOURLESS_KEYWORDS = new Set(['transparent', 'inherit', 'currentColor', 'unset', 'initial']);
+
+/**
+ * Colour reaches an element through a prop, and stylelint cannot see a prop.
+ *
+ * The design system bans literal colours (`rules/design-system.mdc` §3) and the ban is enforced on
+ * CSS — where none of these live. `color="yellow"` is not CSS, it is a *palette name*, and Mantine
+ * turns it into three colour pairs the author never sees: shade 9 on shade 1 for `variant="light"`,
+ * white on shade 6 for `variant="filled"`, shade 0 on a tint in the dark scheme. Measured on
+ * Mantine's palettes those are 2.68:1, 3.28:1 and worse — WCAG AA failures that render, pass every
+ * test, and surface only when `@axe-core/playwright` opens that screen. `c="dimmed"` is the same
+ * story with one colour instead of three: 3.32:1 in the light scheme, 4.03:1 in the dark one.
+ *
+ * So a prop may name a **role** — a `--bc-*` token, or one of the semantic palettes the theme
+ * declares and the token test measures — and may not name a hue. `rules/a11y.mdc` §1 and §3 are
+ * the norm; this rule is the half of it that runs before a browser exists.
+ */
+const noRawMantineColor = {
+  meta: {
+    type: 'problem',
+    docs: {
+      description:
+        'Colour props name a semantic token or a measured semantic palette, never a raw Mantine hue or a literal colour.',
+    },
+    schema: [],
+    messages: {
+      raw: '`{{prop}}="{{value}}"` names a colour instead of a role. Use a semantic token (`var(--bc-…)` from `app/styles/tokens.css`) or one of the measured palettes: {{palettes}}. Mantine\'s own hues fail WCAG AA in the variants it derives from them — see rules/a11y.mdc §1 and app/theme/app-theme.config.ts.',
+    },
+  },
+  create(context) {
+    const palettes = [...SEMANTIC_PALETTES].join(', ');
+
+    /** Every string a value expression can contribute, wherever it sits in it. */
+    const literalsOf = (node, found) => {
+      if (node === null || typeof node !== 'object') return found;
+
+      if (node.type === 'Literal' && typeof node.value === 'string') {
+        found.push(node);
+      } else if (node.type === 'TemplateLiteral') {
+        for (const quasi of node.quasis) {
+          if (quasi.value.cooked.trim() !== '') found.push(quasi);
+        }
+      } else if (node.type === 'ConditionalExpression') {
+        literalsOf(node.consequent, found);
+        literalsOf(node.alternate, found);
+      } else if (node.type === 'LogicalExpression') {
+        literalsOf(node.left, found);
+        literalsOf(node.right, found);
+      } else if (node.type === 'JSXExpressionContainer') {
+        literalsOf(node.expression, found);
+      }
+
+      return found;
+    };
+
+    const textOf = (node) =>
+      (node.type === 'TemplateElement' ? node.value.cooked : node.value).trim();
+
+    const check = (prop, valueNode) => {
+      for (const literal of literalsOf(valueNode, [])) {
+        const value = textOf(literal);
+
+        if (
+          value === '' ||
+          value.includes('var(--bc-') ||
+          SEMANTIC_PALETTES.has(value) ||
+          COLOURLESS_KEYWORDS.has(value)
+        ) {
+          continue;
+        }
+
+        context.report({ node: literal, messageId: 'raw', data: { prop, value, palettes } });
+      }
+    };
+
+    return {
+      JSXAttribute(node) {
+        if (node.name.type !== 'JSXIdentifier' || !COLOUR_PROPS.has(node.name.name)) return;
+        if (node.value === null) return;
+
+        check(node.name.name, node.value);
+      },
+
+      /**
+       * The same prop, reached through an object rather than through JSX.
+       *
+       * Attribute-only was the first shape of this rule, and on the real tree it missed three
+       * places that are Mantine props all the same: the toaster's style map
+       * (`shared/ui/toaster/notify.util.tsx`), which never appears in JSX because
+       * `notifications.show()` takes an object, and a conditional spread
+       * (`{...(deny ? { color: 'red' } : {})}`). A rule that only sees the tidy spelling is the
+       * «fixture instead of the target» failure with extra steps.
+       */
+      Property(node) {
+        if (node.computed || node.key.type !== 'Identifier' || !COLOUR_PROPS.has(node.key.name)) {
+          return;
+        }
+
+        check(node.key.name, node.value);
+      },
+    };
+  },
+};
+
 export const badCrmPlugin = {
   meta: { name: 'bad-crm', version: '0.0.0' },
   rules: {
     'require-role-suffix': requireRoleSuffix,
     'no-foreign-unit-internals': noForeignUnitInternals,
     'no-effect-for-derived-state': noEffectForDerivedState,
+    'no-raw-mantine-color': noRawMantineColor,
   },
 };
 

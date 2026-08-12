@@ -776,6 +776,11 @@ export default tseslint.config(
       // `service/hooks` is exactly where an effect that should have been a query gets written.
       'bad-crm/no-effect-for-derived-state': 'error',
       'bad-crm/no-foreign-unit-internals': 'error',
+      // Declared on the whole client for the same reason: a colour reaches an element through a
+      // prop, and `stylelint` — where the ban on literal colours lives — never sees a prop. This is
+      // the gate that keeps `color="yellow"` and `c="dimmed"` out; both shipped, and both are WCAG
+      // AA failures Mantine derives from its own palettes (`app/theme/app-theme.config.ts`).
+      'bad-crm/no-raw-mantine-color': 'error',
     },
     // What lets `import/no-cycle` above resolve anything at all. The client writes every internal
     // specifier as an `@`-alias (`@units/auth`) or with the `.js` suffix TypeScript ESM requires

@@ -118,9 +118,12 @@ export function PermissionOverrideForm({
             {t('permissions.form.cancel')}
           </Button>
           {/* Spread rather than `color={… : undefined}`: an ALLOW has no colour of its own, and
-              under `exactOptionalPropertyTypes` «no colour» is not the same as `undefined`. */}
+              under `exactOptionalPropertyTypes` «no colour» is not the same as `undefined`.
+              `danger` is a palette name from `app/theme/app-theme.config.ts`, not a sentence — the
+              i18n rule only sees a word inside JSX and cannot tell the two apart. */}
           <Button
-            {...(effect === 'DENY' ? { color: 'red' } : {})}
+            // eslint-disable-next-line i18next/no-literal-string -- Mantine palette name, not user-visible text.
+            {...(effect === 'DENY' ? { color: 'danger' } : {})}
             loading={isPending}
             type="submit"
           >

@@ -31,7 +31,7 @@ export function PermissionSourceBadge({ source, inheritedFrom }: PermissionSourc
   return (
     <Stack gap={2}>
       <Badge
-        color={IamModel.PERMISSION_SOURCE_TONE[source] === 'granted' ? 'teal' : 'gray'}
+        color={IamModel.PERMISSION_SOURCE_TONE[source] === 'granted' ? 'success' : 'neutral'}
         variant="light"
       >
         {t(IamModel.PERMISSION_SOURCE_LABEL_KEY[source])}

@@ -8,7 +8,7 @@ import { createI18n } from '@shared/i18n';
 import { Toaster } from '@shared/ui';
 
 import { QueryDevtools } from './query-devtools.component.js';
-import { appTheme } from './theme/app-theme.config.js';
+import { appCssVariables, appTheme } from './theme/app-theme.config.js';
 import { styleNonce } from './style-nonce.util.js';
 
 /** Failures and confirmations belong where the eye already is: near the primary action. */
@@ -66,6 +66,7 @@ export function Providers({ queryClient, i18n: injected, children }: ProvidersPr
 
   return (
     <MantineProvider
+      cssVariablesResolver={appCssVariables}
       defaultColorScheme="auto"
       theme={appTheme}
       {...(nonce === undefined ? {} : { getStyleNonce: () => nonce })}

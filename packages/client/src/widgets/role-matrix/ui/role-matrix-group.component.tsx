@@ -60,7 +60,7 @@ function RoleMatrixGroupRows({
                 {permission}
               </Text>
               {SharedPermissions.PERMISSION_META[permission].dangerous && (
-                <Text component="span" c="red" size="xs">
+                <Text component="span" c="var(--bc-danger-text)" size="xs">
                   {` ${t('roles.dangerous')}`}
                 </Text>
               )}

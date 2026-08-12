@@ -77,7 +77,7 @@ export function DisableTotp() {
     >
       {/* A `Group` so the button keeps its own width: a `Stack` stretches its children. */}
       <Group>
-        <Button color="red" onClick={open} ref={triggerRef} variant="light">
+        <Button color="danger" onClick={open} ref={triggerRef} variant="light">
           {t('security.disable.trigger')}
         </Button>
       </Group>

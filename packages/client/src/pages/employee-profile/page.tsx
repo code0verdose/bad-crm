@@ -76,7 +76,7 @@ export function EmployeeProfilePage() {
       <SharedUi.PageHeader
         actions={
           subject === undefined ? undefined : (
-            <Button color="red" onClick={dialogControls.open} variant="light">
+            <Button color="danger" onClick={dialogControls.open} variant="light">
               {t('offboarding.action')}
             </Button>
           )

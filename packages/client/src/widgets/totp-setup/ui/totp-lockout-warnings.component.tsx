@@ -24,14 +24,14 @@ import { useTranslation } from 'react-i18next';
  *
  * Stated plainly rather than dramatically, and stated in advance: the alternative is somebody
  * finding out at the point where nothing can be done about it. This is an `Alert` rather than a
- * paragraph so it survives being skimmed, and it is not `color="red"` — this is not a failure, it
+ * paragraph so it survives being skimmed, and it is not `color="danger"` — this is not a failure, it
  * is what the feature costs.
  */
 export function TotpLockoutWarnings() {
   const { t } = useTranslation();
 
   return (
-    <Alert color="yellow" title={t('security.totp.warning.title')} variant="light">
+    <Alert color="warning" title={t('security.totp.warning.title')} variant="light">
       <List size="sm" spacing="xs">
         <List.Item>
           <Text size="sm">{t('security.totp.warning.disable')}</Text>

@@ -20,7 +20,7 @@ const SENT_MESSAGE_KEY = 'auth.forgotPassword.sent';
  */
 export function PasswordResetSent() {
   return (
-    <Alert aria-live="polite" color="blue" role="status" variant="light">
+    <Alert aria-live="polite" color="info" role="status" variant="light">
       {SENT_MESSAGE_KEY}
     </Alert>
   );

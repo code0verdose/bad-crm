@@ -31,7 +31,7 @@ export function InvitationLink({ invitation, onCopy }: InvitationLinkProps) {
       {invitation.mailDispatched ? (
         <Text>{t('members.invite.sent', { email: invitation.email })}</Text>
       ) : (
-        <Alert color="yellow" variant="light">
+        <Alert color="warning" variant="light">
           {t('members.invite.noMail')}
         </Alert>
       )}
@@ -49,7 +49,7 @@ export function InvitationLink({ invitation, onCopy }: InvitationLinkProps) {
         </Button>
       </Group>
 
-      <Text c="dimmed" size="sm">
+      <Text c="var(--bc-text-muted)" size="sm">
         {t('members.invite.expires', {
           date: SharedLib.formatDate(
             invitation.expiresAt,

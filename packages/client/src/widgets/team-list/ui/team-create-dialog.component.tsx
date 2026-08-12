@@ -59,7 +59,7 @@ export function TeamCreateDialog({ opened, onClose }: TeamCreateDialogProps) {
           // `role="alert"`, so it is announced rather than merely drawn: the operator's attention is
           // on the button they just pressed (`rules/a11y.mdc` §13). The text comes from the `code`,
           // never from `detail` — the technical half went to the log.
-          <Alert color="red" role="alert" title={t('teams.create.failed')} variant="light">
+          <Alert color="danger" role="alert" title={t('teams.create.failed')} variant="light">
             <Text size="sm">{t(failureKey)}</Text>
           </Alert>
         )}

@@ -350,11 +350,13 @@ describe('the permissions tab', () => {
 
     expect(grantedBadge).not.toBeNull();
     expect(refusedBadge).not.toBeNull();
+    // The palettes are the semantic ones from `app/theme/app-theme.config.ts`, not Mantine's hues:
+    // `teal-9` on `teal-1` measured 4.32:1 and this badge is where `@axe-core/playwright` found it.
     expect(grantedBadge?.style.getPropertyValue('--badge-bg')).toBe(
-      'var(--mantine-color-teal-light)',
+      'var(--mantine-color-success-light)',
     );
     expect(refusedBadge?.style.getPropertyValue('--badge-bg')).toBe(
-      'var(--mantine-color-gray-light)',
+      'var(--mantine-color-neutral-light)',
     );
   });
 

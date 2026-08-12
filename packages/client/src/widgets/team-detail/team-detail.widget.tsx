@@ -152,7 +152,7 @@ export function TeamDetail({ teamId, onDeleted }: TeamDetailProps) {
               titleKey="teams.danger.title"
             >
               <Group>
-                <Button color="red" onClick={disbandControls.open} variant="light">
+                <Button color="danger" onClick={disbandControls.open} variant="light">
                   {t('teams.delete.action')}
                 </Button>
               </Group>

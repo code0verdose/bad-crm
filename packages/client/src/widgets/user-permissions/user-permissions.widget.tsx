@@ -75,13 +75,13 @@ export function UserPermissions({
   return (
     <Stack gap="md">
       {controller.isOwner && (
-        <Alert color="blue" title={t('permissions.owner.title')} variant="light">
+        <Alert color="info" title={t('permissions.owner.title')} variant="light">
           {t('permissions.owner.description')}
         </Alert>
       )}
 
       {!controller.canWrite && (
-        <Alert color="gray" title={t('permissions.readOnly.title')} variant="light">
+        <Alert color="neutral" title={t('permissions.readOnly.title')} variant="light">
           {t('permissions.readOnly.description')}
         </Alert>
       )}

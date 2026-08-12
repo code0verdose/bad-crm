@@ -66,7 +66,7 @@ export function TeamMemberTable({ rows, onRemove, removingUserId }: TeamMemberTa
               <Table.Td>
                 <ActionIcon
                   aria-label={t('teams.members.remove', { person: row.label })}
-                  color="red"
+                  color="danger"
                   loading={removingUserId === row.userId}
                   onClick={() => {
                     onRemove(row.userId);

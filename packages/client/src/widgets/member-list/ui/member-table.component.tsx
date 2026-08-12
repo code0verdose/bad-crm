@@ -88,7 +88,7 @@ export function MemberTable({ items }: MemberTableProps) {
             </Table.Td>
             <Table.Td>
               <Badge
-                color={item.status === 'SUSPENDED' ? 'gray' : 'green'}
+                color={item.status === 'SUSPENDED' ? 'neutral' : 'success'}
                 size="sm"
                 variant="light"
               >

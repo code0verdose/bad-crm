@@ -94,7 +94,12 @@ export function PermissionOverrideDialog({
       {shown === null ? null : (
         <Stack gap="md">
           {refusal === undefined ? null : (
-            <Alert color="red" role="alert" title={t('permissions.form.refused')} variant="light">
+            <Alert
+              color="danger"
+              role="alert"
+              title={t('permissions.form.refused')}
+              variant="light"
+            >
               {refusal.values === undefined ? t(refusal.key) : t(refusal.key, refusal.values)}
             </Alert>
           )}

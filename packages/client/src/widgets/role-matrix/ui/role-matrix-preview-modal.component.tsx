@@ -49,7 +49,7 @@ export function RoleMatrixPreviewModal({
     >
       <Stack gap="md">
         {refused.length > 0 && (
-          <Alert color="red" title={t('roles.preview.refusedTitle')}>
+          <Alert color="danger" title={t('roles.preview.refusedTitle')}>
             <List>
               {refused.map((outcome) => (
                 <List.Item key={outcome.roleId}>
@@ -63,7 +63,7 @@ export function RoleMatrixPreviewModal({
         )}
 
         {dangerous.length > 0 && refused.length === 0 && (
-          <Alert color="yellow" title={t('roles.preview.dangerousTitle')}>
+          <Alert color="warning" title={t('roles.preview.dangerousTitle')}>
             {t('roles.preview.dangerousBody')}
           </Alert>
         )}
@@ -76,8 +76,12 @@ export function RoleMatrixPreviewModal({
                 <Badge variant="light">
                   {t('roles.preview.holders', { count: outcome.holderCount })}
                 </Badge>
-                <Text c="green">{t('roles.preview.added', { count: outcome.added.length })}</Text>
-                <Text c="red">{t('roles.preview.removed', { count: outcome.removed.length })}</Text>
+                <Text c="var(--bc-success-text)">
+                  {t('roles.preview.added', { count: outcome.added.length })}
+                </Text>
+                <Text c="var(--bc-danger-text)">
+                  {t('roles.preview.removed', { count: outcome.removed.length })}
+                </Text>
               </Group>
             </List.Item>
           ))}

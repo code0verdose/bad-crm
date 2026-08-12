@@ -38,7 +38,7 @@ export function OffboardingReport({ report }: OffboardingReportProps) {
   return (
     <Stack gap="sm">
       {report.alreadyDeactivated ? (
-        <Alert color="blue" title={t('offboarding.already.title')} variant="light">
+        <Alert color="info" title={t('offboarding.already.title')} variant="light">
           <Text size="sm">{t('offboarding.already.description')}</Text>
         </Alert>
       ) : (
@@ -49,7 +49,7 @@ export function OffboardingReport({ report }: OffboardingReportProps) {
       )}
 
       {report.pending.length > 0 && (
-        <Alert color="yellow" title={t('offboarding.pending.title')}>
+        <Alert color="warning" title={t('offboarding.pending.title')}>
           <Text size="sm">{t('offboarding.pending.description')}</Text>
           <List size="sm">
             {report.pending.map((step) => (

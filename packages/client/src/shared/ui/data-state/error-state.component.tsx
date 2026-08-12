@@ -34,7 +34,7 @@ export function ErrorState({
   return (
     <Alert
       className={classes['root']}
-      color="red"
+      color="danger"
       role="alert"
       title={t(messageKey)}
       variant="light"
@@ -42,7 +42,7 @@ export function ErrorState({
     >
       <Stack align="flex-start" gap="sm">
         {onRetry !== undefined && (
-          <Button color="red" onClick={onRetry} size="xs" variant="outline">
+          <Button color="danger" onClick={onRetry} size="xs" variant="outline">
             {retryLabelKey}
           </Button>
         )}

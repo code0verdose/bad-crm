@@ -28,7 +28,7 @@ export function AppErrorScreen({ reference }: AppErrorScreenProps) {
       >
         {t('errors.app.reload')}
       </Button>
-      <Text c="dimmed" data-testid="app-error-reference" size="sm">
+      <Text c="var(--bc-text-muted)" data-testid="app-error-reference" size="sm">
         {reference}
       </Text>
     </Stack>

@@ -57,7 +57,7 @@ export function RegenerateRecoveryCodesForm({
       <Stack gap="md">
         {failureKey !== undefined && (
           <Alert
-            color="red"
+            color="danger"
             role="alert"
             title={t('security.codes.regenerate.failed.title')}
             variant="light"
@@ -83,7 +83,7 @@ export function RegenerateRecoveryCodesForm({
           {...form.getInputProps('totpCode')}
         />
 
-        <Button color="red" loading={isPending} type="submit" variant="light">
+        <Button color="danger" loading={isPending} type="submit" variant="light">
           {t('security.codes.regenerate.submit')}
         </Button>
       </Stack>

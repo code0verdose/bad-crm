@@ -84,7 +84,12 @@ export function TotpConfirmForm({
         />
 
         {failureKey !== undefined && (
-          <Alert color="red" role="alert" title={t('security.totp.failed.title')} variant="light">
+          <Alert
+            color="danger"
+            role="alert"
+            title={t('security.totp.failed.title')}
+            variant="light"
+          >
             <Stack gap="xs">
               <Text size="sm">{t(failureKey)}</Text>
               <Text size="sm">{t('security.totp.failed.lostAnswer')}</Text>

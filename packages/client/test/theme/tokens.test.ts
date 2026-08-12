@@ -1,5 +1,13 @@
 import { describe, expect, it } from 'vitest';
 
+import {
+  DANGER_COLORS,
+  INFO_COLORS,
+  NEUTRAL_COLORS,
+  SUCCESS_COLORS,
+  WARNING_COLORS,
+} from '@app/theme/app-theme.config.js';
+
 import { contrastRatio, roundRatio } from './contrast.util.js';
 import { colourTokens, declaredTokens, schemeTokens, tokensCss } from './token-table.util.js';
 
@@ -23,6 +31,12 @@ const REQUIRED_COLOUR_TOKENS = [
   '--bc-text-muted',
   '--bc-danger-surface',
   '--bc-danger-text',
+  '--bc-warning-surface',
+  '--bc-warning-text',
+  '--bc-success-surface',
+  '--bc-success-text',
+  '--bc-info-surface',
+  '--bc-info-text',
   '--bc-focus-ring',
 ] as const;
 
@@ -56,10 +70,59 @@ const CONTRAST_CASES: readonly ContrastCase[] = [
     background: '--bc-surface',
     minimum: 4.5,
   },
+  /*
+   * Every status is measured twice, because its text appears on two backgrounds and only one of
+   * them is the tinted panel the token is named after: an `Alert` puts the label on the status
+   * surface, and a `<Text c="var(--bc-danger-text)">` beside a permission row puts the same colour
+   * on the page. A pair that clears 4.5:1 on the tint can still fail on white — that is precisely
+   * how `--mantine-color-red-text` shipped at 3.28:1.
+   */
   {
     name: 'danger text on the danger surface',
     foreground: '--bc-danger-text',
     background: '--bc-danger-surface',
+    minimum: 4.5,
+  },
+  {
+    name: 'danger text on the page surface',
+    foreground: '--bc-danger-text',
+    background: '--bc-surface',
+    minimum: 4.5,
+  },
+  {
+    name: 'warning text on the warning surface',
+    foreground: '--bc-warning-text',
+    background: '--bc-warning-surface',
+    minimum: 4.5,
+  },
+  {
+    name: 'warning text on the page surface',
+    foreground: '--bc-warning-text',
+    background: '--bc-surface',
+    minimum: 4.5,
+  },
+  {
+    name: 'success text on the success surface',
+    foreground: '--bc-success-text',
+    background: '--bc-success-surface',
+    minimum: 4.5,
+  },
+  {
+    name: 'success text on the page surface',
+    foreground: '--bc-success-text',
+    background: '--bc-surface',
+    minimum: 4.5,
+  },
+  {
+    name: 'info text on the info surface',
+    foreground: '--bc-info-text',
+    background: '--bc-info-surface',
+    minimum: 4.5,
+  },
+  {
+    name: 'info text on the page surface',
+    foreground: '--bc-info-text',
+    background: '--bc-surface',
     minimum: 4.5,
   },
   {
@@ -124,6 +187,55 @@ describe.each(['light', 'dark'] as const)('contrast in the %s scheme', (scheme) 
     expect(roundRatio(contrastRatio(front as string, back as string))).toBeGreaterThanOrEqual(
       minimum,
     );
+  });
+});
+
+/**
+ * The semantic scales, measured at the three places Mantine reads text off a palette.
+ *
+ * A component says `color="warning"`, and the library — not this repository — decides that
+ * `variant="light"` is shade 9 on shade 1, that `variant="filled"` is white on the primary shade,
+ * and that the dark scheme puts shade 0 on a tint built from the dark end. None of those three
+ * pairs is named by a `--bc-*` token, so the block above cannot see them, and every one of them
+ * failed on Mantine's own palettes: `yellow-9` on `yellow-1` is 2.68:1, white on `red-6` is
+ * 3.28:1. This is the assertion that makes «shade 6 is a bit prettier one step lighter» fail in a
+ * test run rather than in an axe report on a screen nobody opened.
+ */
+describe.each([
+  ['danger', DANGER_COLORS],
+  ['warning', WARNING_COLORS],
+  ['success', SUCCESS_COLORS],
+  ['info', INFO_COLORS],
+  ['neutral', NEUTRAL_COLORS],
+] as const)('the %s scale', (_name, scale) => {
+  const ratio = (foreground: string, background: string): number =>
+    roundRatio(contrastRatio(foreground, background));
+
+  it('carries its own label on a light-variant surface', () => {
+    expect(ratio(scale[9] as string, scale[1] as string)).toBeGreaterThanOrEqual(4.5);
+  });
+
+  it('carries white on a filled surface in either scheme', () => {
+    // `primaryShade` is 6 in the light scheme and 8 in the dark one, and Mantine applies it to
+    // every palette, not only the primary — so a filled control is one of these two.
+    expect(ratio('#ffffff', scale[6] as string)).toBeGreaterThanOrEqual(4.5);
+    expect(ratio('#ffffff', scale[8] as string)).toBeGreaterThanOrEqual(4.5);
+  });
+
+  it('carries its lightest shade on its darkest, which is the dark-scheme light variant', () => {
+    expect(ratio(scale[0] as string, scale[9] as string)).toBeGreaterThanOrEqual(4.5);
+  });
+
+  /**
+   * Shade 4 is what `--mantine-color-<scale>-text` and `-outline` resolve to in the dark scheme,
+   * and the light-scheme half of that same variable is where this whole repair started:
+   * `--mantine-color-red-text` was `red-6` on white at 3.28:1, on every `dangerous` label there is.
+   * The dark half deserves the same assertion, not the same trust.
+   */
+  it('carries its text shade on the dark page surface', () => {
+    const surface = colourTokens('dark').get('--bc-surface') as string;
+
+    expect(ratio(scale[4] as string, surface)).toBeGreaterThanOrEqual(4.5);
   });
 });
 

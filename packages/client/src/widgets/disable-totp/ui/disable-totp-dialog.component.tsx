@@ -113,7 +113,7 @@ export function DisableTotpDialog({ onCancel, onDisabled }: DisableTotpDialogPro
             // `role="alert"`, so it is announced rather than merely drawn: attention is on the
             // button that was just pressed (`rules/a11y.mdc` §13).
             <Alert
-              color="red"
+              color="danger"
               role="alert"
               title={t('security.disable.failed.title')}
               variant="light"
@@ -151,7 +151,7 @@ export function DisableTotpDialog({ onCancel, onDisabled }: DisableTotpDialogPro
             <Button onClick={onCancel} variant="default">
               {t('security.disable.cancel')}
             </Button>
-            <Button color="red" loading={disable.isPending} type="submit">
+            <Button color="danger" loading={disable.isPending} type="submit">
               {t('security.disable.submit')}
             </Button>
           </Group>

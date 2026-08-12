@@ -56,7 +56,7 @@ function PermissionTableRow({
           {row.key}
         </Text>
         {row.dangerous && (
-          <Text c="red" component="span" size="xs">
+          <Text c="var(--bc-danger-text)" component="span" size="xs">
             {` ${t('permissions.dangerous')}`}
           </Text>
         )}

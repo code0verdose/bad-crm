@@ -3,7 +3,14 @@ import { resolve } from 'node:path';
 
 import { DEFAULT_THEME } from '@mantine/core';
 
-import { BRAND_COLORS } from '@app/theme/app-theme.config.js';
+import {
+  BRAND_COLORS,
+  DANGER_COLORS,
+  INFO_COLORS,
+  NEUTRAL_COLORS,
+  SUCCESS_COLORS,
+  WARNING_COLORS,
+} from '@app/theme/app-theme.config.js';
 
 /**
  * Reads `app/styles/tokens.css` as data, so every assertion is made about the stylesheet that
@@ -58,11 +65,24 @@ export const schemeTokens = (scheme: ColorScheme): Map<string, string> => {
 };
 
 /**
+ * The scales this project adds to Mantine's, resolved from the theme rather than from a copy: a
+ * token naming `--mantine-color-warning-9` has to measure the shade the application ships.
+ */
+const PROJECT_COLORS: Record<string, readonly string[]> = {
+  brand: BRAND_COLORS,
+  danger: DANGER_COLORS,
+  warning: WARNING_COLORS,
+  success: SUCCESS_COLORS,
+  info: INFO_COLORS,
+  neutral: NEUTRAL_COLORS,
+};
+
+/**
  * Resolves a Mantine colour variable to the hex the theme gives it.
  *
  * `--mantine-color-white` and `--mantine-color-black` are single values; everything else is
- * `<palette>-<shade>`. `brand` comes from this project's theme, the rest from Mantine's default,
- * which is the object `MantineProvider` merges the override into.
+ * `<palette>-<shade>`. The semantic scales come from this project's theme, the rest from Mantine's
+ * default, which is the object `MantineProvider` merges the override into.
  */
 export const resolveMantineColor = (variable: string): string => {
   const name = variable.replace('--mantine-color-', '');
@@ -73,9 +93,7 @@ export const resolveMantineColor = (variable: string): string => {
   const shade = Number(name.slice(name.lastIndexOf('-') + 1));
   const palette = name.slice(0, name.lastIndexOf('-'));
   const tuple =
-    palette === 'brand'
-      ? BRAND_COLORS
-      : DEFAULT_THEME.colors[palette as keyof typeof DEFAULT_THEME.colors];
+    PROJECT_COLORS[palette] ?? DEFAULT_THEME.colors[palette as keyof typeof DEFAULT_THEME.colors];
 
   const value = tuple?.[shade];
 

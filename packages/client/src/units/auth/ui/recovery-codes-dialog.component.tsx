@@ -83,7 +83,7 @@ export function RecoveryCodesDialog({ codes, onConfirmed }: RecoveryCodesDialogP
       title={t('security.codes.dialog.title')}
     >
       <Stack gap="md">
-        <Alert color="yellow" title={t('security.codes.dialog.onceTitle')} variant="light">
+        <Alert color="warning" title={t('security.codes.dialog.onceTitle')} variant="light">
           <Text size="sm">{t('security.codes.dialog.onceDescription')}</Text>
         </Alert>
 

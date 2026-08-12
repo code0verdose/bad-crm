@@ -23,7 +23,7 @@ export function TeamAccessNotice() {
   const { t } = useTranslation();
 
   return (
-    <Alert color="blue" title={t('teams.notAccessGroup.title')} variant="light">
+    <Alert color="info" title={t('teams.notAccessGroup.title')} variant="light">
       {t('teams.notAccessGroup.description')}
     </Alert>
   );
