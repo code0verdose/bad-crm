@@ -120,3 +120,16 @@ entropy alone and disagrees with gitleaks' default ruleset, which does not — t
 """
 regexTarget = "line"
 regexes = ['''correct-horse-battery''']
+
+[[allowlists]]
+description = """
+The RFC 6238 Appendix B test vector, printed in the standard itself. \
+`GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ` is base32 of the ASCII run `12345678901234567890`, the shared \
+secret every conforming TOTP implementation reproduces the reference codes from. A value published \
+in an RFC is the opposite of a secret, and it carries the check: the suite computes those codes \
+independently and compares, so swapping in a random string would delete the only evidence that the \
+adapter agrees with the standard rather than merely with `otplib`. Entropy trips `generic-api-key` \
+because base32 of a digit run looks like a key; nothing else about it does. Named here as well as \
+inline, per the paragraph at the top of this file.
+"""
+regexes = ['GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ']

@@ -114,12 +114,12 @@ const results = await meili.index('tasks').search(q);   // без ветки pos
 | CI-джоб `compose-up-full`: чистый `docker compose --profile full up -d` + smoke | неподнимающийся стек |
 | CI-джоб `compose-up-minimal`: то же с `--profile minimal` + e2e-подмножество | функцию, не деградирующую без Meilisearch/AI |
 | CI-джоб `upgrade-path`: поднять предыдущий релиз с данными → накатить текущий образ → smoke | ломающее изменение env, томов, миграций |
-| `test/bootstrap/preflight.spec.ts` (по каждому обязательному условию из п. 7) | молчаливый старт с неполной конфигурацией |
-| `test/security/default-creds.spec.ts` | дефолтные пароли и ключи в `.env.example` и compose |
+| `test/bootstrap/preflight.test.ts` (по каждому обязательному условию из п. 7) | молчаливый старт с неполной конфигурацией |
+| `test/security/default-creds.test.ts` | дефолтные пароли и ключи в `.env.example` и compose |
 | CI-шаг `check:published-ports` (парсинг `docker-compose.prod.yml`) | опубликованные наружу порты инфраструктуры |
 | `test/infra/compose.test.ts` (парсинг `docker-compose.yml`) | dev-файл: bind не на `127.0.0.1`, литеральный секрет, дефолт без префикса `dev_`, лицензионно недопустимый образ |
 | CI-шаг `check:env-parity` (`.env.example` ↔ zod-схема) | переменную, добавленную только в код |
-| `test/integration/shutdown.spec.ts` | shutdown дольше 30 с и `/ready`, не отдающий 503 |
+| `test/integration/shutdown.test.ts` | shutdown дольше 30 с и `/ready`, не отдающий 503 |
 | Агент `production-readiness` в commit-гейте | отсутствие плана отката и runbook'а |
 | Агент `deployment-engineer` при изменении compose/Dockerfile | регрессии в процедуре обновления |
 

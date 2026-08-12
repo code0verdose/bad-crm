@@ -220,6 +220,142 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/auth/2fa/setup": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Draft a TOTP secret for the caller's own account.
+         * @description Generates a fresh secret (base32, at least 160 bits of entropy) and returns it once, together
+         *     with the `otpauth://` URI and an SVG QR code. The secret is written encrypted
+         *     (`v1:<iv>:<tag>:<ciphertext>`, AES-256-GCM under `APP_ENCRYPTION_KEY`) as a **draft**:
+         *     `totpEnabledAt` stays unset until `POST /auth/2fa/confirm` proves possession, so 2FA is not
+         *     active for this account no matter how many times this endpoint has been called.
+         *
+         *     A draft is confirmable for fifteen minutes. Calling this again before confirming replaces the
+         *     draft with a fresh secret — the old one is discarded, not left usable alongside the new one.
+         *
+         *     Refused with `409 mfa_already_enabled` once the account already has 2FA on; the existing
+         *     secret is never re-read to produce that answer.
+         *
+         *     **Known gap, tracked in EPIC-013.** Enrolment is authorised by the session alone — neither
+         *     this operation nor `POST /auth/2fa/confirm` asks for the current password or any second proof,
+         *     while the neighbouring `POST /auth/2fa/recovery-codes/regenerate` asks for both. A holder of a
+         *     stolen access token can therefore bind their own authenticator to somebody else's account, and
+         *     enrolment cannot be undone: disable and administrator reset are STORY-013-04. Reauthentication
+         *     lands with that story, and no client should treat this endpoint as safe to expose behind a
+         *     session-only guard until it does.
+         */
+        post: operations["setupTotp"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/2fa/confirm": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Prove possession of the drafted secret and enable 2FA.
+         * @description Verifies `code` against the drafted secret, allowing one 30-second step of clock drift either
+         *     side. On success `totpEnabledAt` is set and ten recovery codes are issued in the same
+         *     transaction — the response carries them in the clear, **exactly once**; neither this endpoint
+         *     nor any other ever returns them again.
+         *
+         *     **`currentPassword` is required, and is checked whatever the code turns out to be.** A session
+         *     alone must not attach a second factor: a stolen access token would otherwise enrol the
+         *     attacker's authenticator and carry off the recovery codes. A wrong password answers `403
+         *     reauthentication_required` no matter whether the code was right, so the response tells a
+         *     bearer-token holder nothing about the code.
+         *
+         *     A wrong code, no draft in progress, or an expired draft all answer `422 invalid_totp_code` —
+         *     one code for all three, so a caller cannot use the distinction to learn whether an enrolment
+         *     is under way. A code that was already accepted at this step answers `422 totp_code_replayed`
+         *     instead, so a person retrying a stale screen is told to wait for the next code rather than
+         *     being sent to look for a typo.
+         *
+         *     Bounded by `mfa_setup_attempt`: five attempts in fifteen minutes, escalating on repeated
+         *     refusal like a login attempt. The budget is spent **before** the code is read, so attempts one
+         *     through five are answered on their merits and the **sixth** request in the window is the one
+         *     that both answers `429` and discards the draft — the next attempt has to start from a freshly
+         *     scanned QR code.
+         *
+         *     **If this response is lost in transit, the recovery codes are gone with it.** `Idempotency-Key`
+         *     is mandatory here but no replay store exists yet (STORY-006-01), and this is the one operation
+         *     where that gap costs more than convenience: 2FA is enabled, the database holds only argon2id
+         *     hashes, and a retry answers `422 invalid_totp_code` because the draft no longer exists. A
+         *     client that loses this response must not present a generic network error — the way out is
+         *     `POST /auth/2fa/recovery-codes/regenerate`, which needs the current password and a live TOTP
+         *     code, both of which the person who just completed enrolment has in hand.
+         */
+        post: operations["confirmTotp"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/2fa/recovery-codes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * How many of the caller's own recovery codes are left.
+         * @description `{ total, remaining }` and nothing else — the plaintext codes exist nowhere after the response
+         *     that first showed them, so there is no version of this endpoint that could return more. The
+         *     low-codes warning at `remaining <= 3` that STORY-013-02 acceptance 6 describes is a client
+         *     behaviour; no client reads this endpoint yet.
+         */
+        get: operations["getRecoveryCodeStatus"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/2fa/recovery-codes/regenerate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Replace the caller's own recovery-code set.
+         * @description Requires the current password **and** a live TOTP code in the same request. Every existing
+         *     code is deleted and a fresh set of ten is issued, in one transaction — there is never a
+         *     moment where the old set is gone and the new one does not exist yet.
+         *
+         *     Either credential missing or wrong answers `403 reauthentication_required`; the two reasons
+         *     are not distinguishable from outside, and neither is "this account has no TOTP enrolled",
+         *     which answers the same code.
+         */
+        post: operations["regenerateRecoveryCodes"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/auth/change-password": {
         parameters: {
             query?: never;
@@ -1537,6 +1673,82 @@ export interface components {
             newPassword: components["schemas"]["Password"];
         };
         /**
+         * @description Six digits, the width every authenticator app renders.
+         * @example 123456
+         */
+        TotpCode: string;
+        ConfirmTotpRequest: {
+            code: components["schemas"]["TotpCode"];
+            /**
+             * @description The caller's own password, checked alongside the code rather than instead of it.
+             *
+             *     A bearer token alone must not be enough to attach a second factor: an attacker holding a
+             *     stolen access token would otherwise enrol **their** authenticator, take the ten recovery
+             *     codes, and leave the account's owner unable to sign in once verification lands and unable
+             *     to turn it off. `POST /auth/2fa/recovery-codes/regenerate` has always asked for the
+             *     password for the same reason, and disabling 2FA is specified to refuse a session-only
+             *     caller outright — enabling was the one door left open.
+             */
+            currentPassword: string;
+        };
+        TotpSetupResult: {
+            /**
+             * @description Base32, shown as text so it can be typed into an authenticator app that has no camera —
+             *     the same value the `uri` embeds. Never returned again after `POST /auth/2fa/confirm`
+             *     succeeds: at that point only `POST /auth/2fa/setup` on a *fresh* enrolment produces one,
+             *     and only while `totpEnabledAt` is still unset.
+             * @example JBSWY3DPEHPK3PXP
+             */
+            secret: string;
+            /**
+             * @description `otpauth://totp/BadCRM:{email}?secret=…&issuer=BadCRM&algorithm=SHA1&digits=6&period=30`
+             *     — what the QR code encodes, for a client that wants to render its own.
+             * @example otpauth://totp/BadCRM:ada%40example.com?secret=JBSWY3DPEHPK3PXP&issuer=BadCRM&algorithm=SHA1&digits=6&period=30
+             */
+            uri: string;
+            /** @description An inline SVG document — the same URI above, rendered as a scannable code. */
+            qrSvg: string;
+        };
+        RecoveryCodesIssuedResult: {
+            /**
+             * @description Ten codes, shown **once**. Neither this endpoint nor any other ever returns them again —
+             *     `GET /auth/2fa/recovery-codes` answers only `{ total, remaining }` afterwards.
+             * @example [
+             *       "23456ABCDE",
+             *       "FGHJKMNPQR",
+             *       "STUVWXYZ23",
+             *       "456789ABCD",
+             *       "EFGHJKMNPQ",
+             *       "RSTUVWXYZ2",
+             *       "3456789ABC",
+             *       "DEFGHJKMNP",
+             *       "QRSTUVWXYZ",
+             *       "23456789AB"
+             *     ]
+             */
+            codes: string[];
+        };
+        RecoveryCodesStatus: {
+            /** @description How many codes the current set started with — always 10 while one exists. */
+            total: number;
+            /**
+             * @description How many are still unused. A client is expected to show a persistent warning at 3 or fewer
+             *     (STORY-013-02, acceptance 6) and to stop offering the recovery-code sign-in path at 0 —
+             *     both are deferred along with the rest of the 2FA screens.
+             */
+            remaining: number;
+        };
+        RegenerateRecoveryCodesRequest: {
+            /**
+             * @description Proof of account ownership, exactly as on `POST /auth/change-password`. Wrong, together
+             *     with a wrong or missing `totpCode`, answers `403 reauthentication_required` — never
+             *     `401 invalid_credentials`, which this operation does not use.
+             */
+            currentPassword: components["schemas"]["Password"];
+            /** @description A live code from the account's authenticator app, required alongside the password. */
+            totpCode: components["schemas"]["TotpCode"];
+        };
+        /**
          * @description Bounded by construction. Every length below is a limit the server enforces: a report is a
          *     line in a log, and a log line an attacker chooses the length of is a disk an attacker fills.
          */
@@ -1676,7 +1888,7 @@ export interface components {
          *     reused with a different meaning.
          * @enum {string}
          */
-        ErrorCode: "validation_failed" | "unauthenticated" | "invalid_credentials" | "account_suspended" | "registration_disabled" | "password_reset_token_invalid" | "invitation_not_valid" | "mail_not_configured" | "route_not_found" | "payload_too_large" | "vault_locked" | "stale_version" | "idempotency_key_reuse" | "last_owner_required" | "period_locked" | "self_lockout" | "system_role_immutable" | "owner_immutable" | "invitation_already_accepted" | "manager_cycle_detected" | "employment_period_inverted" | "recipient_not_active" | "member_not_active" | "invalid_recipient" | "not_the_owner" | "confirmation_required" | "rate_limited" | "feature_disabled" | "service_unavailable" | "internal_error" | "organization_not_found" | "organization_forbidden" | "organization_already_exists" | "team_not_found" | "team_forbidden" | "team_already_exists" | "user_not_found" | "user_forbidden" | "user_already_exists" | "role_not_found" | "role_forbidden" | "role_already_exists" | "invitation_not_found" | "invitation_forbidden" | "invitation_already_exists" | "session_not_found" | "session_forbidden" | "session_already_exists" | "project_not_found" | "project_forbidden" | "project_already_exists" | "board_not_found" | "board_forbidden" | "board_already_exists" | "task_not_found" | "task_forbidden" | "task_already_exists" | "sprint_not_found" | "sprint_forbidden" | "sprint_already_exists" | "comment_not_found" | "comment_forbidden" | "comment_already_exists" | "doc_not_found" | "doc_forbidden" | "doc_already_exists" | "kb_note_not_found" | "kb_note_forbidden" | "kb_note_already_exists" | "file_not_found" | "file_forbidden" | "file_already_exists" | "vault_item_not_found" | "vault_item_forbidden" | "vault_item_already_exists" | "secure_link_not_found" | "secure_link_forbidden" | "secure_link_already_exists" | "time_entry_not_found" | "time_entry_forbidden" | "time_entry_already_exists" | "channel_not_found" | "channel_forbidden" | "channel_already_exists" | "message_not_found" | "message_forbidden" | "message_already_exists" | "dashboard_not_found" | "dashboard_forbidden" | "dashboard_already_exists";
+        ErrorCode: "validation_failed" | "unauthenticated" | "invalid_credentials" | "account_suspended" | "registration_disabled" | "password_reset_token_invalid" | "invitation_not_valid" | "mail_not_configured" | "route_not_found" | "payload_too_large" | "vault_locked" | "stale_version" | "idempotency_key_reuse" | "last_owner_required" | "period_locked" | "self_lockout" | "system_role_immutable" | "owner_immutable" | "invitation_already_accepted" | "manager_cycle_detected" | "employment_period_inverted" | "recipient_not_active" | "member_not_active" | "invalid_recipient" | "not_the_owner" | "confirmation_required" | "invalid_totp_code" | "totp_code_replayed" | "mfa_already_enabled" | "reauthentication_required" | "recovery_code_invalid" | "rate_limited" | "feature_disabled" | "service_unavailable" | "internal_error" | "organization_not_found" | "organization_forbidden" | "organization_already_exists" | "team_not_found" | "team_forbidden" | "team_already_exists" | "user_not_found" | "user_forbidden" | "user_already_exists" | "role_not_found" | "role_forbidden" | "role_already_exists" | "invitation_not_found" | "invitation_forbidden" | "invitation_already_exists" | "session_not_found" | "session_forbidden" | "session_already_exists" | "project_not_found" | "project_forbidden" | "project_already_exists" | "board_not_found" | "board_forbidden" | "board_already_exists" | "task_not_found" | "task_forbidden" | "task_already_exists" | "sprint_not_found" | "sprint_forbidden" | "sprint_already_exists" | "comment_not_found" | "comment_forbidden" | "comment_already_exists" | "doc_not_found" | "doc_forbidden" | "doc_already_exists" | "kb_note_not_found" | "kb_note_forbidden" | "kb_note_already_exists" | "file_not_found" | "file_forbidden" | "file_already_exists" | "vault_item_not_found" | "vault_item_forbidden" | "vault_item_already_exists" | "secure_link_not_found" | "secure_link_forbidden" | "secure_link_already_exists" | "time_entry_not_found" | "time_entry_forbidden" | "time_entry_already_exists" | "channel_not_found" | "channel_forbidden" | "channel_already_exists" | "message_not_found" | "message_forbidden" | "message_already_exists" | "dashboard_not_found" | "dashboard_forbidden" | "dashboard_already_exists";
         /**
          * @description Why one field was rejected. The list mirrors
          *     `packages/shared/src/errors/validation-issue.enums.ts`; anything a validator produces
@@ -2445,6 +2657,66 @@ export interface components {
             };
         };
         /**
+         * @description The presented TOTP code did not match — wrong digits, no draft in progress, or the draft
+         *     expired. One answer for all three: telling them apart would let a caller probe whether an
+         *     enrolment is in progress on an account they do not control, and how long ago it started.
+         */
+        InvalidTotpCode: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/problem+json": components["schemas"]["Problem"];
+            };
+        };
+        /**
+         * @description `POST /auth/2fa/setup` on an account that already has 2FA enabled. A conflict, not a
+         *     validation failure: drafting a second secret would silently replace a working one with a
+         *     fresh secret nobody has scanned yet.
+         */
+        MfaAlreadyEnabled: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/problem+json": components["schemas"]["Problem"];
+            };
+        };
+        /**
+         * @description `POST /auth/2fa/recovery-codes/regenerate` requires the current password **and** a live TOTP
+         *     code in the same request. Whichever is missing or wrong, the answer is this one code — never
+         *     `invalid_credentials` or `invalid_totp_code` — so the two reasons are not distinguishable from
+         *     outside. `403`, not `401`: the session is valid, what is missing is a second, fresher proof.
+         */
+        ReauthenticationRequired: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/problem+json": components["schemas"]["Problem"];
+            };
+        };
+        /**
+         * @description A recovery code was presented and refused: unknown, already used, or belonging to a different
+         *     account. One answer for all three, on the same reasoning as `InvalidCredentials` — telling
+         *     them apart would let somebody holding a stolen or guessed code learn whether it was ever real.
+         *
+         *     **Not referenced by any operation yet.** The only caller is the second-factor sign-in step
+         *     (`POST /auth/2fa/verify`, STORY-013-03), which does not exist: `ConsumeRecoveryCodeUseCase` is
+         *     written and tested but wired to neither the container nor the route registry, because spending
+         *     a code without a pending sign-in to attach the resulting session to would be a hole rather
+         *     than a convenience. Declared here so the sign-in step lands against a contract that already
+         *     names its refusal, and listed as deferred surface in STORY-013-02.
+         */
+        RecoveryCodeInvalid: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/problem+json": components["schemas"]["Problem"];
+            };
+        };
+        /**
          * @description A dependency needed to answer is unavailable. On the authentication endpoints this is
          *     deliberate rather than incidental: when Redis is unreachable the rate limiter cannot count,
          *     and an uncounted login endpoint is an unlimited one, so the request is refused instead
@@ -2886,6 +3158,174 @@ export interface operations {
                 };
             };
             401: components["responses"]["Unauthenticated"];
+            500: components["responses"]["InternalError"];
+        };
+    };
+    setupTotp: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A fresh draft secret, its URI and its QR code. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TotpSetupResult"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            409: components["responses"]["MfaAlreadyEnabled"];
+            500: components["responses"]["InternalError"];
+        };
+    };
+    confirmTotp: {
+        parameters: {
+            query?: never;
+            header: {
+                /**
+                 * @description Client-generated key, mandatory on every unsafe operation that creates an entity, sends
+                 *     mail or spends money or tokens.
+                 *
+                 *     **Today the server only requires the key; it does not yet store or replay a response.** The
+                 *     table keyed by `(key, request hash)` is a cross-cutting mechanism that has not been built —
+                 *     the open half is recorded in STORY-006-01. What the requirement buys now is that a client
+                 *     which never learned to send the header cannot be made idempotent later without a breaking
+                 *     change; what it does not buy is the convenience of getting the original `201` back instead
+                 *     of a `409` on retry. Where a lost response is genuinely ambiguous rather than merely
+                 *     inconvenient, the operation says so in its own description.
+                 *
+                 *     When the store lands: a replay carrying the same request hash will return the stored
+                 *     response, and the same key with a different hash will be refused with 409
+                 *     `idempotency_key_reuse`.
+                 *
+                 *     Declaring the parameter is not a claim that the operation will replay: the client attaches a
+                 *     key to every unsafe request, and nearly every unsafe operation therefore requires one. What
+                 *     the store will change differs per operation, and each says so in its own description:
+                 *
+                 *     * operations that create something, send mail or spend tokens are the ones a replay is *for*
+                 *       — today a lost response leaves the caller unable to tell «it did not happen» from «it
+                 *       happened and the answer was lost»;
+                 *     * operations idempotent by construction (`assignRole`, `deactivateUser`, `reactivateUser`)
+                 *       require the key but gain nothing from a stored response — asking twice for a state that is
+                 *       already there answers the same way. The key is required anyway, so a client written today
+                 *       keeps working when the store lands;
+                 *     * `POST /auth/login` and `POST /auth/refresh` will **never** replay: a stored response *is* a
+                 *       credential. Replaying it would hand back tokens that have since been rotated or revoked,
+                 *       and would let one key slip a repeat past the failed-attempt counter the lockout depends on.
+                 */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ConfirmTotpRequest"];
+            };
+        };
+        responses: {
+            /** @description 2FA is enabled. The ten recovery codes, shown once. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RecoveryCodesIssuedResult"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["ReauthenticationRequired"];
+            422: components["responses"]["InvalidTotpCode"];
+            429: components["responses"]["RateLimited"];
+            500: components["responses"]["InternalError"];
+        };
+    };
+    getRecoveryCodeStatus: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The current count. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RecoveryCodesStatus"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            500: components["responses"]["InternalError"];
+        };
+    };
+    regenerateRecoveryCodes: {
+        parameters: {
+            query?: never;
+            header: {
+                /**
+                 * @description Client-generated key, mandatory on every unsafe operation that creates an entity, sends
+                 *     mail or spends money or tokens.
+                 *
+                 *     **Today the server only requires the key; it does not yet store or replay a response.** The
+                 *     table keyed by `(key, request hash)` is a cross-cutting mechanism that has not been built —
+                 *     the open half is recorded in STORY-006-01. What the requirement buys now is that a client
+                 *     which never learned to send the header cannot be made idempotent later without a breaking
+                 *     change; what it does not buy is the convenience of getting the original `201` back instead
+                 *     of a `409` on retry. Where a lost response is genuinely ambiguous rather than merely
+                 *     inconvenient, the operation says so in its own description.
+                 *
+                 *     When the store lands: a replay carrying the same request hash will return the stored
+                 *     response, and the same key with a different hash will be refused with 409
+                 *     `idempotency_key_reuse`.
+                 *
+                 *     Declaring the parameter is not a claim that the operation will replay: the client attaches a
+                 *     key to every unsafe request, and nearly every unsafe operation therefore requires one. What
+                 *     the store will change differs per operation, and each says so in its own description:
+                 *
+                 *     * operations that create something, send mail or spend tokens are the ones a replay is *for*
+                 *       — today a lost response leaves the caller unable to tell «it did not happen» from «it
+                 *       happened and the answer was lost»;
+                 *     * operations idempotent by construction (`assignRole`, `deactivateUser`, `reactivateUser`)
+                 *       require the key but gain nothing from a stored response — asking twice for a state that is
+                 *       already there answers the same way. The key is required anyway, so a client written today
+                 *       keeps working when the store lands;
+                 *     * `POST /auth/login` and `POST /auth/refresh` will **never** replay: a stored response *is* a
+                 *       credential. Replaying it would hand back tokens that have since been rotated or revoked,
+                 *       and would let one key slip a repeat past the failed-attempt counter the lockout depends on.
+                 */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RegenerateRecoveryCodesRequest"];
+            };
+        };
+        responses: {
+            /** @description The old set is gone. Ten fresh codes, shown once. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RecoveryCodesIssuedResult"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["ReauthenticationRequired"];
+            429: components["responses"]["RateLimited"];
             500: components["responses"]["InternalError"];
         };
     };

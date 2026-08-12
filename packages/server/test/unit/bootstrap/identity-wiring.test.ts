@@ -70,13 +70,17 @@ describe('wiring the authentication surface', () => {
       'authenticate',
       'changePassword',
       'confirmPasswordReset',
+      'confirmTotp',
       'endSession',
       'listSessions',
       'login',
+      'recoveryCodeStatus',
       'refresh',
       'refreshTokens',
+      'regenerateRecoveryCodes',
       'register',
       'requestPasswordReset',
+      'setupTotp',
     ]);
     // `mail` is unconditional: both mailers expose `close()`, so the step does not become a
     // conditional the day an installation is configured without SMTP (`mail.factory.ts`).

@@ -1,11 +1,11 @@
 import { MantineProvider } from '@mantine/core';
-import { Notifications } from '@mantine/notifications';
 import { QueryClientProvider, type QueryClient } from '@tanstack/react-query';
 import { useMemo, type ReactNode } from 'react';
 import { I18nextProvider } from 'react-i18next';
 import { type i18n as I18n } from 'i18next';
 
 import { createI18n } from '@shared/i18n';
+import { Toaster } from '@shared/ui';
 
 import { QueryDevtools } from './query-devtools.component.js';
 import { appTheme } from './theme/app-theme.config.js';
@@ -47,7 +47,8 @@ export interface ProvidersProps {
  * `getStyleNonce` is what lets the provider's `<style>` element survive the CSP of ADR-0023. It is
  * a function rather than a value because the nonce is per document, not per build.
  *
- * `<Notifications />` is mounted exactly once, here. Two of them means every toast appears twice
+ * `<Toaster />` — the application's single `<Notifications />`, wrapped so that its dismiss control
+ * has a name — is mounted exactly once, here. Two of them means every toast appears twice
  * (`rules/errors-and-toasts.mdc` §1), and it is a mistake that renders perfectly.
  *
  * The query devtools are mounted here too, inside the cache they inspect. `QueryDevtools` is `null`
@@ -70,10 +71,11 @@ export function Providers({ queryClient, i18n: injected, children }: ProvidersPr
       {...(nonce === undefined ? {} : { getStyleNonce: () => nonce })}
     >
       <I18nextProvider i18n={i18n}>
-        {/* Inside the i18n context, not above it: a toast renders a sentence from the catalogue, and
-            a `Notifications` mounted outside would resolve its keys against whatever global
-            instance happened to exist rather than against the one this tree was given. */}
-        <Notifications limit={NOTIFICATIONS_LIMIT} position={NOTIFICATIONS_POSITION} />
+        {/* Inside the i18n context, not above it: a toast renders a sentence from the catalogue —
+            and so does the label on its dismiss control, which is why the surface is `Toaster`
+            rather than `Notifications` itself. Mounted outside, both would resolve against whatever
+            global instance happened to exist rather than against the one this tree was given. */}
+        <Toaster limit={NOTIFICATIONS_LIMIT} position={NOTIFICATIONS_POSITION} />
         <QueryClientProvider client={queryClient}>
           {children}
           {QueryDevtools === null ? null : <QueryDevtools />}

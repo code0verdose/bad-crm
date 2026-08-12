@@ -205,6 +205,54 @@ const GENERIC_ERROR_CODE_STATUS = {
   confirmation_required: 428,
   rate_limited: 429,
   /**
+   * `POST /auth/2fa/confirm` with a code that does not match the draft secret at any accepted step.
+   *
+   * One code for "wrong digits", "no draft to confirm" and "draft expired": telling them apart would
+   * hand the caller a way to probe whether an enrolment is in progress on an account they do not
+   * control, and — for the expiry case — how long ago it started (STORY-013-01, acceptance 4 and 5).
+   * **422**, not 401: the caller is already authenticated, so nothing here is a credential failure —
+   * the field submitted is what is wrong, the same distinction `manager_cycle_detected` draws.
+   */
+  invalid_totp_code: 422,
+  /**
+   * The presented TOTP code matches the step that was already accepted once.
+   *
+   * A separate code from `invalid_totp_code` on purpose, even though both are 422 and both come from
+   * the same field: this one is reachable only by presenting a code that *was* correct, so the
+   * anti-replay predicate (`totp_last_counter`) is the reason, not a typo — the distinction a person
+   * watching over somebody's shoulder or replaying a captured value would produce, and the one the
+   * client can tell apart in its copy ("that code was already used").
+   */
+  totp_code_replayed: 422,
+  /**
+   * `POST /auth/2fa/setup` when `totpEnabledAt` is already set.
+   *
+   * A conflict, not a validation failure: the request is well formed and the caller may in principle
+   * set up 2FA — the *state* refuses, because a second enrolment would silently replace a working
+   * secret with one nobody has scanned yet (STORY-013-01, acceptance 7). The existing secret is never
+   * re-read to produce this answer — it stays exactly as unreadable as it is anywhere else.
+   */
+  mfa_already_enabled: 409,
+  /**
+   * A self-service action that changes or reveals a security-relevant secret was requested without a
+   * fresh proof of the credentials that guard it.
+   *
+   * `POST /auth/2fa/recovery-codes/regenerate` is the one caller today: it requires the current
+   * password **and** a live TOTP code in the same request, and refuses with this code — not
+   * `invalid_credentials` and not `invalid_totp_code` — when either is missing or wrong, so the two
+   * reasons are not distinguishable from outside (STORY-013-02, acceptance 8). **403**, not 401: the
+   * caller already holds a valid session: what is missing is a second, fresher proof, not the first.
+   */
+  reauthentication_required: 403,
+  /**
+   * A recovery code was presented and refused: unknown, already used, or belonging to the wrong
+   * account. One code and one body for all three, on the same reasoning `invalid_credentials`
+   * documents above — telling them apart would let somebody holding a stolen or guessed code learn
+   * whether it was ever real, or that a colleague had already used theirs (STORY-013-02, acceptance
+   * 5 and 11). **401**: reached before any session exists, on the second-factor step of sign-in.
+   */
+  recovery_code_invalid: 401,
+  /**
    * An optional subsystem is switched off in this installation, and the honest answer is "this
    * installation does not do that": search without Meilisearch, the assistant with `AI_ENABLED`
    * off.

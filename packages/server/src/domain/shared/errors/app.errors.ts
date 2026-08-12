@@ -200,6 +200,73 @@ export class InvitationNotValidError extends AppError {
   }
 }
 
+/**
+ * The presented TOTP code did not match the account's secret at any accepted step.
+ *
+ * One error for "wrong digits", "no draft to confirm against" and "the draft expired" — see the
+ * code's own note in `packages/shared/src/errors/error-code.enums.ts` for why the three collapse.
+ * `422`, not `401`: the caller already holds a valid session, so nothing here is a credential
+ * failure — the field submitted is what is wrong.
+ */
+export class InvalidTotpCodeError extends AppError {
+  constructor() {
+    super('invalid_totp_code', 'The TOTP code is not valid for this account right now');
+  }
+}
+
+/**
+ * The presented TOTP code was correct, and was already accepted once.
+ *
+ * A distinct error from `InvalidTotpCodeError`, even though both answer 422 on the same field: this
+ * one is reachable only through the anti-replay predicate on `totp_last_counter`, so a client can
+ * show "that code was already used" instead of "wrong code" (`totp.port.ts`, STORY-013-01 acceptance
+ * 6).
+ */
+export class TotpCodeReplayedError extends AppError {
+  constructor() {
+    super('totp_code_replayed', 'That code has already been used');
+  }
+}
+
+/**
+ * `POST /auth/2fa/setup` on an account that already has `totpEnabledAt` set.
+ *
+ * A conflict, not a validation failure: the request is well formed and the caller may in principle
+ * enrol — the *state* refuses, because a second enrolment would silently replace a working secret
+ * with one nobody has scanned yet (STORY-013-01, acceptance 7).
+ */
+export class MfaAlreadyEnabledError extends AppError {
+  constructor() {
+    super('mfa_already_enabled', '2FA is already enabled for this account');
+  }
+}
+
+/**
+ * A self-service action needs a fresh proof of the credentials that guard it, and did not get one.
+ *
+ * `POST /auth/2fa/recovery-codes/regenerate` requires the current password **and** a live TOTP code
+ * in the same request; whichever is missing or wrong, the answer is this error and never
+ * `invalid_credentials` or `invalid_totp_code` — the two reasons must not be distinguishable from
+ * outside (STORY-013-02, acceptance 8). `403`, not `401`: the session is valid, what is missing is a
+ * second, fresher proof.
+ */
+export class ReauthenticationRequiredError extends AppError {
+  constructor() {
+    super('reauthentication_required', 'This action needs your password and a current 2FA code');
+  }
+}
+
+/**
+ * A recovery code was presented and refused: unknown, already used, or belonging to a different
+ * account than the one signing in. One error for all three — see the code's own note in
+ * `packages/shared/src/errors/error-code.enums.ts` (STORY-013-02, acceptance 5 and 11).
+ */
+export class RecoveryCodeInvalidError extends AppError {
+  constructor() {
+    super('recovery_code_invalid', 'That recovery code is not usable');
+  }
+}
+
 /** The body exceeded the 1 MB limit; files never travel through the API (ADR-0015). */
 export class PayloadTooLargeError extends AppError {
   constructor(details?: ErrorDetails, cause?: unknown) {

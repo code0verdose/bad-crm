@@ -45,6 +45,18 @@ describe('secret redaction', () => {
     ['accessToken', { session: { accessToken: 's3cr3t-token' } }],
     ['refreshTokenHash', { session: { refreshTokenHash: 's3cr3t-token' } }],
     ['passwordHash', { user: { passwordHash: 's3cr3t-token' } }],
+    /**
+     * The identical gap, on the 2FA surface (EPIC-013): the generic `*.secret` and `*.recoveryCode`
+     * never covered the field names this domain's own code actually uses —
+     * `confirm-totp.use-case.ts`, `setup-totp.use-case.ts` and `regenerate-recovery-codes.use-case.ts`
+     * carry the plaintext TOTP secret as `base32Secret`, the encrypted column as `secretEnc`, and the
+     * ten-code batch as `recoveryCodes` (plural). Before this entry, `logger.debug({ base32Secret })`
+     * added tomorrow while debugging enrolment would write the account's live secret to every log
+     * aggregator in the clear — and no test in this file would have caught it.
+     */
+    ['base32Secret', { totp: { base32Secret: 's3cr3t-token' } }],
+    ['secretEnc', { user: { secretEnc: 's3cr3t-token' } }],
+    ['recoveryCodes', { result: { recoveryCodes: 's3cr3t-token' } }],
   ])('replaces %s with the placeholder', (_path, payload) => {
     const destination = capturingDestination();
 
@@ -89,6 +101,9 @@ describe('secret redaction', () => {
         '*.secret',
         '*.otp',
         '*.recoveryCode',
+        '*.base32Secret',
+        '*.secretEnc',
+        '*.recoveryCodes',
       ]),
     );
   });

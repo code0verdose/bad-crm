@@ -20,5 +20,8 @@
     }
   },
   "loading": "Loading…",
-  "retry": "Try again"
+  "retry": "Try again",
+  "notification": {
+    "dismiss": "Dismiss this message"
+  }
 }

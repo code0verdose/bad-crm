@@ -13,6 +13,14 @@ estimate: S
 потере аутентификатора получить сброс от администратора, **чтобы** ни случайный клик, ни украденная
 сессия не снимали защиту, но и утеря телефона не оставляла меня без доступа навсегда.
 
+> **Эта история разблокирует [STORY-013-03](story-013-03-login-second-factor.md).** Включение 2FA уже
+> отгружено (STORY-013-01, STORY-013-02), выхода из неё в продукте нет ни одного, а перевыпуск кодов
+> требует живого TOTP-кода. Пока вход второй фактор не читает, это безвредно; поэтому STORY-013-03
+> помечена `blocked: true` и не выходит раньше этой. Полная формулировка — [`epic.md`](../epic.md),
+> раздел «Блокирующая зависимость внутри эпика». Отдельно: `docs/runbooks/incident.md` **уже**
+> предписывает оператору «сбросить 2FA» — механизм появляется здесь, и оговорку из регламента нужно
+> снять вместе с выходом этой истории.
+
 ## Acceptance (Given/When/Then)
 
 1. **Самостоятельное отключение.**
@@ -77,19 +85,19 @@ estimate: S
 
 ## Задачи
 
-- [ ] `packages/server/src/application/auth/use-cases/disable-totp.use-case.ts`.
+- [ ] `packages/server/src/application/identity/use-cases/disable-totp.use-case.ts`.
 - [ ] `packages/server/src/application/iam/use-cases/reset-user-mfa.use-case.ts` — снятие 2FA +
       отзыв сессий + инкремент версии в одной транзакции, уведомление через outbox.
-- [ ] `packages/server/src/domain/auth/access/mfa-policy.policy.ts` —
+- [ ] `packages/server/src/domain/identity/access/mfa-policy.policy.ts` —
       `assertNotRequiredByPolicy`, `assertNotSelfReset`.
-- [ ] `packages/server/src/presentation/http/routes/registry.ts` — `2fa/disable` (self-service),
-      `user:reset_mfa`.
+- [ ] `packages/server/src/presentation/http/route-registry.factory.ts` — `2fa/disable`
+      (self-service), `user:reset_mfa`.
 - [ ] `packages/client/src/widgets/two-factor-settings/two-factor-settings.widget.tsx` +
       `ui/disable-2fa-dialog.component.tsx`; в админке —
       `widgets/user-security/ui/reset-mfa-dialog.component.tsx` под `<Can permission="user:reset_mfa">`.
 - [ ] `packages/client/src/units/auth/service/mutations/disable-totp.mutation.ts`,
       `units/iam/service/mutations/reset-user-mfa.mutation.ts`.
-- [ ] Тесты: `disable-totp.use-case.spec.ts` (п. 2–4), `reset-user-mfa.use-case.spec.ts`
+- [ ] Тесты: `disable-totp.use-case.test.ts` (п. 2–4), `reset-user-mfa.use-case.test.ts`
       (п. 5–7, 9), интеграционный «после сброса сессии отозваны», e2e + axe.
 
 ## Ссылки

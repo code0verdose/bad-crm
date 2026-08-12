@@ -10,5 +10,8 @@
   "required": "This field cannot be empty",
   "number": {
     "invalid": "Enter a number"
+  },
+  "totp_code": {
+    "invalid": "Enter the six digits from your authenticator app"
   }
 }

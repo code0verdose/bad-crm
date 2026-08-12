@@ -98,4 +98,35 @@ export const RATE_LIMIT_POLICY: Readonly<Record<RateLimitPolicy, RateLimitPolicy
     windowSeconds: 15 * MINUTE,
     blockSeconds: 15 * MINUTE,
   },
+  /**
+   * Drafting (`POST /auth/2fa/setup`) and confirming (`POST /auth/2fa/confirm`) a TOTP secret —
+   * one shared budget for the whole enrolment flow, keyed on the caller. Escalates like
+   * `auth_attempt`, for the identical reason: a repeated refusal here is evidence of guessing rather
+   * than noise, and STORY-013-01 acceptance 4 asks for "экспоненциальной задержкой" by name.
+   */
+  mfa_setup_attempt: {
+    points: 5,
+    windowSeconds: 15 * MINUTE,
+    blockSeconds: 15 * MINUTE,
+    escalation: { factor: 2, maxBlockSeconds: 1 * HOUR, memorySeconds: 24 * HOUR },
+  },
+  /**
+   * Reauthenticating before a recovery-code regeneration. No escalation: the subject is an
+   * authenticated account holder, not an anonymous guesser, and the fifteen-minute window is already
+   * the cost `rules/security.mdc` rule 11 asks for on a sensitive path.
+   */
+  mfa_reauth_attempt: {
+    points: 5,
+    windowSeconds: 15 * MINUTE,
+    blockSeconds: 15 * MINUTE,
+  },
+  /**
+   * Presenting a recovery code during the second-factor step. STORY-013-02 acceptance 10 states the
+   * number directly: five attempts, fifteen minutes.
+   */
+  mfa_recovery_consume_attempt: {
+    points: 5,
+    windowSeconds: 15 * MINUTE,
+    blockSeconds: 15 * MINUTE,
+  },
 };

@@ -101,12 +101,12 @@ await meili.index('vault').addDocuments([{ id, name: item.name }]);  // ❌ ни
 | Механизм | Что ловит |
 |---|---|
 | ESLint `no-restricted-imports` на `meilisearch` вне `infrastructure/search/**` | прямые вызовы из use-case и с клиента |
-| Тест `test/security/bundle-secrets.spec.ts` (grep по сборке) | `MEILI_MASTER_KEY` в клиентском бандле |
-| `test/integration/search/cross-tenant.spec.ts` | документ чужой организации в выдаче |
-| `test/integration/search/visible-to.spec.ts` | документ, доступный не своим принципалам |
-| `test/integration/search/acl-reindex.spec.ts` (исключить участника → повторить поиск) | отсутствие переиндексации при смене ACL |
-| `test/integration/search/no-vault.spec.ts` | любую vault-сущность в индексе или в эмбеддингах |
-| `test/integration/search/parity.spec.ts` (одинаковый набор кейсов для Meilisearch и postgres-fts) | более мягкую фильтрацию во втором адаптере |
+| Тест `test/security/bundle-secrets.test.ts` (grep по сборке) | `MEILI_MASTER_KEY` в клиентском бандле |
+| `test/integration/search/cross-tenant.test.ts` | документ чужой организации в выдаче |
+| `test/integration/search/visible-to.test.ts` | документ, доступный не своим принципалам |
+| `test/integration/search/acl-reindex.test.ts` (исключить участника → повторить поиск) | отсутствие переиндексации при смене ACL |
+| `test/integration/search/no-vault.test.ts` | любую vault-сущность в индексе или в эмбеддингах |
+| `test/integration/search/parity.test.ts` (одинаковый набор кейсов для Meilisearch и postgres-fts) | более мягкую фильтрацию во втором адаптере |
 | e2e `private-project-invisible-everywhere`, `private-channel-invisible-everywhere` | утечку через вторичные пути |
 | Preflight-проверка портов при старте | опубликованный наружу порт Meilisearch и дефолтный ключ |
 | Агент `security-auditor` при изменении схемы документа | появление секретов и лишних ПДн в индексе |

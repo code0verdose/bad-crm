@@ -94,6 +94,7 @@ model Organization {
   invitations         Invitation[]
   sessions            Session[]
   passwordResetTokens PasswordResetToken[]
+  mfaRecoveryCodes    MfaRecoveryCode[]
 
   @@map("organizations")
 }
@@ -158,8 +159,19 @@ model User {
   emailVerifiedAt DateTime? @map("email_verified_at") @db.Timestamptz(6)
   passwordHash    String    @map("password_hash")
 
-  totpSecretEnc String?   @map("totp_secret_enc")
-  totpEnabledAt DateTime? @map("totp_enabled_at") @db.Timestamptz(6)
+  totpSecretEnc      String?   @map("totp_secret_enc")
+  totpEnabledAt      DateTime? @map("totp_enabled_at") @db.Timestamptz(6)
+  /// The RFC 6238 time-step of the last TOTP code this account had accepted — the anti-replay
+  /// predicate `TotpEnrollmentRepositoryPort.advanceCounter` compares against, never the code itself
+  /// (STORY-013-01, acceptance 6). `NULL` until the first code is ever accepted, including the one
+  /// that confirms enrolment.
+  totpLastCounter    Int?      @map("totp_last_counter")
+  /// When a **draft** secret (`totpEnabledAt IS NULL`) stops being confirmable. Set by `setup`, read
+  /// by `confirm`'s own predicate, and never swept by a job: nothing currently runs one
+  /// (`ADR-0021` is not wired to a queue yet), so an unconfirmed draft simply becomes unusable at
+  /// this timestamp rather than disappearing — the next `setup` overwrites it regardless
+  /// (STORY-013-01, acceptance 3).
+  totpDraftExpiresAt DateTime? @map("totp_draft_expires_at") @db.Timestamptz(6)
 
   /// Bumped on every change to this user's roles, overrides or ACL entries, carried in the access
   /// token as `pv`; a token whose `pv` is behind the row is stale and the rights are re-read. That
@@ -185,11 +197,12 @@ model User {
   ownedOrganizations  Organization[]           @relation("OrganizationOwner")
   sessions            Session[]
   passwordResetTokens PasswordResetToken[]
+  mfaRecoveryCodes    MfaRecoveryCode[]
   roles               UserRole[]               @relation("UserRoleHolder")
   rolesGranted        UserRole[]               @relation("UserRoleGrantor")
   teamMemberships     TeamMember[]
-  employeeProfile     EmployeeProfile? @relation("EmployeeAccount")
-  manages             EmployeeProfile[] @relation("EmployeeManager")
+  employeeProfile     EmployeeProfile?         @relation("EmployeeAccount")
+  manages             EmployeeProfile[]        @relation("EmployeeManager")
   permissionOverrides UserPermissionOverride[] @relation("OverrideSubject")
   invitationsSent     Invitation[]             @relation("InvitationAuthor")
   invitationAccepted  Invitation[]             @relation("InvitationAcceptor")
@@ -316,6 +329,65 @@ model PasswordResetToken {
   /// cannot express, so it stays in the migration — and stays invisible to `migrate diff`, which
   /// models no partial index and therefore neither demands nor drops it.
   @@map("password_reset_tokens")
+}
+
+/// Tenant-scoped table [T]: one issued recovery code for one account's 2FA (STORY-013-02).
+///
+/// **`code_hash` is argon2id, not SHA-256.** Unlike `PasswordResetToken.tokenHash` or
+/// `Session.refreshTokenHash` — both 256 bits of CSPRNG output, where a lookup can equality-match the
+/// digest directly — a recovery code is ten characters from a 31-symbol alphabet
+/// (`RECOVERY_CODE_ENTROPY_BITS` ≈ 49.4 bits), read and typed by a person rather than pasted from a
+/// link. Consuming one is therefore a loop over this account's unused rows, verifying each candidate's
+/// hash in turn (`RecoveryCodeRepositoryPort`), not a `WHERE code_hash = $1`.
+///
+/// **No plaintext column, ever.** The batch of ten is returned to the caller exactly once, in the
+/// response body of `confirm` or of `regenerate`, and never written to a row — see
+/// `mfa-recovery-code-structure.test.ts` for the structural assertion that the column does not exist.
+model MfaRecoveryCode {
+  id             String @id(map: "pk_mfa_recovery_codes") @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String @map("organization_id") @db.Uuid
+  userId         String @map("user_id") @db.Uuid
+
+  codeHash String    @map("code_hash")
+  usedAt   DateTime? @map("used_at") @db.Timestamptz(6)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  /// `onUpdate: NoAction` is written out, and that is the point of writing it: Prisma emits
+  /// `ON UPDATE CASCADE` for a relation that declares nothing, which is how this reference shipped
+  /// with a cascade nobody chose (`docs/architecture/data-model.md`, «Про `Organization.ownerId`»,
+  /// closed 2026-07-30 — the referenced key is an immutable uuid, so a cascade can only ever rewrite
+  /// a child the operator did not name).
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "fk_mfa_recovery_codes_organization_id")
+  /// Composite, like every reference in this schema: a single-column `FOREIGN KEY (user_id)` would
+  /// let a row be inserted naming a user of another organization — foreign key checks run as the
+  /// table owner and bypass row-level security (`rules/tenancy-rls.mdc`, rule 7). `Cascade`: a
+  /// recovery code without the account it recovers is not a row anybody reads.
+  ///
+  /// **`NoAction` on update, and here it is the tenant boundary that depends on it.** The referenced
+  /// pair is `(organization_id, id)`, so under a cascade an `UPDATE users SET organization_id = …` —
+  /// a support fix, a backfill, a future transfer of an account — silently rewrites
+  /// `mfa_recovery_codes.organization_id` too and carries the material of a second factor into
+  /// another tenant. Foreign key checks run as the table owner and bypass RLS, so neither `USING` nor
+  /// `WITH CHECK` is consulted; with `NoAction` the operator is refused instead
+  /// (`migrations.test.ts`, «the recovery codes of an account»).
+  user         User         @relation(fields: [organizationId, userId], references: [organizationId, id], onDelete: Cascade, onUpdate: NoAction, map: "fk_mfa_recovery_codes_user_id")
+
+  /// The one index besides the primary key, and the only one this table needs.
+  ///
+  /// It is what `ON DELETE CASCADE` from `users` scans, and it serves the reads: the consume loop
+  /// asks for one account's unused rows, `{ total, remaining }` counts that account's rows twice
+  /// (once **without** `used_at` in the predicate), and the bulk delete on regeneration removes all
+  /// of them, spent ones included. Only one of the three filters on `used_at`.
+  ///
+  /// A partial `WHERE used_at IS NULL` twin shipped beside it and was removed
+  /// (`20260812090000_mfa_recovery_codes_fk_actions`): a batch is ten codes and a regeneration
+  /// deletes the whole set, so both indexes pointed at the same ≤10 rows — while `used_at` in the
+  /// predicate kept spending a code from ever being a HOT update, and made issuing a batch write
+  /// twenty index tuples instead of ten.
+  @@index([organizationId, userId], map: "idx_mfa_recovery_codes_org_user")
+  @@map("mfa_recovery_codes")
 }
 
 /// Tenant-scoped table [T]: an org-structure container — «who works together».

@@ -102,14 +102,14 @@ const total = await prisma.timeEntry.aggregate({ _sum: { minutes: true }, where:
 
 | Механизм | Что ловит |
 |---|---|
-| Уникальный индекс `RunningTimer.userId` + `test/integration/time/double-start.spec.ts` (два параллельных старта) | гонку двойного старта — ожидается ошибка уникальности |
+| Уникальный индекс `RunningTimer.userId` + `test/integration/time/double-start.test.ts` (два параллельных старта) | гонку двойного старта — ожидается ошибка уникальности |
 | `CHECK (minutes <> 0)` + `uq_time_entries_reverses` | нулевые записи и повторное сторно |
-| `test/integration/time/approved-immutable.spec.ts` | `UPDATE`/`DELETE` подтверждённой записи — должен отклоняться |
-| `test/integration/time/reversal-sum.spec.ts` | расхождение суммы после сторно (`rollup` и `InvoiceLine`) |
-| `test/integration/time/rate-snapshot.spec.ts` (изменить ставку после аппрува) | пересчёт прошлых периодов |
-| `test/architecture/no-raw-time-aggregate.spec.ts` (grep агрегатов по `time_entries` в отчётных путях) | отчёт мимо `TimeRollup` |
-| `test/integration/time/self-approve.spec.ts` | самоаппрув на уровне policy |
-| `test/integration/time/timezone-boundary.spec.ts` (записи на границе суток и недели) | ошибки границ периода |
+| `test/integration/time/approved-immutable.test.ts` | `UPDATE`/`DELETE` подтверждённой записи — должен отклоняться |
+| `test/integration/time/reversal-sum.test.ts` | расхождение суммы после сторно (`rollup` и `InvoiceLine`) |
+| `test/integration/time/rate-snapshot.test.ts` (изменить ставку после аппрува) | пересчёт прошлых периодов |
+| `test/architecture/no-raw-time-aggregate.test.ts` (grep агрегатов по `time_entries` в отчётных путях) | отчёт мимо `TimeRollup` |
+| `test/integration/time/self-approve.test.ts` | самоаппрув на уровне policy |
+| `test/integration/time/timezone-boundary.test.ts` (записи на границе суток и недели) | ошибки границ периода |
 | Агент `db-reviewer` при изменении схемы времени | ослабление инвариантов на уровне БД |
 
 ## Исключения

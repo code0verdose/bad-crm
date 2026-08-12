@@ -8,9 +8,13 @@
  * two vocabularies of the same three words, kept identical by a test, and a store that could not
  * see the token it belonged to.
  *
- * Absent on purpose: `service/queries`. Restoring a session is a rotation — one `POST /auth/refresh`
- * per tab, deduplicated, with a credential in the answer — and a cache entry is exactly what it must
- * not become (CLAUDE.md, invariant 3). It lives in `service/stores` instead.
+ * `service/queries` holds exactly one read, and the rule that kept the segment empty until
+ * EPIC-013 still stands: **an answer that carries a credential is never a query.** Restoring a
+ * session is a rotation — one `POST /auth/refresh` per tab, deduplicated, with a token in the
+ * answer — and it lives in `service/stores`; the drafted TOTP secret and the ten recovery codes are
+ * answers to mutations for the same reason, with `gcTime: 0` on top. What the segment does hold is
+ * `GET /auth/2fa/recovery-codes`, which answers `{ total, remaining }` and cannot be made to say
+ * anything else — a counter is cacheable precisely because it is not a credential.
  */
 export * as AuthApi from './api/index.js';
 export * as AuthLib from './lib/index.js';

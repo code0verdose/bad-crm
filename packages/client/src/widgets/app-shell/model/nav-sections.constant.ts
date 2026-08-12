@@ -1,4 +1,5 @@
 import {
+  IconKey,
   IconLayoutDashboard,
   IconShieldLock,
   IconUsers,
@@ -20,7 +21,8 @@ import { type SharedPermissions } from '@bad-crm/shared';
  */
 export interface NavItem {
   /** A path of the route tree. Widening this to `string` would give up the compile-time check. */
-  readonly to: '/dashboard' | '/admin/members' | '/admin/teams' | '/admin/roles';
+  readonly to:
+    '/dashboard' | '/settings/security' | '/admin/members' | '/admin/teams' | '/admin/roles';
   readonly labelKey: string;
   readonly icon: Icon;
   /**
@@ -41,7 +43,16 @@ export interface NavSection {
 export const NAV_SECTIONS: readonly NavSection[] = [
   {
     titleKey: 'nav.section.personal',
-    items: [{ to: '/dashboard', labelKey: 'nav.dashboard', icon: IconLayoutDashboard }],
+    items: [
+      { to: '/dashboard', labelKey: 'nav.dashboard', icon: IconLayoutDashboard },
+      /**
+       * No `permission`, and that is the point rather than an omission: every operation behind
+       * `/settings/security` is self-service — the route registry marks all four `selfService:
+       * true`, because nobody could be denied the right to protect their own sign-in. An entry
+       * everybody sees is the correct entry here.
+       */
+      { to: '/settings/security', labelKey: 'nav.settingsSecurity', icon: IconKey },
+    ],
   },
   {
     titleKey: 'nav.section.administration',

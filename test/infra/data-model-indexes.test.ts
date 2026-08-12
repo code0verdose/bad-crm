@@ -27,7 +27,16 @@ interface Schema {
   readonly indexes: Set<string>;
 }
 
-/** Every table, index and named unique/primary constraint the committed migrations create. */
+/**
+ * Every table, index and named unique/primary constraint the migrations leave behind.
+ *
+ * **Creations minus drops, and the subtraction is the point.** The first version accumulated only
+ * `CREATE`s, so an index removed by a later migration — the way `rules/db-migrations.mdc` (12)
+ * requires a mistake to be repaired, since a migration is history and is not edited — stayed in this
+ * set forever. The document then had to keep naming an index the database no longer has, or this
+ * test failed on a correct repair. That is the wrong direction for a registry: it should describe
+ * the schema as it ends up, not every state it passed through.
+ */
 const schemaFromMigrations = (): Schema => {
   const tables = new Set<string>();
   const indexes = new Set<string>();
@@ -40,24 +49,37 @@ const schemaFromMigrations = (): Schema => {
       .filter((line) => !line.trimStart().startsWith('--'))
       .join('\n');
 
-    for (const [, name] of sql.matchAll(/\bCREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?"(\w+)"/gi)) {
-      tables.add(name ?? '');
-    }
+    // Statement by statement, in the order they run. Grouping by pattern across the whole file
+    // would lose a migration that drops a constraint and re-adds it under the same name — the shape
+    // used to change a key's action — because the delete would then run after the add.
+    //
+    // Within one statement every match is collected: a `CREATE TABLE` carries its primary key and
+    // any inline `UNIQUE` together, and taking only the first would quietly register one of them.
+    for (const statement of sql.split(';')) {
+      for (const [, name] of statement.matchAll(
+        /\bCREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?"(\w+)"/gi,
+      )) {
+        if (name !== undefined) tables.add(name);
+      }
 
-    for (const [, name] of sql.matchAll(
-      /\bCREATE\s+(?:UNIQUE\s+)?INDEX\s+(?:CONCURRENTLY\s+)?(?:IF\s+NOT\s+EXISTS\s+)?"(\w+)"/gi,
-    )) {
-      indexes.add(name ?? '');
-    }
+      for (const pattern of [
+        /\bCREATE\s+(?:UNIQUE\s+)?INDEX\s+(?:CONCURRENTLY\s+)?(?:IF\s+NOT\s+EXISTS\s+)?"(\w+)"/gi,
+        /\bADD\s+CONSTRAINT\s+"(\w+)"\s+(?:UNIQUE|PRIMARY\s+KEY)/gi,
+        /\bCONSTRAINT\s+"(\w+)"\s+(?:UNIQUE|PRIMARY\s+KEY)/gi,
+      ]) {
+        for (const [, name] of statement.matchAll(pattern)) {
+          if (name !== undefined) indexes.add(name);
+        }
+      }
 
-    for (const [, name] of sql.matchAll(
-      /\bADD\s+CONSTRAINT\s+"(\w+)"\s+(?:UNIQUE|PRIMARY\s+KEY)/gi,
-    )) {
-      indexes.add(name ?? '');
-    }
-
-    for (const [, name] of sql.matchAll(/\bCONSTRAINT\s+"(\w+)"\s+PRIMARY\s+KEY/gi)) {
-      indexes.add(name ?? '');
+      for (const pattern of [
+        /\bDROP\s+INDEX\s+(?:CONCURRENTLY\s+)?(?:IF\s+EXISTS\s+)?"(\w+)"/gi,
+        /\bDROP\s+CONSTRAINT\s+(?:IF\s+EXISTS\s+)?"(\w+)"/gi,
+      ]) {
+        for (const [, name] of statement.matchAll(pattern)) {
+          if (name !== undefined) indexes.delete(name);
+        }
+      }
     }
   }
 

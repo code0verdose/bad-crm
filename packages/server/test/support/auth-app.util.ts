@@ -3,13 +3,18 @@ import { type Express } from 'express';
 import { AuthenticateSessionQuery } from '@/application/identity/use-cases/authenticate-session.query.js';
 import { ChangePasswordUseCase } from '@/application/identity/use-cases/change-password.use-case.js';
 import { ConfirmPasswordResetUseCase } from '@/application/identity/use-cases/confirm-password-reset.use-case.js';
+import { ConfirmTotpUseCase } from '@/application/identity/use-cases/confirm-totp.use-case.js';
 import { EndSessionUseCase } from '@/application/identity/use-cases/end-session.use-case.js';
+import { GenerateRecoveryCodesUseCase } from '@/application/identity/use-cases/generate-recovery-codes.use-case.js';
 import { IssueSessionUseCase } from '@/application/identity/use-cases/issue-session.use-case.js';
 import { ListSessionsQuery } from '@/application/identity/use-cases/list-sessions.query.js';
 import { LoginUseCase } from '@/application/identity/use-cases/login.use-case.js';
+import { ReadRecoveryCodeStatusQuery } from '@/application/identity/use-cases/read-recovery-code-status.query.js';
 import { RefreshSessionUseCase } from '@/application/identity/use-cases/refresh-session.use-case.js';
+import { RegenerateRecoveryCodesUseCase } from '@/application/identity/use-cases/regenerate-recovery-codes.use-case.js';
 import { RegisterOrganizationUseCase } from '@/application/identity/use-cases/register-organization.use-case.js';
 import { RequestPasswordResetUseCase } from '@/application/identity/use-cases/request-password-reset.use-case.js';
+import { SetupTotpUseCase } from '@/application/identity/use-cases/setup-totp.use-case.js';
 import { AssignRoleUseCase } from '@/application/iam/use-cases/assign-role.use-case.js';
 import { BuildActorQuery } from '@/application/iam/use-cases/build-actor.query.js';
 import { GetMyPermissionsQuery } from '@/application/iam/use-cases/get-my-permissions.query.js';
@@ -28,6 +33,9 @@ import {
   WriteEmployeeProfileUseCase,
 } from '@/application/iam/use-cases/write-employee-profile.use-case.js';
 import { AesFieldEncryption } from '@/infrastructure/crypto/field-encryption.adapter.js';
+import { CsprngRecoveryCodeGenerator } from '@/infrastructure/crypto/csprng-recovery-code-generator.adapter.js';
+import { OtplibTotpAdapter } from '@/infrastructure/crypto/otplib-totp.adapter.js';
+import { QrcodeSvgAdapter } from '@/infrastructure/qr/qrcode-svg.adapter.js';
 import { ListInvitationsQuery } from '@/application/iam/use-cases/list-invitations.query.js';
 import { ListRolesQuery } from '@/application/iam/use-cases/list-roles.query.js';
 import { ListTeamsQuery } from '@/application/iam/use-cases/list-teams.query.js';
@@ -83,6 +91,7 @@ import {
   authUser,
   RecordingLogger,
 } from './identity-doubles.util.js';
+import { FakeRecoveryCodes, FakeTotpEnrollment } from './mfa-doubles.util.js';
 import {
   FakeCustomRoleRepository,
   FakeEmployeeDirectoryRepository,
@@ -254,6 +263,22 @@ export const createAuthApp = (options: AuthAppOptions = {}): AuthApp => {
     new ProvisionSystemRolesUseCase(new FakeRoleRepository()),
   );
 
+  // The 2FA surface (STORY-013-01, STORY-013-02). Real crypto adapters rather than scripted doubles
+  // where the real ones are cheap and stateless (`OtplibTotpAdapter`, `QrcodeSvgAdapter`,
+  // `CsprngRecoveryCodeGenerator` over the same fake hasher every other credential in this harness
+  // shares) — the same reasoning `fields` below already applies to `AesFieldEncryption`: a real
+  // adapter over a fixed test key is more faithful than a second, hand-rolled encryption double.
+  const totpEnrollment = new FakeTotpEnrollment();
+  const recoveryCodeRows = new FakeRecoveryCodes();
+  const totp = new OtplibTotpAdapter();
+  const qr = new QrcodeSvgAdapter();
+  const recoveryCodeGenerator = new CsprngRecoveryCodeGenerator(hasher);
+  const generateRecoveryCodes = new GenerateRecoveryCodesUseCase(
+    recoveryCodeRows,
+    recoveryCodeGenerator,
+  );
+  const mfaFields = new AesFieldEncryption(Buffer.alloc(32, 7).toString('base64'));
+
   const identity = {
     register: new RegisterOrganizationUseCase(
       bootstrap,
@@ -331,6 +356,48 @@ export const createAuthApp = (options: AuthAppOptions = {}): AuthApp => {
     authenticate: new AuthenticateSessionQuery(accessTokens, sessions, unitOfWork, clock),
     authLookup: lookup,
     refreshTokens,
+    setupTotp: new SetupTotpUseCase(
+      users,
+      totpEnrollment,
+      totp,
+      qr,
+      mfaFields,
+      unitOfWork,
+      rateLimit,
+      clock,
+    ),
+    confirmTotp: new ConfirmTotpUseCase(
+      totpEnrollment,
+      totp,
+      mfaFields,
+      generateRecoveryCodes,
+      users,
+      hasher,
+      unitOfWork,
+      rateLimit,
+      clock,
+      logger,
+      audit,
+      dispatcher,
+      APP_URL,
+    ),
+    recoveryCodeStatus: new ReadRecoveryCodeStatusQuery(recoveryCodeRows, unitOfWork),
+    regenerateRecoveryCodes: new RegenerateRecoveryCodesUseCase(
+      users,
+      totpEnrollment,
+      totp,
+      mfaFields,
+      recoveryCodeRows,
+      hasher,
+      generateRecoveryCodes,
+      unitOfWork,
+      rateLimit,
+      clock,
+      logger,
+      audit,
+      dispatcher,
+      APP_URL,
+    ),
   };
 
   const userRoles = options.userRoles ?? new FakeUserRoleRepository();

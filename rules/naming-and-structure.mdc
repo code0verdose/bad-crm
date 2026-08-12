@@ -47,7 +47,8 @@ alwaysApply: true
    | `.context.tsx` / `.provider.tsx` | React context / провайдер | `theme.provider.tsx` |
    | `.guard.ts` | guard маршрута | `require-permission.guard.ts` |
    | `.module.css` | стили рядом с компонентом | `task-card.module.css` |
-   | `.test.ts(x)` / `.spec.ts` | тесты рядом с кодом | `use-task-filters.hook.test.ts` |
+   | `.test.ts(x)` | Vitest-тест (**единственный шаблон, который видят конфиги**) | `use-task-filters.hook.test.ts` |
+   | `.spec.ts` | сценарий Playwright — **только** в `packages/e2e/tests/**` | `sign-in.spec.ts` |
 
    **Backend**
 
@@ -161,7 +162,7 @@ export default function TaskCard({ task }: Props) {                     // ❌ d
 | Кастомное правило `bad-crm/no-inline-helpers` | объявление функции в файле компонента вне самого компонента |
 | ESLint `@typescript-eslint/naming-convention` | несоответствие PascalCase/camelCase для символов |
 | `test/architecture/barrels.test.ts` | импорт мимо `index.ts` сегмента |
-| `test/architecture/unit-names.spec.ts` | корень `units/*` вне списка канонических имён из `docs/product/glossary.md` — ловит `units/tasks`, `units/permissions`, `units/knowledge-base` и любую новую папку без строки в глоссарии |
+| `test/architecture/unit-names.test.ts` | корень `units/*` вне списка канонических имён из `docs/product/glossary.md` — ловит `units/tasks`, `units/permissions`, `units/knowledge-base` и любую новую папку без строки в глоссарии |
 | Агент `code-reviewer` | расхождение имён с `docs/product/glossary.md` |
 | Агент `fsd-architecture-linter` | множественное число и синонимы в имени unit'а при ревью дельты клиента |
 

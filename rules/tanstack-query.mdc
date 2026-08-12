@@ -162,7 +162,7 @@ onMutate: (draft) => runOptimisticPatch(QueryKeys.Tasks.all, 'tmp', draft);
 | `use-*.hook.test.ts` (Vitest + MSW): success + error на каждый хук | необработанные состояния |
 | `packages/client/test/api/optimistic.test.ts` — сервер отвечает ошибкой | отсутствие отката и «залипший» оптимистичный UI; возврат удалённого элемента на прежнюю позицию, а не в конец |
 | `packages/client/test/api/query-client.test.ts` | второй тост на один сбой, тост на `AbortError`, отсутствие `logError` |
-| `test/optimistic/no-optimistic-in-vault.spec.ts` | `onMutate` в `units/vault/**` |
+| `test/optimistic/no-optimistic-in-vault.test.ts` | `onMutate` в `units/vault/**` |
 | e2e: смена фильтра дважды подряд | гонку запросов при отсутствии `signal` |
 | Агент `frontend-developer` при ревью новых хуков | смешение оптимистичного и пессимистичного паттернов |
 

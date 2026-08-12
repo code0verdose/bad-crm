@@ -8,13 +8,18 @@ import { type ReadinessProbePort } from '@/application/platform/ports/readiness-
 import { AuthenticateSessionQuery } from '@/application/identity/use-cases/authenticate-session.query.js';
 import { ChangePasswordUseCase } from '@/application/identity/use-cases/change-password.use-case.js';
 import { ConfirmPasswordResetUseCase } from '@/application/identity/use-cases/confirm-password-reset.use-case.js';
+import { ConfirmTotpUseCase } from '@/application/identity/use-cases/confirm-totp.use-case.js';
 import { EndSessionUseCase } from '@/application/identity/use-cases/end-session.use-case.js';
+import { GenerateRecoveryCodesUseCase } from '@/application/identity/use-cases/generate-recovery-codes.use-case.js';
 import { IssueSessionUseCase } from '@/application/identity/use-cases/issue-session.use-case.js';
 import { ListSessionsQuery } from '@/application/identity/use-cases/list-sessions.query.js';
 import { LoginUseCase } from '@/application/identity/use-cases/login.use-case.js';
+import { ReadRecoveryCodeStatusQuery } from '@/application/identity/use-cases/read-recovery-code-status.query.js';
 import { RefreshSessionUseCase } from '@/application/identity/use-cases/refresh-session.use-case.js';
+import { RegenerateRecoveryCodesUseCase } from '@/application/identity/use-cases/regenerate-recovery-codes.use-case.js';
 import { RegisterOrganizationUseCase } from '@/application/identity/use-cases/register-organization.use-case.js';
 import { RequestPasswordResetUseCase } from '@/application/identity/use-cases/request-password-reset.use-case.js';
+import { SetupTotpUseCase } from '@/application/identity/use-cases/setup-totp.use-case.js';
 import { BootstrapOrganizationUseCase } from '@/application/organization/use-cases/bootstrap-organization.use-case.js';
 import { CheckHealthUseCase } from '@/application/platform/use-cases/check-health.use-case.js';
 import { CheckReadinessUseCase } from '@/application/platform/use-cases/check-readiness.use-case.js';
@@ -93,6 +98,9 @@ import { HmacAddressHasher } from '@/infrastructure/crypto/address-hasher.adapte
 import { JwtAccessTokenAdapter } from '@/infrastructure/crypto/jwt-access-token.adapter.js';
 import { Sha256RefreshTokenAdapter } from '@/infrastructure/crypto/refresh-token.adapter.js';
 import { Sha256ResetTokenAdapter } from '@/infrastructure/crypto/reset-token.adapter.js';
+import { CsprngRecoveryCodeGenerator } from '@/infrastructure/crypto/csprng-recovery-code-generator.adapter.js';
+import { OtplibTotpAdapter } from '@/infrastructure/crypto/otplib-totp.adapter.js';
+import { QrcodeSvgAdapter } from '@/infrastructure/qr/qrcode-svg.adapter.js';
 import { type DbRoleProbeClient } from '@/infrastructure/persistence/prisma/assert-db-role.util.js';
 import { PrismaAuthLookup } from '@/infrastructure/persistence/prisma/auth-lookup.adapter.js';
 import { createAuthLookupClient } from '@/infrastructure/persistence/prisma/auth-lookup.client.js';
@@ -115,8 +123,10 @@ import { PrismaUserLifecycleRepository } from '@/infrastructure/persistence/pris
 import { PrismaEmployeeProfileRepository } from '@/infrastructure/persistence/prisma/employee-profile.repository.js';
 import { PrismaInvitationRepository } from '@/infrastructure/persistence/prisma/invitation.repository.js';
 import { PrismaOrganizationRepository } from '@/infrastructure/persistence/prisma/organization.repository.js';
+import { PrismaMfaRecoveryCodeRepository } from '@/infrastructure/persistence/prisma/mfa-recovery-code.repository.js';
 import { PrismaPasswordResetTokenRepository } from '@/infrastructure/persistence/prisma/password-reset-token.repository.js';
 import { PrismaSessionRepository } from '@/infrastructure/persistence/prisma/session.repository.js';
+import { PrismaTotpEnrollmentRepository } from '@/infrastructure/persistence/prisma/totp-enrollment.repository.js';
 import { PrismaUnitOfWork } from '@/infrastructure/persistence/prisma/unit-of-work.adapter.js';
 import { PrismaUserRepository } from '@/infrastructure/persistence/prisma/user.repository.js';
 import { detachedRateLimit } from '@/infrastructure/rate-limit/detached-rate-limit.adapter.js';
@@ -596,6 +606,8 @@ const buildIdentity = (input: {
   const users = new PrismaUserRepository();
   const sessions = new PrismaSessionRepository();
   const resetTokenRows = new PrismaPasswordResetTokenRepository();
+  const totpEnrollment = new PrismaTotpEnrollmentRepository();
+  const recoveryCodeRows = new PrismaMfaRecoveryCodeRepository();
 
   const hasher = new Argon2PasswordHasher({
     memoryCost: input.env.ARGON2_MEMORY_COST,
@@ -606,6 +618,17 @@ const buildIdentity = (input: {
   const resetTokens = new Sha256ResetTokenAdapter();
   const accessTokens = new JwtAccessTokenAdapter(input.env.JWT_SECRET, input.clock);
   const addresses = new HmacAddressHasher(input.env.APP_ENCRYPTION_KEY);
+  // Own instance rather than one shared with `buildIam`'s `fields`: both wrap the same key and hold
+  // no state beyond the decoded buffer, so a second construction costs one `Buffer.from` and keeps
+  // this function self-contained the way every other adapter here already is.
+  const fields = new AesFieldEncryption(input.env.APP_ENCRYPTION_KEY);
+  const totp = new OtplibTotpAdapter();
+  const qr = new QrcodeSvgAdapter();
+  const recoveryCodeGenerator = new CsprngRecoveryCodeGenerator(hasher);
+  const generateRecoveryCodes = new GenerateRecoveryCodesUseCase(
+    recoveryCodeRows,
+    recoveryCodeGenerator,
+  );
 
   const issueSession = new IssueSessionUseCase(
     sessions,
@@ -701,6 +724,48 @@ const buildIdentity = (input: {
     authenticate: new AuthenticateSessionQuery(accessTokens, sessions, unitOfWork, input.clock),
     authLookup,
     refreshTokens,
+    setupTotp: new SetupTotpUseCase(
+      users,
+      totpEnrollment,
+      totp,
+      qr,
+      fields,
+      unitOfWork,
+      input.rateLimit,
+      input.clock,
+    ),
+    confirmTotp: new ConfirmTotpUseCase(
+      totpEnrollment,
+      totp,
+      fields,
+      generateRecoveryCodes,
+      users,
+      hasher,
+      unitOfWork,
+      input.rateLimit,
+      input.clock,
+      input.logger,
+      input.audit,
+      input.mailDispatcher,
+      input.env.APP_URL,
+    ),
+    recoveryCodeStatus: new ReadRecoveryCodeStatusQuery(recoveryCodeRows, unitOfWork),
+    regenerateRecoveryCodes: new RegenerateRecoveryCodesUseCase(
+      users,
+      totpEnrollment,
+      totp,
+      fields,
+      recoveryCodeRows,
+      hasher,
+      generateRecoveryCodes,
+      unitOfWork,
+      input.rateLimit,
+      input.clock,
+      input.logger,
+      input.audit,
+      input.mailDispatcher,
+      input.env.APP_URL,
+    ),
   };
 
   // `sessions` travels with the kit because offboarding revokes them: the account status, the

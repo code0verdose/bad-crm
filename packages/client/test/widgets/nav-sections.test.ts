@@ -18,20 +18,41 @@ describe('what NAV_SECTIONS actually requires', () => {
     const sections = visibleSections(NAV_SECTIONS, (permission) => granted.has(permission));
     const labels = sections.flatMap((section) => section.items.map((item) => item.labelKey));
 
-    expect(labels).toEqual(['nav.dashboard', 'nav.adminMembers', 'nav.adminRoles']);
+    expect(labels).toEqual([
+      'nav.dashboard',
+      'nav.settingsSecurity',
+      'nav.adminMembers',
+      'nav.adminRoles',
+    ]);
   });
 
   it('shows «Команды» once team:read is granted, and nothing else administrative', () => {
     const sections = visibleSections(NAV_SECTIONS, (permission) => permission === 'team:read');
     const labels = sections.flatMap((section) => section.items.map((item) => item.labelKey));
 
-    expect(labels).toEqual(['nav.dashboard', 'nav.adminTeams']);
+    expect(labels).toEqual(['nav.dashboard', 'nav.settingsSecurity', 'nav.adminTeams']);
   });
 
+  /**
+   * And what survives that is the list of entries nobody can be denied.
+   *
+   * «Безопасность» is one of them on purpose: every operation behind `/settings/security` is
+   * self-service — the route registry marks all four `selfService: true` — because nobody could be
+   * denied the right to protect their own sign-in. An entry gated on a permission there would hide
+   * the second factor from exactly the accounts that hold no permissions at all.
+   */
   it('hides every administrative entry, «Команды» included, from somebody granted nothing', () => {
     const sections = visibleSections(NAV_SECTIONS, () => false);
     const labels = sections.flatMap((section) => section.items.map((item) => item.labelKey));
 
-    expect(labels).toEqual(['nav.dashboard']);
+    expect(labels).toEqual(['nav.dashboard', 'nav.settingsSecurity']);
+  });
+
+  it('declares no permission on the two entries that are everybody’s', () => {
+    const ungated = NAV_SECTIONS.flatMap((section) =>
+      section.items.filter((item) => item.permission === undefined).map((item) => item.labelKey),
+    );
+
+    expect(ungated).toEqual(['nav.dashboard', 'nav.settingsSecurity']);
   });
 });

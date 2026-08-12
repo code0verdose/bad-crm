@@ -108,7 +108,7 @@ if (values.title.length > 200) setError('Слишком длинно');
 | ESLint `no-restricted-syntax` на строковый литерал вторым аргументом Zod-валидатора | хардкод текста ошибки |
 | ESLint `no-restricted-properties` на `process.env` вне `infrastructure/bootstrap/**` | чтение env мимо схемы |
 | `*.schema.test.ts` на каждую схему: happy + пустое + невалидное + граница + лишние поля | схему, принимающую мусор |
-| `env-schema.spec.ts` | переменную, добавленную в код мимо схемы и `.env.example` |
+| `env-schema.test.ts` | переменную, добавленную в код мимо схемы и `.env.example` |
 | `packages/server/test/integration/http/validation.test.ts` | endpoint без zod-схемы на границе (ожидается 422 `validation_failed`) |
 | Компонентные тесты форм | ручную проверку в компоненте вместо резолвера |
 

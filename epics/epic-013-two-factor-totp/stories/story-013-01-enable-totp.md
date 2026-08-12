@@ -1,7 +1,7 @@
 ---
 id: STORY-013-01
 epic: EPIC-013
-status: backlog
+status: in-progress
 blocked: false
 priority: must
 estimate: M
@@ -23,9 +23,10 @@ estimate: M
    `totpEnabledAt = null`), поэтому 2FA ещё не действует.
 
 2. **Подтверждение владения.**
-   Given черновой секрет и код из аутентификатора;
-   When `POST /api/v1/auth/2fa/confirm` с `{ code }`;
-   Then при совпадении проставляется `totpEnabledAt = now`, генерируются коды восстановления
+   Given черновой секрет, код из аутентификатора и текущий пароль;
+   When `POST /api/v1/auth/2fa/confirm` с `{ code, currentPassword }` (пароль обязателен: включение —
+   чувствительное действие над учётной записью, наличия сессии для него недостаточно, `T-IAM-01`);
+   Then при совпадении **обоих** факторов проставляется `totpEnabledAt = now`, генерируются коды восстановления
    ([STORY-013-02](story-013-02-recovery-codes.md)), в `AuditLog` — `user.mfa_enabled`
    (`severity = warning`); ответ 200.
 
@@ -78,27 +79,40 @@ estimate: M
 
 ## Задачи
 
-- [ ] `packages/server/src/application/auth/use-cases/setup-totp.use-case.ts`,
+- [x] `packages/server/src/application/identity/use-cases/setup-totp.use-case.ts`,
       `confirm-totp.use-case.ts`.
-- [ ] `packages/server/src/application/auth/ports/totp.port.ts` +
-      `infrastructure/crypto/otplib-totp.adapter.ts` (`otplib`, `window: 1`, `digits: 6`,
+- [x] `packages/server/src/application/identity/ports/totp.port.ts` +
+      `infrastructure/crypto/otplib-totp.adapter.ts` (`otplib` v13, `window: 1`, `digits: 6`,
       `period: 30`).
-- [ ] `packages/server/src/infrastructure/crypto/field-encryption.adapter.ts` — шифрование
-      `totpSecretEnc` с префиксом версии ключа.
-- [ ] `packages/server/prisma/migrations/*_totp/migration.sql` — `users.totp_secret_enc`,
-      `totp_enabled_at`, `totp_last_counter`, `totp_draft_expires_at`.
-- [ ] `packages/server/src/presentation/http/routes/registry.ts` — маршруты `2fa/setup`, `2fa/confirm`
-      (требуют сессии; `permission` не нужен — операция над собой, зафиксировать `publicReason`-аналог
-      комментарием `selfService: true` в реестре).
-- [ ] `packages/server/src/infrastructure/rate-limit/totp-attempts.limiter.ts` (Redis).
+- [x] `packages/server/src/application/identity/ports/qr-code.port.ts` +
+      `infrastructure/qr/qrcode-svg.adapter.ts` — SVG QR-кода из `otpauth://`-URI (в исходной
+      формулировке задачи отсутствовал, хотя критерий 1 его требует).
+- [x] `packages/server/src/infrastructure/crypto/field-encryption.adapter.ts` — шифрование
+      `totpSecretEnc` с префиксом версии ключа. **Существующий адаптер переиспользован** без правок:
+      формат `v1:<iv>:<tag>:<ciphertext>` уже был контрактом порта.
+- [x] `packages/server/prisma/migrations/20260811090000_totp_enrollment_columns/migration.sql` —
+      `users.totp_last_counter`, `totp_draft_expires_at`. `totp_secret_enc` и `totp_enabled_at`
+      **уже существовали** с `20260728120000_auth_core_identity_and_sessions`.
+- [x] `packages/server/src/presentation/http/route-registry.factory.ts` — маршруты `2fa/setup`,
+      `2fa/confirm` (требуют сессии; `permission` не нужен — операция над собой, обоснование записано
+      как `x-self-service-reason` в спеке и текстом в реестре).
+- [x] Ограничитель частоты — не отдельный файл, а политика `mfa_setup_attempt` в
+      `infrastructure/rate-limit/rate-limit-policy.constant.ts` поверх существующего Redis-лимитера
+      (5 / 15 минут, эскалация ×2 до часа).
 - [ ] `packages/client/src/units/auth/service/{mutations,hooks}` — `setup-totp.mutation.ts`,
       `confirm-totp.mutation.ts`, `use-totp-setup.hook.ts`.
 - [ ] `packages/client/src/widgets/totp-setup/totp-setup.widget.tsx` +
       `ui/totp-qr.component.tsx`, `ui/totp-code-field.component.tsx`.
-- [ ] i18n: `packages/client/src/app/i18n/{en,ru}/security.json`.
-- [ ] Тесты: `otplib-totp.adapter.spec.ts` (RFC 6238 тестовые векторы), `confirm-totp.use-case.spec.ts`
-      (п. 4–6 с фиксированным `ClockPort`), структурный тест шифрования секрета,
-      grep-тест логов, e2e `enable-2fa.spec.ts` + axe.
+- [ ] i18n: `packages/client/src/shared/i18n/locales/{en,ru}/security.json`. Переведены только коды
+      отказов в `errors.json`.
+- [x] Тесты: `test/unit/crypto/otplib-totp.adapter.test.ts` (в том числе пара «25 c принимается /
+      90 c отклоняется»), `test/unit/application/{setup-totp,confirm-totp}.use-case.test.ts`
+      (п. 4–6 с фиксированным `ClockPort`), `test/unit/qr/qrcode-svg.adapter.test.ts`,
+      `test/integration/http/mfa-endpoints.test.ts`.
+- [ ] Тесты, которых нет: grep-тест e2e-логов на base32-секрет и e2e `enable-2fa.spec.ts` + axe —
+      оба требуют экрана (см. «Что отложено»). Шифрование секрета доказано юнитом
+      (`setup-totp.use-case.test.ts`, «encrypts the secret before writing it»), а не структурным
+      тестом схемы.
 
 ## Ссылки
 
@@ -108,11 +122,162 @@ estimate: M
 - [`ux-architecture.md`, `/settings/security`, «Формы»](../../../docs/architecture/ux-architecture.md)
 - PRD: NFR-6
 
+## Сделано (2026-08-12) — серверная половина
+
+### Черновик — состояние строки, а не флаг в коде
+
+`beginDraft` это `UPDATE users SET totp_secret_enc = …, totp_draft_expires_at = … WHERE
+totp_enabled_at IS NULL`. Прочитать состояние и разветвиться на нём значило бы оставить окно, в
+котором параллельный `confirm` включает 2FA, а этот вызов молча заменяет уже отсканированный секрет
+новым, которого нет ни в одном аутентификаторе. Условная запись это окно закрывает: чей `UPDATE`
+дошёл до PostgreSQL после включения, тот не находит строки и получает `409 mfa_already_enabled`
+(критерий 7). Существующий секрет ради этого ответа **не читается** — ни разу, ни для сравнения.
+
+### Ничего нового для шифрования и для хеширования
+
+Секрет уходит в `FieldEncryptionPort.encrypt` — тот самый адаптер, под которым уже лежат ключи
+AI-провайдеров и экстренный контакт сотрудника (`v1:<iv>:<tag>:<ciphertext>`, AES-256-GCM,
+`APP_ENCRYPTION_KEY`). Второй механизм шифрования «для 2FA» не заведён сознательно: у ротации ключа
+одна процедура, у формата один парсер, и версия ключа читается тем же префиксом. Расшифровка живёт
+ровно на длину одной проверки в `ConfirmTotpUseCase` и не кладётся в поле класса.
+
+### Бюджет тратится до того, как код прочитан
+
+`mfa_setup_attempt.consume` вызывается **первой строкой** `execute`, как `LoginUseCase` тратит
+`auth_attempt` до Argon2id: всё, что происходит после ответа лимитера, не должно быть достижимо тем,
+кто бюджет уже израсходовал.
+
+Из этого порядка следует число, которого нет в критерии 4 прямым текстом: попытки 1–5 обрабатываются
+штатно, а черновик выбрасывается на **шестом** запросе — вместе с 429. `consume` на шестом отвечает
+`allowed: false`, и только тогда `abandonDraft` и запись `user.mfa_setup_failed` уходят одной
+транзакцией. Формулировка спеки `openapi.yaml` («The fifth refusal discards the draft») этому не
+соответствовала и **исправлена вслед за кодом**; текст истории коду соответствовал.
+
+### Окно дрейфа
+
+`epochTolerance = TOTP_DRIFT_WINDOW_STEPS × TOTP_STEP_SECONDS` — одно умножение в адаптере вместо
+пересчёта на каждом вызове. Граница критерия 5 закреплена парой «25 секунд принимается / 90 секунд
+отклоняется» в `otplib-totp.adapter.test.ts`.
+
+### Одноразовость кода внутри окна — сделана, и отвечает своим кодом
+
+`totp_last_counter` пишется вместе с включением (`commitEnrollment`) и передаётся в проверку как
+`afterTimeStep`, так что предъявленный второй раз код в том же шаге не принимается (критерий 6).
+Повтор при этом отличается от просто неверного кода: адаптер возвращает флаг `replayed`, и
+`confirm-totp.use-case.ts:249` бросает `TotpCodeReplayedError` вместо `InvalidTotpCodeError`
+(покрыто `test/unit/application/confirm-totp.use-case.test.ts:225-241`). Критерий 6 закрыт целиком.
+
+### Включение требует пароля, а не только сессии
+
+`POST /auth/2fa/confirm` принимает `{ code, currentPassword }`
+(`presentation/http/validators/mfa.validator.ts:35-38`). Пароль проверяется **всегда** — вместе с
+чтением черновика, а не после успешной проверки кода (`confirm-totp.use-case.ts:210`), — поэтому по
+ответу нельзя понять, какая из двух проверок не прошла: неверный пароль даёт
+`403 reauthentication_required` независимо от того, верен ли код
+(`confirm-totp.use-case.ts:247,252-255`). Держателя одной лишь угнанной сессии этого барьера
+достаточно, чтобы отвергнуть (`T-IAM-01`). Спека приведена в соответствие: `ConfirmTotpRequest`
+объявляет оба поля обязательными.
+
+### Актор — из сессии, не из тела
+
+`confirmTotpBodySchema` это `z.strictObject({ code, currentPassword })`: `userId` не просто
+игнорируется — тело с лишним полем отвергается 422 (критерий 9). Ни одна схема этой поверхности поля
+`userId` не имеет.
+
+## Что отложено, и почему
+
+- **Весь клиент (критерий 10)** — экрана `/settings/security` не существует, поэтому не сделано
+  ничего из критерия: ни отображения секрета текстом рядом с QR, ни `inputmode="numeric"` +
+  `autocomplete="one-time-code"`, ни прогона axe, ни namespace `security.json` в EN/RU. Сервер отдаёт
+  и `secret`, и `uri`, и `qrSvg` — материал для экрана есть, экрана нет. Владелец остаётся за этой
+  историей; собирать его имеет смысл вместе с виджетами [STORY-013-02](story-013-02-recovery-codes.md)
+  и [STORY-013-04](story-013-04-disable-totp.md), которые живут на том же маршруте.
+- **Джоба подчистки просроченных черновиков (критерий 3)** — планировщика в сборке нет: ни таблицы
+  `outbox_event`, ни воркера BullMQ (ADR-0021 принят, механизм не реализован — тот же долг записан в
+  STORY-012-05 и STORY-012-06). Смягчение, из-за которого это не дыра: просроченный черновик
+  **отвергается на чтении** — `ConfirmTotpUseCase` требует `draftExpiresAt > now` и отвечает
+  `invalid_totp_code`, а повторный `setup` перезаписывает строку. То есть в таблице копится мусор, а
+  не пригодный к подтверждению секрет. Владельца-истории у сметания этого мусора сегодня нет; оно
+  возвращается вместе с самим механизмом очереди.
+- ~~**Отдельный код отказа `totp_code_replayed` (критерий 6)**~~ — **закрыто (2026-08-12).** Ранее
+  здесь было записано, что `TotpCodeReplayedError` заведён, опубликован в `ErrorCode` и переведён, но
+  «не бросается ниоткуда». Это больше не так: `confirm-totp.use-case.ts:249` бросает его на флаге
+  `replayed` из адаптера, тест — `confirm-totp.use-case.test.ts:225-241`. Опубликованным кодом отказа
+  без источника в этой дельте остаётся только `recovery_code_invalid`
+  ([STORY-013-02](story-013-02-recovery-codes.md), «Что отложено»): `ConsumeRecoveryCodeUseCase` не
+  подключён ни к контейнеру, ни к реестру маршрутов до [STORY-013-03](story-013-03-login-second-factor.md).
+- **Grep-тест e2e-логов на base32-секрет (критерий 7)** — e2e-сценария нет, потому что нет экрана;
+  греп по логам несуществующего прогона проверял бы пустоту. То, что секрет не попадает в лог,
+  сегодня держится на отсутствии единственного места, где он существует расшифрованным, и на
+  `redact`-путях pino, а не на тесте.
+- **Структурный тест схемы «plaintext-колонки не существует» (критерий 8)** — шифрование доказано
+  юнитом на уровне use-case; сверка формы колонок держится общим `schema-drift.test.ts`, отдельного
+  теста «в `users` нет колонки с открытым секретом» не написано.
+
+## Блокирующая зависимость, созданная этой историей
+
+**Включение 2FA уже доступно по API — а выхода из неё нет.** Отключения нет
+([STORY-013-04](story-013-04-disable-totp.md) в `backlog`), административного сброса нет, CLI нет, а
+перевыпуск набора кодов требует живого TOTP-кода, то есть набор не умеет продлевать сам себя. Отсюда
+условие, а не пожелание: **[STORY-013-03](story-013-03-login-second-factor.md) (вход со вторым
+фактором) не выходит раньше [STORY-013-04](story-013-04-disable-totp.md) (отключение и
+административный сброс)** — полная формулировка в [`epic.md`](../epic.md), раздел «Блокирующая
+зависимость внутри эпика».
+
+Опора у зависимости одна: **потеря аутентификатора необратима**. Единственный владелец организации,
+потерявший телефон, не восстанавливается ничем, кроме правки БД руками — сбросить его 2FA некому; у
+рядового сотрудника тупик тот же, потому что механизма сброса не существует вовсе.
+
+### Переаутентификация на включении — закрыто (2026-08-12), опора отпала
+
+Раньше здесь стояла вторая опора той же зависимости: ни `setup`, ни `confirm` не спрашивают пароля,
+поэтому нарушитель с угнанным access-токеном привязывает свой аутентификатор и делает захват учётной
+записи неотменяемым. **Эта половина дыры закрыта.** `confirm` требует `currentPassword` наравне с
+`code`, пароль проверяется всегда, неверный пароль отвечает `403 reauthentication_required`
+независимо от кода — см. раздел «Включение требует пароля, а не только сессии» выше; спека
+(`ConfirmTotpRequest`) объявляет оба поля обязательными. Правило STORY-013-04, критерий 3 («наличие
+сессии само по себе недостаточно», `T-IAM-01`), написанное про `disable`, теперь применено и к
+включению — на том же уровне, что у соседнего
+`POST /auth/2fa/recovery-codes/regenerate` ([STORY-013-02](story-013-02-recovery-codes.md)).
+
+Session-only остался только `setup`, и это безвредно: он готовит **черновик**, который ничего не даёт
+до подтверждения, отвергается на чтении по истечении и уничтожается при исчерпании попыток.
+
+Формально критерия на переаутентификацию у этой истории по-прежнему нет — поведение отгружено
+раньше, чем описано. Критерий 2 приведён в соответствие с кодом выше по тексту; заводить отдельный
+критерий при доработке уже не нужно, нужно не потерять его при переписывании.
+
+Блокирующая зависимость от этого не снимается: она стоит на отсутствии выхода, а выход паролем не
+делается. Сегодня это не взорвалось только потому, что вход второй фактор не читает вовсе.
+
+### `Idempotency-Key` требуется, а стора нет — и здесь это уже не «неудобство»
+
+`POST /auth/2fa/confirm` обязан нести `Idempotency-Key`
+(`presentation/http/middleware/idempotency-key.middleware.ts`), но хранилища ответов в продукте нет:
+middleware проверяет форму заголовка и пропускает запрос дальше. Комментарий middleware обосновывает
+это тем, что без стора теряется «удобство, а не безопасность» — на `POST /auth/register` это верно,
+потому что повтор упирается в уникальный `organizations.slug`.
+
+**Для `confirm` рассуждение не работает.** Ответ на успешное включение несёт единственную копию
+десяти кодов восстановления; в базе — только argon2id-хеши. Потерянный по сети ответ (таймаут,
+разрыв, закрытая вкладка) означает, что 2FA **включена**, а кодов человек **не увидел** и увидеть
+уже не может: повтор запроса упрётся в `invalid_totp_code`, потому что черновика больше нет.
+Уникального ограничения, которое сделало бы повтор безопасно-эквивалентным, здесь не существует.
+
+Выход есть и он единственный — **перевыпуск набора**
+(`POST /auth/2fa/recovery-codes/regenerate`): он требует пароль и живой TOTP-код, а оба у человека,
+который только что завершил привязку, на руках. Это записано в описание операции в
+[`openapi.yaml`](../../../docs/api/openapi.yaml), чтобы клиент знал, куда вести пользователя, а не
+показывал общую ошибку сети. Полноценная идемпотентность — сквозной механизм (стор по паре
+`(key, request hash)`), она за пределами этого эпика; долг записан в STORY-006-01.
+
 ## Definition of Done
 
-- [ ] Тесты написаны первыми (TDD), проходят, изменённый код покрыт
-- [ ] Commit-гейт зелёный (test-coverage, security-auditor, db-reviewer при изменении схемы, production-readiness, commit-hygiene)
-- [ ] Документация обновлена (docs/ + запись в `docs/brain/`)
-- [ ] a11y и i18n (для UI-историй)
-- [ ] **Isolation-тест RLS** для каждой новой таблицы
-- [ ] **Permission объявлена** для каждого нового endpoint и проверяется в use-case
+- [x] Тесты написаны первыми (TDD), проходят, изменённый код покрыт
+- [ ] Commit-гейт зелёный — **красный**: гейт вернул FAIL, эта запись и есть часть его закрытия
+- [x] Документация обновлена (`openapi.yaml`, `data-model.md`, CHANGELOG + запись в `docs/brain/`)
+- [ ] a11y и i18n — экрана нет (см. «Что отложено»); переведены только коды отказов
+- [x] **Isolation-тест RLS** — новых таблиц у этой истории нет, добавлены две колонки в `users`,
+      уже покрытые реестровым набором `rls-isolation.test.ts`
+- [x] **Permission объявлена** — обе записи реестра self-service, обоснование записано в реестре и в
+      `x-self-service-reason` спеки; актор берётся из сессии, не из тела

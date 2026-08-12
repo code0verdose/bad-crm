@@ -1,0 +1,21 @@
+/*
+ * Two columns where there is room and one where there is not, without a media query and without a
+ * fixed height — the block has to survive a 200 % text zoom, and ten codes that scroll inside a
+ * clipped box are ten codes somebody will not finish copying (`rules/a11y.mdc` §4).
+ */
+.list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
+  gap: var(--mantine-spacing-xs);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.code {
+  display: block;
+  font-size: var(--mantine-font-size-md);
+  letter-spacing: 0.08em;
+  text-align: center;
+  word-break: break-all;
+}

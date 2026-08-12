@@ -3,6 +3,7 @@ import { initReactI18next } from 'react-i18next';
 
 import enAuth from './locales/en/auth.json' with { type: 'json' };
 import enRoles from './locales/en/roles.json' with { type: 'json' };
+import enSecurity from './locales/en/security.json' with { type: 'json' };
 import enDashboard from './locales/en/dashboard.json' with { type: 'json' };
 import enFilter from './locales/en/filter.json' with { type: 'json' };
 import enCommon from './locales/en/common.json' with { type: 'json' };
@@ -17,6 +18,7 @@ import enTeams from './locales/en/teams.json' with { type: 'json' };
 import enValidation from './locales/en/validation.json' with { type: 'json' };
 import ruAuth from './locales/ru/auth.json' with { type: 'json' };
 import ruRoles from './locales/ru/roles.json' with { type: 'json' };
+import ruSecurity from './locales/ru/security.json' with { type: 'json' };
 import ruDashboard from './locales/ru/dashboard.json' with { type: 'json' };
 import ruFilter from './locales/ru/filter.json' with { type: 'json' };
 import ruCommon from './locales/ru/common.json' with { type: 'json' };
@@ -49,6 +51,7 @@ const RESOURCES = {
     nav: enNav,
     pagination: enPagination,
     permissions: enPermissions,
+    security: enSecurity,
     teams: enTeams,
     validation: enValidation,
   },
@@ -65,6 +68,7 @@ const RESOURCES = {
     nav: ruNav,
     pagination: ruPagination,
     permissions: ruPermissions,
+    security: ruSecurity,
     teams: ruTeams,
     validation: ruValidation,
   },

@@ -45,9 +45,13 @@ interface PermissionRows {
  * builder has no way to say "compare against the server's clock" other than sending it one. The two
  * clocks agree closely enough for this deployment shape (one Node process and one Postgres, usually
  * one Docker Compose host) that the difference has no operational meaning; it does mean the predicate
- * cannot be pinned to a single statement snapshot the way a literal `now()` in SQL would be, which
- * this endpoint does not need — it already accepts a window of up to a cache TTL before an expiry
- * takes effect (§5, edge case 1 of `permission-model.md`).
+ * cannot be pinned to a single statement snapshot the way a literal `now()` in SQL would be.
+ *
+ * The earlier version of this paragraph excused the gap by saying the endpoint «already accepts a
+ * window of up to a cache TTL». There is no cache: §8 of `permission-model.md` designs one, and the
+ * design was never built. The honest statement is narrower — the window is the clock difference
+ * itself, which on a single-host deployment is milliseconds, and an expiry that lands inside it takes
+ * effect on the next request rather than this one.
  *
  * **A deprecated permission grants nothing.** A key removed from the code stays in the catalogue so
  * existing grants survive (`docs/architecture/data-model.md`, group 2), and the policy layer must

@@ -20,6 +20,33 @@ body {
   color-scheme: light dark;
 }
 
+/*
+ * Printing the recovery codes.
+ *
+ * The dialog that shows them offers a printout, and «print» in a browser means the whole document —
+ * so without this a person asking for ten codes on paper gets a screenshot of an application with
+ * the codes somewhere in the middle of it. Two rules, both global because the elements they hide
+ * are outside any one component: the marked block is what survives, and everything at the top level
+ * that does not contain it — the application shell behind the dialog — goes.
+ *
+ * `:has()` rather than a class toggled on `body`: the condition is «this block is on screen», which
+ * is a fact about the tree, and deriving it with an effect would be a second source of truth that
+ * can be left switched on (rules/frontend-fsd.mdc rule 11).
+ *
+ * This lives here because a CSS module cannot express it — module class names are hashed and the
+ * elements being hidden belong to other modules — which is exactly the «truly global» exception
+ * rules/design-system.mdc §2 names.
+ */
+@media print {
+  body:has([data-bc-print]) > *:not(:has([data-bc-print])) {
+    display: none;
+  }
+
+  [data-bc-print-hidden] {
+    display: none;
+  }
+}
+
 /* An animation that ignores this preference is a bug, not a style choice (rules/a11y.mdc). */
 @media (prefers-reduced-motion: reduce) {
   *,

@@ -39,6 +39,9 @@ const harness = (): Harness => {
     client_error_report: policy,
     invitation_create: policy,
     invitation_accept: policy,
+    mfa_setup_attempt: policy,
+    mfa_reauth_attempt: policy,
+    mfa_recovery_consume_attempt: policy,
   } satisfies WindowLimiters;
 
   return { adapter: new RedisRateLimiterAdapter(limiters, logger), attempts, penalties, lines };

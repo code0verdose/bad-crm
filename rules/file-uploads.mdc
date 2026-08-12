@@ -92,14 +92,14 @@ app.get('/files/:id', async (req, res) => (await s3.getObject(key)).Body!.pipe(r
 
 | Механизм | Что ловит |
 |---|---|
-| `test/integration/files/presign-authz.spec.ts` | выдачу URL без проверки прав; 403 вместо 404 на чужой файл |
-| `test/integration/files/ttl.spec.ts` | TTL > 300 с (900 с только с явным маркером в коде) |
-| `test/integration/files/commit-mismatch.spec.ts` | приём файла, чей фактический размер/тип не совпал с заявленным |
-| `test/integration/files/mime-whitelist.spec.ts` | загрузку типа вне whitelist и файла с подделанным `Content-Type` |
-| `test/integration/files/cross-tenant.spec.ts` | доступ к объекту чужой организации по прямому ключу |
+| `test/integration/files/presign-authz.test.ts` | выдачу URL без проверки прав; 403 вместо 404 на чужой файл |
+| `test/integration/files/ttl.test.ts` | TTL > 300 с (900 с только с явным маркером в коде) |
+| `test/integration/files/commit-mismatch.test.ts` | приём файла, чей фактический размер/тип не совпал с заявленным |
+| `test/integration/files/mime-whitelist.test.ts` | загрузку типа вне whitelist и файла с подделанным `Content-Type` |
+| `test/integration/files/cross-tenant.test.ts` | доступ к объекту чужой организации по прямому ключу |
 | ESLint `no-restricted-syntax` на `res.pipe(` / `getObject(...).Body` в `presentation/**` | проксирование тела через Node |
 | Тест `objectKey` (ключ строится только из `orgId`, даты и uuid) | пользовательскую строку в ключе |
-| Джоб-тест `orphan-files.spec.ts` | физическое удаление файла, на который ещё есть ссылки |
+| Джоб-тест `orphan-files.test.ts` | физическое удаление файла, на который ещё есть ссылки |
 | Агент `security-auditor` | небезопасные дефолты бакета (`public-read`, отсутствие шифрования at rest) |
 
 ## Исключения

@@ -120,15 +120,15 @@ await tools.deleteTask({ taskId });
 
 | Механизм | Что ловит |
 |---|---|
-| `test/integration/ai/provider-secrets.spec.ts` | полный ключ в любом ответе API или в логе |
-| Тест `test/security/bundle-secrets.spec.ts` | ключи провайдеров в клиентском бандле |
-| `test/integration/ai/retrieval-authz.spec.ts` (актор без доступа к проекту) | приватный чанк в контексте |
-| `test/integration/ai/no-vault-in-context.spec.ts` | любую vault-сущность в retrieval или в эмбеддингах |
-| `test/integration/ai/tool-allowlist.spec.ts` (по каждой роли) | инструмент, доступный без соответствующего права |
-| `test/security/prompt-injection.spec.ts` (корпус инъекций в документах и в выводе инструментов) | смену поведения ассистента текстом из данных |
-| `test/integration/ai/limits.spec.ts` | отсутствие лимита контекста, частоты или бюджета |
-| `test/integration/ai/token-accounting.spec.ts` | вызов без записи учёта токенов |
-| `test/integration/ai/disabled.spec.ts` (`AI_ENABLED=false`) | падение вместо 501 `feature_disabled` |
+| `test/integration/ai/provider-secrets.test.ts` | полный ключ в любом ответе API или в логе |
+| Тест `test/security/bundle-secrets.test.ts` | ключи провайдеров в клиентском бандле |
+| `test/integration/ai/retrieval-authz.test.ts` (актор без доступа к проекту) | приватный чанк в контексте |
+| `test/integration/ai/no-vault-in-context.test.ts` | любую vault-сущность в retrieval или в эмбеддингах |
+| `test/integration/ai/tool-allowlist.test.ts` (по каждой роли) | инструмент, доступный без соответствующего права |
+| `test/security/prompt-injection.test.ts` (корпус инъекций в документах и в выводе инструментов) | смену поведения ассистента текстом из данных |
+| `test/integration/ai/limits.test.ts` | отсутствие лимита контекста, частоты или бюджета |
+| `test/integration/ai/token-accounting.test.ts` | вызов без записи учёта токенов |
+| `test/integration/ai/disabled.test.ts` (`AI_ENABLED=false`) | падение вместо 501 `feature_disabled` |
 | ESLint `no-restricted-imports` на SDK провайдеров вне `infrastructure/ai/**` | вызовы мимо порта |
 | Агент `ai-engineer` при изменении промптов и инструментов | расширение поверхности атаки |
 

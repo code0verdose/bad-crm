@@ -21,6 +21,42 @@ export const AUDIT_ACTIONS = [
   'password.changed',
   /** A password was set through a recovery link. */
   'password.reset',
+  /**
+   * TOTP was confirmed and switched on for the account (STORY-013-01).
+   *
+   * Filed the moment `totpEnabledAt` is set — not at `setup`, which only drafts a secret nobody has
+   * proven possession of yet. Everything about *what* the secret is stays out of the entry: `before`
+   * and `after` never carry a key or a code, only the fact that the account gained a second factor.
+   */
+  'user.mfa_enabled',
+  /**
+   * Five TOTP codes in a row were refused during enrolment and the draft secret was invalidated
+   * (STORY-013-01, acceptance 4).
+   *
+   * A distinct entry from an ordinary `auth_attempt` refusal — those are logged, not audited — because
+   * this one ends in a state change: the draft is gone, and whoever set it up has to scan a new QR
+   * code. A reviewer asking "why did this person's enrolment reset itself" needs this in the trail,
+   * not only in a rate-limiter counter that expires.
+   */
+  'user.mfa_setup_failed',
+  /**
+   * A recovery code was spent to open a session in place of a TOTP code (STORY-013-02, acceptance 4).
+   *
+   * Its own entry rather than folded into `session.signed_in`: a sign-in that consumed a recovery code
+   * is the one an incident review reaches for first when an authenticator was reported lost — the
+   * codes are what stood between the account and administrator reset, and using one is worth knowing
+   * about on its own even when the outcome is an ordinary, successful sign-in.
+   */
+  'user.mfa_recovery_code_used',
+  /**
+   * The recovery code set was replaced: every unused code was invalidated and a fresh set of ten
+   * was issued (STORY-013-02, acceptance 7).
+   *
+   * Reachable only after the caller reauthenticated with both the current password and a live TOTP
+   * code — `reauthentication_required` refuses everything short of that — so the entry doubles as the
+   * record that the stronger check was actually exercised, not only configured.
+   */
+  'user.mfa_recovery_codes_regenerated',
   /** A custom role was composed, recomposed or removed (STORY-011-03). */
   'role.created',
   'role.updated',
@@ -69,7 +105,9 @@ export const AUDIT_ACTIONS = [
    *
    * The one entry in this catalogue that records a change to who can do **everything**: the owner
    * short-circuits every capability layer, so this event is the boundary between two people's
-   * authority over an installation. `before`/`after` carry both ids, and nothing else needs to.
+   * authority over an installation. `before` and `after` name the column that *is* the authority —
+   * `{ ownerId }` on each side — plus `previousOwnerRoleKey`, the one fact of the handover that is
+   * written nowhere else: which role the outgoing owner was left holding.
    */
   'organization.ownership_transferred',
   /**
@@ -145,17 +183,21 @@ export const AUDIT_ACTIONS = [
    * An administrator read another person's effective permissions —
    * `GET /users/{userId}/permissions` (STORY-011-11).
    *
-   * The one **read** this catalogue records. `docs/security/permission-model.md` §10 files a 403 on
-   * a dangerous key and a denied write, and deliberately does not file a plain `GET`: a click on
-   * every hidden button would flood the trail. This operation is the exception to that default, not
-   * a second rule — it names the person who did the looking and the colleague who was looked at, and
-   * a run of it across the roster is a fact its own severity (`INFO`) does not raise, but a reviewer
-   * asking «who has been looking at whom» needs it to exist at all. Two properties of the *answer*
-   * are why it earns the exception where an ordinary `GET` does not: it hands back the sentences one
-   * administrator wrote about a colleague under a `reason`, and reading it about everyone in turn
-   * draws the map of how the organization is actually administered — the same reasoning that makes
-   * `audit.exported`, `vault.escrow_used` and `VaultAccessLog`'s own `VIEW` entry logged reads
-   * instead of silent ones.
+   * The one **read** this catalogue records, and — as of 2026-08-12 — the only entry that concerns
+   * `GET /users/{userId}/permissions` at all. Two properties of the *answer* are why it earns the
+   * exception where an ordinary `GET` does not: it hands back the sentences one administrator wrote
+   * about a colleague under a `reason`, and reading it about everyone in turn draws the map of how
+   * the organization is actually administered — the same reasoning that makes `audit.exported`,
+   * `vault.escrow_used` and `VaultAccessLog`'s own `VIEW` entry logged reads instead of silent ones.
+   *
+   * **It covers the successful branch only, and nothing covers the other one.** An earlier version
+   * of this comment said the refusal was already carried by §10's rule «a denial on a dangerous key
+   * is always filed». That rule is not implemented: this list holds no refusal action of any kind,
+   * `assertAllowed` only throws, and the capability guard refuses before the use-case is entered. A
+   * caller enumerating the roster **without** `permission:override_read` therefore leaves nothing in
+   * the trail — only an HTTP log line naming the actor, the route template and 403, with no subject
+   * and no permission key. Filing refusals is EPIC-016 work; until then this is a stated gap rather
+   * than a rule that happens to live elsewhere.
    */
   'permission.inspected',
 ] as const;

@@ -94,10 +94,10 @@ export async function handle(job: Job) {
 | Механизм | Что ловит |
 |---|---|
 | ESLint `no-restricted-syntax` на `queue.add(` вне `infrastructure/queue/**` | публикацию в очередь из use-case |
-| `test/architecture/no-io-in-transaction.spec.ts` | вызов адаптера S3/SMTP/AI/HTTP внутри `withTransaction` |
-| `test/integration/outbox/at-least-once.spec.ts` | неидемпотентный handler: событие подаётся дважды, состояние сравнивается |
-| `test/integration/outbox/rollback.spec.ts` | событие, оставшееся в очереди после отката транзакции |
-| `test/integration/queue/tenant-context.spec.ts` | handler, обратившийся к БД мимо `runJob` (падение на `guardedClient`) |
+| `test/architecture/no-io-in-transaction.test.ts` | вызов адаптера S3/SMTP/AI/HTTP внутри `withTransaction` |
+| `test/integration/outbox/at-least-once.test.ts` | неидемпотентный handler: событие подаётся дважды, состояние сравнивается |
+| `test/integration/outbox/rollback.test.ts` | событие, оставшееся в очереди после отката транзакции |
+| `test/integration/queue/tenant-context.test.ts` | handler, обратившийся к БД мимо `runJob` (падение на `guardedClient`) |
 | Метрика `outbox_lag_seconds` + алерт | отставание диспетчера |
 | Метрика `bullmq_jobs_total{status="failed"}` + запись в `dead_letter` | job'ы без классификации ошибок |
 

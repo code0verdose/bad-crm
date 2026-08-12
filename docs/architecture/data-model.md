@@ -71,6 +71,27 @@ updated: 2026-07-26
 - `onDelete` задаётся явно всегда. По умолчанию `Restrict`. `Cascade` — только для строк-владений,
   не имеющих смысла без родителя (`TaskLabel`, `ChannelMember`, `VaultItemVersion`). Для ссылок на
   людей — `SetNull` (`Task.assigneeId` при удалении сотрудника) либо запрет удаления.
+- **`onUpdate` задаётся явно и всегда `NoAction`** (решение от 2026-07-30, см. «Про
+  `Organization.ownerId`» ниже). Prisma для связи, которая ничего не объявила, пишет
+  `ON UPDATE CASCADE`, и в SQL-файл это уезжает молча. Первичный ключ у нас — неизменяемый uuid,
+  поэтому каскад по обновлению ничего не чинит: он только переписывает дочернюю строку, которую
+  оператор не называл. На ссылке, чей целевой ключ включает `organization_id`, это перенос дочерней
+  строки **в другого арендатора** — `UPDATE users SET organization_id = …` (ручная правка поддержки,
+  бэкфилл, будущий перенос учётки) утащил бы за собой сессии, токены сброса и коды восстановления.
+  Проверки FK исполняются от имени владельца таблицы и обходят RLS, поэтому ни `USING`, ни
+  `WITH CHECK` этого не увидят; с `NO ACTION` оператор получает отказ с именем таблицы, которая
+  всё ещё ссылается на старую пару.
+
+  **Остаток, не переведённый на `NoAction`** — семь ключей, написанных до решения:
+  `fk_users_organization_id`, `fk_teams_organization_id`, `fk_sessions_organization_id`,
+  `fk_sessions_user_id`, `fk_sessions_rotated_from_id`, `fk_password_reset_tokens_organization_id`,
+  `fk_password_reset_tokens_user_id`. Конвертируются отдельной задачей (таблицы EPIC-003/EPIC-006, а
+  не EPIC-013) и обязаны быть переведены **до первого версионного тега**: пока таблицы пусты, правка
+  стоит `DROP CONSTRAINT` + `ADD CONSTRAINT`, после релиза — `NOT VALID` плюс отдельный
+  `VALIDATE CONSTRAINT` со сканом. Список ведётся в тесте
+  `test/integration/db/migrations.test.ts` («foreign keys between tenant tables»), который заодно
+  падает, если исключение перестало соответствовать каталогу, — и любой новый ключ с
+  `ON UPDATE CASCADE` он тоже не пропустит.
 
 ### Мульти-тенантность в модели
 
@@ -179,10 +200,11 @@ updated: 2026-07-26
 | Сущность | Метка | Ключевые поля | Связи |
 |---|---|---|---|
 | `Organization` | [T]* | `id`, `slug` (уникален глобально), `name`, `ownerId` → `User`, `settings Json`, `timezone`, `defaultCurrency`, `createdAt`, `deletedAt?` | корень всего графа |
-| `User` | [T] | `organizationId`, `email`, `emailVerifiedAt?`, `passwordHash`, `totpSecretEnc?`, `totpEnabledAt?`, `permissionsVersion Int`, `status ACTIVE\|SUSPENDED\|INVITED`, `lastSeenAt?`, `locale`, `timezone`, `authVerifierSalt?`, `authVerifierHash?`, `deletedAt?` | → `Organization`; 1:1 `EmployeeProfile`; 1:N `Session`, `UserRole` |
+| `User` | [T] | `organizationId`, `email`, `emailVerifiedAt?`, `passwordHash`, `totpSecretEnc?`, `totpEnabledAt?`, `totpLastCounter Int?`, `totpDraftExpiresAt?`, `permissionsVersion Int`, `status ACTIVE\|SUSPENDED\|INVITED`, `lastSeenAt?`, `locale`, `timezone`, `authVerifierSalt?`, `authVerifierHash?`, `deletedAt?` | → `Organization`; 1:1 `EmployeeProfile`; 1:N `Session`, `UserRole`, `MfaRecoveryCode` |
 | `EmployeeProfile` | [T] | `userId @unique`, `firstName`, `lastName`, `jobTitle?`, `department?`, `managerId?` → `User`, `weeklyCapacityHours Int`, `employmentType`, `hiredAt?`, `terminatedAt?`, `timezone`, `skills String[]`, `emergencyContactEnc?` | 1:1 `User`, self-ref через `managerId` |
 | `Session` | [T] | `userId`, `familyId`, `rotatedFromId?` → `Session`, `refreshTokenHash`, `userAgent`, `ipHash`, `ipMasked`, `expiresAt`, `revokedAt?`, `revokedReason?` | → `User` |
 | `PasswordResetToken` | [T] | `userId`, `tokenHash`, `expiresAt`, `usedAt?`, `requestedIpHash?` | → `User` |
+| `MfaRecoveryCode` | [T] | `userId`, `codeHash` (argon2id), `usedAt?` | → `User` (STORY-013-02) |
 | `Invitation` | [T] | `email`, `roleId?`, `teamIds String[]`, `tokenHash`, `locale en\|ru`, `invitedById`, `expiresAt`, `acceptedAt?`, `acceptedUserId?` | → `Organization`, `Role`, `User` |
 | `Team` | [T] | `name`, `slug`, `description`, `deletedAt?` | 1:N `TeamMember` |
 | `TeamMember` | [T] | `teamId`, `userId`, `teamRole MEMBER\|LEAD`, `joinedAt` | join `Team` × `User` |
@@ -257,6 +279,20 @@ updated: 2026-07-26
   каскаду не помогает;
   `idx_password_reset_tokens_org_expires (organization_id, expires_at) WHERE used_at IS NULL` —
   зачистка просроченных.
+- `idx_mfa_recovery_codes_org_user (organization_id, user_id)` — **единственный** индекс таблицы
+  кроме первичного ключа. Он же обслуживает `ON DELETE CASCADE` составного FK на `users`, поэтому не
+  частичный (как `idx_password_reset_tokens_org_user` выше).
+
+  **Частичного двойника `WHERE used_at IS NULL` здесь нет** — он был заведён вместе с таблицей и снят
+  миграцией `20260812090000_mfa_recovery_codes_fk_actions`. Обоснование «под предикат каждого
+  реального чтения» не выдержало сверки с запросами: по «неиспользованные» фильтрует только цикл
+  подбора кода (`listUnused`); счётчик `{ total, remaining }` считает `total` **без** `used_at`, а
+  массовое удаление при перевыпуске удаляет все строки человека, включая использованные
+  (STORY-013-02, критерий 7). Не работал и аргумент «остаётся маленьким по мере расходования»:
+  набор — десять кодов, перевыпуск удаляет его целиком, так что оба индекса указывали в одни и те же
+  ≤10 строк. Цена при этом была настоящей: `used_at` входит в предикат, поэтому погашение кода не
+  может быть HOT-обновлением и правит оба индекса, а выдача набора пишет двадцать индексных кортежей
+  вместо десяти.
 - `uq_invitations_token (token_hash)` — **уникальный глобально**: значение и есть предъявляемая
   учётная запись, коллизия между организациями была бы коллизией самого токена;
   `idx_invitations_org_email (organization_id, email) WHERE accepted_at IS NULL` — **уникальный**
@@ -553,6 +589,19 @@ rolling deploy (старый код всегда писал значение); �
   требует буквально этого значения (`revokedReason = 'offboarding'`), потому что одна операция
   деактивации закрывает и приостановку, и уход. Значение PG-enum нельзя переименовать без
   пересоздания типа, поэтому имя выбрано сейчас, пока таблица пуста.
+
+**Про `MfaRecoveryCode` и офбординг.** Та же асимметрия, что у сессий, но закрыта она пока только
+наполовину. Физическое удаление `users` уносит коды (`ON DELETE CASCADE` составного FK); мягкое
+удаление и `status = 'SUSPENDED'` не трогают эту таблицу вообще, а список шагов деактивации
+(`PENDING_OFFBOARDING_STEPS`) второй фактор не упоминает — там перечислены проекты, сокеты,
+защищённые ссылки и vault. До появления шага, который **удаляет** коды в той же транзакции, что и
+отзыв сессий, выживших делает непригодными репозиторий: `listUnused` фильтрует по живой учётке
+(`user: { deletedAt: null }`, симметрично `PrismaTotpEnrollmentRepository.find`), а список кандидатов
+— единственные ворота, через которые проходит предъявленный код. Приостановленную учётку
+(`status = 'SUSPENDED'`, а именно её и проставляет деактивация) фильтр не ловит: её отсекает вход —
+`LoginUseCase` отвечает `account_suspended` до второго фактора, а сам `ConsumeRecoveryCodeUseCase`
+пока не подключён ни к одному маршруту (подключает STORY-013-03). Шаг офбординга, удаляющий коды, —
+отдельная задача EPIC-013.
 
 **Про `PasswordResetToken`.** Отдельная сущность, а не колонки на `User`: у пользователя может быть
 несколько запросов подряд, каждый со своим сроком, и историю попыток нельзя восстановить из одной

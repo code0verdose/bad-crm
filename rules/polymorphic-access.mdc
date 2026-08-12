@@ -97,11 +97,11 @@ await prisma.attachment.create({ data: { entityType, entityId, fileId } });
 |---|---|
 | PostgreSQL enum на колонке дискриминатора | значение вне списка — отклоняется базой |
 | Тип-union в коде + `satisfies` | ветку `resolveProjectId`, забытую для нового типа — ошибка компиляции |
-| `test/integration/polymorphic/parent-authz.spec.ts` (по каждому типу) | доступ к дочерней записи при недоступном родителе (ожидается 404) |
-| `test/integration/polymorphic/cascade.spec.ts` (по каждому типу) | сироту после удаления родителя: comments, attachments, acl, embeddings, watchers |
-| `test/integration/rls/rls-isolation.test.ts` | полиморфную таблицу без собственного `organization_id` и политики |
+| `test/integration/polymorphic/parent-authz.test.ts` (по каждому типу) | доступ к дочерней записи при недоступном родителе (ожидается 404) |
+| `test/integration/polymorphic/cascade.test.ts` (по каждому типу) | сироту после удаления родителя: comments, attachments, acl, embeddings, watchers |
+| `packages/server/test/integration/db/rls-isolation.test.ts` | полиморфную таблицу без собственного `organization_id` и политики |
 | Ночной integrity-джоб + метрика `polymorphic_orphans_total{table,type}` + алерт | сирот в проде |
-| `test/db/indexes.spec.ts` | отсутствие обратного индекса (`file_id`) и составного `(organization_id, entity_type, entity_id)` |
+| `test/db/indexes.test.ts` | отсутствие обратного индекса (`file_id`) и составного `(organization_id, entity_type, entity_id)` |
 | Агент `db-reviewer` при добавлении типа | пропуск одного из пяти шагов п. 7 |
 
 ## Исключения

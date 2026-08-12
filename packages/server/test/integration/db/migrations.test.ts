@@ -374,7 +374,36 @@ describe('foreign keys between tenant tables', () => {
     readonly target: string;
     readonly columns: string[];
     readonly targetColumns: string[];
+    /** `pg_constraint.confupdtype`: 'a' NO ACTION, 'c' CASCADE, 'r' RESTRICT, 'n' SET NULL. */
+    readonly onUpdate: string;
   }
+
+  /**
+   * The keys that carry `ON UPDATE CASCADE` because they were written before the project decided
+   * against it, listed by name so the exemption shrinks by editing this list rather than by being
+   * forgotten.
+   *
+   * The decision is recorded in `docs/architecture/data-model.md` («Про `Organization.ownerId`»,
+   * closed 2026-07-30): the referenced key is an immutable uuid, so a cascade can never be the
+   * *repair* of anything — it can only rewrite a child row that the operator did not name. On a
+   * reference whose target pair includes `organization_id` that rewrite carries the child across a
+   * tenant boundary, and foreign key checks run as the table owner and bypass row-level security, so
+   * no policy sees it happen (`rules/tenancy-rls.mdc`, 7).
+   *
+   * Every key created after that date declares `ON UPDATE NO ACTION` explicitly. These seven predate
+   * it and are converted by a change of their own — while the tables are still empty and the
+   * conversion costs nothing but a `DROP CONSTRAINT` / `ADD CONSTRAINT`; after the first release the
+   * same edit needs `NOT VALID` plus a `VALIDATE CONSTRAINT` scan.
+   */
+  const CASCADE_ON_UPDATE_PREDATING_THE_DECISION = [
+    'fk_password_reset_tokens_organization_id',
+    'fk_password_reset_tokens_user_id',
+    'fk_sessions_organization_id',
+    'fk_sessions_rotated_from_id',
+    'fk_sessions_user_id',
+    'fk_teams_organization_id',
+    'fk_users_organization_id',
+  ];
 
   let foreignKeys: ForeignKeyFacts[];
 
@@ -385,10 +414,12 @@ describe('foreign keys between tenant tables', () => {
       target_table: string;
       columns: string[];
       target_columns: string[];
+      confupdtype: string;
     }>(
       `SELECT con.conname                        AS constraint_name,
               src.relname                        AS table_name,
               tgt.relname                        AS target_table,
+              con.confupdtype                    AS confupdtype,
               ARRAY(SELECT a.attname::text
                       FROM unnest(con.conkey) AS k
                       JOIN pg_attribute a ON a.attrelid = con.conrelid AND a.attnum = k)  AS columns,
@@ -409,6 +440,7 @@ describe('foreign keys between tenant tables', () => {
       target: row.target_table,
       columns: row.columns,
       targetColumns: row.target_columns,
+      onUpdate: row.confupdtype,
     }));
   });
 
@@ -467,6 +499,47 @@ describe('foreign keys between tenant tables', () => {
       // before `organization_id` on `users`, and the ARRAY() above follows the join, not `confkey`.
       targetColumns: ['id', 'organization_id'],
     });
+  });
+
+  /**
+   * `ON UPDATE` is a decision of this project, not a default of the tool that generated the SQL.
+   *
+   * Prisma writes `ON UPDATE CASCADE` unless a relation says otherwise, and a model that declares
+   * nothing therefore ships the cascade. What the cascade does here is silent: `UPDATE users SET
+   * organization_id = …` — a support fix, a backfill, a future account transfer — rewrites the
+   * children instead of being refused, and every child whose target pair includes `organization_id`
+   * follows the account across a tenant boundary. The checks run as the table owner and bypass
+   * row-level security, so neither `USING` nor `WITH CHECK` sees it. With NO ACTION the operator gets
+   * an error naming the table that still points at the old pair.
+   */
+  it('declares NO ACTION on update, except on the keys that predate the decision', () => {
+    const cascading = foreignKeys
+      .filter((key) => key.onUpdate !== 'a')
+      .filter((key) => !CASCADE_ON_UPDATE_PREDATING_THE_DECISION.includes(key.constraint))
+      .map((key) => `${key.table}.${key.constraint} → ${key.target}`);
+
+    expect(
+      cascading,
+      'ON UPDATE CASCADE rewrites the child row an operator did not name, and on a tenant-carrying ' +
+        'reference it moves that row into another organization: declare onUpdate: NoAction',
+    ).toEqual([]);
+  });
+
+  /**
+   * The exemption list, held against the catalog in both directions.
+   *
+   * A name that no longer exists means the list outlived the key — the shape a converted constraint
+   * leaves behind, and the reason a stale exemption goes on excusing nothing while looking like
+   * work still to do. A name that is no longer cascading means the same thing.
+   */
+  it('exempts only keys that exist and are still cascading', () => {
+    const stale = CASCADE_ON_UPDATE_PREDATING_THE_DECISION.filter((name) => {
+      const key = foreignKeys.find((candidate) => candidate.constraint === name);
+
+      return key === undefined || key.onUpdate === 'a';
+    });
+
+    expect(stale, 'converted or removed: take these off the exemption list').toEqual([]);
   });
 
   it('anchors every tenant table to the organization it belongs to', () => {
@@ -727,6 +800,136 @@ describe('the owner of an organization', () => {
     );
 
     expect(rows[0]?.owner_id, 'a soft delete is not a delete: the FK never fires').toBe(ownerId);
+  });
+});
+
+/**
+ * `mfa_recovery_codes`, in the two respects nothing the application does can show.
+ *
+ * Both are properties of the schema alone: which action the foreign keys take when the parent's key
+ * changes, and which indexes the table carries. A recovery code works identically either way — right
+ * up to the day somebody runs an `UPDATE` on `users`.
+ */
+describe('the recovery codes of an account', () => {
+  const HOME = randomUUID();
+  const ELSEWHERE = randomUUID();
+
+  /** An account that is not the owner of its organization: `fk_organizations_owner_id` would
+   * otherwise refuse the move on its own, and the assertion below would pass without this table
+   * having any say in it. */
+  const seedMember = async (withCode: boolean): Promise<string> =>
+    asMaintenance(pools.owner, async (client) => {
+      await insertOrganizationWithOwner(client, HOME, { slug: `home-${HOME.slice(0, 8)}` });
+      await insertOrganizationWithOwner(client, ELSEWHERE, {
+        slug: `elsewhere-${ELSEWHERE.slice(0, 8)}`,
+      });
+
+      const { rows } = await client.query<{ id: string }>(
+        `INSERT INTO users (organization_id, email, password_hash, status, updated_at)
+         VALUES ($1::uuid, $2, 'placeholder-not-a-credential', 'ACTIVE', now())
+         RETURNING id`,
+        [HOME, `member-${randomUUID().slice(0, 8)}@example.test`],
+      );
+      const memberId = rows[0]?.id ?? '';
+
+      if (withCode) {
+        await client.query(
+          `INSERT INTO mfa_recovery_codes (organization_id, user_id, code_hash, updated_at)
+           VALUES ($1::uuid, $2::uuid, 'not-a-real-argon2id-digest', now())`,
+          [HOME, memberId],
+        );
+      }
+
+      return memberId;
+    });
+
+  const moveToElsewhere = (userId: string): Promise<unknown> =>
+    asMaintenance(pools.owner, (client) =>
+      client.query('UPDATE users SET organization_id = $2::uuid WHERE id = $1::uuid', [
+        userId,
+        ELSEWHERE,
+      ]),
+    );
+
+  beforeEach(async () => {
+    await truncateAll(pools.owner);
+  });
+
+  /**
+   * The operation the action decides, run for real.
+   *
+   * `ON UPDATE CASCADE` — what Prisma writes for a relation that declares nothing — would answer
+   * this statement by rewriting `mfa_recovery_codes.organization_id` too, carrying the material of a
+   * second factor into the organization the account was moved to, with no error and no policy
+   * involved: foreign key checks run as the table owner and bypass row-level security
+   * (`rules/tenancy-rls.mdc`, 7). NO ACTION refuses, and names the table that still points at the
+   * old pair.
+   */
+  it('refuses to follow its account into another organization', async () => {
+    const memberId = await seedMember(true);
+
+    await expect(moveToElsewhere(memberId)).rejects.toMatchObject({
+      code: '23503',
+      constraint: 'fk_mfa_recovery_codes_user_id',
+    });
+  });
+
+  /**
+   * The positive control the refusal above needs: the same statement, the same account, no recovery
+   * code. It succeeds — so the rejection is this table's doing and not some other constraint's, and
+   * an assertion that «the update fails» cannot pass for a reason nobody checked.
+   */
+  it('CONTROL: the same move succeeds for an account that has no recovery code', async () => {
+    const memberId = await seedMember(false);
+
+    await moveToElsewhere(memberId);
+
+    const { rows } = await asMaintenance(pools.owner, (client) =>
+      client.query<{ organization_id: string }>(
+        'SELECT organization_id FROM users WHERE id = $1::uuid',
+        [memberId],
+      ),
+    );
+
+    expect(rows[0]?.organization_id).toBe(ELSEWHERE);
+  });
+
+  it('declares NO ACTION on update on both of its references', async () => {
+    const { rows } = await pools.owner.query<{ conname: string; confupdtype: string }>(
+      `SELECT conname, confupdtype
+         FROM pg_constraint
+        WHERE contype = 'f' AND conrelid = 'mfa_recovery_codes'::regclass
+        ORDER BY conname`,
+    );
+
+    expect(rows).toEqual([
+      { conname: 'fk_mfa_recovery_codes_organization_id', confupdtype: 'a' },
+      { conname: 'fk_mfa_recovery_codes_user_id', confupdtype: 'a' },
+    ]);
+  });
+
+  /**
+   * One index besides the primary key, and not two.
+   *
+   * A partial `(organization_id, user_id) WHERE used_at IS NULL` alongside the full one indexes the
+   * same rows twice: a batch is ten codes, and a regeneration deletes the whole set rather than
+   * letting it accumulate, so «the partial one stays small» describes both of them. What it costs is
+   * not hypothetical — `used_at` sits in the predicate, so spending a code cannot be a HOT update and
+   * has to touch both indexes, and issuing a batch writes twenty index tuples instead of ten. The
+   * full index stays: it is the one `ON DELETE CASCADE` from `users` uses, and a partial index cannot
+   * serve a cascade.
+   */
+  it('carries the full index the cascade needs, and no partial duplicate of it', async () => {
+    const { rows } = await pools.owner.query<{ indexname: string }>(
+      `SELECT indexname FROM pg_indexes
+        WHERE schemaname = 'public' AND tablename = 'mfa_recovery_codes'
+        ORDER BY indexname`,
+    );
+
+    expect(rows.map((row) => row.indexname)).toEqual([
+      'idx_mfa_recovery_codes_org_user',
+      'pk_mfa_recovery_codes',
+    ]);
   });
 });
 

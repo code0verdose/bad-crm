@@ -49,12 +49,16 @@ import { type RefreshTokenPort } from '@/application/identity/ports/refresh-toke
 import { type AuthenticateSessionQuery } from '@/application/identity/use-cases/authenticate-session.query.js';
 import { type ChangePasswordUseCase } from '@/application/identity/use-cases/change-password.use-case.js';
 import { type ConfirmPasswordResetUseCase } from '@/application/identity/use-cases/confirm-password-reset.use-case.js';
+import { type ConfirmTotpUseCase } from '@/application/identity/use-cases/confirm-totp.use-case.js';
 import { type EndSessionUseCase } from '@/application/identity/use-cases/end-session.use-case.js';
 import { type ListSessionsQuery } from '@/application/identity/use-cases/list-sessions.query.js';
 import { type LoginUseCase } from '@/application/identity/use-cases/login.use-case.js';
+import { type ReadRecoveryCodeStatusQuery } from '@/application/identity/use-cases/read-recovery-code-status.query.js';
 import { type RefreshSessionUseCase } from '@/application/identity/use-cases/refresh-session.use-case.js';
+import { type RegenerateRecoveryCodesUseCase } from '@/application/identity/use-cases/regenerate-recovery-codes.use-case.js';
 import { type RegisterOrganizationUseCase } from '@/application/identity/use-cases/register-organization.use-case.js';
 import { type RequestPasswordResetUseCase } from '@/application/identity/use-cases/request-password-reset.use-case.js';
+import { type SetupTotpUseCase } from '@/application/identity/use-cases/setup-totp.use-case.js';
 import { type MetricsPort } from '@/application/platform/ports/metrics.port.js';
 import { type IdGeneratorPort } from '@/application/platform/ports/id-generator.port.js';
 import { type LoggerPort } from '@/application/platform/ports/logger.port.js';
@@ -114,6 +118,10 @@ export interface IdentityDependencies {
   readonly authenticate: AuthenticateSessionQuery;
   readonly authLookup: AuthLookupPort;
   readonly refreshTokens: RefreshTokenPort;
+  readonly setupTotp: SetupTotpUseCase;
+  readonly confirmTotp: ConfirmTotpUseCase;
+  readonly recoveryCodeStatus: ReadRecoveryCodeStatusQuery;
+  readonly regenerateRecoveryCodes: RegenerateRecoveryCodesUseCase;
 }
 
 /**

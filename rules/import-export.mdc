@@ -100,15 +100,15 @@ await kb.save({ body: entry.rawHtml });
 
 | Механизм | Что ловит |
 |---|---|
-| `test/security/zip-slip.spec.ts` (архив с `../../etc/x`, symlink, bomb) | выход за корень, символические ссылки, превышение лимитов |
-| `test/integration/import/idempotency.spec.ts` (повторный прогон job'а) | дубликаты при ретрае |
-| `test/integration/import/partial-failure.spec.ts` | откат уже импортированных единиц из-за одной ошибки |
-| `test/integration/import/tenant-context.spec.ts` | импорт мимо `withTenant` и мимо проверки прав |
-| `test/integration/export/authz.spec.ts` | экспорт данных, недоступных актору; отсутствие права `*:export` |
-| `test/security/csv-injection.spec.ts` | неэкранированную ячейку с `=`/`+`/`-`/`@` |
-| `test/integration/export/no-secrets.spec.ts` | `apiKeyEnc`, vault-данные и токены в выгрузке |
-| `test/integration/export/audit.spec.ts` | экспорт без записи в `AuditLog` |
-| `test/security/sanitize.spec.ts` (общий XSS-корпус) | сырой HTML из импорта |
+| `test/security/zip-slip.test.ts` (архив с `../../etc/x`, symlink, bomb) | выход за корень, символические ссылки, превышение лимитов |
+| `test/integration/import/idempotency.test.ts` (повторный прогон job'а) | дубликаты при ретрае |
+| `test/integration/import/partial-failure.test.ts` | откат уже импортированных единиц из-за одной ошибки |
+| `test/integration/import/tenant-context.test.ts` | импорт мимо `withTenant` и мимо проверки прав |
+| `test/integration/export/authz.test.ts` | экспорт данных, недоступных актору; отсутствие права `*:export` |
+| `test/security/csv-injection.test.ts` | неэкранированную ячейку с `=`/`+`/`-`/`@` |
+| `test/integration/export/no-secrets.test.ts` | `apiKeyEnc`, vault-данные и токены в выгрузке |
+| `test/integration/export/audit.test.ts` | экспорт без записи в `AuditLog` |
+| `test/security/sanitize.test.ts` (общий XSS-корпус) | сырой HTML из импорта |
 
 ## Исключения
 

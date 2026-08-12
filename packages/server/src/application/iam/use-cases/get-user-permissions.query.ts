@@ -97,10 +97,16 @@ export interface GetUserPermissionsInput {
  * departure from it: the body carries the sentences an administrator wrote about a named colleague
  * under `reason`, and reading it across the roster draws the map of how the organization is actually
  * administered — the same two properties that put `audit.exported`, `vault.escrow_used` and
- * `VaultAccessLog`'s own `VIEW` on the trail. Written only on the branch that returns an answer: a
- * refusal is either the capability 403 (§10 already logs a denial on a `dangerous` key, and this one
- * is marked `dangerous` for the same reason) or the subject 404, and a read that told nobody anything
- * is not the thing this entry exists to make reviewable.
+ * `VaultAccessLog`'s own `VIEW` on the trail.
+ *
+ * **Only the branch that returns an answer is recorded, and the other branch is recorded nowhere.**
+ * An earlier version of this comment justified that by §10 «already logging a denial on a
+ * `dangerous` key» — it does not. No refusal action exists in `AUDIT_ACTIONS`; `assertAllowed` below
+ * runs **before** `withTenant` and before `audit.record`, and the route guard refuses earlier still,
+ * so there is no point on the refusal path where an entry could be written today. A caller without
+ * `permission:override_read` enumerating user ids leaves only an HTTP log line — actor, route
+ * template, 403 — with no subject and no key. Auditing refusals is EPIC-016; this is a known gap,
+ * not a rule enforced elsewhere.
  */
 export class GetUserPermissionsQuery {
   constructor(

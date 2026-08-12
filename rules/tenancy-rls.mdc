@@ -14,7 +14,7 @@ alwaysApply: true
 - Добавляешь или меняешь таблицу/модель Prisma.
 - Пишешь миграцию.
 - Пишешь репозиторий, query-адаптер, seed, воркер, крон, скрипт обслуживания.
-- Трогаешь `withTenant`, `tenant-tables.ts`, роли БД, `DATABASE_URL`.
+- Трогаешь `withTenant`, `tenant-tables.constant.ts`, роли БД, `DATABASE_URL`.
 
 ## Правило
 
@@ -57,7 +57,7 @@ alwaysApply: true
     `withTenant` на каждую, а не читают всё разом.
 13. **Каждый job несёт `organizationId` в payload**; обёртка `runJob` открывает `withTenant` до
     вызова handler'а. Handler, обратившийся к БД мимо обёртки, падает на `guardedClient`.
-14. **Новая таблица регистрируется в `tenant-tables.ts` и в `ROW_FACTORIES`** — иначе не
+14. **Новая таблица регистрируется в `tenant-tables.constant.ts` и в `ROW_FACTORIES`** — иначе не
     компилируется и не попадает в isolation-тесты.
 15. **Isolation-тест обязателен на каждую таблицу и обязан содержать положительный контроль** на
     каждую проверяемую команду — «своя строка видна», «своя строка пишется», «свой `INSERT`

@@ -254,6 +254,26 @@ export const ROW_FACTORIES = {
     );
   },
 
+  /**
+   * A recovery code needs a user of the same organization, for the identical reason `sessions` and
+   * `password_reset_tokens` make one: the composite foreign key refuses a user from anywhere else.
+   *
+   * `code_hash` gets a marker string rather than a real argon2id digest — nothing here is exercised
+   * as a credential, only as a column, and a fixture that looked like a real digest is a fixture
+   * somebody eventually copies into a seed (CLAUDE.md, «Чувствительность данных»).
+   */
+  mfa_recovery_codes: async (client, organizationId) => {
+    const user = await createUser(client, organizationId);
+
+    return insert(
+      client,
+      `INSERT INTO mfa_recovery_codes (organization_id, user_id, code_hash, updated_at)
+       VALUES ($1, $2, $3, now())
+       RETURNING id`,
+      [organizationId, user.id, 'not-a-real-argon2id-digest'],
+    );
+  },
+
   password_reset_tokens: async (client, organizationId) => {
     const user = await createUser(client, organizationId);
 

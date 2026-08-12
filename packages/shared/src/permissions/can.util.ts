@@ -4,7 +4,9 @@ import { isPermissionKey, requiredLevel, type PermissionKey } from './permission
 /**
  * Capability side of a subject: roles and per-user overrides, already folded into two sets.
  *
- * Folding happens once, server-side, in `EffectivePermissionsService`; this module never reads a
+ * Folding happens once, server-side — `BuildActorQuery` asks the reader adapter, which turns rows
+ * into the two sets. (An `EffectivePermissionsService` was named here for a while and never existed;
+ * a class name in a docstring is worth grepping before trusting.) This module never reads a
  * database. That is what makes it importable by the client for UI hints without shipping any
  * authorisation logic that the client could be tricked into deciding on its own — the authority is
  * always the server (invariant 2 in CLAUDE.md).

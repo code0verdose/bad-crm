@@ -123,11 +123,11 @@ const key = process.env.APP_ENCRYPTION_KEY!;
 | Агент `secret-scanner` | секреты в репозитории и в выводе команд, ведёт журнал утечек |
 | Агент `security-auditor` в commit-гейте | OWASP-находки, небезопасные дефолты, CVE в зависимостях; вердикт High/Critical блокирует коммит |
 | CodeQL в CI (`.github/workflows/codeql.yml`) | инъекции, небезопасную десериализацию, path traversal |
-| Тест `test/security/bundle-secrets.spec.ts` (grep по собранному бандлу) | `MEILI_MASTER_KEY`/`JWT_SECRET`/ключи провайдеров в клиентской сборке |
-| Тест `test/security/log-redaction.spec.ts` | новый секретный ключ, не попавший в `REDACTED_PATHS` |
-| `test/integration/auth/refresh-reuse.spec.ts` | отсутствие reuse detection |
-| `test/integration/auth/rate-limit.spec.ts` | endpoint без лимита |
-| Тест `env-schema.spec.ts` | переменную, добавленную в код мимо схемы и `.env.example` |
+| Тест `test/security/bundle-secrets.test.ts` (grep по собранному бандлу) | `MEILI_MASTER_KEY`/`JWT_SECRET`/ключи провайдеров в клиентской сборке |
+| Тест `test/security/log-redaction.test.ts` | новый секретный ключ, не попавший в `REDACTED_PATHS` |
+| `test/integration/auth/refresh-reuse.test.ts` | отсутствие reuse detection |
+| `test/integration/auth/rate-limit.test.ts` | endpoint без лимита |
+| Тест `env-schema.test.ts` | переменную, добавленную в код мимо схемы и `.env.example` |
 | ESLint `no-restricted-globals` на `localStorage` в `units/auth/**` | токены в persistent storage |
 
 ## Исключения

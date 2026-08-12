@@ -21,5 +21,6 @@
   "signOut": "Выйти",
   "adminMembers": "Сотрудники",
   "adminTeams": "Команды",
-  "adminRoles": "Роли и права"
+  "adminRoles": "Роли и права",
+  "settingsSecurity": "Безопасность"
 }

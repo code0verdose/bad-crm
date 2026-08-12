@@ -2,7 +2,17 @@
 id: STORY-013-03
 epic: EPIC-013
 status: backlog
-blocked: false
+blocked: true
+blocked_reason: >-
+  Не выходит раньше STORY-013-04 (отключение и административный сброс 2FA). Включение 2FA отгружено
+  (STORY-013-01, STORY-013-02), а выхода из неё в продукте нет: ни самостоятельного отключения, ни
+  административного сброса, ни CLI, а перевыпуск набора кодов требует живого TOTP-кода, то есть
+  набор не умеет продлевать сам себя. Пока вход второй фактор не читает, это безвредно; в тот день,
+  когда эта история его прочитает, потеря телефона у единственного владельца организации становится
+  потерей организации, восстанавливаемой только правкой БД руками. Вторая опора этой блокировки
+  ("включить 2FA может любой держатель сессии, без пароля") отпала 2026-08-12: confirm требует
+  currentPassword, пароль проверяется всегда, неверный пароль даёт 403 reauthentication_required.
+  Блокировка остаётся в силе по первой опоре — отсутствие выхода паролем не лечится.
 priority: must
 estimate: M
 ---
@@ -90,25 +100,78 @@ estimate: M
     Then обе записи имеют `public: true` с непустым `publicReason`; список публичных маршрутов
     снапшотится и его изменение требует ревью.
 
+## Блокирующая зависимость: эта история не выходит раньше STORY-013-04
+
+**Двухфакторная аутентификация сейчас — дверь без выхода.** Серверная часть включения уже отгружена
+([STORY-013-01](story-013-01-enable-totp.md), [STORY-013-02](story-013-02-recovery-codes.md)):
+2FA можно включить по API уже сегодня. Выхода при этом нет ни одного:
+
+- отключения нет — [STORY-013-04](story-013-04-disable-totp.md) в `backlog`;
+- административного сброса (`user:reset_mfa`) нет — та же история;
+- CLI или административной команды нет;
+- перевыпуск набора кодов (`POST /auth/2fa/recovery-codes/regenerate`) требует **живого TOTP-кода**,
+  то есть набор не умеет продлевать сам себя. Человек, вошедший по коду восстановления, потратит
+  десять кодов и запрётся окончательно.
+
+Следствие, которое становится реальным ровно в тот момент, когда вход начнёт читать второй фактор:
+**потеря аутентификатора необратима.** Единственный владелец организации, включивший 2FA и
+потерявший телефон, **не восстанавливается ничем**, кроме правки базы данных руками: сбрасывать его
+2FA некому — прав выше владельца нет. У рядового сотрудника, потерявшего и телефон, и коды, тупик
+тот же, только по другой причине: механизма сброса не существует ни у кого.
+
+Сегодня это не взорвалось только потому, что вход второй фактор не читает вовсе. Поэтому условие, а
+не пожелание: **[STORY-013-04](story-013-04-disable-totp.md) выходит раньше этой истории или в одном
+релизе с ней.** До тех пор — `blocked: true`.
+
+### Вторая опора этой блокировки отпала — дыру закрыли (2026-08-12)
+
+Здесь стоял второй пункт: включение 2FA не требует переаутентификации, `setup` и `confirm` защищены
+только сессией, поэтому нарушитель с угнанным access-токеном привязывает **свой** аутентификатор,
+забирает коды восстановления и делает захват необратимым.
+
+**Опоры больше нет.** `POST /auth/2fa/confirm` принимает `code` **и** `currentPassword`
+(`presentation/http/validators/mfa.validator.ts:35-38`), пароль проверяется **всегда** — параллельно
+с чтением черновика (`confirm-totp.use-case.ts:210`), — а неверный пароль отвечает
+`403 reauthentication_required` независимо от того, верен ли код
+(`confirm-totp.use-case.ts:247,252-255`); `ConfirmTotpRequest` в
+[`openapi.yaml`](../../../docs/api/openapi.yaml) объявляет оба поля обязательными. Правило
+STORY-013-04, критерий 3 («наличие сессии само по себе недостаточно», `T-IAM-01`) к включению
+применено. Session-only остался `POST /auth/2fa/setup`, который лишь готовит черновик: до
+подтверждения он не даёт ничего, отвергается на чтении по истечении и уничтожается при исчерпании
+попыток.
+
+Блокировка от этого не снимается — она держится на **первой** опоре, отсутствии выхода, и та в силе:
+паролем на включении потерянный телефон не лечится. Половина, которая закрылась, записана здесь, а
+не стёрта, чтобы тот, кто придёт снимать `blocked: true`, видел, что именно ещё осталось сделать —
+STORY-013-04, и только она.
+
 ## Задачи
 
-- [ ] `packages/server/src/application/auth/use-cases/login.use-case.ts` — ветка «2FA включена» →
+- [ ] `packages/server/src/application/identity/use-cases/login.use-case.ts` — ветка «2FA включена» →
       выдача `mfaToken` вместо сессии.
-- [ ] `packages/server/src/application/auth/use-cases/verify-second-factor.use-case.ts`.
-- [ ] `packages/server/src/infrastructure/auth/mfa-token.service.ts` — выпуск/проверка JWT со
-      `scope = mfa_pending`, `jti`-денилист в Redis, TTL 5 минут.
+- [ ] `packages/server/src/application/identity/use-cases/verify-second-factor.use-case.ts` — на шаге
+      TOTP; на шаге кода восстановления вызывает уже написанный, но ещё никуда не подключённый
+      `consume-recovery-code.use-case.ts` (STORY-013-02), и тем самым впервые делает достижимым код
+      отказа `recovery_code_invalid`, объявленный в спеке и не возвращаемый сегодня ни одним
+      маршрутом. `totp_code_replayed` достижим уже сейчас — его бросает `confirm-totp.use-case.ts:249`
+      (STORY-013-01, критерий 6); здесь он появляется на **втором** шаге, входе, с ответом 401.
+- [ ] `packages/server/src/infrastructure/identity/mfa-token.service.ts` — выпуск/проверка JWT со
+      `scope = mfa_pending` и субъектом `pending:{userId}`, `jti`-денилист в Redis, TTL 5 минут.
+      Комментарий к политике `mfa_recovery_consume_attempt` в `application/platform/ports/rate-limit.port.ts`
+      уже описывает этот субъект как существующий — привести его в соответствие вместе с реализацией.
 - [ ] `packages/server/src/presentation/http/middleware/auth.middleware.ts` — явная проверка
       `scope !== 'mfa_pending'` для всех защищённых маршрутов.
-- [ ] `packages/server/src/infrastructure/rate-limit/login.limiter.ts`,
-      `mfa-verify.limiter.ts` (лимит на токен + на IP).
-- [ ] `packages/server/src/presentation/http/routes/registry.ts` — публичные записи с `publicReason`.
+- [ ] Ограничители: лимит на промежуточный токен + IP-половина
+      `mfa_recovery_consume_attempt`, которой сегодня нет (STORY-013-02, критерий 10).
+- [ ] `packages/server/src/presentation/http/route-registry.factory.ts` — публичные записи с `publicReason`.
 - [ ] `packages/client/src/app/routes/login.tsx` (+ шаг `two-factor`),
       `pages/login/ui/two-factor-step.component.tsx`,
       `units/auth/service/mutations/verify-second-factor.mutation.ts`,
       `units/auth/model/validation/two-factor.schema.ts`.
-- [ ] Тесты: `mfa-pending-token-rejected-everywhere.spec.ts` (табличный по `ROUTE_REGISTRY`),
-      `verify-second-factor.use-case.spec.ts` (п. 4–6), `auth-timing-equality.spec.ts` (п. 8),
-      `login-flood-memory` нагрузочный (п. 9), e2e `login-with-2fa.spec.ts` + axe.
+- [ ] Тесты: `mfa-pending-token-rejected-everywhere.test.ts` (табличный по `ROUTE_REGISTRY`),
+      `verify-second-factor.use-case.test.ts` (п. 4–6), `auth-timing-equality.test.ts` (п. 8),
+      `login-flood-memory` нагрузочный (п. 9), e2e `login-with-2fa.spec.ts` + axe (Playwright-набор
+      именуется `.spec.ts`, серверные Vitest-наборы — `.test.ts`).
 
 ## Ссылки
 

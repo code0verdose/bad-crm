@@ -101,11 +101,11 @@ io.to(room).emit('message:created', { ...message, authorEmail: author.email });
 | Кастомное ESLint-правило `bad-crm/no-io-emit-global` | `io.emit(` и рассылку в неймспейс |
 | ESLint `no-restricted-syntax` на `socket.join(` вне `infrastructure/realtime/**` | join мимо централизованной проверки |
 | Тип `roomName()` (шаблонный литерал `org:${string}:${Resource}:${string}`) | имя комнаты, собранное конкатенацией — ошибка компиляции |
-| `test/integration/realtime/cross-tenant.spec.ts` | подписку на комнату чужой организации |
-| `test/integration/realtime/authz.spec.ts` | подписку на приватный канал без членства (ожидается `resource_not_found`) |
-| `test/integration/realtime/revocation.spec.ts` | пользователя, оставшегося в комнате после потери прав |
-| `test/integration/realtime/presence-ttl.spec.ts` | presence-ключ без TTL |
-| `test/integration/realtime/typing-throttle.spec.ts` | отсутствие троттлинга |
+| `test/integration/realtime/cross-tenant.test.ts` | подписку на комнату чужой организации |
+| `test/integration/realtime/authz.test.ts` | подписку на приватный канал без членства (ожидается `resource_not_found`) |
+| `test/integration/realtime/revocation.test.ts` | пользователя, оставшегося в комнате после потери прав |
+| `test/integration/realtime/presence-ttl.test.ts` | presence-ключ без TTL |
+| `test/integration/realtime/typing-throttle.test.ts` | отсутствие троттлинга |
 | Агент `security-auditor` при изменении gateway | обход handshake-контекста |
 
 ## Исключения

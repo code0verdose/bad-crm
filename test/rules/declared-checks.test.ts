@@ -130,10 +130,7 @@ const isSatisfied = (check: DeclaredCheck): boolean => {
  */
 const PENDING: Readonly<Record<string, string>> = {
   // ── OpenAPI and HTTP semantics (EPIC-003 in review, idempotency scheduled with M2) ───────────
-  'api-contract.mdc · command · api:lint':
-    'Spectral is not installed and no `api:lint` script exists; the specification is currently held ' +
-    'by `packages/server/test/contract/openapi.test.ts` in both directions, which is a different check.',
-  'api-contract.mdc · file · test/integration/http/idempotency.spec.ts':
+  'api-contract.mdc · file · test/integration/http/idempotency.test.ts':
     'There is no idempotency middleware yet — the `Idempotency-Key` handling lands with the first ' +
     'mutating resource endpoints in M2, and the suite is written against it.',
 
@@ -159,9 +156,6 @@ const PENDING: Readonly<Record<string, string>> = {
   'tanstack-query.mdc · eslint-rule · bad-crm/require-signal-in-queryfn':
     'Not implemented in `eslint/bad-crm.plugin.js`. The client has one query hook so far and it is ' +
     'reviewed by hand; the rule belongs with the first list screen that can race.',
-  'testing.mdc · eslint-rule · bad-crm/no-network-in-tests':
-    'Not implemented in `eslint/bad-crm.plugin.js`. The ban on network from a test is currently a ' +
-    'review item only — the closest mechanical guard is that no test imports a fetch client.',
   'zod-validation.mdc · eslint-rule · bad-crm/no-interface-next-to-schema':
     'Not implemented in `eslint/bad-crm.plugin.js`. Schema-first is followed by convention today ' +
     'and checked by the reviewer, not by the linter.',
@@ -171,7 +165,7 @@ const PENDING: Readonly<Record<string, string>> = {
     '`eslint-plugin-boundaries` is not a dependency. The layer directions it would express are ' +
     'enforced today by `no-restricted-imports` groups per `files` block plus `test/architecture/layers.test.ts`, ' +
     'which walks the real import graph — the plugin would replace that pair, not add to it.',
-  'i18n.mdc · file · test/i18n/plural.spec.ts':
+  'i18n.mdc · file · test/i18n/plural.test.ts':
     'Pluralisation lands with the first countable string. EPIC-008 has the catalogues and the ' +
     'instance (STORY-008-01) and no plural yet — 26 keys, none of them counted — so the suite would ' +
     'assert `one/few/many` about nothing.',
@@ -181,24 +175,24 @@ const PENDING: Readonly<Record<string, string>> = {
     'Same as `i18n:check`: the script is specified against a message catalogue that EPIC-008 introduces.',
 
   // ── suites specified for subsystems that are not built ───────────────────────────────────────
-  'naming-and-structure.mdc · file · test/architecture/unit-names.spec.ts':
+  'naming-and-structure.mdc · file · test/architecture/unit-names.test.ts':
     'No suite reads `docs/product/glossary.md` yet. `test/architecture/structure.test.ts` checks the ' +
     'shape of `units/*` but not the vocabulary of their names.',
-  'outbox.mdc · file · test/architecture/no-io-in-transaction.spec.ts':
+  'outbox.mdc · file · test/architecture/no-io-in-transaction.test.ts':
     'There is no outbox and no queue in the tree; the suite is specified against the transactional ' +
     'publish path that epic introduces.',
-  'permissions.mdc · file · test/permissions/route-registry.spec.ts':
+  'permissions.mdc · file · test/permissions/route-registry.test.ts':
     'The route registry carries no permission declarations yet (EPIC-011); ' +
     '`packages/server/test/unit/http/route-registry.test.ts` checks the registry against Express and stops there.',
-  'permissions.mdc · file · test/permissions/acl-coverage.spec.ts':
+  'permissions.mdc · file · test/permissions/acl-coverage.test.ts':
     'Half of it exists as `packages/server/test/contract/acl-coverage.test.ts`, which holds every ' +
     'route with an id in its path to naming the use-case that checks the object. The other half — ' +
     'measuring the *levels* — still has nothing to measure: no resource endpoint consumes an ACL ' +
     'level until the first resource domain (EPIC-014).',
-  'self-host-packaging.mdc · file · test/integration/shutdown.spec.ts':
+  'self-host-packaging.mdc · file · test/integration/shutdown.test.ts':
     'Half of it exists as a unit test — `packages/server/test/unit/bootstrap/shutdown.test.ts` covers ' +
     'the handler and its deadline. The `/ready → 503` half needs a live server and belongs to the integration suite.',
-  'time-tracking-invariants.mdc · file · test/architecture/no-raw-time-aggregate.spec.ts':
+  'time-tracking-invariants.mdc · file · test/architecture/no-raw-time-aggregate.test.ts':
     'There are no `time_entries` and no reporting paths in the tree; the suite is specified against ' +
     'the aggregation layer of the time-tracking epics.',
 };

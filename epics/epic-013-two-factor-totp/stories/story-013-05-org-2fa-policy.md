@@ -90,11 +90,11 @@ estimate: M
       `z.infer`; чтение `Organization.settings` через `safeParse`.
 - [ ] `packages/server/src/application/organization/use-cases/update-security-policy.use-case.ts`.
 - [ ] `packages/server/src/application/organization/queries/mfa-coverage-report.query.ts` (п. 2, 9).
-- [ ] `packages/server/src/domain/auth/access/mfa-requirement.ts` — чистая функция
+- [ ] `packages/server/src/domain/identity/access/mfa-requirement.ts` — чистая функция
       `isMfaRequired(actorRoles, policy, roleGrantedAt, now): { required, graceEndsAt }`.
-- [ ] `packages/server/src/infrastructure/auth/mfa-enrollment-token.service.ts` +
+- [ ] `packages/server/src/infrastructure/identity/mfa-enrollment-token.service.ts` +
       обработка `scope = mfa_enrollment` в `auth.middleware.ts`.
-- [ ] `packages/server/src/presentation/http/routes/registry.ts` —
+- [ ] `packages/server/src/presentation/http/route-registry.factory.ts` —
       `organization:manage_security_policy`; whitelist маршрутов, доступных при `mfa_enrollment`.
 - [ ] `packages/client/src/app/routes/_authenticated/admin/organization.tsx` — вкладка `security`;
       `widgets/security-policy/security-policy.widget.tsx` +
@@ -103,9 +103,10 @@ estimate: M
       `mfa_enrollment`; `widgets/mfa-enrollment-gate/mfa-enrollment-gate.widget.tsx`, баннер
       grace-периода.
 - [ ] i18n: `packages/client/src/app/i18n/{en,ru}/security-policy.json`.
-- [ ] Тесты: `mfa-requirement.spec.ts` (табличный: роль × политика × grace × наличие 2FA),
-      `mfa-enrollment-token-scope.spec.ts` (табличный по `ROUTE_REGISTRY`, п. 3),
-      интеграционные п. 5, 6, 8, e2e `mandatory-2fa-enrollment.spec.ts` + axe.
+- [ ] Тесты: `mfa-requirement.test.ts` (табличный: роль × политика × grace × наличие 2FA),
+      `mfa-enrollment-token-scope.test.ts` (табличный по `ROUTE_REGISTRY`, п. 3),
+      интеграционные п. 5, 6, 8, e2e `mandatory-2fa-enrollment.spec.ts` + axe (Playwright-набор
+      именуется `.spec.ts` — это не то же расхождение, что у Vitest-наборов выше).
 
 ## Ссылки
 

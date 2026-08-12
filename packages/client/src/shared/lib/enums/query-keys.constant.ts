@@ -123,8 +123,28 @@ export interface TeamQueryKeys {
   readonly detail: (id: string) => readonly [string, 'detail', string];
 }
 
+/**
+ * The recovery-code counter — one address, and there will never be a second.
+ *
+ * `GET /auth/2fa/recovery-codes` answers `{ total, remaining }` about the caller and takes no
+ * parameters, so there is no list and no detail: a `detail(id)` here would suggest an operation
+ * that reads somebody else's codes, and no such operation exists or could.
+ *
+ * **What is deliberately not here is the codes themselves and the drafted secret.** Both are
+ * answers to mutations and neither may become a cache entry (CLAUDE.md, «Чувствительность
+ * данных»); giving them a key would be the first step towards persisting them.
+ */
+export interface RecoveryCodeQueryKeys {
+  readonly all: readonly [string];
+  readonly status: () => readonly [string, 'status'];
+}
+
 export const QueryKeys = {
   Sessions: entityQueryKeys<SessionListParams>('sessions'),
+  RecoveryCodes: {
+    all: ['recovery-codes'],
+    status: () => ['recovery-codes', 'status'],
+  } satisfies RecoveryCodeQueryKeys,
   Permissions: {
     all: ['permissions'],
     mine: () => ['permissions', 'mine'],

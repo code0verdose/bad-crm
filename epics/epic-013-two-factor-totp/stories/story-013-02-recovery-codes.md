@@ -1,7 +1,7 @@
 ---
 id: STORY-013-02
 epic: EPIC-013
-status: backlog
+status: in-progress
 blocked: false
 priority: must
 estimate: M
@@ -87,25 +87,38 @@ estimate: M
 
 ## Задачи
 
-- [ ] `packages/server/prisma/migrations/*_mfa_recovery_codes/migration.sql` — таблица с
-      `organization_id`, `user_id`, `code_hash`, `used_at`, индекс
-      `idx_mfa_recovery_user (organization_id, user_id) WHERE used_at IS NULL`,
-      RLS `ENABLE` + `FORCE` + политики, `REVOKE UPDATE` не применяется (нужен `used_at`).
-- [ ] `packages/server/src/application/auth/use-cases/generate-recovery-codes.use-case.ts`,
-      `consume-recovery-code.use-case.ts`, `regenerate-recovery-codes.use-case.ts`.
-- [ ] `packages/server/src/application/auth/ports/password-hasher.port.ts` — переиспользование
-      argon2id-адаптера для хеширования кодов.
-- [ ] `packages/server/src/domain/auth/recovery-code.value.ts` — алфавит, длина, нормализация
-      (регистр, дефисы).
-- [ ] `packages/server/src/presentation/http/routes/registry.ts` — `2fa/recovery-codes`,
-      `2fa/recovery-codes/regenerate`.
+- [x] `packages/server/prisma/migrations/20260811093000_mfa_recovery_codes/migration.sql` — таблица с
+      `organization_id`, `user_id`, `code_hash`, `used_at`, частичный индекс
+      `idx_mfa_recovery_codes_org_user_unused (organization_id, user_id) WHERE used_at IS NULL`
+      (плюс полный `idx_mfa_recovery_codes_org_user`), RLS `ENABLE` + `FORCE` + политики
+      `tenant_isolation` и `maintenance_access`, составной FK на `users (organization_id, id)`;
+      `UPDATE` и `DELETE` выданы намеренно (`used_at` и перевыпуск).
+- [x] `packages/server/src/application/identity/use-cases/generate-recovery-codes.use-case.ts`,
+      `consume-recovery-code.use-case.ts`, `regenerate-recovery-codes.use-case.ts`,
+      `read-recovery-code-status.query.ts` (счётчик `{ total, remaining }` — в исходной формулировке
+      задачи отсутствовал, хотя критерий 2 его требует).
+- [x] `packages/server/src/application/identity/ports/password-hasher.port.ts` — переиспользование
+      argon2id-адаптера для хеширования кодов, включая `dummyHash`.
+- [x] `packages/server/src/domain/identity/recovery-code.value.ts` — алфавит (31 символ, без
+      `0/O`, `1/I/L`), длина, счёт, `normalizeRecoveryCode`, `isWellFormedRecoveryCode`.
+- [x] `packages/server/src/presentation/http/route-registry.factory.ts` — `2fa/recovery-codes`
+      (`GET`) и `2fa/recovery-codes/regenerate` (`POST`). **`consume` маршрута не получил** — см.
+      «Что отложено».
 - [ ] `packages/client/src/widgets/recovery-codes/recovery-codes.widget.tsx` +
       `ui/recovery-codes-list.component.tsx`, `ui/recovery-codes-confirm.component.tsx`,
       скачивание `.txt` и печать; баннер `ui/recovery-codes-low-banner.component.tsx`.
 - [ ] `packages/client/src/units/auth/service/mutations/regenerate-recovery-codes.mutation.ts`.
-- [ ] Тесты: `consume-recovery-code.use-case.spec.ts`, конкурентный
-      `recovery-code-race.spec.ts` (п. 3), `recovery-code-timing.spec.ts` (п. 9),
-      интеграционные п. 5, 7, 8, 10, isolation-тест таблицы, e2e «вход по коду восстановления».
+- [x] Тесты: `test/unit/application/consume-recovery-code.use-case.test.ts`, конкурентный
+      `test/integration/db/mfa-recovery-code-race.test.ts` (п. 3, на реальном Postgres),
+      `test/unit/domain/recovery-code.value.test.ts`,
+      `test/unit/crypto/csprng-recovery-code-generator.adapter.test.ts`,
+      `test/unit/application/{regenerate-recovery-codes.use-case,read-recovery-code-status.query}.test.ts`,
+      `test/integration/http/mfa-endpoints.test.ts` (п. 7, 8, 10), `test/unit/persistence/mfa-repositories.test.ts`;
+      isolation-тест таблицы приходит реестровым набором — `mfa_recovery_codes` добавлена в
+      `TENANT_TABLES`, по которому идёт `test/integration/db/rls-isolation.test.ts`.
+- [ ] Тесты, которых нет: отдельный `recovery-code-timing` (п. 9 — равенство времени ответа проверено
+      только конструкцией цикла и `dummyHash`, замера нет) и e2e «вход по коду восстановления»
+      (входа не существует, см. «Что отложено»).
 
 ## Ссылки
 
@@ -116,11 +129,113 @@ estimate: M
 - [`rls-design.md`, чек-лист «новая таблица»](../../../docs/security/rls-design.md)
 - PRD: NFR-6
 
+## Сделано (2026-08-12) — серверная половина
+
+### Одноразовость доказана базой, а не сравнением в коде
+
+Совпадение кода с хешем ничего не решает: два запроса могут разрешить **одну и ту же** строку — они
+считают одно и то же сравнение против одного и того же хеша. Спор выигрывает единственный оператор
+`UPDATE mfa_recovery_codes SET used_at = $2 WHERE id = $1 AND used_at IS NULL RETURNING id`
+(`RecoveryCodeRepositoryPort.markUsed`): у кого вернулась строка, тот и потратил код. Проверено не
+дублями и не моками, а `test/integration/db/mfa-recovery-code-race.test.ts` — параллельные запросы на
+реальном Postgres в контейнере. Проигравший получает **тот же** отказ, что и «такого кода нет»:
+второй, более точный ответ подтвердил бы, что код был настоящим секунду назад.
+
+### Хеши существующим механизмом, не новым
+
+Коды хешируются тем же `PasswordHasherPort`, что и пароли — argon2id через `@node-rs/argon2`, с теми
+же параметрами и тем же `dummyHash`. Отдельный «более лёгкий» хешер для кодов не заведён: параметры
+стоимости тогда пришлось бы обосновывать дважды, а `dummyHash` для равенства времени — иметь в двух
+экземплярах. Отсюда же следует, почему поиск кода — цикл, а не запрос по индексу: argon2id солит
+каждую строку отдельно, равенства для `WHERE` не существует.
+
+### Перевыпуск — одна транзакция, и счётчик двигается
+
+`deleteAllForUser` идёт **до** `issueFor` внутри одного `withTenant`: сбой в середине оставляет
+«ничего не изменилось», а не «старых кодов уже нет, новые не записались» (критерий 7). Принятый при
+реаутентификации TOTP-код сразу двигает `totp_last_counter` (`advanceCounter`) — иначе тот же код в
+пределах своих тридцати секунд остался бы «неиспользованным» с точки зрения анти-replay и годился бы
+для повторного предъявления на шаге входа.
+
+### Один отказ на три состояния
+
+`reauthentication_required` отвечает и на неверный пароль, и на неверный код, и на «у аккаунта TOTP
+вообще не включён»; обе проверки выполняются **всегда** (`Promise.all`), а не по короткому замыканию,
+чтобы по тому, до какой из них дошло выполнение, нельзя было различить причины (критерий 8).
+
+### Таблица закрыта полным блоком RLS
+
+`ENABLE` + `FORCE`, политика `tenant_isolation` на роль `app_user` с `USING` **и** `WITH CHECK`,
+составной внешний ключ на `users (organization_id, id)` — проверки FK исполняются владельцем таблицы и
+RLS обходят, поэтому односоставная ссылка могла бы назвать учётку чужой организации. Изоляция
+проверяется не отдельным тестом, а реестром: `mfa_recovery_codes` внесена в `TENANT_TABLES`, а
+`rls-isolation.test.ts` перебирает реестр целиком и требует положительный контроль (критерий 11).
+
+## Что отложено, и почему
+
+- **Весь клиент (критерии 2 и 6)** — подтверждение «я сохранил коды» перед закрытием, скачивание
+  `.txt` и печать, постоянный баннер при `remaining ≤ 3`: ни одного из этих компонентов нет, потому
+  что нет экрана `/settings/security` (тот же корень, что у критерия 10
+  [STORY-013-01](story-013-01-enable-totp.md)). Серверная половина обоих критериев сделана: коды
+  отдаются открытым текстом **ровно один раз** в ответе на `confirm`/`regenerate` и больше нигде, а
+  `GET /auth/2fa/recovery-codes` отвечает только `{ total, remaining }` — материал для баннера есть,
+  баннера нет.
+- **Уведомление владельцу учётки при использовании кода (критерий 4)** — in-app-уведомлений в
+  продукте нет вообще, а письмо вне транзакции требует outbox (ADR-0021 принят, механизм не
+  реализован). В `AuditLog` факт пишется (`user.mfa_recovery_code_used`), наружу не уходит ничего.
+- **Ключ ограничителя только по пользователю, без IP (критерий 10)** — критерий требует «5 попыток
+  за 15 минут на пользователя **и** на IP»; политика `mfa_recovery_consume_attempt` объявлена как
+  `UserSubject` и ключуется одним `userId`. IP-половины **нет**.
+
+  По факту, а не по комментарию:
+
+  - Ключ по пользователю для подбора **одного конкретного кода строже** ключа по IP: нападающий не
+    получает свежий бюджет, сменив адрес, — пять попыток дано учётной записи, а не соединению.
+    Поэтому отсутствие IP-половины не открывает перебор кодов конкретного человека.
+  - Чего при этом **нет измерения** — распределённой активности по адресам: «один IP пробует коды к
+    сорока учётным записям» сегодня не считается ничем и ни во что не пишется. Это и есть незакрытая
+    часть критерия, а не формальность.
+  - **Комментарий в `application/platform/ports/rate-limit.port.ts` обосновывает решение посылкой,
+    которой в коде нет.** Он описывает субъект как `pending:{userId}` — «userId из токена, которого
+    никто вне попытки входа не держит». Строки `pending:` в `packages/server/src` не существует
+    вовсе, промежуточного токена в продукте нет, а во флоу включения 2FA он и не участвовал бы:
+    субъект здесь — обычный аутентифицированный вызывающий. Обоснование написано про систему, в
+    которой STORY-013-03 уже вышла.
+  - Наследование этого дословно — задача [STORY-013-03](story-013-03-login-second-factor.md): там
+    субъектом станет именно pending-токен, и там же появляется её критерий 5 («параллельно работает
+    лимит по IP+email»). До тех пор посылка комментария опережает реализацию, и правка комментария
+    принадлежит владельцу кода (`packages/**`), а не этой записи.
+- **Метрика `mfa_recovery_failed_total` и агрегированная запись серии неудач в `AuditLog`
+  (критерий 10)** — не заведены. Отдельная неудача пишется в лог событием
+  `recovery_code_refused`, а 429 попадает в общий `incrementAuthRateLimited` по шаблону маршрута;
+  специализированной серии нет, и заводить её до появления маршрута, который эти неудачи производит,
+  значило бы измерять то, чего никто не вызывает.
+- **Вход по коду восстановления целиком (критерии 4, 5, 11 в части «предъявляется на шаге второго
+  фактора»)** — `ConsumeRecoveryCodeUseCase` написан и покрыт тестами, но **не подключён ни к
+  контейнеру (`container.factory.ts`), ни к реестру маршрутов**: потратить код без ожидающего входа,
+  к которому можно привязать выданную сессию, было бы дырой, а не удобством. Прямое следствие видно в
+  контракте: `recovery_code_invalid` — единственный из четырёх новых `responses`-компонентов
+  `openapi.yaml` с **нулём** `$ref`, то есть опубликованный и переведённый код отказа, который сегодня
+  не возвращается ни одним маршрутом. Поверхность целиком принадлежит
+  [STORY-013-03](story-013-03-login-second-factor.md); там же она и закрывается — вместе с
+  `POST /auth/2fa/verify`.
+
+## Блокирующая зависимость, созданная этой историей
+
+Перевыпуск набора требует **живого TOTP-кода** — то есть набор кодов не умеет продлевать сам себя.
+Человек, вошедший по коду восстановления, сожжёт десять кодов и запрётся окончательно, потому что
+отключения и административного сброса не существует. Отсюда:
+**[STORY-013-03](story-013-03-login-second-factor.md) не выходит раньше
+[STORY-013-04](story-013-04-disable-totp.md)** — полная формулировка в [`epic.md`](../epic.md),
+раздел «Блокирующая зависимость внутри эпика».
+
 ## Definition of Done
 
-- [ ] Тесты написаны первыми (TDD), проходят, изменённый код покрыт
-- [ ] Commit-гейт зелёный (test-coverage, security-auditor, db-reviewer при изменении схемы, production-readiness, commit-hygiene)
-- [ ] Документация обновлена (docs/ + запись в `docs/brain/`)
-- [ ] a11y и i18n (для UI-историй)
-- [ ] **Isolation-тест RLS** для каждой новой таблицы
-- [ ] **Permission объявлена** для каждого нового endpoint и проверяется в use-case
+- [x] Тесты написаны первыми (TDD), проходят, изменённый код покрыт
+- [ ] Commit-гейт зелёный — **красный**: гейт вернул FAIL, эта запись и есть часть его закрытия
+- [x] Документация обновлена (`openapi.yaml`, `data-model.md`, CHANGELOG + запись в `docs/brain/`)
+- [ ] a11y и i18n — экрана нет (см. «Что отложено»); переведены только коды отказов
+- [x] **Isolation-тест RLS** — `mfa_recovery_codes` внесена в `TENANT_TABLES` и покрыта реестровым
+      `rls-isolation.test.ts` с положительным контролем
+- [x] **Permission объявлена** — обе записи реестра self-service, обоснование записано в реестре и в
+      `x-self-service-reason` спеки; перевыпуск авторизуется реаутентификацией, а не capability

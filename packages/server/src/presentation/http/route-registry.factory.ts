@@ -1,5 +1,6 @@
 import { API_PREFIX } from '@/presentation/http/api-version.constant.js';
 import { createAuthController } from '@/presentation/http/controllers/auth.controller.js';
+import { createMfaController } from '@/presentation/http/controllers/mfa.controller.js';
 import { createTelemetryController } from '@/presentation/http/controllers/telemetry.controller.js';
 import { clientErrorBodySchema } from '@/presentation/http/validators/telemetry.validator.js';
 import { createMetricsController } from '@/presentation/http/controllers/metrics.controller.js';
@@ -38,6 +39,10 @@ import {
   resetPasswordBodySchema,
   sessionIdParamsSchema,
 } from '@/presentation/http/validators/auth.validator.js';
+import {
+  confirmTotpBodySchema,
+  regenerateRecoveryCodesBodySchema,
+} from '@/presentation/http/validators/mfa.validator.js';
 import { metaQuerySchema } from '@/presentation/http/validators/meta.validator.js';
 import {
   createRoleBodySchema,
@@ -272,6 +277,18 @@ export const createRouteRegistry = (
     sessionIdValidator,
   });
 
+  const confirmTotpValidator = validate({ body: confirmTotpBodySchema });
+  const regenerateRecoveryCodesValidator = validate({ body: regenerateRecoveryCodesBodySchema });
+
+  const mfa = createMfaController({
+    setupTotp: dependencies.identity.setupTotp,
+    confirmTotp: dependencies.identity.confirmTotp,
+    recoveryCodeStatus: dependencies.identity.recoveryCodeStatus,
+    regenerateRecoveryCodes: dependencies.identity.regenerateRecoveryCodes,
+    confirmTotpValidator,
+    regenerateRecoveryCodesValidator,
+  });
+
   const sameOrigin = createSameOriginMiddleware(
     allowedOrigins({
       appUrl: dependencies.config.appUrl,
@@ -418,6 +435,46 @@ export const createRouteRegistry = (
       selfServiceReason:
         'same subject and object as signing out, over the rest of one’s own sessions; there is no capability that could grant it to anybody else',
       ownershipCheckedIn: 'EndSessionUseCase.revokeOthers',
+    },
+    {
+      method: 'post',
+      path: `${API_PREFIX}/auth/2fa/setup`,
+      handlers: [mfa.setup],
+      selfService: true,
+      selfServiceReason:
+        'drafting a TOTP secret for one’s own account is authorised by holding the session, not by a capability; nobody could be denied the right to protect their own login (docs/security/permission-model.md §3.20)',
+      ownershipCheckedIn: 'SetupTotpUseCase',
+    },
+    {
+      method: 'post',
+      path: `${API_PREFIX}/auth/2fa/confirm`,
+      handlers: [requireIdempotencyKey(), confirmTotpValidator.handler, mfa.confirm],
+      selfService: true,
+      selfServiceReason:
+        'confirming possession of one’s own drafted secret, reauthenticated with the current password in the same request; bounded by the mfa_setup_attempt budget of five per fifteen minutes on the caller, spent in ConfirmTotpUseCase before either proof is even read',
+      ownershipCheckedIn: 'ConfirmTotpUseCase',
+    },
+    {
+      method: 'get',
+      path: `${API_PREFIX}/auth/2fa/recovery-codes`,
+      handlers: [mfa.recoveryCodeStatus],
+      selfService: true,
+      selfServiceReason:
+        'reading the count of one’s own remaining recovery codes; the plaintext values do not exist anywhere to be denied access to',
+      ownershipCheckedIn: 'ReadRecoveryCodeStatusQuery',
+    },
+    {
+      method: 'post',
+      path: `${API_PREFIX}/auth/2fa/recovery-codes/regenerate`,
+      handlers: [
+        requireIdempotencyKey(),
+        regenerateRecoveryCodesValidator.handler,
+        mfa.regenerateRecoveryCodes,
+      ],
+      selfService: true,
+      selfServiceReason:
+        'replacing one’s own recovery-code set; authorised by reauthentication (current password and a live TOTP code) rather than by a capability, and bounded by the mfa_reauth_attempt budget of five per fifteen minutes',
+      ownershipCheckedIn: 'RegenerateRecoveryCodesUseCase',
     },
     {
       method: 'get',

@@ -1,0 +1,29 @@
+/*
+ * The picture is square and must survive a 200 % text zoom without pushing the form off screen, so
+ * it is bounded by a relative width rather than by a pixel size (`rules/a11y.mdc` §4).
+ */
+.code {
+  inline-size: 100%;
+  max-inline-size: 14rem;
+  block-size: auto;
+  /*
+   * White in both schemes, and deliberately not `light-dark()`: a QR code is read by a camera that
+   * expects dark modules on a light field. Inverted for a dark theme it is a picture of a QR code
+   * that no phone will scan — the one case where following the colour scheme breaks the function.
+   */
+  background: var(--mantine-color-white);
+  padding: var(--mantine-spacing-xs);
+  border-radius: var(--mantine-radius-sm);
+}
+
+/*
+ * The secret is read out loud, typed by hand and copied character by character, so it is set at a
+ * size that survives that — and it wraps rather than truncates: an ellipsis in the middle of a
+ * shared secret is a secret nobody can enter.
+ */
+.secret {
+  font-size: var(--mantine-font-size-md);
+  letter-spacing: 0.1em;
+  word-break: break-all;
+  text-align: center;
+}

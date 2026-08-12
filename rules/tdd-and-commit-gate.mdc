@@ -1,5 +1,5 @@
 ---
-description: How code gets written (red-green-refactor) and the six checks that must pass before any commit or push.
+description: How code gets written (red-green-refactor) and the gate checks that must all pass before any commit or push.
 globs: **
 alwaysApply: true
 ---
@@ -27,10 +27,13 @@ alwaysApply: true
 5. Для UI-компонентов и тривиальных репозиториев TDD не обязателен, но **тесты в том же коммите**.
    Отдельных PR «добавим тесты позже» не существует.
 
-### B. Шесть проверок гейта
+### B. Проверки гейта
 
-**`git commit` и `git push` не выполняются, пока все шесть не дали PASS** — даже если попросили
-закоммитить. Сначала гейт, потом коммит. Независимые проверки запускаются параллельно.
+**`git commit` и `git push` не выполняются, пока каждая строка таблицы не дала PASS** — даже если
+попросили закоммитить. Сначала гейт, потом коммит. Независимые проверки запускаются параллельно.
+Состав гейта задаёт **только эта таблица** (её копия в `CLAUDE.md` обязана совпадать построчно);
+число проверок в прозе не пишется — именно так предыдущая, шестистрочная редакция пережила
+добавление седьмой строки и полгода лгала читателю.
 
 | # | Проверка | Агент/инструмент | Критерий PASS |
 |---|---|---|---|
@@ -40,6 +43,7 @@ alwaysApply: true
 | 4 | Продакшен-готовность | `production-readiness` | error handling, логи и метрики, конфиг и секреты, перформанс, обратная совместимость, план отката |
 | 5 | Чистота коммита | `scan-cruft.sh --staged` + агент `commit-hygiene` | нет BLOCK-мусора; нет fallback-ов, mock-данных, временных скриптов, лишней доки |
 | 6 | База знаний обновлена | вручную | создана запись `docs/brain/YYYY-MM-DD--<slug>.md` и обновлён `~/ObsidianBrain/` (Projects + затронутые Technologies/Concepts) |
+| 7 | Утверждения соответствуют коду | `stale-claims-auditor` — обязателен, если над дельтой работали две и более волны, либо волна фиксов прошла после ревью, либо дельта закрывает историю | обоснования рисков, комментарии «почему», спека, докстринги, разделы «Сделано»/«Отложено» и жёсткие числа в правилах сверены с фактическим кодом; пометки «отложено»/`blocked: true`, причина которых устранена, сняты |
 
 **Профильные проверки добавляются по типу дельты:** `permission-matrix-auditor` (каталог прав,
 роли, `ROUTE_REGISTRY`, policy, снапшот), `tenancy-rls-auditor` (новая таблица, политика,
@@ -111,13 +115,13 @@ Co-Authored-By: Claude <noreply@anthropic.com>  # AI-атрибуция запр
 
 | Механизм | Что ловит |
 |---|---|
-| Скилл `/gate` | прогон всех шести проверок параллельно со сводкой вердиктов |
+| Скилл `/gate` | прогон всех проверок таблицы параллельно со сводкой вердиктов |
 | Hook `~/.claude/hooks/git-guard.sh` (PreToolUse) | секреты и BLOCK-мусор в staged при попытке коммита — жёсткий блок |
 | `~/.claude/git-hooks/pre-commit` | то же на уровне git для любого клиента |
 | `commitlint` с `@commitlint/config-conventional` в CI | нарушение формата сообщения |
 | CI-шаг `grep -iE 'co-authored-by: claude|generated with' ` по сообщениям коммитов PR | AI-атрибуцию |
 | `vitest --coverage` + пороги | падение покрытия |
-| Агенты `test-coverage`, `security-auditor`, `db-reviewer`, `production-readiness`, `commit-hygiene` | содержательные дефекты, которых не видит регулярка |
+| Агенты `test-coverage`, `security-auditor`, `db-reviewer`, `production-readiness`, `commit-hygiene`, `stale-claims-auditor` | содержательные дефекты, которых не видит регулярка |
 
 ## Исключения
 

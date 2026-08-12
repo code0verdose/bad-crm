@@ -36,7 +36,7 @@ alwaysApply: true
 
    | Дельта затрагивает | Команда |
    |---|---|
-   | `docs/api/openapi.yaml` | `pnpm api:lint && pnpm api:gen && git diff --exit-code` |
+   | `docs/api/openapi.yaml` | `pnpm api:gen && git diff --exit-code` (валидность спеки проверяет контрактный набор `packages/server/test/contract/**`; отдельного `api:lint` в `package.json` нет) |
    | `schema.prisma`, миграции, репозитории | `pnpm test:integration` (Testcontainers; локально — `pnpm test:integration:local`, см. ниже) |
    | RLS-политики, новую таблицу | `pnpm test:integration` (аудит каталога входит в него) — и `pnpm check:rls -- <url>` на живом хосте, если он есть |
    | клиентские экраны и потоки | `pnpm test:e2e` (или явное обоснование, почему не гонялся) |

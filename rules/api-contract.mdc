@@ -98,13 +98,13 @@ GET /api/v1/channels/{id}/messages?page=200&perPage=50
 
 | Механизм | Что ловит |
 |---|---|
-| `pnpm api:lint` (Spectral) | невалидную спеку, отсутствующие описания и примеры |
+| `packages/server/test/contract/**` (`openapi.test.ts`, `spec-examples.test.ts`, `error-codes.test.ts`) | невалидную спеку, отсутствующие описания и примеры, расхождение спека ↔ роутер. **Скрипта `pnpm api:lint` не существует** — Spectral в проект не заводили; заведёшь — добавь строку сюда и в `package.json` одновременно |
 | `pnpm api:gen` + `git diff --exit-code` в CI | забытую регенерацию типов |
 | `packages/server/test/contract/openapi.test.ts` | route без операции и операцию без route; расхождение каталога кодов ошибок с `enum` спеки |
 | ESLint `no-restricted-globals` на `fetch` и `no-restricted-imports` на `axios` вне `packages/client/src/shared/api` | raw-запросы на клиенте |
 | Типы `openapi-fetch` | неверный путь, параметр или форму тела — ошибка компиляции |
-| `test/integration/http/idempotency.spec.ts` | отсутствие или неверную обработку `Idempotency-Key` |
-| Тест `pagination-contract.spec.ts` | `limit` без верхней границы, курсор без tie-breaker |
+| `test/integration/http/idempotency.test.ts` | отсутствие или неверную обработку `Idempotency-Key` |
+| Тест `pagination-contract.test.ts` | `limit` без верхней границы, курсор без tie-breaker |
 
 ## Исключения
 

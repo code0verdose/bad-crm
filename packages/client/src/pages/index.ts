@@ -11,5 +11,6 @@ export * from './admin-roles/index.js';
 export * from './admin-members-invite/index.js';
 export * from './accept-invite/index.js';
 export * from './employee-profile/index.js';
+export * from './settings-security/index.js';
 export * from './admin-teams/index.js';
 export * from './team-detail/index.js';

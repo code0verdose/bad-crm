@@ -39,6 +39,20 @@ export const REDACTED_PATHS: readonly string[] = [
   '*.accessToken',
   '*.refreshTokenHash',
   '*.passwordHash',
+  /**
+   * The identical gap, found on the 2FA surface (EPIC-013): `*.secret` and `*.recoveryCode` cover a
+   * key spelled exactly that way, and every call site in `identity/use-cases/*totp*` and
+   * `*recovery-code*` spells it differently — `base32Secret` (the plaintext TOTP secret, everywhere
+   * it exists in memory), `secretEnc` (the column that carries it at rest, redacted on the same
+   * principle even though it is ciphertext — a value nothing should have a reason to write down), and
+   * `recoveryCodes` (plural — the batch of ten plaintext codes `ConfirmTotpUseCase` and
+   * `RegenerateRecoveryCodesUseCase` return). `mfa-recovery-code-structure.test.ts` pins that these
+   * three are covered as the negative control for "a secret logged under this domain's own field
+   * names, not the generic ones".
+   */
+  '*.base32Secret',
+  '*.secretEnc',
+  '*.recoveryCodes',
   // The same keys one level up: `logger.info({ password })` has no parent object for `*.` to match.
   'password',
   'token',
@@ -51,4 +65,7 @@ export const REDACTED_PATHS: readonly string[] = [
   'accessToken',
   'refreshTokenHash',
   'passwordHash',
+  'base32Secret',
+  'secretEnc',
+  'recoveryCodes',
 ];

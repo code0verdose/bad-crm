@@ -10,13 +10,14 @@ export interface UserRecord {
 }
 
 /**
- * What a self-service password change needs about the caller, and the only place `passwordHash`
+ * What a self-service reauthentication needs about the caller, and the only place `passwordHash`
  * crosses this boundary.
  *
  * Deliberately not folded into `UserRecord`: that one is read on the session response and by the
  * authorization layer, and a digest that travels with it is a digest one careless serializer puts in
- * a body. This shape exists for exactly one caller — `ChangePasswordUseCase` — and leaves it only
- * into `PasswordHasherPort.verify`.
+ * a body. This shape exists for every use-case that re-checks the current password against a live
+ * session — `ChangePasswordUseCase`, `ConfirmTotpUseCase` and `RegenerateRecoveryCodesUseCase` — and
+ * leaves it only into `PasswordHasherPort.verify`.
  *
  * `email` comes along because the attempt counter is keyed on the pair of address and account
  * (`rate-limit.port.ts`): reading it here is what lets a wrong current password land in the same

@@ -189,3 +189,42 @@ describe('what a toast actually says', () => {
     expect(await screen.findByText('Too many attempts. Try again in 30 s.')).toBeInTheDocument();
   });
 });
+
+/**
+ * The control that closes a toast, which for two epics had no name at all.
+ *
+ * Mantine draws it as an icon-only `CloseButton`: a screen reader announces «button», and axe
+ * reports `button-name` against every toast the product raises. Nothing had caught it because the
+ * cases above mount `<Notifications />` directly and none of them ever scanned a rendered toast —
+ * it surfaced when axe was run over a screen that raises one (`test/widgets/totp-setup.test.tsx`).
+ *
+ * `Toaster` is the fix and the reason it is a component rather than an argument to `notify`: the
+ * label is a sentence from the catalogue, and `notify` is a module-level utility with no context to
+ * read one from.
+ */
+describe('the toast surface the application mounts', () => {
+  it('gives the dismiss control a name a screen reader can read', async () => {
+    render(
+      <MantineProvider env="test">
+        {/*
+          The suite's `cimode` instance, named rather than inherited. `initReactI18next` sets the
+          *global* default instance, so the ad-hoc English one built two cases above is what an
+          unwrapped `useTranslation` would find here — an order dependency that answers with a
+          different string depending on which file ran first.
+        */}
+        <I18nextProvider i18n={i18next}>
+          <SharedUi.Toaster limit={3} position="top-right" />
+        </I18nextProvider>
+      </MantineProvider>,
+    );
+
+    SharedUi.notify.error({ id: 'named', messageKey: 'errors.conflict' });
+
+    await screen.findByText('errors.conflict');
+
+    // CONTROL of the assertion: the control exists at all, so «has a name» is about a button and
+    // not about an empty query. `cimode` answers with the key, which is the string asserted.
+    expect(screen.getAllByRole('button')).toHaveLength(1);
+    expect(screen.getByRole('button', { name: 'common.notification.dismiss' })).toBeInTheDocument();
+  });
+});

@@ -1,0 +1,86 @@
+{
+  "title": "Security",
+  "loadFailed": "Could not read the state of your second factor.",
+  "totp": {
+    "title": "Two-factor authentication",
+    "description": "An authenticator app shows a six-digit code that changes every 30 seconds. With it switched on, a stolen password on its own is not enough to sign in as you.",
+    "status": {
+      "on": "On. Signing in asks for a code from your authenticator app."
+    },
+    "enable": "Turn on two-factor authentication",
+    "scan": {
+      "description": "Scan this with your authenticator app, or type the secret in by hand. Then enter the code it shows, together with your current password."
+    },
+    "qr": {
+      "alt": "QR code for pairing an authenticator app. The same secret is written out below as text."
+    },
+    "secret": {
+      "hint": "No camera? Type this into the app instead:"
+    },
+    "code": {
+      "label": "Code from the app",
+      "description": "Six digits. It changes every 30 seconds — if it expires while you type, use the next one."
+    },
+    "password": {
+      "label": "Your current password",
+      "description": "Asked for so that a stolen browser session cannot attach somebody else's authenticator to your account."
+    },
+    "confirm": "Confirm and turn on",
+    "cancel": "Not now",
+    "failed": {
+      "title": "Two-factor authentication was not turned on",
+      "lostAnswer": "If you are seeing this after a connection dropped mid-confirmation, two-factor authentication may already be on and your recovery codes were never shown. Go to «Replace recovery codes» below: it asks for this same password and a code from the app, and it issues a fresh set."
+    },
+    "warning": {
+      "title": "Worth knowing before you turn it on",
+      "noDisable": "There is no way to turn it off yet. Switching it off, and an administrator reset, are still being built — until they arrive, this is a one-way change.",
+      "recoveryOnly": "The recovery codes you get next are the only way back in if the phone is lost. They are stored as hashes, so nobody can look them up for you — not support, not whoever runs this server.",
+      "lostAnswer": "The codes are shown once, in the answer to the confirmation. If that answer never arrives — the connection drops, the tab closes — two-factor authentication is on and the codes are gone. A new set can still be issued from this page with your password and a code from the app."
+    }
+  },
+  "codes": {
+    "title": "Recovery codes",
+    "description": "Ten one-time codes. Each one signs you in once, when the authenticator app is not available.",
+    "remaining": "Unused: {{remaining}} of {{total}}.",
+    "low": {
+      "title": "Running out of recovery codes",
+      "description_one": "{{count}} code left. Replace the set while the app is still to hand — replacing needs a code from it.",
+      "description_other": "{{count}} codes left. Replace the set while the app is still to hand — replacing needs a code from it."
+    },
+    "none": {
+      "title": "No recovery codes left",
+      "description": "Every code has been used. The authenticator app is now the only way in, and an administrator reset does not exist yet — so issue a new set below while the app still works."
+    },
+    "regenerate": {
+      "title": "Replace recovery codes",
+      "description": "Issues ten new codes and destroys the old ones at the same moment. Use it when the codes are running low, when somebody else may have seen them, or when you never got to see them at all.",
+      "password": {
+        "label": "Your current password"
+      },
+      "code": {
+        "label": "Code from the app"
+      },
+      "submit": "Replace the codes",
+      "failed": {
+        "title": "The codes were not replaced"
+      }
+    },
+    "dialog": {
+      "title": "Your recovery codes",
+      "onceTitle": "Shown once",
+      "onceDescription": "This is the only time these codes can be read. After this window closes they cannot be shown again — only hashes of them are kept. Download or print them now.",
+      "download": "Download as .txt",
+      "print": "Print",
+      "saved": "I have saved these codes",
+      "savedHint": "Somewhere you can reach without this account: a password manager, a printout, a note kept safe.",
+      "done": "Done",
+      "close": "Close"
+    },
+    "list": {
+      "aria": "Recovery codes"
+    },
+    "file": {
+      "header": "Bad CRM recovery codes. Each code signs you in once, when your authenticator app is not available. Keep them somewhere you can reach without this account."
+    }
+  }
+}

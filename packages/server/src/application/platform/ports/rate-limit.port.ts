@@ -41,6 +41,29 @@ export const RATE_LIMIT_POLICIES = [
    * fresh budget, which is not a limit at all (the same reasoning as `confirm-password-reset`).
    */
   'invitation_accept',
+  /**
+   * Drafting a TOTP secret at `POST /auth/2fa/setup` and confirming it at `POST /auth/2fa/confirm` —
+   * one shared budget for the whole enrolment flow. Keyed on the caller, who is already authenticated
+   * at this point; 5 / 15 minutes, escalating — the same budget `auth_attempt` gives guessing a
+   * password, because a six-digit code is guessable in the same order of magnitude
+   * (`docs/security/threat-model.md`, T-IAM-04; STORY-013-01, acceptance 4).
+   */
+  'mfa_setup_attempt',
+  /**
+   * Reauthenticating with the current password and a live TOTP code before
+   * `POST /auth/2fa/recovery-codes/regenerate` is allowed to run. Keyed on the caller; 5 / 15 minutes.
+   */
+  'mfa_reauth_attempt',
+  /**
+   * Presenting a recovery code — the atomic building block `ConsumeRecoveryCodeUseCase` exercises
+   * today and the budget `POST /auth/2fa/verify` will spend from once STORY-013-03 wires the
+   * second-factor sign-in step to it. Keyed on `userId` alone (`RateLimitSubjects.mfa_recovery_consume_attempt`
+   * is `UserSubject`, rendered by `rateLimitKeyOf` as `user=${userId}` — there is no separate
+   * "pending sign-in" subject anywhere in this codebase), not on IP and email the way `auth_attempt`
+   * is: there is no email at this point in the flow, only a userId that `auth_attempt` already
+   * bounded reaching. 5 / 15 minutes (STORY-013-02, acceptance 10).
+   */
+  'mfa_recovery_consume_attempt',
 ] as const;
 
 export type RateLimitPolicy = (typeof RATE_LIMIT_POLICIES)[number];
@@ -98,6 +121,9 @@ export interface RateLimitSubjects {
   readonly client_error_report: ActorSubject;
   readonly invitation_create: UserSubject;
   readonly invitation_accept: IpSubject;
+  readonly mfa_setup_attempt: UserSubject;
+  readonly mfa_reauth_attempt: UserSubject;
+  readonly mfa_recovery_consume_attempt: UserSubject;
 }
 
 /**

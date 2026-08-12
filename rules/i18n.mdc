@@ -119,7 +119,7 @@ export const TASK_STATUS_LABEL = { todo: 'К выполнению', done: 'Го�
 | `packages/client/test/i18n/label-maps.test.ts` | готовый текст в `*.enums.ts` / `*.constant.ts` вместо `labelKey` — то, чего JSX-правило не видит |
 | CI-шаг `pnpm i18n:check` (гейты паритета + сводка в job summary) | ключ, существующий только в одном языке, **и** ключ с пустым значением — присутствующий для любого сравнения множеств и пустой для читателя |
 | CI-шаг `pnpm i18n:unused` | ключи-сироты и ключи, собранные конкатенацией (не находятся статически) |
-| `test/i18n/plural.spec.ts` для RU и EN | отсутствие форм `few`/`many` |
+| `test/i18n/plural.test.ts` для RU и EN | отсутствие форм `few`/`many` |
 | `test/i18n/error-codes-parity.test.ts` | код ошибки (или код проблемы поля) без ключа в `errors.json` любого из языков |
 | ESLint `no-restricted-syntax` на `Intl.*` и `toLocale*` вне `shared/lib/format` | форматирование мимо обёрток: зашитая локаль и новый форматтер на каждую ячейку таблицы |
 | e2e Playwright с `locale: 'ru-RU'` по ключевым экранам + скриншот-диффы | переполнение и обрезку при длинном русском тексте |

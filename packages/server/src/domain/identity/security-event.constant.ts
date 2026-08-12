@@ -109,6 +109,46 @@ export const SECURITY_EVENTS = {
    * the token or the invitee's email.
    */
   invitationAccepted: 'invitation_accepted',
+  /** A draft secret was confirmed: `totpEnabledAt` was set and a fresh recovery-code batch issued. */
+  totpEnabled: 'totp_enabled',
+  /**
+   * An already-enabled account replaced its recovery-code batch through
+   * `POST /auth/2fa/recovery-codes/regenerate`.
+   *
+   * A distinct name from `totpEnabled`, deliberately: the two are different facts about an account —
+   * one is "2FA just turned on", the other is "2FA was already on and its recovery codes were
+   * replaced" — and an operator reading `totpEnabled` twice for the same account would read the
+   * second regeneration as a second enrolment, which it is not.
+   */
+  totpRecoveryCodesRegenerated: 'totp_recovery_codes_regenerated',
+  /**
+   * `FieldEncryptionPort.decrypt` threw on a TOTP secret column — the stored value is not in the
+   * format the running `APP_ENCRYPTION_KEY` can read, whether because the key was rotated without
+   * re-encrypting existing rows or the column was corrupted.
+   *
+   * `error`, not `warn`: every account with 2FA enabled becomes unable to sign in the moment this key
+   * stops matching, which is the definition of "requires a human" (`rules/observability.mdc`, rule 7).
+   */
+  totpSecretUndecryptable: 'totp_secret_undecryptable',
+  /**
+   * A TOTP code was presented at `POST /auth/2fa/confirm` — during enrolment — or, once STORY-013-03
+   * wires the second-factor step, at sign-in, and refused: wrong, replayed, or presented against an
+   * expired or absent draft. `outcome` distinguishes them for the operator without moving the
+   * distinction into the response, exactly as `signInFailed` does for a password.
+   */
+  totpVerificationFailed: 'totp_verification_failed',
+  /**
+   * A draft secret was invalidated after five refused codes in a row (STORY-013-01, acceptance 4).
+   * Written beside the `AuditLog` entry of the same fact, not instead of it: this is the operational
+   * line an on-call engineer greps for, the audit row is the one a reviewer reads later.
+   */
+  totpSetupAbandoned: 'totp_setup_abandoned',
+  /**
+   * A recovery code was presented — at the second-factor step of sign-in, once STORY-013-03 wires it
+   * in — and refused: unknown, already used, or belonging to a different account than the pending
+   * sign-in names. One event for all three, on the same reasoning as `passwordResetRefused`.
+   */
+  recoveryCodeRefused: 'recovery_code_refused',
 } as const;
 
 export type SecurityEvent = (typeof SECURITY_EVENTS)[keyof typeof SECURITY_EVENTS];

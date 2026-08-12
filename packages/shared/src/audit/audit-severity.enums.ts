@@ -31,6 +31,20 @@ export const AUDIT_ACTION_SEVERITY: Readonly<Record<AuditAction, AuditSeverity>>
   'password.changed': 'WARNING',
   // Same, and reachable by whoever holds a mailbox rather than the old password.
   'password.reset': 'WARNING',
+  // A second factor was switched on: the event an incident review wants to find, because its absence
+  // is the difference between a leaked password being a minor and a total compromise.
+  'user.mfa_enabled': 'WARNING',
+  // Enrolment reset itself after five wrong codes. Not critical — nothing was granted or taken away —
+  // but the same level as `password.changed`: it is where an incident review starts when an account
+  // is later found compromised, because a stranger holding the password would produce exactly this.
+  'user.mfa_setup_failed': 'WARNING',
+  // A recovery code, not a TOTP code, opened the session: the alternate credential that exists
+  // specifically for "I no longer have my authenticator" was exercised. Worth a reviewer's attention
+  // even when nothing else about the sign-in is unusual, which is what `WARNING` buys here.
+  'user.mfa_recovery_code_used': 'WARNING',
+  // The whole recovery-code set was replaced. Same level as a permission override: it is a change to
+  // what can get somebody back into the account, made after the stronger reauthentication check.
+  'user.mfa_recovery_codes_regenerated': 'WARNING',
   // What a role grants is what everybody holding it may do: the composition is a change of rights
   // for a group rather than for a person, which is why it reads at the same level as an assignment.
   'role.created': 'WARNING',

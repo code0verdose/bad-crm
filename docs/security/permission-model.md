@@ -1,7 +1,7 @@
 ---
 doc: permission-model
 project: bad-crm
-updated: 2026-08-11
+updated: 2026-08-12
 ---
 
 # Bad CRM — модель прав и доступов
@@ -19,6 +19,15 @@ updated: 2026-08-11
   [`stack.md`](../architecture/stack.md), раздел «Безопасность в коде»; изоляция арендаторов —
   см. `rls-design.md` и [`data-model.md`](../architecture/data-model.md), раздел
   «Мульти-тенантность и RLS».
+
+**Как читать статусы (сверка с кодом 2026-08-12).** Документ — спецификация целевой модели, а
+продукт реализует её по эпикам, поэтому части разделов описывают то, чего ещё нет. Такие места
+помечены явно: врезкой о статусе (§8), колонкой «сегодня»/«в коде» в таблицах (§7, §8, §10) или
+пометкой *(планируется)*. Правило, которое стоило одной ошибочной поправки и потому вынесено сюда:
+**на непомеченное «планируется» ссылаться как на компенсирующий контроль нельзя** — если
+обоснование решения опирается на механизм, найдите этот механизм в коде прежде, чем принимать
+решение. Кратко о самом крупном пробеле: **аудита отказов сегодня нет никакого** (§10, «Отказы»), и
+кеша прав нет тоже (§8).
 
 Связанные документы: [`data-model.md`](../architecture/data-model.md) (группа «Права и доступ»),
 [`overview.md`](../architecture/overview.md) (сквозной механизм «б»),
@@ -161,8 +170,12 @@ export const requiredLevel = (key: PermissionKey): AccessLevel | null =>
 3. **`requiredLevel` живёт только в коде**, в БД не дублируется: это свойство логики, а не данных,
    и меняется вместе с реализацией use-case.
 
-**Синхронизация с таблицей `Permission`.** Сид (`prisma/seed/permissions.seed.ts`) выполняется в
-той же транзакции, что и миграция при деплое:
+**Синхронизация с таблицей `Permission`.** Сид — `packages/server/scripts/seed-permissions.ts`
+(`pnpm db:seed:permissions`), **отдельная команда** установки и обновления, а не часть транзакции
+миграции: он ходит миграционным подключением (`DATABASE_MIGRATION_URL`), потому что `app_user` эту
+таблицу только читает — приложение, способное писать каталог, могло бы выдать себе право. Решение о
+том, что менять, принимает чистая функция `planCatalog` (`scripts/seed-permissions.util.ts`), и оно
+применяется одним `$transaction`:
 
 ```ts
 for (const key of PERMISSIONS) {
@@ -188,10 +201,13 @@ await tx.permission.updateMany({
 
 Поведение с deprecated-ключом:
 
-- при вычислении эффективных прав **игнорируется** (ключа нет в `PERMISSION_SET`);
+- при вычислении эффективных прав **игнорируется** — и это сделано на чтении, в
+  `effective-permissions-reader.adapter.ts`: строки с `deprecatedAt` отфильтрованы там же, где строки
+  превращаются в capability;
 - в админ-UI матрица показывает его серым с плашкой «выведено из употребления»;
-- ночной джоб считает `RolePermission`/`UserPermissionOverride` на deprecated-ключи и отдаёт
-  метрикой: ненулевое значение дольше двух релизов означает, что забыли чистку.
+- *(планируется)* джоб считает `RolePermission`/`UserPermissionOverride` на deprecated-ключи и
+  отдаёт метрикой: ненулевое значение дольше двух релизов означает, что забыли чистку. Джоба нет —
+  планировщика в продукте пока не существует вообще, и до него отчёт снимается запросом руками.
 
 **Уточнение к data-model.md:** таблице `Permission` нужна колонка `deprecatedAt DateTime?`
 (в текущей редакции её нет — см. таблицу расхождений в §12).
@@ -205,6 +221,13 @@ await tx.permission.updateMany({
 
 **Кастомные роли** (`isSystem = false`) организация собирает из каталога: любой набор существующих
 ключей. Изобрести новый ключ нельзя — вешать его не на что.
+
+Системные роли пишет не сид, а use-case — `ProvisionSystemRolesUseCase`
+(`application/iam/use-cases/provision-system-roles.use-case.ts`), вызываемый из двух мест: при
+регистрации организации и на обновлении. Второе — причина, по которой это use-case, а не строка
+установочного скрипта: состав системной роли живёт в коде (`SYSTEM_ROLE_PERMISSIONS`), и ключ,
+добавленный в матрицу §4, обязан доехать до уже существующих инсталляций без миграции на каждое
+изменение матрицы.
 
 ```ts
 export const SYSTEM_ROLE_KEYS = [
@@ -223,7 +246,7 @@ export const SYSTEM_ROLE_PERMISSIONS: Readonly<
 | Таблица | Ключевые поля | Инварианты |
 |---|---|---|
 | `Role` | `organizationId`, `key`, `name`, `description`, `isSystem`, `isDefault`, `priority` | `uq_roles_org_key(organization_id, key)`; ровно одна `isDefault` роль на организацию (частичный уникальный индекс) |
-| `RolePermission` | `roleId`, `permissionKey` → `Permission.key` | **только ALLOW**; `uq_role_permissions(role_id, permission_key)`; для `isSystem`-ролей строки пишет только сид |
+| `RolePermission` | `roleId`, `permissionKey` → `Permission.key` | **только ALLOW**; `uq_role_permissions(role_id, permission_key)`; для `isSystem`-ролей строки пишет только `ProvisionSystemRolesUseCase` |
 | `UserRole` | `userId`, `roleId`, `grantedById`, `grantedAt`, `expiresAt?` | `uq_user_roles(user_id, role_id)`; истёкшее назначение прав не даёт |
 
 **`RolePermission` содержит только ALLOW.** Отрицание на уровне роли делает систему нечитаемой:
@@ -288,9 +311,14 @@ model UserPermissionOverride {
 - Один ключ — одна строка на человека (`uq(userId, permissionKey)`): «два разных мнения об одном
   праве» невозможны по схеме, а не по договорённости.
 
-Джоб-чистильщик раз в час удаляет истёкшие строки и инкрементит `permissionsVersion` затронутых
-пользователей. До того как джоб отработал, истёкший оверрайд **уже не действует**: фильтр по
-`expiresAt` стоит в самом запросе (§5, краевой случай 1).
+Истёкший оверрайд **не действует с самой секунды `expiresAt`**: фильтр
+`(expiresAt IS NULL OR expiresAt > now())` стоит в самом запросе сборки Actor (§5, краевой случай 1),
+и это единственный механизм, который здесь работает.
+
+*(планируется)* Джоб-чистильщик удаляет истёкшие строки и инкрементит `permissionsVersion`
+затронутых пользователей. **Его нет** — как нет и планировщика, который его запускал бы, — поэтому
+истёкшие строки накапливаются в таблице до ручной уборки. На решение о доступе это не влияет
+(предикат выше), на содержимое экрана исключений — тоже: §7(ж) отдаёт только действующие.
 
 ### Слой 4 — resource-scoped ACL
 
@@ -868,9 +896,12 @@ Capability из этой таблицы — **необходимое, но не 
 | `job:read` | job | read | — | нет | platform |
 | `job:retry` | job | retry | — | **да** | platform |
 
-**Итого: 331 ключ, из них 111 отмечены `isDangerous`.** Числа зафиксированы тестом
-`permissions.catalog.spec.ts` (снапшот длины массива) — не чтобы охранять константу, а чтобы
-добавление права было заметно в диффе PR и требовало осознанного ревью.
+**Итого: 331 ключ, из них 111 отмечены `isDangerous`.** Оба числа зафиксированы гейтом
+`test/permissions/catalog-matches-model.test.ts`: он разбирает таблицы §3 **этого документа** и
+сверяет их с `permissions.catalog.ts` ключ за ключом и поле за полем, а отдельным случаем —
+вытаскивает регуляркой эту самую фразу и сравнивает две цифры с длиной массива и числом опасных
+ключей. Отсюда практическое следствие для редактирующего документ: формат строки таблицы и формулу
+«Итого: N ключ…, из них M отмечены `isDangerous`» ломать нельзя — гейт разбирает их буквально.
 
 *Каталог дополнен 7 ключами 2026-08-05 при проектировании корпоративной почты*
 ([ADR-0025](../architecture/adr/0025-corporate-mail-stalwart.md),
@@ -1158,9 +1189,14 @@ Capability из этой таблицы — **необходимое, но не 
   передано. `transfer-ownership` этой проверки **не делает и не должна**: она не снимает владельца, а
   переставляет `organizations.owner_id` на проверенного активного получателя в той же транзакции, что
   и роли, — колонка `NOT NULL` не бывает пустой (§2, «Про owner»).
-- **Снять с себя право `role:update`.** UI блокирует ячейку (см. `ux-architecture.md`,
-  «Управление ролями и правами»), сервер дополнительно отклоняет операцию, если она лишает актора
-  `role:update`, — иначе организация запирается без администратора.
+- **Снять с себя право, которым правят права.** Правило узкое и покрывает **два** ключа —
+  `role:update` и `role:delete` (`GOVERNS_RIGHTS` в `domain/iam/access/role-composition.policy.ts`):
+  и правка состава роли, и удаление роли целиком проходят через одну проверку `locksOutSelf`, потому
+  что удаление — это снятие всех её прав со всех носителей, включая актора. UI блокирует ячейку (см.
+  `ux-architecture.md`, «Управление ролями и правами»), сервер отклоняет операцию с `self_lockout`, —
+  иначе организация запирается без администратора. Шире правило намеренно не идёт: администратор,
+  сознательно сужающий собственную роль, пока кто-то другой держит остальное, — это нормальная
+  операция, а не ошибка.
 
 ---
 
@@ -1175,7 +1211,7 @@ Actor {
   roleIds[], roleKeys[], teamIds[],
   permissions: Set<PermissionKey>,   # роли ∪ ALLOW-оверрайды (непросроченные)
   denied:      Set<PermissionKey>,   # DENY-оверрайды (непросроченные)
-  isOwner: bool,                     # активное назначение системной роли owner
+  isOwner: bool,                     # organizations.owner_id == userId (§2, «Про owner»)
   permissionsVersion: int
 }
 
@@ -1265,7 +1301,7 @@ can(actor, key, ref = null):
 | 11 | нет | `ALLOW` (истёк) | ≥ требуемого | **DENY** | `permission_not_granted` |
 | 12 | любое | любое | ресурс не найден | **DENY → HTTP 404** | `resource_not_found` |
 | 13 | любое | любое | ошибка резолва | **DENY → HTTP 503** | `acl_resolution_failed` |
-| 14 | owner | `DENY` (аномалия в БД) | любой | **ALLOW** + алерт | — |
+| 14 | owner | `DENY` (аномалия в БД) | любой | **ALLOW**, молча | — (сигнала нет — краевой случай 2) |
 | 15 | да | нет | право без ресурса (`requiredLevel = null`) | **ALLOW** | — |
 | 16 | да | нет | требуется ресурс, но не передан | **DENY** | `resource_required` |
 
@@ -1274,7 +1310,7 @@ can(actor, key, ref = null):
 это и дешевле, и не даёт по времени ответа отличить «нет права» от «нет объекта».
 
 ```ts
-// packages/shared/src/permissions/deny-reason.ts
+// packages/shared/src/permissions/deny-reason.enums.ts
 export const DENY_REASONS = [
   'not_authenticated', 'unknown_permission', 'permission_not_granted',
   'denied_by_override', 'resource_required', 'resource_not_found',
@@ -1367,26 +1403,35 @@ RFC 9457 (спецификация их прямо разрешает), а не 
 
 ### Краевые случаи
 
-**1. Истёкший override.** `UserPermissionOverride.expiresAt < now()` — строка ещё в БД (джоб не
-отработал), но в выборку не попадает: фильтр `(expiresAt IS NULL OR expiresAt > now())` стоит в
-запросе сборки Actor. Итог: человек падает обратно на права ролей. Опасная ловушка — кеш: Actor,
-собранный до истечения, живёт в Redis; поэтому TTL кеша (60 c, §8) **не больше** гранулярности,
-с которой мы обещаем отзыв по времени, а при выдаче временного ALLOW use-case ставит отложенную
-задачу инвалидации на момент `expiresAt`. `now()` здесь — запись предиката, а не реализация: у
-Prisma-репозиториев (`effective-permissions-reader.adapter.ts`, `user-role.repository.ts`,
-`custom-role.repository.ts`) это `new Date()` — часы приложения на момент сборки запроса, а не
-`now()`, вычисленный Postgres внутри `WHERE`. Для этого деплоя (один Node-процесс, один Postgres,
-обычно один хост `docker-compose.yml`) разница между двумя часами не имеет эксплуатационного
-значения, и это окно уже накрыто TTL кеша выше — отдельного бюджета на рассинхронизацию часов не
-заводим.
+**1. Истёкший override.** `UserPermissionOverride.expiresAt < now()` — строка ещё в БД (чистильщика
+нет, см. слой 3), но в выборку не попадает: фильтр `(expiresAt IS NULL OR expiresAt > now())` стоит
+в самом запросе сборки Actor. Итог: человек падает обратно на права ролей **на следующем же
+запросе**. `now()` здесь — запись предиката, а не реализация: у Prisma-репозиториев
+(`effective-permissions-reader.adapter.ts`) это `new Date()` — часы приложения на момент сборки
+запроса, а не `now()`, вычисленный Postgres внутри `WHERE`. Для этого деплоя (один Node-процесс,
+один Postgres, обычно один хост `docker-compose.yml`) разница между двумя часами не имеет
+эксплуатационного значения — отдельного бюджета на рассинхронизацию часов не заводим.
 
-**2. DENY у owner.** Запрещено на записи: use-case `create-permission-override` отклоняет с
-`last_owner_required`/`owner_immutable`, плюс страховка в БД — триггер `ck_upo_not_owner`,
-отклоняющий вставку `effect = DENY` для пользователя с активной ролью `owner`. Если строка всё же
-появилась (ручной SQL, восстановление из старого дампа) — рантайм её **игнорирует** (шаг 1
-проверяет `isOwner` первым), пишет `logger.error` и метрику `permission_owner_deny_found_total`,
-по которой настроен алерт. Причина такой избыточности: организация, где владелец потерял право
-`role:assign`, не чинится изнутри продукта вообще.
+Ранняя редакция добавляла здесь, что «это окно уже накрыто TTL кеша выше»: **ссылка недействительна
+— кеша нет**, §8 описывает не реализованное. Actor сегодня собирается заново на каждый запрос
+(`build-actor.query.ts`), поэтому окна между истечением и отзывом не существует вовсе, и никакой TTL
+его не покрывает и не обязан. Когда кеш появится, ограничение вернётся в обратную сторону: TTL
+станет **верхней границей** запаздывания отзыва, и его придётся выбирать под обещанную
+гранулярность, а не наоборот.
+
+**2. DENY у owner.** Запрещено на записи: use-case отклоняет с
+`last_owner_required`/`owner_immutable`, плюс страховка в БД — триггер `ck_upo_not_owner`
+(миграция `20260805130000_user_permission_overrides`), отклоняющий `effect = DENY` для пользователя,
+**совпадающего с `organizations.owner_id`** — не «с активной ролью `owner`»: триггер и рантайм
+читают один и тот же указатель, иначе страховка защищала бы не то, что проверяет политика.
+
+Если строка всё же появилась (ручной SQL, восстановление из старого дампа) — рантайм её
+**игнорирует** (шаг 1 проверяет `isOwner` первым, `can.util.ts`). Ранняя редакция обещала здесь ещё
+`logger.error` и метрику `permission_owner_deny_found_total` с алертом: **ни того, ни другого нет**,
+и метрика в проекте не зарегистрирована (§10, «Отказы»). То есть аномалия отрабатывается корректно и
+**молча**: продукт от неё не ломается, но и не сообщает о ней — знать о такой строке можно только
+запросом в БД. Причина, по которой избыточность вообще нужна, от этого не меняется: организация,
+где владелец потерял право `role:assign`, не чинится изнутри продукта вообще.
 
 **3. ACL на предке и потомке одновременно.** Проект: `TEAM=backend → EDITOR`. Документ внутри:
 `USER=ivan → VIEWER`. Иван — в команде backend. Обход останавливается на самом документе, ответ —
@@ -1423,7 +1468,8 @@ guest — всегда `NONE`. Пока ему не выдали `ResourceAcl(TA
 **9. Иерархия сломана: у ресурса нет родителя.** `Task.boardColumnId` указывает на удалённую доску,
 `DocPage.parentPageId` — на удалённую страницу. `ancestorChain` возвращает `null` вместо цепочки →
 `accessReader` отдаёт `null` → **404** и `logger.warn` с `resourceId`: это баг целостности, его
-ловит ночной integrity-джоб (см. `data-model.md`, «Полиморфные связи»), а не тихое «разрешить».
+ловит integrity-джоб (запланирован вместе с доменом; см. `data-model.md`, «Полиморфные связи»), а не
+тихое «разрешить».
 
 **10. Права изменились между проверкой и выполнением.** Actor собран в начале запроса; в середине
 транзакции админ отобрал право. Мы **не** перечитываем права внутри запроса: цена — окно в
@@ -1544,16 +1590,22 @@ LIMIT 1;                      -- ближайший узел с записями
 принимает `domain`, данные для решения приносит порт `application`, транспорт только переводит
 результат в HTTP.
 
-| Слой | Файл | Ответственность | Чего здесь нет |
+Колонка «сегодня» — путь в текущем коде; где стоит «—», файла ещё нет и строка описывает целевую
+форму (примеры ниже с доменом `task` — иллюстрации: домена `task` в продукте нет, первым доменом с
+ACL станет проект, EPIC-014).
+
+| Слой | Роль | Сегодня | Чего здесь нет |
 |---|---|---|---|
-| `packages/shared` | `permissions/permissions.catalog.ts`, `can.ts`, `access-level.ts` | каталог, типы, чистый `can()` | I/O, знание о БД |
-| `domain` | `domain/<context>/access/*.policy.ts` | правила: `canUpdateTask(actor, scope): Decision` | запросы, Prisma, HTTP |
-| `application` | `application/<context>/ports/*-access-reader.port.ts` | интерфейс «принеси scope» | реализация |
-| `application` | `application/<context>/use-cases/*.use-case.ts` | прочитать scope → policy → выполнить | сами правила |
-| `application` | `application/access/services/effective-permissions.service.ts` | сборка `Actor`, кеш | правила |
-| `infrastructure` | `persistence/prisma/*-access-reader.adapter.ts`, `redis/permission-cache.adapter.ts` | SQL, Redis | решения о доступе |
-| `presentation` | `middleware/require-permission.middleware.ts` | fail-fast по capability | ACL (не знает `resourceId`) |
-| `client` | `units/auth/service/hooks/use-can.hook.ts`, `shared/ui/can.component.tsx` | видимость элементов | безопасность |
+| `packages/shared` | каталог, типы, единственная лестница capability | `permissions/permissions.catalog.ts`, `can.util.ts`, `access-level.enums.ts`, `deny-reason.enums.ts` | I/O, знание о БД |
+| `domain` | правила: `can…(actor, scope): Decision` | `domain/access/{authorize,decision}.util.ts`, `domain/iam/access/*.policy.ts` | запросы, Prisma, HTTP |
+| `application` | интерфейс «принеси факты о правах» | `application/iam/ports/effective-permissions-reader.port.ts` | реализация |
+| `application` | прочитать scope → policy → выполнить | `application/iam/use-cases/*.{use-case,query}.ts` | сами правила |
+| `application` | сборка `Actor` | `application/iam/use-cases/build-actor.query.ts` (кеша нет — §8) | правила |
+| `infrastructure` | SQL | `persistence/prisma/effective-permissions-reader.adapter.ts` | решения о доступе |
+| `infrastructure` | Redis-кеш прав | — (`PermissionCachePort` не заведён) | — |
+| `presentation` | fail-fast по capability | `presentation/http/middleware/require-permission.middleware.ts` | ACL (не знает `resourceId`) |
+| `client` | видимость элементов | `units/iam/service/hooks/use-can.hook.ts`, `units/iam/ui/can.component.tsx` | безопасность |
+| `domain` | ACL-политика и access-reader'ы | — (STORY-011-06, blocked до EPIC-014) | — |
 
 ### (а) Domain — чистые policy-функции
 
@@ -1675,91 +1727,109 @@ export class UpdateTaskUseCase {
 Порядок «сначала `taskScope`, потом `findById`» неслучаен: если объекта нет или он чужой, мы
 отвечаем 404, ни разу не прочитав его содержимое.
 
-### (г) EffectivePermissionsService — сборка Actor
+### (г) `BuildActorQuery` — сборка Actor
 
 ```ts
-// application/access/services/effective-permissions.service.ts
-export class EffectivePermissionsService implements EffectivePermissionsPort {
+// application/iam/use-cases/build-actor.query.ts
+export class BuildActorQuery {
   constructor(
-    private readonly reader: PermissionReaderPort,   // SQL: роли, оверрайды, команды, версия
-    private readonly cache: PermissionCachePort,     // Redis
-    private readonly logger: LoggerPort,
+    private readonly unitOfWork: UnitOfWorkPort,
+    private readonly permissions: EffectivePermissionsReaderPort,
   ) {}
 
-  async forUser(userId: UserId, organizationId: OrganizationId): Promise<Actor> {
-    const version = await this.reader.permissionsVersion(userId);   // дешёвое чтение одной колонки
-    const key = `perm:${userId}:${version}`;
+  async execute(input: BuildActorInput): Promise<Actor> {
+    return this.unitOfWork.withTenant({ ...input }, async () => {
+      const facts = await this.permissions.capabilitiesOf(input.userId);
 
-    const cached = await this.cache.get(key);
-    if (cached) return hydrate(cached);
+      if (facts === null) throw denyAccess('user', 'other_organization');   // 404, не 403
 
-    const raw = await this.reader.load(userId, organizationId);     // 1 запрос, см. ниже
-    const actor = buildActor(raw);
-    if (actor.permissionsVersion === version) {                     // версия не сдвинулась во время сборки
-      await this.cache.set(key, dehydrate(actor), { ttlSeconds: 60 });
-    }
-    return actor;
+      return { userId: input.userId, organizationId: input.organizationId,
+               isOwner: facts.isOwner, permissionsVersion: facts.permissionsVersion,
+               permissions: new Set(facts.granted), denied: new Set(facts.denied),
+               roleKeys: facts.roleKeys };
+    });
   }
 }
 ```
 
-`PermissionReaderPort.load` — **один** запрос с тремя `LEFT JOIN LATERAL` (роли → права, оверрайды,
-членство в командах), покрытый индексом `role_permissions (organization_id, role_id) INCLUDE
-(permission_key)` из `data-model.md`. Собирается один раз на HTTP-запрос и кладётся в
-`AsyncLocalStorage` рядом с tenant-контекстом — повторный вызов `forUser` внутри одного запроса
-берёт из памяти процесса, а не из Redis.
+**Права читаются на каждый запрос, а не берутся из токена**: токен говорит, что было верно в момент
+выдачи, а критерий STORY-011-04 — что следующий запрос идёт уже с новыми правами и без перелогина.
+
+**Кеша нет.** §8 ниже описывает 60-секундный кеш по `permissionsVersion` как целевую форму; в коде
+нет ни `PermissionCachePort`, ни Redis-адаптера, ни памяти на запрос. Цена сегодня — одно индексное
+чтение на каждый гвард; `Actor` в пределах одного запроса кладётся в `res.locals` гвардом
+(`readActor`), а не в `AsyncLocalStorage`, и повторный `execute` внутри одного запроса — это
+повторный запрос в БД. Кеш вводится тогда, когда появится экран, делающий это чтение горячим, — а не
+раньше, потому что кеш без измеренной нужды это то, о чём всем приходится рассуждать и незачем.
+
+`EffectivePermissionsReaderPort` имеет две операции над **одними** строками:
+`capabilitiesOf` (свёрнутый вид для решения) и `attributedCapabilitiesOf` (тот же вид с атрибуцией —
+для §7(ж)). Предикаты срока и фильтр `deprecatedAt` живут в одном месте намеренно: разъехавшись,
+экран объяснял бы администратору права, которых гвард не даёт.
 
 ### (д) Presentation — middleware как fail-fast
 
 ```ts
 // presentation/http/middleware/require-permission.middleware.ts
-export const requirePermission =
-  (key: PermissionKey) =>
-  async (req: Request, _res: Response, next: NextFunction): Promise<void> => {
-    const actor = req.actor;                                   // положен auth-middleware
-    if (!actor) return next(new UnauthorizedError('not_authenticated'));
-    if (!effectivePermission(actor, key)) {
-      return next(new ForbiddenError('permission_not_granted', { permission: key }));
-    }
-    next();                                                    // ACL проверит use-case
-  };
+export const createPermissionMiddleware = (
+  dependencies: PermissionGuardDependencies,
+  permission: SharedPermissions.PermissionKey,
+): RequestHandler => async (_request, response, next) => {
+  try {
+    const caller = readCaller(response);                       // положен authenticate-middleware
+    const actor = await dependencies.buildActor.execute({
+      userId: caller.userId, organizationId: caller.organizationId,
+    });
 
-// routes/task.routes.ts
-router.patch('/tasks/:taskId', requirePermission('task:update'), taskController.update);
+    (response.locals as ActorLocals)[ACTOR] = actor;           // controller возьмёт readActor()
+
+    // Отказ кодируется ресурсом, о котором право: `role:assign` → `role_forbidden`.
+    assertAllowed(authorizeCapability(actor, permission), refusalResourceOf(permission));
+
+    next();
+  } catch (error) {
+    next(error);
+  }
+};
 ```
 
+Гвард **не монтируется руками у маршрута**: реестр (§9в) перечисляет декларации, и middleware
+навешивается обходом реестра — иначе «забыл добавить гвард» остаётся возможным по построению.
+
 **Middleware — оптимизация, а не авторитет.** Он отсекает заведомо бесправные запросы до парсинга
-тела и до похода в БД, но `resourceId` он не резолвит и цепочку ACL проверить не может. Правило,
+тела и до чтения объекта, но `:id` он не резолвит и цепочку ACL проверить не может. Правило,
 проверяемое ревью и тестом: **каждый маршрут, изменяющий или читающий объект, обязан иметь проверку
-в use-case; middleware обязателен дополнительно** (реестр §9в требует объявленный `permission`
-у каждого маршрута).
+в use-case; middleware обязателен дополнительно** (реестр §9в требует у маршрута с параметром имя
+use-case в `aclCheckedIn`).
+
+**Отказ гварда не оставляет записи в аудите** — `assertAllowed` только бросает. Это важно для §10:
+проверка, срабатывающая раньше всех, — единственная, у которой вообще нет места для записи в момент
+срабатывания.
 
 ### (е) Клиент — подсказка UI
 
 ```ts
-// GET /api/v1/me/permissions → { permissions: PermissionKey[], roles: string[], version: number }
-// ETag: "perm-{userId}-{version}", Cache-Control: private, must-revalidate
+// GET /api/v1/me/permissions →
+//   { permissions: PermissionKey[], denied: PermissionKey[], roles: string[],
+//     isOwner: boolean, version: number }
+// ETag: "perm-{userId}-{version}", Cache-Control: private, must-revalidate; 304 на If-None-Match
 
-// units/auth/service/queries/me-permissions.query.ts
-export const mePermissionsQuery = () => queryOptions({
-  queryKey: QueryKeys.Auth.permissions(),
-  queryFn: ({ signal }) => AuthApi.getMyPermissions({ signal }),
-  staleTime: 5 * 60_000,
-});
-
-// units/auth/service/hooks/use-can.hook.ts
-export function useCan(permission: PermissionKey, resource?: ResourceRef): boolean {
-  const { data } = useSuspenseQuery(mePermissionsQuery());
-  const view = useMemo(() => toCapabilityView(data), [data]);
-  return can(view, permission, resource?.accessLevel);   // тот же can() из packages/shared
-}
+// units/iam/service/queries/my-permissions.query.ts
+// units/iam/service/hooks/use-can.hook.ts
 ```
 
+`denied` и `isOwner` отдаются **сознательно**, а не «на всякий случай»: клиент считает подсказку той
+же функцией `capabilityOutcome` из `packages/shared`, а её лестница начинается с владельца и
+DENY-оверрайдов. Отдай сервер только объединённый список — клиент либо потерял бы обе верхние
+ступени, либо завёл бы вторую, свою лестницу, что и есть риск R-15.
+
 ```tsx
-// shared/ui/can.component.tsx — тонкая обёртка без логики
-export function Can({ permission, resource, fallback = null, children }: CanProps) {
-  return useCan(permission, resource) ? <>{children}</> : <>{fallback}</>;
-}
+// units/iam/ui/can.component.tsx — тонкая обёртка без логики
+export const Can = ({ permission, accessLevel, children, fallback }: CanProps): ReactNode => {
+  const { can } = IamHooks.useCan();
+
+  return can(permission, accessLevel) ? children : (fallback ?? null);
+};
 ```
 
 - **Уровень ACL конкретного объекта клиент не вычисляет.** Сервер отдаёт его вместе с объектом
@@ -1808,7 +1878,8 @@ GET /api/v1/users/{userId}/permissions        → permission:override_read
    `permission:explain`.
 
 Просроченные исключения в ответе отсутствуют, а не помечаются неактивными: оверрайд перестаёт
-действовать в момент `expiresAt`, а не когда отработает часовой чистильщик (§5, краевой случай 1), —
+действовать в момент `expiresAt`, а не когда отработает чистильщик (которого пока нет; §5, краевой
+случай 1), —
 и показывать его значило бы показывать несуществующее правило.
 
 Источник ответа — тот же `capabilityOutcome`, что и у гарда; операция добавляет только атрибуцию,
@@ -1820,20 +1891,28 @@ GET /api/v1/users/{userId}/permissions        → permission:override_read
 
 ## Кеширование и инвалидация
 
-### Что кешируется
+> **Статус раздела: спроектировано, не реализовано (сверено 2026-08-12).** Ни Redis-кеша прав, ни
+> `PermissionCachePort`, ни лока `perm:lock:{userId}`, ни заголовка `X-Permissions-Stale` в коде нет.
+> Сегодня `Actor` собирается заново на каждый гвард (`build-actor.query.ts`) — одно индексное чтение,
+> без кеша и без слоя памяти на запрос. Раздел оставлен как проект будущей оптимизации, но ссылаться
+> на него как на действующий контроль — нельзя: одна такая ссылка уже стояла в §5 (краевой случай 1)
+> и была неверна. Реализовано и работает из всего раздела ровно одно: **инкремент
+> `permissionsVersion` в той же транзакции**, что и изменение прав, — и он не оптимизация, а условие
+> корректности будущего кеша.
 
-| Что | Где | Ключ | TTL | Инвалидация |
-|---|---|---|---|---|
-| `Actor` (capability) | Redis | `perm:{userId}:{permissionsVersion}` | 60 c | сменой версии (ключ становится недостижимым) |
-| `Actor` | память процесса (`AsyncLocalStorage`) | — | время запроса | конец запроса |
-| `permissionsVersion` | чтение из БД на каждый запрос | — | — | — |
-| Уровень ACL ресурса | **не кешируется** между запросами | — | — | мемоизация в пределах одного запроса |
-| Каталог permissions | статический импорт | — | вечно | релиз |
+### Что кешируется (целевая форма)
 
-**`permissionsVersion` читается всегда** — это `SELECT permissions_version FROM users WHERE id = $1`
-по первичному ключу, единицы микросекунд и index-only scan. Именно поэтому TTL не выполняет роль
-инвалидации: он существует только как страховка от «зависших» ключей и от разъезда данных при
-восстановлении Redis из снапшота.
+| Что | Где | Ключ | TTL | Инвалидация | Сегодня |
+|---|---|---|---|---|---|
+| `Actor` (capability) | Redis | `perm:{userId}:{permissionsVersion}` | 60 c | сменой версии (ключ становится недостижимым) | — нет |
+| `Actor` | память процесса | — | время запроса | конец запроса | частично: гвард кладёт `Actor` в `res.locals`, контроллер читает `readActor()` |
+| `permissionsVersion` | чтение из БД на каждый запрос | — | — | — | ✅ читается в составе фактов на каждый гвард |
+| Уровень ACL ресурса | **не кешируется** между запросами | — | — | мемоизация в пределах одного запроса | неприменимо: ACL нет (STORY-011-06) |
+| Каталог permissions | статический импорт | — | вечно | релиз | ✅ |
+
+**`permissionsVersion` читается всегда** — по первичному ключу, единицы микросекунд и index-only
+scan. Именно поэтому TTL не выполняет роль инвалидации: он существует только как страховка от
+«зависших» ключей и от разъезда данных при восстановлении Redis из снапшота.
 
 **Уровень ACL не кешируется между запросами намеренно.** Он зависит от пары
 (субъект × ресурс × цепочка предков): ключей получилось бы больше, чем самих строк, а инвалидация
@@ -1844,46 +1923,56 @@ GET /api/v1/users/{userId}/permissions        → permission:override_read
 
 Всегда **в той же транзакции**, что и само изменение:
 
-| Событие | Кому инкрементим |
-|---|---|
-| `UserRole` создан / удалён / истёк | этому пользователю |
-| `RolePermission` изменён | всем носителям роли (`UPDATE … WHERE id IN (SELECT user_id FROM user_roles WHERE role_id = $1)`) |
-| `Role` удалена | всем бывшим носителям |
-| `UserPermissionOverride` создан / изменён / удалён / истёк | этому пользователю |
-| `ResourceAcl` создан / изменён / удалён | субъекту (`USER`), всем носителям роли (`ROLE`), всем членам команды (`TEAM`) |
-| `TeamMember` добавлен / удалён | этому пользователю |
-| `ProjectMember` добавлен / удалён / `leftAt` | этому пользователю |
-| `User.status → SUSPENDED`, `deletedAt` | этому пользователю (плюс отзыв сессий) |
-| Передача владения | обоим участникам |
+| Событие | Кому инкрементим | Сегодня |
+|---|---|---|
+| `UserRole` создан / удалён | этому пользователю | ✅ |
+| `UserRole` истёк | этому пользователю | — (нет джоба; до него право уже не действует по предикату) |
+| `RolePermission` изменён | всем носителям роли (`UPDATE … WHERE id IN (SELECT user_id FROM user_roles WHERE role_id = $1)`) | ✅ |
+| `Role` удалена | всем бывшим носителям | ✅ |
+| `UserPermissionOverride` создан / изменён / удалён | этому пользователю | ✅ |
+| `UserPermissionOverride` истёк | этому пользователю | — (та же причина) |
+| `ResourceAcl` создан / изменён / удалён | субъекту (`USER`), всем носителям роли (`ROLE`), всем членам команды (`TEAM`) | — (STORY-011-06, blocked) |
+| `TeamMember` добавлен / удалён | этому пользователю | ✅ |
+| `ProjectMember` добавлен / удалён / `leftAt` | этому пользователю | — (проектов нет, EPIC-014) |
+| `User.status → SUSPENDED`, `deletedAt` | этому пользователю (плюс отзыв сессий) | ✅ |
+| Передача владения | **обоим** участникам, одним `updateMany` | ✅ |
 
 Массовый инкремент — один `UPDATE` по индексу, без цикла в приложении: цикл в JS дал бы N
 транзакций и окно, в котором часть людей уже с новыми правами, а часть ещё со старыми.
 
 ### Гонки и как их избегаем
 
-1. **Чтение версии → сборка → запись в кеш.** Между чтением и записью права могли измениться, и
+Пункты 1, 2, 5 и 6 описывают поведение **будущего кеша**; сегодня кеша нет, поэтому эти гонки не
+возникают и не защищены — они возникнут вместе с ним. Пункты 3, 4 и 7 — про сегодня.
+
+1. *(с кешем)* **Чтение версии → сборка → запись в кеш.** Между чтением и записью права могли измениться, и
    мы записали бы устаревший Actor под новым ключом. Защита: версия перечитывается в конце сборки
    и, если сдвинулась, результат **не кладётся** в кеш (код §7г) — следующий запрос соберёт заново.
-2. **Кеш-штамп (stampede).** Сброс версии у популярной роли обнуляет ключи сразу многим. Сборка
+2. *(с кешем)* **Кеш-штамп (stampede).** Сброс версии у популярной роли обнуляет ключи сразу многим. Сборка
    идёт под коротким Redis-локом `perm:lock:{userId}` (`SET NX PX 3000`); не получивший лок ждёт
    до 200 мс и, если не дождался, собирает сам (лучше лишний запрос, чем ожидание).
 3. **Read-your-writes.** Админ поменял свои права и сразу открыл страницу: инкремент и изменение в
    одной транзакции, версия читается из БД (не из кеша), поэтому новый ключ гарантированно
    промахивается и права перечитываются. Гонка невозможна по построению.
-4. **Access-token с устаревшей версией.** В токене лежит `permissionsVersion` на момент выдачи
-   (см. `data-model.md`). Middleware сравнивает её с БД: при расхождении токен не отвергается, а
-   права **перечитываются** (и клиенту отдаётся заголовок `X-Permissions-Stale: 1`, по которому он
-   инвалидирует `me/permissions`). Отвергать токен нельзя — иначе любое изменение прав разлогинивает
-   человека посреди работы.
-5. **Redis недоступен.** `PermissionCachePort` при ошибке логирует и возвращает `miss` — система
+4. **Access-token с устаревшей версией.** В токене лежит `permissionsVersion` на момент выдачи.
+   Реализовано **не так, как здесь было написано**: `AuthenticateSessionQuery` сравнивает claim со
+   строкой пользователя и при расхождении отвечает **401** — токен перестаёт считаться действующим
+   (`context.permissionsVersion === claims.permissionsVersion` в списке условий пригодности).
+   Заголовка `X-Permissions-Stale` не существует. Разлогинивания при этом не происходит: 401
+   обрабатывает клиентский refresh-цикл, новый access-token выписывается с актуальной версией, и
+   запрос повторяется — то есть изменение прав стоит один лишний round-trip, а не сессию. Это
+   осознанно более строгий вариант, чем «перечитать права»: токен со старой версией не должен
+   считаться пригодным ни для чего, потому что тот же claim закрывает и отзыв сессии при офбординге.
+5. *(с кешем)* **Redis недоступен.** `PermissionCachePort` при ошибке логирует и возвращает `miss` — система
    работает медленнее, но корректно. Кеш **никогда** не является источником решения о доступе:
    недоступность кеша не превращается ни в deny-всем, ни в allow-всем.
 6. **Отрицательного кеширования нет.** Мы не кешируем результат `can()` — только исходные данные
    (`Actor`). Иначе инвалидация превращается в обход всех пар (пользователь × ключ × ресурс).
-7. **Истечение по времени** (`expiresAt` у оверрайда, назначения роли, ACL). Плановая задача на
-   момент истечения инкрементит версию; часовой джоб-чистильщик — страховка. До срабатывания
-   любого из них фильтр `expiresAt > now()` в запросе уже исключает запись, а окно ошибки
-   ограничено TTL кеша (60 c).
+7. **Истечение по времени** (`expiresAt` у оверрайда, назначения роли). Сегодня работает **только**
+   фильтр `expiresAt > now()` в запросе сборки — и его достаточно ровно потому, что кеша нет: право
+   исчезает на первом же запросе после срока. Плановая задача на момент истечения и джоб-чистильщик
+   (страховка) — не реализованы; когда появится кеш, они станут обязательными, а не страховочными:
+   иначе истёкшая строка продолжит действовать до конца TTL.
 
 ---
 
@@ -1895,7 +1984,8 @@ Policy — чистые функции, поэтому покрытие стро
 Формат — таблица случаев, а не набор `it()` с копипастой:
 
 ```ts
-// domain/task/access/task-access.policy.spec.ts
+// иллюстрация; реальные табличные тесты policy лежат в
+// packages/server/test/unit/domain/access/*.test.ts (домена task в продукте нет)
 const cases: ReadonlyArray<{
   name: string; actor: Partial<Actor>; scope: Partial<TaskScope>;
   expected: boolean; reason?: DenyReason;
@@ -1928,118 +2018,167 @@ it.each(cases)('$name', ({ actor, scope, expected, reason }) => {
 
 ### (б) Permission-matrix snapshot test — главный предохранитель
 
-Интеграционный тест поднимает приложение с тестовой БД, создаёт по одному пользователю на каждую
-системную роль, прогоняет **все пары (роль × endpoint)** и сверяет фактический ответ со снапшотом
-в репозитории. Любое случайное расширение прав валит CI с человекочитаемым диффом.
+`packages/server/test/permissions/permission-matrix.test.ts`. Тест поднимает приложение по одному
+разу на ячейку, подставляет актора с ровно тем набором прав, который даёт системная роль, зовёт
+каждый **guarded**-маршрут реестра по HTTP (supertest поверх одного слушающего сокета) и сверяет
+исход с закоммиченным снапшотом. Любое случайное расширение прав валит CI с человекочитаемым
+диффом, где направление названо словами.
 
-Формат снапшота — **JSON, отсортированный детерминированно** (`method`, затем `path`), чтобы дифф
-читался глазами:
+Три уточнения, каждое из которых раньше было описано неверно:
+
+- **«Все пары роль × endpoint» — это пары роль × *guarded*-маршрут.** Матрица берёт
+  `createRouteRegistry(...).filter(isGuardedRoute)`: сегодня это **27** маршрутов из 50. Публичные и
+  `selfService`-маршруты в неё не входят по построению — у первых нет актора, у вторых нет
+  капабилити, и «роль × маршрут» для них не определена. Их прикрывают другие гейты: `openapi.test.ts`
+  (форма авторизации совпадает с контрактом в обе стороны) и `acl-coverage.test.ts`
+  (`ownershipCheckedIn` назван и разрешается в существующий класс).
+- **БД не поднимается.** Тест гоняется на реальном HTTP-стеке, но с in-memory-двойниками портов
+  (`test/support/auth-app.util.ts`): проверяется маршрут + гвард + use-case + politика, то есть ровно
+  тот шов, где «забыли подключить проверку». Testcontainers здесь не нужен и стоил бы минуты на
+  каждую из 189 ячеек.
+- **Формат снапшота — `{ catalogSize, matrix }`**, где `matrix` — `роль → "МЕТОД /путь" → исход`.
+  Полей `snapshotVersion`, `roles[]`, `endpoints[]`, `fixture`, `requiredLevel` в файле нет.
 
 ```jsonc
 // packages/server/test/permissions/__snapshots__/permission-matrix.json
 {
-  "$schema": "./permission-matrix.schema.json",
-  "snapshotVersion": 1,
-  "catalogSize": 318,
-  "roles": ["owner", "admin", "manager", "lead", "developer", "viewer", "guest"],
-  "fixture": "permission-matrix.fixture.ts@v3",   // какой набор данных использован
-  "endpoints": [
-    {
-      "method": "PATCH",
-      "path": "/api/v1/tasks/{taskId}",
-      "permission": "task:update",
-      "requiredLevel": "EDITOR",
-      "fixtureResource": "task.publicProject.memberEditable",
-      "matrix": {
-        "owner":     "allow",
-        "admin":     "allow",
-        "manager":   "allow",
-        "lead":      "allow",
-        "developer": "allow",
-        "viewer":    "deny:permission_not_granted",
-        "guest":     "deny:resource_not_found"
-      }
+  "catalogSize": 331,
+  "matrix": {
+    "owner": {
+      "GET /api/v1/roles": "allow",
+      "PATCH /api/v1/roles/:roleId": "deny:role_not_found",
+      "GET /api/v1/users/:userId/permissions": "allow"
+      // …27 маршрутов
     },
-    {
-      "method": "POST",
-      "path": "/api/v1/invoices/{invoiceId}/issue",
-      "permission": "invoice:issue",
-      "requiredLevel": null,
-      "fixtureResource": "invoice.draft",
-      "matrix": {
-        "owner": "allow", "admin": "deny:permission_not_granted",
-        "manager": "allow", "lead": "deny:permission_not_granted",
-        "developer": "deny:permission_not_granted",
-        "viewer": "deny:permission_not_granted", "guest": "deny:resource_not_found"
-      }
+    "viewer": {
+      "GET /api/v1/roles": "deny:role_forbidden"
+      // …
     }
-  ]
+    // …7 системных ролей
+  }
 }
 ```
 
-Значение ячейки — `allow` либо `deny:<DenyReason>`. Хранить именно причину, а не голый `deny`,
+Значение ячейки — `allow` либо `deny:<reason ?? code>`: сначала берётся `reason` из `problem+json`
+(это `DenyReason`), и только если его нет — код ошибки. Хранить именно причину, а не голый `deny`,
 принципиально: подмена 404 на 403 (утечка существования объекта) — это регресс безопасности, и он
-обязан быть виден в диффе.
+обязан быть виден в диффе. `catalogSize` едет рядом с матрицей, чтобы ключ, добавленный **без**
+изменения матрицы, тоже был заметен: право, которого никто не выдаёт и никакой маршрут не проверяет,
+— это либо недоделка, либо кандидат в `deprecated`.
 
-Кастомный сериализатор печатает падение так:
+Падение печатается так (`describeChange`):
 
 ```
-permission-matrix изменилась (3 отличия):
-  + viewer   PATCH /api/v1/tasks/{taskId}          deny:permission_not_granted → allow   ⚠ расширение прав
-  - lead     POST  /api/v1/timesheets/{id}/approve allow → deny:permission_not_granted
-  ~ guest    GET   /api/v1/docs/{docId}            deny:resource_not_found → deny:permission_not_granted  ⚠ раскрытие существования
-Если изменение намеренное: pnpm test:permissions -u и приложите обоснование к PR.
+права изменились — проверь направление и обнови снапшот осознанно:
+  ⚠ расширение прав: viewer GET /api/v1/roles deny:role_forbidden → allow
+  ⚠ раскрытие существования: guest GET /api/v1/teams/:teamId deny:resource_not_found → deny:permission_not_granted
+  изменение: lead DELETE /api/v1/teams/:teamId allow → deny:team_forbidden
+UPDATE_PERMISSION_MATRIX=1 pnpm --filter @bad-crm/server test permission-matrix
 ```
 
 Правила вокруг снапшота:
 
-- Обновление снапшота (`-u`) в PR **требует отдельного ревью** — CODEOWNERS на путь
-  `test/permissions/__snapshots__/**`.
-- Строка со значком `⚠ расширение прав` в отчёте обязывает описать причину в теле PR (проверяется
-  шаблоном PR, а не только совестью).
-- Тест гоняется на **реальном HTTP-стеке** (supertest + поднятая БД), а не на policy напрямую:
-  иначе он не поймает маршрут, где проверку забыли подключить.
+- Обновление снапшота — **не** `-u` vitest, а переменная окружения `UPDATE_PERMISSION_MATRIX=1`:
+  тест сначала считает диффы, печатает их и только потом, по явному разрешению, перезаписывает файл.
+  Флаг `-u` перезаписал бы снапшот молча, вместе со всеми прочими снапшотами прогона.
+- CODEOWNERS на путь снапшота — **правило пока не введено** (файла `CODEOWNERS` в репозитории нет).
+  До него единственная защита — что дифф читаем и назван словами; заводить CODEOWNERS стоит вместе с
+  первым внешним контрибьютором.
+- Строка со значком `⚠ расширение прав` обязывает описать причину в теле PR.
+
+**Матрица роль × маршрут в машинном виде — это и есть снапшот**, документ её не дублирует: копия
+на 189 ячеек разъехалась бы с файлом на первом же изменении. Что документ обязан держать — это
+привязка «маршрут → право → место проверки объекта», и она ниже.
+
+#### Guarded-маршруты сегодня (27)
+
+Сверено с `route-registry.factory.ts` 2026-08-12. Колонка `aclCheckedIn` — имя use-case, который
+принимает авторитетное решение; для маршрута с `:id`-параметром оно обязательно (§9в).
+
+| Маршрут | Право | `aclCheckedIn` |
+|---|---|---|
+| `GET /api/v1/roles` | `role:read` | `ListRolesQuery` |
+| `POST /api/v1/roles/preview-changes` | `role:read` | `PreviewRoleChangesQuery` |
+| `POST /api/v1/roles/apply-changes` | `role:update` | `ApplyRoleChangesUseCase` |
+| `POST /api/v1/roles` | `role:create` | `CreateCustomRoleUseCase` |
+| `PATCH /api/v1/roles/:roleId` | `role:update` | `UpdateCustomRoleUseCase` |
+| `DELETE /api/v1/roles/:roleId` | `role:delete` | `DeleteCustomRoleUseCase` |
+| `POST /api/v1/users/:userId/roles` | `role:assign` | `AssignRoleUseCase` |
+| `DELETE /api/v1/users/:userId/roles/:roleId` | `role:revoke` | `RevokeRoleUseCase` |
+| `GET /api/v1/teams` | `team:read` | `ListTeamsQuery` |
+| `POST /api/v1/teams` | `team:create` | `CreateTeamUseCase` |
+| `GET /api/v1/teams/:teamId` | `team:read` | `GetTeamDetailQuery` |
+| `PATCH /api/v1/teams/:teamId` | `team:update` | `UpdateTeamUseCase` |
+| `DELETE /api/v1/teams/:teamId` | `team:delete` | `DeleteTeamUseCase` |
+| `POST /api/v1/teams/:teamId/members` | `team:manage_members` | `AddTeamMemberUseCase` |
+| `DELETE /api/v1/teams/:teamId/members/:userId` | `team:manage_members` | `RemoveTeamMemberUseCase` |
+| `GET /api/v1/invitations` | `invitation:read` | `ListInvitationsQuery` |
+| `POST /api/v1/invitations` | `invitation:create` | `CreateInvitationUseCase` |
+| `POST /api/v1/invitations/:invitationId/resend` | `invitation:resend` | `ResendInvitationUseCase` |
+| `DELETE /api/v1/invitations/:invitationId` | `invitation:revoke` | `RevokeInvitationUseCase` |
+| `GET /api/v1/employees` | `employee:read` | `ListEmployeesQuery` |
+| `GET /api/v1/employees/org-chart` | `employee:view_org_chart` | `GetOrgChartQuery` |
+| `POST /api/v1/organization/transfer-ownership` | `organization:transfer_ownership` | `TransferOwnershipUseCase` |
+| `POST /api/v1/users/:userId/deactivate` | `user:suspend` | `DeactivateUserUseCase` |
+| `POST /api/v1/users/:userId/reactivate` | `user:reactivate` | `ReactivateUserUseCase` |
+| `GET /api/v1/users/:userId/permissions` | `permission:override_read` | `GetUserPermissionsQuery` |
+| `PUT /api/v1/users/:userId/permission-overrides/:permission` | `permission:override` | `WritePermissionOverrideUseCase` |
+| `DELETE /api/v1/users/:userId/permission-overrides/:permission` | `permission:override` | `RemovePermissionOverrideUseCase` |
+
+Ни у одного из этих прав `requiredLevel` не задан (`null`) — ресурсного слоя в продукте ещё нет,
+поэтому каждая ячейка снапшота сегодня отражает **только** capability. С первым ACL-доменом
+(EPIC-014) у матрицы появится второе измерение, и форма файла выбрана так, чтобы это было
+дополнением, а не переписыванием.
 
 ### (в) CI-правило «нет маршрута без объявленной permission»
 
 Маршруты объявляются через реестр, а не россыпью по файлам:
 
-```ts
-// presentation/http/routes/registry.ts
-export const ROUTE_REGISTRY = [
-  { method: 'PATCH', path: '/tasks/:taskId', permission: 'task:update',
-    handler: taskController.update, aclCheckedIn: 'UpdateTaskUseCase' },
-  { method: 'GET', path: '/health', public: true,
-    publicReason: 'liveness-проба балансировщика, данных не отдаёт' },
-] as const satisfies readonly RouteDeclaration[];
-```
+Реестр — **функция**, а не константа: `createRouteRegistry(container.http)` в
+`presentation/http/route-registry.factory.ts` принимает собранные контроллеры и возвращает
+`RouteDeclaration[]`. Не `ROUTE_REGISTRY as const`: декларация держит уже связанные обработчики, а
+их нельзя получить на уровне модуля, не потянув composition root в каждый импорт реестра.
+
+**Форм авторизации три, а не две** — и третья заведена не здесь, а в §3.20, где отсутствие права
+над собственными сессией и паролем объяснено по существу:
 
 ```ts
-type RouteDeclaration =
-  | { method: HttpMethod; path: string; permission: PermissionKey; handler: Handler;
-      aclCheckedIn?: string }
-  | { method: HttpMethod; path: string; public: true; publicReason: string; handler?: Handler };
+type RouteDeclaration = GuardedRoute | PublicRoute | SelfServiceRoute;
+//  GuardedRoute      — permission: PermissionKey (+ aclCheckedIn?: string)
+//  PublicRoute       — public: true, publicReason: string
+//  SelfServiceRoute  — selfService: true, selfServiceReason: string,
+//                      ownershipCheckedIn: string   // обязателен, а не опционален
 ```
 
-Проверки в CI (падают сборку, а не предупреждают):
+`SelfServiceRoute` снимает **только** проверку каталога; аутентификация с маршрута не снимается
+(`requiresAuthentication` — «всё, кроме публичного»). Обязательный `ownershipCheckedIn` — цена за
+эту форму: она же самое удобное место спрятать эндпоинт, которому полагалось право.
 
-1. `satisfies` + `PermissionKey` — **опечатка в ключе не компилируется**; это проверка типов, а не
-   тест.
-2. Каждый зарегистрированный в Express маршрут присутствует в `ROUTE_REGISTRY`
-   (сравнение `app._router.stack` с реестром — тот же приём, что в контрактном тесте OpenAPI,
-   `stack.md`).
-3. Каждая запись реестра либо имеет `permission`, либо `public: true` **с непустым**
-   `publicReason` (публичных маршрутов — единицы: `/health`, `/ready`, `/metrics`, `/link/:token`,
-   логин, приглашение, сброс пароля; их список тоже снапшотится).
-4. Для маршрутов с `:id`-параметром обязателен `aclCheckedIn` — имя use-case, который проверяет
-   ACL; тест `acl-coverage.spec.ts` убеждается, что такой класс существует и вызывает `assertAllowed`.
-5. Каждый ключ каталога используется хотя бы в одном месте (реестр, policy или матрица ролей) —
-   «мёртвое право» либо удаляется, либо получает `deprecated`.
+Проверки, падающие в CI:
+
+1. **Тип.** Ключ вне каталога не компилируется, а «маршрут без права и без объяснения» —
+   структурная ошибка union'а, то есть отказ сборки, а не тест, который можно забыть написать.
+2. **Каждый смонтированный Express-маршрут есть в реестре и наоборот** —
+   `test/contract/openapi.test.ts` («mounts exactly what the registry declares» / «leaves no registry
+   entry unmounted»), сравнение идёт с обходом `app`-стека, нормализуя `:id` и `{id}` к одной форме.
+3. **Форма авторизации совпадает с контрактом в обе стороны** — `test/contract/route-authorization.test.ts`
+   и тот же `openapi.test.ts`: реестр объявляет ровно ту форму (`x-permission` / `x-public-reason` /
+   `x-self-service-reason`), которую публикует `docs/api/openapi.yaml`, а `publicReason` непустой.
+4. **Маршрут с `:id`-параметром называет use-case** — `test/contract/acl-coverage.test.ts`. Тест
+   проверяет, что имя **есть** и что оно разрешается в реально экспортируемый класс. Чего он **не**
+   проверяет — что внутри этого класса есть вызов `assertAllowed`; ранняя редакция обещала и это.
+   Такую проверку нечем сделать честно, пока она статическая (вызов может быть в приватном методе
+   или в policy, которую use-case зовёт), и её место — матрица §9б, где решение измеряется по HTTP.
+5. **Мёртвых прав нет** — правило есть, гейта на него **нет**. Сегодня оно выполняется тривиально:
+   `SYSTEM_ROLE_PERMISSIONS.owner` содержит все 331 ключ, то есть каждый ключ «используется» матрицей
+   ролей. Осмысленная проверка — «ключ, который не проверяет ни один маршрут и не даёт ни одна роль,
+   кроме owner» — это работа для `permission-matrix-auditor` (§9г), а не для регулярки.
 
 ### (г) Агент `permission-matrix-auditor`
 
 Отдельный субагент в commit-гейте (рядом с `security-auditor`), запускается, когда дельта трогает
-`permissions.catalog.ts`, `SYSTEM_ROLE_PERMISSIONS`, `ROUTE_REGISTRY`, `*.policy.ts` или снапшот.
+`permissions.catalog.ts`, `SYSTEM_ROLE_PERMISSIONS`, `route-registry.factory.ts`, `*.policy.ts` или
+снапшот матрицы.
 Проверяет то, чего не видит регулярка:
 
 1. Новый ключ добавлен в каталог, но не выдан ни одной роли и не используется ни одним маршрутом —
@@ -2059,8 +2198,11 @@ type RouteDeclaration =
 
 - **Кросс-тенантность:** запрос актором организации A к объекту организации B → 404, а не 403
   (и не пустой массив с 200).
-- **Инвалидация:** изменение роли → следующий запрос отражает новые права без перелогина
-  (интеграционный тест на Redis).
+- **Инвалидация:** изменение роли → следующий запрос отражает новые права без перелогина. Кеша нет,
+  поэтому проверять нечего инвалидировать: гарантия держится на том, что `Actor` собирается заново
+  на каждый гвард, а `permissionsVersion` инкрементится в той же транзакции (и рассинхронизация
+  версии с токеном даёт 401 → refresh, §8, гонка 4). Интеграционного теста «на Redis» не существует
+  и не должно, пока нет Redis-кеша.
 - **`beforeLoad`-гарды и `useCan`** на клиенте: юнит-тесты на `can()` из `shared` (та же функция,
   что на сервере — один набор случаев прогоняется в обоих пакетах).
 - **E2E** (Playwright): пользователь с ролью `viewer` не видит кнопку и получает понятный экран
@@ -2076,30 +2218,48 @@ type RouteDeclaration =
 само изменение (иначе при откате остаётся запись о несостоявшемся событии, а при падении после
 коммита — событие теряется).
 
-| `action` | `resourceType` | `before` / `after` | `severity` |
-|---|---|---|---|
-| `role.created`, `role.updated`, `role.deleted` | `ROLE` | `{ key, name, permissions[] }` — полный набор ключей до и после | `warning` |
-| `role.assigned`, `role.revoked` | `USER_ROLE` | `{ userId, roleKey, expiresAt }` | `warning` |
-| `permission.override.created`, `.updated`, `.deleted` | `USER_PERMISSION_OVERRIDE` | `{ userId, permissionKey, effect, reason, expiresAt }` | `warning` |
-| `permission.override.expired` | `USER_PERMISSION_OVERRIDE` | `after: null`, `actorType = SYSTEM` | `info` |
-| `acl.granted`, `acl.updated`, `acl.revoked` | `RESOURCE_ACL` | `{ resourceType, resourceId, subjectType, subjectId, accessLevel, expiresAt }` | `warning` |
-| `organization.ownership_transferred` | `ORGANIZATION` | `{ fromUserId, toUserId }` | `critical` |
-| `user.impersonation_started`, `.ended` | `USER` | `{ targetUserId, requestId }` | `critical` |
-| `permission.denied.dangerous` | тип целевого ресурса | `{ permissionKey, reason, resourceId }` | `warning` |
-| `permissions.recomputed` | `USER` | `{ userId, oldVersion, newVersion, trigger }` | `info` |
-| `vault.escrow_used` | `VAULT` | `{ vaultId, custodianIds }` | `critical` |
-| `audit.exported` | `AUDIT_LOG` | `{ filter, rowCount }` | `critical` |
-| `permission.inspected` | `USER` | нет `before`/`after` — факт чтения, а не изменения | `info` |
+Колонка «в коде» — есть ли действие в закрытом каталоге
+`packages/shared/src/audit/audit-action.enums.ts` **сегодня**. Строки без ✅ — целевая форма,
+приезжающая со своим доменом; читать их как описание работающего механизма нельзя.
+
+| `action` | `resourceType` | `before` / `after` | `severity` | в коде |
+|---|---|---|---|---|
+| `role.created`, `role.updated`, `role.deleted` | `ROLE` | `{ key, name, permissions[] }` — полный набор ключей до и после | `warning` | ✅ |
+| `role.dangerous_granted` | `ROLE` | состав, в котором оказался ключ с `isDangerous` | `warning` | ✅ |
+| `role.assigned`, `role.revoked` | `USER_ROLE` | `{ userId, roleKey, expiresAt }` | `warning` | ✅ |
+| `permission.override.created`, `.updated`, `.deleted` | `USER_PERMISSION_OVERRIDE` | `{ userId, permissionKey, effect, reason, expiresAt }` | `warning` | ✅ |
+| `permission.override.expired` | `USER_PERMISSION_OVERRIDE` | `after: null`, `actorType = SYSTEM` | `info` | — (нужен джоб истечения, которого нет — §3, слой 3) |
+| `acl.granted`, `acl.updated`, `acl.revoked` | `RESOURCE_ACL` | `{ resourceType, resourceId, subjectType, subjectId, accessLevel, expiresAt }` | `warning` | — (STORY-011-06, blocked) |
+| `organization.ownership_transferred` | `ORGANIZATION` | `before: { ownerId }` / `after: { ownerId, previousOwnerRoleKey }` | `critical` | ✅ |
+| `rls.bypassed` | `ORGANIZATION` | намеренный обход изоляции арендатора | `critical` | ✅ |
+| `user.impersonation_started`, `.ended` | `USER` | `{ targetUserId, requestId }` | `critical` | — (`user:impersonate` не реализован) |
+| `permission.denied.dangerous` | тип целевого ресурса | `{ permissionKey, reason, resourceId }` | `warning` | — **нет; аудита отказов сегодня нет вообще, см. «Отказы»** |
+| `permissions.recomputed` | `USER` | `{ userId, oldVersion, newVersion, trigger }` | `info` | — |
+| `vault.escrow_used` | `VAULT` | `{ vaultId, custodianIds }` | `critical` | — (EPIC-035) |
+| `audit.exported` | `AUDIT_LOG` | `{ filter, rowCount }` | `critical` | — (EPIC-016) |
+| `permission.inspected` | `USER` | нет `before`/`after` — факт чтения, а не изменения | `info` | ✅ |
+
+`organization.ownership_transferred` пишет **не** `{ fromUserId, toUserId }`, как стояло в ранней
+редакции, а пару `before`/`after` по той самой колонке, которая является авторитетом
+(`transfer-ownership.use-case.ts`): `before: { ownerId }` — прежнее значение
+`organizations.owner_id`, `after: { ownerId, previousOwnerRoleKey }` — новое плюс роль, на которую
+посажен прежний владелец. Форма выбрана под таблицу, а не под фразу: журнал отвечает «что было и что
+стало» одинаково для всех записей, а `previousOwnerRoleKey` — единственный факт передачи, которого
+больше нигде нет.
 
 Дополнительно: `VaultAccessLog` фиксирует `VIEW/DECRYPT/COPY/EXPORT/SHARE/REVOKE` независимо от
 `AuditLog` — у vault отдельный журнал по требованию домена (`data-model.md`, группа 7).
 
+Каталог действий закрыт и сегодня содержит 34 имени; все они — про **свершившееся изменение**, плюс
+одно чтение (`permission.inspected`). Ни одного действия про отказ в нём нет, и это не умолчание
+формулировки, а состояние продукта — см. «Отказы».
+
 **Почему `permission.inspected` — читающее действие в списке «что логируется всегда» (поправка
-2026-08-11, STORY-011-11).** Общее правило ниже, в «Отказы», говорит только про отказы на `GET`:
-«Отказы на чтение (`GET`) в `AuditLog` не пишутся — только метрика». Про **успешные** чтения правило
-не говорит ничего — молчание нормы, а не запрет, и до этой поправки `GET /users/{userId}/permissions`
-не аудировался просто потому, что никто не завёл для него действие, а не потому, что §10 это
-запрещал.
+2026-08-11, STORY-011-11).** Норма в «Отказы» ниже говорит только про **отказы** на `GET` («в
+`AuditLog` не пишутся — только метрика», и то как целевое правило, а не как реализованное). Про
+**успешные** чтения она не говорит ничего — молчание нормы, а не запрет, и до этой поправки
+`GET /users/{userId}/permissions` не аудировался просто потому, что никто не завёл для него
+действие, а не потому, что §10 это запрещал.
 
 Это чтение — не рядовой `GET`, а прямой аналог уже аудируемых чтений выше в этой же таблице:
 `audit.exported` и `vault.escrow_used` логируются именно потому, что показывают то, что одни люди
@@ -2114,10 +2274,28 @@ type RouteDeclaration =
 
 Пишется только на успешный ответ (`{ type: 'USER', id: <субъект> }`, без `before`/`after` — читать
 нечего менять), `severity: info`: сам факт просмотра не требует внимания дежурного, но обязан
-оставлять след для ревизии. Отказ по этому же праву — другой случай: `permission:override_read`
-помечено `dangerous: true` (`permissions.catalog.ts`), и на него распространяется уже существовавшее
-правило «отказ по праву с `isDangerous` — всегда» из раздела «Отказы» ниже; два правила не
-пересекаются, потому что одно про успех, а другое про отказ.
+оставлять след для ревизии.
+
+**На чём эта поправка держится и на чём — нет (ревизия 2026-08-12).** Первая её редакция
+обосновывала объём так: «отказ по этому же праву покрыт уже существовавшим правилом „отказ по праву
+с `isDangerous` — всегда“, и два правила не пересекаются, потому что одно про успех, а другое про
+отказ». **Обоснование неверно: правила про отказы в коде не существует.** В `AUDIT_ACTIONS` нет ни
+одного действия про отказ (объявленного здесь `permission.denied.dangerous` в каталоге нет);
+`assertAllowed` — чистый `throw` без записи, и в `get-user-permissions.query.ts` он стоит **до**
+`withTenant` и до `audit.record`, а гвард `require-permission.middleware.ts` отказывает ещё раньше,
+до входа в use-case. Отказ оседает только строкой общего обработчика ошибок
+(`error-handler.middleware.ts`) — с актором и статусом, но без субъекта и без ключа права.
+
+Отсюда честный объём: `permission.inspected` покрывает **одну ветку из двух** — «кто посмотрел и
+увидел». Ветка «кто перебирал, не имея права» не покрыта в `AuditLog` ничем. Перебор
+`GET /users/{userId}/permissions` актором без `permission:override_read` следа в журнале не
+оставляет, и любое рассуждение, опирающееся на аудит отказов, к этому эндпоинту неприменимо.
+
+Решение оставлено в силе именно в этом объёме, а не отменено: аудит успешных чтений полезен сам по
+себе и покрывает основную массу обращений — право есть у `owner` и `admin` (§4.2), то есть у тех,
+кто эти чтения и делает, и «кто читал персональные исключения коллег» журнал теперь отвечает. Но
+формулировка «след остаётся в любом случае» из нормы убрана: аудит отказов — не косметика к этой
+поправке, а её **вторая половина**, и до EPIC-016 это названный пробел, а не молчание нормы.
 
 ### Что именно кладём в `before` / `after`
 
@@ -2133,38 +2311,70 @@ type RouteDeclaration =
 
 ### Отказы
 
-Логируются **не все** отказы: 403 на каждом клике по скрытой кнопке залил бы журнал. Пишем:
+**Сегодня отказ не пишется в `AuditLog` вообще — ни один.** Раздел раньше описывал целевое правило
+в настоящем времени, и на него успели сослаться как на действующий компенсирующий контроль (поправка
+про `permission.inspected` выше). Поэтому сначала — что есть, потом — что задумано.
+
+**Что есть.** Отказ по capability бросается `assertAllowed` (`domain/access/decision.util.ts`) и
+долетает до общего обработчика (`presentation/http/error-handler.middleware.ts`), который пишет одну
+строку `logger.warn(… 'request rejected')`; pino-http добавляет завершающую строку запроса. В них
+есть `requestId`, метод, **шаблон** маршрута (`/api/v1/users/:userId/permissions`), статус и — через
+`AsyncLocalStorage` — `organizationId` и `userId` **актора**. В них нет: ключа права, `DenyReason`
+(он уходит в тело ответа, а не в лог) и **субъекта** — параметры пути в лог не попадают, потому что
+URL не логируется ни на каком уровне. Это лог приложения: он ротируется, не защищён
+`REVOKE UPDATE, DELETE` и в журнал организации не попадает.
+
+**Чего нет.** Действия `permission.denied.dangerous` в каталоге нет. Агрегата серий нет — считать
+их нечем: планировщика и очереди в продукте пока не существует. Метрики
+`permission_denied_total{reason}` нет: `MetricsPort` объявляет ровно три вещи —
+`http_requests_total`, `http_request_duration_seconds` и `auth_rate_limited_total`
+(`infrastructure/metrics/prom-client.adapter.ts`), и алерт на перебор прав из них не строится.
+Единственный сигнал, который сегодня можно получить, — это `http_requests_total{status="403"}` по
+шаблону маршрута, без актора и без причины.
+
+**Целевое правило** (EPIC-016, «Журнал действий») — то, что раньше стояло здесь как факт:
 
 - отказ по праву с `isDangerous` — всегда;
 - отказ после успешной аутентификации на изменяющем запросе (`POST/PATCH/DELETE`) — всегда;
 - серии отказов (> 10 за минуту от одного актора) — одной агрегированной записью + метрика
   `permission_denied_total{reason}` и алерт: это признак либо расхождения UI с сервером, либо
-  перебора.
+  перебора;
+- отказы на чтение (`GET`) в `AuditLog` не пишутся — только метрика.
 
-Отказы на чтение (`GET`) в `AuditLog` не пишутся — только метрика.
+Реализуя его, придётся решить то, обо что правило спотыкается прямо сейчас: **отказ происходит
+раньше, чем открыт тенант**. Гвард и первая строка use-case отказывают до `withTenant`, а запись в
+`AuditLog` идёт внутри него — значит, запись отказа либо получает собственный путь (свой
+`withTenant` из данных токена), либо делается в общем обработчике, который к этому моменту знает
+только код ошибки. Пока этот выбор не сделан, ни одна фраза этого документа не вправе утверждать,
+что отказ оставляет след.
 
 ### Кто может смотреть
 
-| Что | Право |
-|---|---|
-| Общий журнал организации | `audit:read` |
-| События безопасности (права, vault, impersonation, escrow) | `audit:read_security` (`dangerous`) |
-| Выгрузка журнала | `audit:export` (`dangerous`, само действие логируется как `critical`) |
-| Настройка срока хранения | `audit:manage_retention` (только `owner`) |
-| Эффективные права **другого** человека с источником каждого (`GET /users/{userId}/permissions`) | `permission:override_read` |
-| «Почему у этого человека есть доступ» (explain-экран) | `permission:explain` |
+| Что | Право | Сегодня |
+|---|---|---|
+| Общий журнал организации | `audit:read` | — экрана и эндпоинта нет (EPIC-016) |
+| События безопасности (права, vault, impersonation, escrow) | `audit:read_security` (`dangerous`) | — |
+| Выгрузка журнала | `audit:export` (`dangerous`, само действие логируется как `critical`) | — |
+| Настройка срока хранения | `audit:manage_retention` (только `owner`) | — |
+| Эффективные права **другого** человека с источником каждого (`GET /users/{userId}/permissions`) | `permission:override_read` | ✅ STORY-011-11 |
+| «Почему у этого человека есть доступ» (explain-экран) | `permission:explain` | — (нужен `ResourceAcl`) |
+
+Записи в `AuditLog` пишутся уже сейчас (таблица выше), а **читать** их через продукт пока нельзя:
+журнал действий — это EPIC-016. До него журнал доступен только через БД, и это отдельная причина не
+считать его компенсирующим контролем для чего бы то ни было раньше времени.
 
 **Экран прав сотрудника** (`permission:override_read`) реализован в STORY-011-11 и описан в §7(ж).
 Он отвечает на «что этот человек может и кто это устроил» — capability со ступенью решения по
 каждому ключу. Отдельное право, а не доля `permission:read`: каталог прав секретом не является, а
 персональные исключения с причинами — являются.
 
-**Экран объяснения** (`permission:explain`) — прямое требование риска R-15: по паре
-(пользователь, право) показывает цепочку решения — какая роль дала, какой оверрайд перебил, какой
-узел ACL сработал и какая запись `ResourceAcl` его создала (с `grantedById` и `reason`). Тот же
-результат сервер отдаёт как `explain`-эндпоинт `GET /api/v1/permissions/explain?userId&key&resourceId`,
-и он использует **тот же** код `can()`, а не свою копию — иначе объяснение начнёт расходиться
-с решением.
+**Экран объяснения** (`permission:explain`) — прямое требование риска R-15, и его **ещё нет**: он
+отвечает на «почему человек дотягивается до **этого объекта**», а объектного слоя в продукте нет
+(STORY-011-06, blocked до EPIC-014). Целевая форма: по паре (пользователь, право) показывать цепочку
+решения — какая роль дала, какой оверрайд перебил, какой узел ACL сработал и какая запись
+`ResourceAcl` его создала (с `grantedById` и `reason`); сервер отдаёт то же самое эндпоинтом
+`GET /api/v1/permissions/explain?userId&key&resourceId`, который обязан использовать **тот же** код
+`can()`, а не свою копию — иначе объяснение начнёт расходиться с решением.
 
 Изменять `AuditLog` не может никто: на таблице `REVOKE UPDATE, DELETE` для роли приложения
 (`data-model.md`, группа 14). Аудит, который приложение может переписать, аудитом не является.

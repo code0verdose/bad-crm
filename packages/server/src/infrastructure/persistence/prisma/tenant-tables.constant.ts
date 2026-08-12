@@ -80,6 +80,18 @@ export const TENANT_TABLES = {
     softDeleted: true,
     rowTimestamps: true,
   },
+  mfa_recovery_codes: {
+    model: 'MfaRecoveryCode',
+    tenantColumn: 'organization_id',
+    // UPDATE, because spending a code is `UPDATE ... SET used_at = now() WHERE used_at IS NULL`, the
+    // one atomic statement the whole table exists for (`RecoveryCodeRepositoryPort.markUsed`). DELETE,
+    // because regenerating the set removes every row of the account in the same transaction that
+    // writes the fresh batch (STORY-013-02, acceptance 7) — a bulk stamp would leave superseded rows
+    // this table has no screen to show.
+    appUserPrivileges: ['SELECT', 'INSERT', 'UPDATE', 'DELETE'],
+    softDeleted: false,
+    rowTimestamps: true,
+  },
   password_reset_tokens: {
     model: 'PasswordResetToken',
     tenantColumn: 'organization_id',

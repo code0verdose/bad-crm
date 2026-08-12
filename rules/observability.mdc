@@ -150,13 +150,13 @@ Prometheus по временно́му ряду на сущность, ряд н
 
 | Механизм | Что ловит |
 |---|---|
-| `test/security/log-redaction.spec.ts` (прогон логгера по объекту со всеми секретными ключами) | новый секретный ключ вне `REDACTED_PATHS` |
+| `test/security/log-redaction.test.ts` (прогон логгера по объекту со всеми секретными ключами) | новый секретный ключ вне `REDACTED_PATHS` |
 | ESLint `no-console` (error) вне `infrastructure/logging` | обход логгера |
-| `test/observability/log-context.spec.ts` (запрос через supertest → проверка полей записи) | потерю `requestId`/`organizationId`/`userId` |
-| `test/observability/metrics-cardinality.spec.ts` | идентификаторы в лейблах метрик |
-| `test/observability/job-context.spec.ts` | job без унаследованного `requestId` |
-| `test/integration/audit/*.spec.ts` на каждое событие из п. 14 | отсутствующую или несинхронную запись аудита |
-| `test/integration/health/ready.spec.ts` при выключенном Meilisearch | `/ready`, зависящий от опционального сервиса |
+| `test/observability/log-context.test.ts` (запрос через supertest → проверка полей записи) | потерю `requestId`/`organizationId`/`userId` |
+| `test/observability/metrics-cardinality.test.ts` | идентификаторы в лейблах метрик |
+| `test/observability/job-context.test.ts` | job без унаследованного `requestId` |
+| `test/integration/audit/*.test.ts` на каждое событие из п. 14 | отсутствующую или несинхронную запись аудита |
+| `test/integration/health/ready.test.ts` при выключенном Meilisearch | `/ready`, зависящий от опционального сервиса |
 | Агент `production-readiness` в commit-гейте | отсутствие логов и метрик у нового кода |
 | Агент `observability-engineer` при добавлении очереди или интеграции | недостающие метрики и алерты |
 

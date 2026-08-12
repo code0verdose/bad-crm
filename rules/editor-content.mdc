@@ -92,11 +92,11 @@ await prisma.docPage.update({ where: { id }, data: { content } });   // без v
 | Механизм | Что ловит |
 |---|---|
 | `docContentSchema` + тест на документ предыдущей `contentVersion` | поломку обратной совместимости формата |
-| `test/security/sanitize.spec.ts` с XSS-корпусом (`javascript:`, `onerror=`, `<script>`, `data:`) | пропуск опасной разметки на сервере |
+| `test/security/sanitize.test.ts` с XSS-корпусом (`javascript:`, `onerror=`, `<script>`, `data:`) | пропуск опасной разметки на сервере |
 | ESLint `react/no-danger` (error, allow-list — только компонент рендера санитизированного результата) | произвольный `dangerouslySetInnerHTML` |
-| `test/integration/docs/optimistic-lock.spec.ts` (две параллельные правки) | отсутствие 409 `stale_version` |
-| `test/integration/docs/unfurl-authz.spec.ts` | превью, раскрывающее недоступный получателю ресурс |
-| `test/integration/search/plaintext.spec.ts` | попадание сырого дерева блоков в индекс вместо `plainText` |
+| `test/integration/docs/optimistic-lock.test.ts` (две параллельные правки) | отсутствие 409 `stale_version` |
+| `test/integration/docs/unfurl-authz.test.ts` | превью, раскрывающее недоступный получателю ресурс |
+| `test/integration/search/plaintext.test.ts` | попадание сырого дерева блоков в индекс вместо `plainText` |
 | `size-limit` на чанк редактора | потерю ленивой загрузки |
 | CI-шаг `check:blocknote-xl` (сверка установленных `@blocknote/xl-*` со списком в ADR-0012) | подключение GPL-пакета без записи в ADR |
 | Агент `frontend-security-coder` при изменении рендеринга контента | обходы санитайзера |

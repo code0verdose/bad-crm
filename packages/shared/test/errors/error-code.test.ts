@@ -56,12 +56,25 @@ describe('error code catalog', () => {
    * family, an author who wants to distinguish the two cases has to add a code to this file, in a
    * reviewed diff, next to this comment.
    */
-  it('offers exactly one code for a refused credential', () => {
+  /**
+   * `recovery_code_invalid` (STORY-013-02) joined this list deliberately, in this reviewed diff, and
+   * is not a regression of the guarantee above: it is a *different* credential, presented at a
+   * *different* step. `invalid_credentials` answers `POST /auth/login` and
+   * `POST /auth/change-password` — the primary password, where the risk is enumerating accounts by
+   * distinguishing "no such user" from "wrong password". `recovery_code_invalid` answers the
+   * second-factor step once STORY-013-03 wires it in, where the equivalent risk is distinguishing
+   * "no such code" from "that code was already used" — a one-code answer for that pair, exactly the
+   * same principle applied to a second flow. Merging the two into one code would make a client unable
+   * to render "check your email and password" against "check your recovery code", which are different
+   * screens; it would not remove a second place the login enumeration oracle could reappear, because
+   * a recovery code carries no account identifier for an oracle to leak in the first place.
+   */
+  it('offers exactly one code for a refused credential, per credential', () => {
     const refusals = ERROR_CODES.filter(
       (code) => ERROR_CODE_STATUS[code] === 401 && code !== 'unauthenticated',
     );
 
-    expect(refusals).toEqual(['invalid_credentials']);
+    expect(refusals).toEqual(['invalid_credentials', 'recovery_code_invalid']);
   });
 
   /**

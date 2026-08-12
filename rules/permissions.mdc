@@ -117,11 +117,11 @@ export async function canUpdateTask(actor: Actor, taskId: string) {
 | Механизм | Что ловит |
 |---|---|
 | Тип `PermissionKey` + `satisfies readonly RouteDeclaration[]` | опечатку в ключе, маршрут без permission — ошибка компиляции |
-| `test/permissions/route-registry.spec.ts` | маршрут в Express, отсутствующий в реестре, и наоборот |
-| `test/permissions/acl-coverage.spec.ts` | маршрут с `:id` без `aclCheckedIn`; use-case без `assertAllowed` |
+| `test/permissions/route-registry.test.ts` | маршрут в Express, отсутствующий в реестре, и наоборот |
+| `test/permissions/acl-coverage.test.ts` | маршрут с `:id` без `aclCheckedIn`; use-case без `assertAllowed` |
 | `test/permissions/permission-matrix.test.ts` + снапшот `permission-matrix.json` | любое изменение матрицы (роль × endpoint) с указанием `DenyReason`; подмену 404→403 |
-| `domain/**/access/*.policy.spec.ts` (табличные тесты) | все ветки policy; порог покрытия **100 % строк и ветвей** |
-| Тест `list-matches-can.spec.ts` на каждый списочный endpoint | расхождение «список ≠ построчный `can()`» |
+| `domain/**/access/*.policy.test.ts` (табличные тесты) | все ветки policy; порог покрытия **100 % строк и ветвей** |
+| Тест `list-matches-can.test.ts` на каждый списочный endpoint | расхождение «список ≠ построчный `can()`» |
 | e2e Playwright `private-*-invisible-everywhere` | утечку через вторичные пути (поиск, дашборд, автодополнение, уведомления) |
 | Агент `permission-matrix-auditor` в commit-гейте | мёртвые права, `requiredLevel: null` у ресурсного права, неотмеченные `dangerous`, вторую точку вычисления прав |
 
