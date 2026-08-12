@@ -43,7 +43,7 @@
     "cors": "^2.8.6",
     "express": "^5.2.1",
     "helmet": "^8.3.0",
-    "ioredis": "^5.11.1",
+    "ioredis": "^6.0.0",
     "jose": "6.2.8",
     "nodemailer": "^9.0.5",
     "otplib": "13.4.1",
