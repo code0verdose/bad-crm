@@ -1,5 +1,5 @@
 import { type AuditLoggerPort } from '@/application/platform/ports/audit-logger.port.js';
-import { type PasswordHasherPort } from '@/application/identity/ports/password-hasher.port.js';
+import { type RecoveryCodeMatcher } from '@/application/identity/use-cases/recovery-code-matcher.use-case.js';
 import { type RecoveryCodeRepositoryPort } from '@/application/identity/ports/recovery-code-repository.port.js';
 import { type ClockPort } from '@/application/platform/ports/clock.port.js';
 import { type LoggerPort } from '@/application/platform/ports/logger.port.js';
@@ -8,7 +8,6 @@ import { type UnitOfWorkPort } from '@/application/platform/ports/unit-of-work.p
 import {
   isWellFormedRecoveryCode,
   normalizeRecoveryCode,
-  RECOVERY_CODE_COUNT,
 } from '@/domain/identity/recovery-code.value.js';
 import { SECURITY_EVENTS } from '@/domain/identity/security-event.constant.js';
 import { RateLimitedError, RecoveryCodeInvalidError } from '@/domain/shared/errors/app.errors.js';
@@ -61,11 +60,22 @@ export interface ConsumeRecoveryCodeInput {
  * it (STORY-013-02, acceptance 3; proven under real concurrency in
  * `test/integration/db/mfa-recovery-code-race.test.ts`). A loop that trusted its own comparison to
  * mean "this code is now spent" would let both winners open a session from the same code.
+ *
+ * ## The match itself lives in `RecoveryCodeMatcher`
+ *
+ * STORY-013-04's `DisableTotpUseCase` needs the identical timing-safe match — a recovery code is one
+ * of the two proofs `POST /auth/2fa/disable` accepts — but must not spend it before a second,
+ * independent proof (the password) is also known to be correct. That ordering cannot be built out of
+ * a method that always matches *and* spends in one step, so the fixed-cost loop moved to
+ * `RecoveryCodeMatcher` and this class became one of its two callers instead of the loop's only
+ * owner. `markUsed` itself was already shared before this split; the split closes the other half —
+ * two use-cases no longer risk two drifting implementations of "how many verifications, in what
+ * order" for the one loop whose entire point is that the count never varies.
  */
 export class ConsumeRecoveryCodeUseCase {
   constructor(
+    private readonly matcher: RecoveryCodeMatcher,
     private readonly codes: RecoveryCodeRepositoryPort,
-    private readonly hasher: PasswordHasherPort,
     private readonly unitOfWork: UnitOfWorkPort,
     private readonly rateLimit: RateLimitPort,
     private readonly clock: ClockPort,
@@ -114,9 +124,7 @@ export class ConsumeRecoveryCodeUseCase {
     normalizedCode: string,
     ipAddress: string | undefined,
   ): Promise<string | null> {
-    const candidates = await this.codes.listUnused(actor.userId);
-
-    const matchId = await this.match(candidates, normalizedCode);
+    const matchId = await this.matcher.match(actor.userId, normalizedCode);
 
     if (matchId === null) return null;
 
@@ -133,33 +141,6 @@ export class ConsumeRecoveryCodeUseCase {
       target: { type: 'USER', id: actor.userId },
       requestId: undefined,
     });
-
-    return matchId;
-  }
-
-  private async match(
-    candidates: readonly { readonly id: string; readonly codeHash: string }[],
-    normalizedCode: string,
-  ): Promise<string | null> {
-    let matchId: string | null = null;
-
-    // Fixed at RECOVERY_CODE_COUNT slots, never fewer — the timing reason this class's docstring
-    // gives. Sequential and without an early exit even once a match is found, so the elapsed time
-    // never depends on *where* in the list the right code sits either.
-    const slots = Math.max(candidates.length, RECOVERY_CODE_COUNT);
-
-    for (let index = 0; index < slots; index += 1) {
-      const candidate = candidates[index];
-
-      if (candidate === undefined) {
-        // Padding: no real row left at this slot, verified against the dummy digest all the same.
-        await this.hasher.verify(this.hasher.dummyHash, normalizedCode);
-
-        continue;
-      }
-
-      if (await this.hasher.verify(candidate.codeHash, normalizedCode)) matchId = candidate.id;
-    }
 
     return matchId;
   }

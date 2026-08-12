@@ -111,7 +111,8 @@ export const RATE_LIMIT_POLICY: Readonly<Record<RateLimitPolicy, RateLimitPolicy
     escalation: { factor: 2, maxBlockSeconds: 1 * HOUR, memorySeconds: 24 * HOUR },
   },
   /**
-   * Reauthenticating before a recovery-code regeneration. No escalation: the subject is an
+   * Reauthenticating before a recovery-code regeneration or a self-service 2FA disable — one shared
+   * budget for both (`rate-limit.port.ts` explains why). No escalation: the subject is an
    * authenticated account holder, not an anonymous guesser, and the fifteen-minute window is already
    * the cost `rules/security.mdc` rule 11 asks for on a sensitive path.
    */
@@ -125,6 +126,16 @@ export const RATE_LIMIT_POLICY: Readonly<Record<RateLimitPolicy, RateLimitPolicy
    * number directly: five attempts, fifteen minutes.
    */
   mfa_recovery_consume_attempt: {
+    points: 5,
+    windowSeconds: 15 * MINUTE,
+    blockSeconds: 15 * MINUTE,
+  },
+  /**
+   * An administrator resetting somebody else's 2FA (`user:reset_mfa`). No escalation, for the same
+   * reason as `mfa_reauth_attempt` and `invitation_create`: the subject of a lock-out here is a known,
+   * authenticated administrator, not an anonymous guesser.
+   */
+  mfa_admin_reset_attempt: {
     points: 5,
     windowSeconds: 15 * MINUTE,
     blockSeconds: 15 * MINUTE,

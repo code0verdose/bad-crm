@@ -6,6 +6,7 @@ import { type GetMyPermissionsQuery } from '@/application/iam/use-cases/get-my-p
 import { type GetUserPermissionsQuery } from '@/application/iam/use-cases/get-user-permissions.query.js';
 import { type AcceptInvitationUseCase } from '@/application/iam/use-cases/accept-invitation.use-case.js';
 import { type DeactivateUserUseCase } from '@/application/iam/use-cases/deactivate-user.use-case.js';
+import { type ResetUserMfaUseCase } from '@/application/iam/use-cases/reset-user-mfa.use-case.js';
 import { type TransferOwnershipUseCase } from '@/application/iam/use-cases/transfer-ownership.use-case.js';
 import { type ReactivateUserUseCase } from '@/application/iam/use-cases/reactivate-user.use-case.js';
 import { type GetOrgChartQuery } from '@/application/iam/use-cases/get-org-chart.query.js';
@@ -50,6 +51,7 @@ import { type AuthenticateSessionQuery } from '@/application/identity/use-cases/
 import { type ChangePasswordUseCase } from '@/application/identity/use-cases/change-password.use-case.js';
 import { type ConfirmPasswordResetUseCase } from '@/application/identity/use-cases/confirm-password-reset.use-case.js';
 import { type ConfirmTotpUseCase } from '@/application/identity/use-cases/confirm-totp.use-case.js';
+import { type DisableTotpUseCase } from '@/application/identity/use-cases/disable-totp.use-case.js';
 import { type EndSessionUseCase } from '@/application/identity/use-cases/end-session.use-case.js';
 import { type ListSessionsQuery } from '@/application/identity/use-cases/list-sessions.query.js';
 import { type LoginUseCase } from '@/application/identity/use-cases/login.use-case.js';
@@ -122,6 +124,7 @@ export interface IdentityDependencies {
   readonly confirmTotp: ConfirmTotpUseCase;
   readonly recoveryCodeStatus: ReadRecoveryCodeStatusQuery;
   readonly regenerateRecoveryCodes: RegenerateRecoveryCodesUseCase;
+  readonly disableTotp: DisableTotpUseCase;
 }
 
 /**
@@ -153,6 +156,7 @@ export interface IamDependencies {
   readonly transferOwnership: TransferOwnershipUseCase;
   readonly deactivateUser: DeactivateUserUseCase;
   readonly reactivateUser: ReactivateUserUseCase;
+  readonly resetUserMfa: ResetUserMfaUseCase;
   readonly listEmployees: ListEmployeesQuery;
   readonly getOrgChart: GetOrgChartQuery;
   readonly readEmployeeProfile: ReadEmployeeProfileQuery;

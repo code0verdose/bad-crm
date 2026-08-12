@@ -9,12 +9,14 @@ import { AuthenticateSessionQuery } from '@/application/identity/use-cases/authe
 import { ChangePasswordUseCase } from '@/application/identity/use-cases/change-password.use-case.js';
 import { ConfirmPasswordResetUseCase } from '@/application/identity/use-cases/confirm-password-reset.use-case.js';
 import { ConfirmTotpUseCase } from '@/application/identity/use-cases/confirm-totp.use-case.js';
+import { DisableTotpUseCase } from '@/application/identity/use-cases/disable-totp.use-case.js';
 import { EndSessionUseCase } from '@/application/identity/use-cases/end-session.use-case.js';
 import { GenerateRecoveryCodesUseCase } from '@/application/identity/use-cases/generate-recovery-codes.use-case.js';
 import { IssueSessionUseCase } from '@/application/identity/use-cases/issue-session.use-case.js';
 import { ListSessionsQuery } from '@/application/identity/use-cases/list-sessions.query.js';
 import { LoginUseCase } from '@/application/identity/use-cases/login.use-case.js';
 import { ReadRecoveryCodeStatusQuery } from '@/application/identity/use-cases/read-recovery-code-status.query.js';
+import { RecoveryCodeMatcher } from '@/application/identity/use-cases/recovery-code-matcher.use-case.js';
 import { RefreshSessionUseCase } from '@/application/identity/use-cases/refresh-session.use-case.js';
 import { RegenerateRecoveryCodesUseCase } from '@/application/identity/use-cases/regenerate-recovery-codes.use-case.js';
 import { RegisterOrganizationUseCase } from '@/application/identity/use-cases/register-organization.use-case.js';
@@ -43,6 +45,7 @@ import { type PasswordHasherPort } from '@/application/identity/ports/password-h
 import { type FieldEncryptionPort } from '@/application/platform/ports/field-encryption.port.js';
 import { AcceptInvitationUseCase } from '@/application/iam/use-cases/accept-invitation.use-case.js';
 import { DeactivateUserUseCase } from '@/application/iam/use-cases/deactivate-user.use-case.js';
+import { ResetUserMfaUseCase } from '@/application/iam/use-cases/reset-user-mfa.use-case.js';
 import { TransferOwnershipUseCase } from '@/application/iam/use-cases/transfer-ownership.use-case.js';
 import { ReactivateUserUseCase } from '@/application/iam/use-cases/reactivate-user.use-case.js';
 import { GetOrgChartQuery } from '@/application/iam/use-cases/get-org-chart.query.js';
@@ -568,6 +571,25 @@ const buildIam = (input: {
       input.clock,
     ),
     reactivateUser: new ReactivateUserUseCase(unitOfWork, userLifecycle, permissions, input.audit),
+    // `users`, `totpEnrollment` and `recoveryCodeRows` are fresh instances rather than shared through
+    // `identityKit`, unlike `sessions`: all three are `TenantScopedRepository` subclasses with no
+    // constructor state of their own — every write goes through the scope `UnitOfWorkPort.withTenant`
+    // opens, read out of `AsyncLocalStorage` — so a second instance is not a second connection to
+    // co-ordinate, only a second zero-argument object.
+    resetUserMfa: new ResetUserMfaUseCase(
+      unitOfWork,
+      new PrismaUserRepository(),
+      new PrismaTotpEnrollmentRepository(),
+      new PrismaMfaRecoveryCodeRepository(),
+      input.identityKit.sessions,
+      userRoles,
+      permissions,
+      input.rateLimit,
+      input.audit,
+      input.clock,
+      input.mailDispatcher,
+      input.appUrl,
+    ),
     listEmployees: new ListEmployeesQuery(unitOfWork, employeeDirectory),
     getOrgChart: new GetOrgChartQuery(unitOfWork, employeeDirectory),
     readEmployeeProfile: new ReadEmployeeProfileQuery(unitOfWork, employeeProfiles, input.fields),
@@ -758,6 +780,22 @@ const buildIdentity = (input: {
       recoveryCodeRows,
       hasher,
       generateRecoveryCodes,
+      unitOfWork,
+      input.rateLimit,
+      input.clock,
+      input.logger,
+      input.audit,
+      input.mailDispatcher,
+      input.env.APP_URL,
+    ),
+    disableTotp: new DisableTotpUseCase(
+      totpEnrollment,
+      totp,
+      fields,
+      recoveryCodeRows,
+      new RecoveryCodeMatcher(recoveryCodeRows, hasher),
+      users,
+      hasher,
       unitOfWork,
       input.rateLimit,
       input.clock,

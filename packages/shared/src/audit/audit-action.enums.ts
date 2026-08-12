@@ -57,6 +57,28 @@ export const AUDIT_ACTIONS = [
    * record that the stronger check was actually exercised, not only configured.
    */
   'user.mfa_recovery_codes_regenerated',
+  /**
+   * The account owner turned their own 2FA off: `POST /auth/2fa/disable` (STORY-013-04, acceptance
+   * 1). Reachable only after both the current password and a live proof of the second factor — a
+   * TOTP code or a recovery code — were checked. `after.secondFactorKind` names which of the two it
+   * was (`'totp' | 'recovery_code'`) — a fact, not a secret: it carries no code and no hash, and it is
+   * exactly what an incident review needs to tell "the printed sheet was used" from "the authenticator
+   * app was". `before`/`after` never carry the code or hash themselves, only this fact and the count
+   * of recovery codes the disable deleted with it.
+   */
+  'user.mfa_disabled',
+  /**
+   * An administrator switched a colleague's 2FA off through `user:reset_mfa` (STORY-013-04,
+   * acceptance 5).
+   *
+   * A distinct entry from `user.mfa_disabled` rather than the same action with a different actor:
+   * the two answer different questions an incident review asks — "did the owner choose this" versus
+   * "did somebody else choose it for them" — and folding them would make the second question
+   * unanswerable by a filter. `after` carries the counts the operation actually produced (sessions
+   * revoked, recovery codes deleted), the same reasoning `user.suspended` gives for recording
+   * offboarding as counters rather than as reassurance.
+   */
+  'user.mfa_reset_by_admin',
   /** A custom role was composed, recomposed or removed (STORY-011-03). */
   'role.created',
   'role.updated',

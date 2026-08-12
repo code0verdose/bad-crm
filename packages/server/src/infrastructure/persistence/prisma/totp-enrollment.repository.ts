@@ -121,4 +121,22 @@ export class PrismaTotpEnrollmentRepository
       return rows.length > 0;
     });
   }
+
+  disable(userId: string): Promise<boolean> {
+    return this.run('disable', async (tx) => {
+      const rows = await tx.$queryRaw<EnrollmentRow[]>`
+        UPDATE users
+           SET totp_secret_enc = NULL,
+               totp_enabled_at = NULL,
+               totp_draft_expires_at = NULL,
+               totp_last_counter = NULL,
+               updated_at = now()
+         WHERE id = ${userId}::uuid
+           AND deleted_at IS NULL
+           AND totp_enabled_at IS NOT NULL
+        RETURNING id`;
+
+      return rows.length > 0;
+    });
+  }
 }

@@ -45,6 +45,16 @@ export const AUDIT_ACTION_SEVERITY: Readonly<Record<AuditAction, AuditSeverity>>
   // The whole recovery-code set was replaced. Same level as a permission override: it is a change to
   // what can get somebody back into the account, made after the stronger reauthentication check.
   'user.mfa_recovery_codes_regenerated': 'WARNING',
+  // Same level as enabling: losing the second factor is exactly as significant an event as gaining
+  // one, and it is the entry an incident review reaches for when an account that had 2FA no longer
+  // does.
+  'user.mfa_disabled': 'WARNING',
+  // `CRITICAL`, unlike the self-service disable above: somebody other than the account owner just
+  // removed their second factor and revoked every one of their sessions. An installation that alerts
+  // on `organization.ownership_transferred` and `rls.bypassed` should alert on this one too — it is
+  // the step that immediately precedes an account takeover if the actor's own credentials are not
+  // what they claim to be.
+  'user.mfa_reset_by_admin': 'CRITICAL',
   // What a role grants is what everybody holding it may do: the composition is a change of rights
   // for a group rather than for a person, which is why it reads at the same level as an assignment.
   'role.created': 'WARNING',

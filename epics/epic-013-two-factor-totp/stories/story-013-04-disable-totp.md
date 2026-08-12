@@ -1,7 +1,7 @@
 ---
 id: STORY-013-04
 epic: EPIC-013
-status: backlog
+status: in-progress
 blocked: false
 priority: must
 estimate: S
@@ -85,20 +85,196 @@ estimate: S
 
 ## Задачи
 
-- [ ] `packages/server/src/application/identity/use-cases/disable-totp.use-case.ts`.
-- [ ] `packages/server/src/application/iam/use-cases/reset-user-mfa.use-case.ts` — снятие 2FA +
-      отзыв сессий + инкремент версии в одной транзакции, уведомление через outbox.
-- [ ] `packages/server/src/domain/identity/access/mfa-policy.policy.ts` —
-      `assertNotRequiredByPolicy`, `assertNotSelfReset`.
-- [ ] `packages/server/src/presentation/http/route-registry.factory.ts` — `2fa/disable`
-      (self-service), `user:reset_mfa`.
+- [x] `packages/server/src/application/identity/use-cases/disable-totp.use-case.ts` — принимает TOTP
+      **или** recovery-код как второй фактор; оба проверяются параллельно с паролем, ни один не
+      тратится раньше, чем пароль подтверждён верным.
+- [x] `packages/server/src/application/iam/use-cases/reset-user-mfa.use-case.ts` — снятие 2FA +
+      удаление кодов + отзыв сессий (`SessionRepositoryPort.revokeAllFamilies`, тот же метод, что
+      офбординг) + инкремент версии, одной транзакцией. Уведомление — `MailDispatchPort.dispatch`
+      после коммита (outbox ещё не существует в проекте, см. STORY-013-01 «Что отложено»; та же
+      оговорка применена и здесь).
+- [x] `packages/server/src/domain/identity/access/mfa-policy.policy.ts` — `assertNotSelfReset` и
+      `assertMfaResetInBounds` (правило подмножества + защита владельца, добавлена аудитом
+      безопасности 2026-08-12 — см. «Аудит безопасности» ниже). `assertNotRequiredByPolicy` **не
+      заведена** — см. «Что отложено».
+- [x] `packages/server/src/application/identity/use-cases/recovery-code-matcher.use-case.ts` —
+      новый файл: сопоставление recovery-кода без его списания, извлечено из
+      `ConsumeRecoveryCodeUseCase` и переиспользовано `DisableTotpUseCase`, чтобы не заводить вторую
+      реализацию таймингово-безопасного цикла (списание — `RecoveryCodeRepositoryPort.markUsed` —
+      осталось одной реализацией, как и было).
+- [x] `packages/server/src/application/identity/ports/totp-enrollment.port.ts` +
+      `infrastructure/persistence/prisma/totp-enrollment.repository.ts` — новый метод `disable`.
+- [x] `packages/server/prisma/schema.prisma` + миграция
+      `20260812110000_mfa_reset_session_reason` — новое значение `MFA_RESET_BY_ADMIN` перечисления
+      `session_revoked_reason` (аддитивная миграция, `ALTER TYPE ... ADD VALUE`).
+- [x] `packages/server/src/presentation/http/route-registry.factory.ts` — `POST /auth/2fa/disable`
+      (self-service), `POST /users/:userId/reset-mfa` (`user:reset_mfa`).
+- [x] `docs/api/openapi.yaml` — оба маршрута, `DisableTotpRequest`, `ResetMfaResult`; `pnpm api:gen`
+      прогнан, сгенерированный клиентский файл обновлён.
 - [ ] `packages/client/src/widgets/two-factor-settings/two-factor-settings.widget.tsx` +
       `ui/disable-2fa-dialog.component.tsx`; в админке —
       `widgets/user-security/ui/reset-mfa-dialog.component.tsx` под `<Can permission="user:reset_mfa">`.
+      **Не сделано** — вне зоны этой дельты (серверная история); см. «Что отложено».
 - [ ] `packages/client/src/units/auth/service/mutations/disable-totp.mutation.ts`,
-      `units/iam/service/mutations/reset-user-mfa.mutation.ts`.
-- [ ] Тесты: `disable-totp.use-case.test.ts` (п. 2–4), `reset-user-mfa.use-case.test.ts`
-      (п. 5–7, 9), интеграционный «после сброса сессии отозваны», e2e + axe.
+      `units/iam/service/mutations/reset-user-mfa.mutation.ts`. **Не сделано**, по той же причине.
+- [x] Тесты: `test/unit/application/disable-totp.use-case.test.ts` (п. 1–3, включая рейс по счётчику
+      TOTP, недешифруемый секрет, отсутствующая запись credential),
+      `test/unit/application/recovery-code-matcher.use-case.test.ts`,
+      `test/unit/iam/reset-user-mfa.use-case.test.ts` (п. 5, 7, 9),
+      `test/unit/domain/mfa-policy.test.ts`, `test/unit/domain/mfa-changed-mail.test.ts`,
+      `test/unit/persistence/mfa-repositories.test.ts` (метод `disable`),
+      `test/integration/http/mfa-endpoints.test.ts` (`POST /auth/2fa/disable`, п. 2–3),
+      `test/integration/http/reset-user-mfa.test.ts` — интеграционный «после сброса сессии отозваны»
+      (п. 5, с настоящим отзывом refresh-cookie), permission-matrix snapshot обновлён.
+
+## Сделано (2026-08-12) — серверная половина
+
+### Второй фактор — TOTP или recovery-код, один и тот же код отказа
+
+Форма `code` решает, какая проверка запускается: `/^\d{6}$/` — TOTP, иначе попытка сопоставить как
+recovery-код (после `isWellFormedRecoveryCode`, бесплатной проверки формы). Оба пути и проверка
+пароля читаются в `Promise.all` **до** того, как хоть один из них учтён — та же причина, по которой
+`RegenerateRecoveryCodesUseCase` не делает short-circuit: иначе по времени ответа можно было бы
+понять, какая из двух проверок не прошла. Любой отказ — неверный пароль, неверный/отсутствующий код
+в любой форме, отсутствие включённой 2FA вовсе — отвечает одним `reauthentication_required`
+(критерий 2). Списание recovery-кода (`markUsed`) и продвижение TOTP-счётчика (`advanceCounter`)
+происходят только после того, как пароль подтверждён верным — иначе запрос с правильным кодом и
+неправильным паролем сжигал бы код или счётчик впустую.
+
+### Recovery-код сопоставляется, а не списывается, до подтверждения пароля
+
+Это и есть причина, по которой чистое переиспользование `ConsumeRecoveryCodeUseCase.execute()`
+(единственного существующего потребителя атомарного списания) не подошло: тот метод сопоставляет и
+списывает одним неделимым шагом, что для входа корректно (кроме кода восстановления, второго фактора
+там нет), но для `disable` создало бы окно, где код тратится раньше, чем известно, что пароль верен.
+Поэтому таймингово-безопасный цикл сравнения вынесен в `RecoveryCodeMatcher` — separate
+match-без-spend, вызываемый и `ConsumeRecoveryCodeUseCase`, и `DisableTotpUseCase`. Атомарное
+списание (`RecoveryCodeRepositoryPort.markUsed`, `UPDATE ... WHERE used_at IS NULL`) как было одной
+реализацией, так и осталось — рефакторинг закрыл именно тот дубль тайминг-цикла, который иначе
+пришлось бы написать во второй раз в `disable-totp.use-case.ts`, а не создал второй способ списания.
+
+### Отключение и удаление кодов — одна транзакция; проверка вызывающего — тоже внутри неё
+
+`enrollment.disable` (новый метод порта, зеркало `beginDraft`) и `recoveryCodeRows.deleteAllForUser`
+выполняются в одном `unitOfWork.withTenant`. **В отличие от `ConfirmTotpUseCase` и
+`RegenerateRecoveryCodesUseCase`, здесь нечего минтить до открытия транзакции** — оба соседа платят
+Argon2id заранее только за партию *новых* кодов восстановления, которую вот-вот выпустят; `disable`
+партию удаляет, а не создаёт, поэтому такого шага у него нет. Расшифровка TOTP-секрета и его проверка
+(либо, для recovery-кода, `RecoveryCodeMatcher.match` с фиксированными `RECOVERY_CODE_COUNT`
+Argon2id-сравнениями) происходят **внутри** транзакции, как и у обоих соседей: `UserRepositoryPort
+.findCredential` и `TotpEnrollmentRepositoryPort.find` — tenant-scoped чтения, резолвящиеся только
+внутри контекста, который открывает эта же `withTenant`; отдельного «read-only tenant scope» для них
+в кодовой базе нет. Стоимость ограничена и известна — одна проверка пароля плюс либо расшифровка+одна
+проверка TOTP, либо десять фиксированных сравнений (никогда оба сразу — `verifySecondFactor` ветвится
+по форме `code`), что укладывается в таймаут транзакции с большим запасом. От конкурентной нагрузки
+путь ограничивает `mfa_reauth_attempt`, расходуемый в `execute` до вызова `withTenant`: исчерпавший
+бюджет вызывающий до транзакции не доходит вовсе. Расшифрованное значение живёт ровно на длину одной
+проверки и никуда не сохраняется.
+
+### Административный сброс — тот же путь отзыва сессий, что и офбординг
+
+`ResetUserMfaUseCase.reset` вызывает `SessionRepositoryPort.revokeAllFamilies` — тот самый метод,
+которым `DeactivateUserUseCase` закрывает сессии офбординга, а не новую реализацию. Инкремент
+`permissionsVersion` — через `UserRoleRepositoryPort.bumpPermissionsVersion`, тоже существующий
+метод (использован `RevokeRoleUseCase`). Запись `AuditLog` и письмо — после коммита. Число вызовов
+внутри транзакции с даты аудита ниже больше не постоянно — см. «Аудит безопасности» — но переиспользуемые
+примитивы те же.
+
+### Аудит безопасности (2026-08-12): правило ранга и настоящая идемпотентность
+
+Дельта выше прошла независимый аудит безопасности до коммита; две находки его заблокировали и
+исправлены в этой же дельте.
+
+**Правило подмножества и защита владельца (HIGH).** До аудита единственной проверкой цели была
+`assertNotSelfReset` — «не сам себе». Держатель `user:reset_mfa` (есть у `owner` и `admin`) мог
+вызвать сброс на владельце организации: секрет снят, коды удалены, сессии отозваны, учётка осталась
+`ACTIVE` и защищена только паролем. Тот же путь работал «вбок» — админ против админа — и для любой
+кастомной роли с этим правом. Это ровно `T-IAM-09`, которое уже соблюдают
+`role-assignment.policy.ts`, `permission-override.policy.ts`, `role-composition.policy.ts`,
+`invitation-access.policy.ts` и `user-lifecycle.policy.ts` в обе стороны — `ResetUserMfaUseCase` был
+единственным путём без него. Добавлена `assertMfaResetInBounds` (`domain/identity/access/mfa-policy.policy.ts`):
+читает эффективные права субъекта через `EffectivePermissionsReaderPort` внутри той же транзакции
+(идентично `DeactivateUserUseCase`) и отказывает в двух случаях — субъект владелец, а актор нет
+(`not_the_owner`, переиспользован из `ownership-transfer.policy.ts`, а не заведён новый) — раньше
+правила подмножества, по той же причине, что `assertDeactivable` проверяет конфликт передачи
+владения раньше своего подмножества: совет «получите это право» бессмыслен против аккаунта,
+держащего все 331 право по построению (`SYSTEM_ROLE_PERMISSIONS.owner`); и субъект держит право,
+которого нет у актора (`permission_not_granted`, тот же код и та же форма, что и у
+`DeactivateUserUseCase`). Табличные тесты — `test/unit/domain/mfa-policy.test.ts`, use-case и
+атакующий сценарий (админ против владельца) — `test/unit/iam/reset-user-mfa.use-case.test.ts` и
+`test/integration/http/reset-user-mfa.test.ts`.
+
+**Повтор — настоящий no-op, и лимит частоты (MEDIUM).** До аудита каждый повтор — независимо от
+`Idempotency-Key`, который здесь ничего не дедуплицирует (хранилища ответов нет —
+`idempotency-key.middleware.ts` прямо называет это открытой половиной, STORY-006-01) —
+заново отзывал сессии, поднимал версию прав и слал письмо, даже когда второй фактор уже был выключен:
+держатель права в цикле не давал жертве удержать сессию и заливал её почту. `enrollment.disable`
+отвечает, было ли 2FA реально включено мгновением раньше (её собственный контракт прямо называет эту
+ошибку), и теперь `reset` останавливается на `false` до какой-либо ещё записи — ни кодов, ни сессий,
+ни версии, ни письма, ни записи аудита, зеркало молчаливой ветки `alreadyDeactivated` у
+`DeactivateUserUseCase`. Отдельно заведён бюджет `mfa_admin_reset_attempt` (5 / 15 мин, без эскалации,
+ключ — актор) — свой, а не доля `mfa_reauth_attempt`: тот бюджет про переаутентификацию вызывающего,
+а административный сброс сознательно пропускает пароль и код (в этом весь смысл операции). Тратится
+до открытия транзакции, как и у любого чувствительного пути (`rules/security.mdc`, правило 11).
+
+### `session_revoked_reason` получил седьмое значение, а не переиспользовал `OFFBOARDING`
+
+`OFFBOARDING` документирован как «аккаунт перестал быть способен держать сессии» — после
+административного сброса 2FA аккаунт остаётся `ACTIVE` и может открыть новую сессию немедленно.
+Переиспользование `OFFBOARDING` сделало бы этот комментарий ложным для класса строк, который он не
+описывает, поэтому заведено `MFA_RESET_BY_ADMIN` аддитивной миграцией
+(`20260812110000_mfa_reset_session_reason`, `ALTER TYPE ... ADD VALUE`, проверено на реальном
+Postgres через `pnpm test:integration:local`).
+
+### Самому себе — нельзя, и это конфликт, а не отказ в доступе
+
+`assertNotSelfReset` (домен, чистая функция, без I/O) бросает `ConflictError('self_lockout', …)` —
+тот же код, что `assertDeactivable` использует для «нельзя офбордить себя», по идентичной причине:
+право `user:reset_mfa` реально есть, объект реально существует, отказывает именно состояние запроса
+(«целится в себя»), а не отсутствие права.
+
+### 403 без права — целиком существующий механизм
+
+Критерий 6 («403 без `user:reset_mfa`») не потребовал ни кода, ни строки нового кода: маршрут
+объявлен с `permission: 'user:reset_mfa'`, и `require-permission.middleware.ts` уже отвечает
+`user_forbidden` с `reason: permission_not_granted` для любого маршрута без объявленного права —
+писать для этого специальный код `permission_not_granted` (как буквально сформулирован критерий в
+истории) означало бы завести второй код для факта, для которого он уже есть.
+
+## Что отложено, и почему
+
+- **Критерии 4 и 8 (политика организации) — не начаты вовсе, заглушек нет.** Оба требуют
+  [STORY-013-05](story-013-05-org-2fa-policy.md) (`backlog`): без строки политики в БД
+  `assertNotRequiredByPolicy` нечего было бы читать, и функция либо всегда разрешала бы отключение
+  (мёртвый код), либо жёстко запрещала бы то, что эта дельта не может включить обратно. Код отказа
+  `mfa_required_by_policy`, который никто не бросает, в каталог **не добавлен** — этот эпик уже
+  дважды получал такую находку на гейте (см. историю STORY-013-01/02), и третий раз заводить её
+  осознанно не стоило.
+- **Весь клиент (виджеты, диалоги подтверждения, мутации, i18n, axe — критерий 10)** — вне зоны этой
+  дельты (`packages/server/**` и смежная документация). Материал для экрана есть: оба эндпоинта
+  отвечают формой, которую `docs/api/openapi.yaml` объявляет (`ResetMfaResult` со счётчиками,
+  `204` у `disable`), но самого экрана `/settings/security` по-прежнему нет — та же корневая причина,
+  что у критерия 10 STORY-013-01 и критериев 2/6 STORY-013-02.
+- **`test:integration:local` для recovery-кода в `disable` отдельным гонка-тестом не написан.**
+  Атомарность списания уже доказана на реальном Postgres для той же операции
+  (`RecoveryCodeRepositoryPort.markUsed`) в `test/integration/db/mfa-recovery-code-race.test.ts`
+  (STORY-013-02); `DisableTotpUseCase` вызывает тот же метод через тот же `RecoveryCodeMatcher`, а не
+  собственную реализацию, поэтому отдельное гоночное доказательство для него измеряло бы то же самое
+  свойство того же SQL-оператора во второй раз.
+
+## Блокирующая зависимость эпика — backend-половина закрыта, снятие пометки не выполнено этой дельтой
+
+[`epic.md`](../epic.md), раздел «Блокирующая зависимость внутри эпика»: механизм выхода из 2FA,
+которого не хватало для снятия `blocked: true` с STORY-013-03, теперь существует и протестирован —
+самостоятельное отключение (`POST /auth/2fa/disable`) и административный сброс
+(`POST /users/{userId}/reset-mfa`) оба реализованы, покрыты юнит- и HTTP-интеграционными тестами,
+включая настоящий отзыв сессии на реальном refresh-cookie. Формулировка эпика — «снимается пометка
+выпуском STORY-013-04» — а эта история не в статусе `done`: клиентская половина (критерий 10) не
+сделана вовсе. `blocked: true` в
+[story-013-03-login-second-factor.md](story-013-03-login-second-factor.md) этой дельтой сознательно
+**не тронут** — решение, снимать ли пометку до появления клиентского экрана или дожидаться его,
+принадлежит тому, кто берёт STORY-013-03 или закрывает клиентскую часть этой истории, а не
+зафиксировано здесь молча.
 
 ## Ссылки
 
@@ -109,9 +285,18 @@ estimate: S
 
 ## Definition of Done
 
-- [ ] Тесты написаны первыми (TDD), проходят, изменённый код покрыт
-- [ ] Commit-гейт зелёный (test-coverage, security-auditor, db-reviewer при изменении схемы, production-readiness, commit-hygiene)
-- [ ] Документация обновлена (docs/ + запись в `docs/brain/`)
-- [ ] a11y и i18n (для UI-историй)
-- [ ] **Isolation-тест RLS** для каждой новой таблицы
-- [ ] **Permission объявлена** для каждого нового endpoint и проверяется в use-case
+- [x] Тесты написаны первыми (TDD), проходят, изменённый код покрыт — 169 файлов / 2277 тестов
+      зелёных без Docker, интеграционный набор с реальным Postgres зелёный (кроме одного
+      воспроизводимо не связанного с этой дельтой Docker-флейка в `rate-limit/shared-counter.test.ts`,
+      подтверждённого зелёным при изолированном перезапуске)
+- [ ] Commit-гейт зелёный — гейт-агенты (`test-coverage`, `security-auditor`, `db-reviewer`,
+      `production-readiness`, `commit-hygiene`) этой дельтой не прогонялись; typecheck/lint/build/test
+      и `pnpm coverage:baseline` — зелёные
+- [x] Документация обновлена (`openapi.yaml`, `docs/runbooks/incident.md` — оговорка о ручном сбросе
+      снята — + эта запись истории; запись в `docs/brain/` не сделана этой дельтой)
+- [ ] a11y и i18n — не применимо к этой дельте (клиент вне зоны, см. «Что отложено»)
+- [x] **Isolation-тест RLS** — новых таблиц нет; изменение схемы (новое значение перечисления) не
+      таблица и не требует отдельного isolation-теста
+- [x] **Permission объявлена** — `user:reset_mfa` уже существовала в каталоге
+      (`permissions.catalog.ts`, `dangerous: true`) до этой истории; `2fa/disable` — self-service с
+      обоснованием в реестре и в `x-self-service-reason` спеки

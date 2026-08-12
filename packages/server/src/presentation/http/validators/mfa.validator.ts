@@ -49,5 +49,29 @@ export const regenerateRecoveryCodesBodySchema = z.strictObject({
   totpCode: totpCodeSchema,
 });
 
+/**
+ * `POST /auth/2fa/disable`.
+ *
+ * `code` is deliberately looser than `totpCodeSchema`: `DisableTotpUseCase` accepts either a live
+ * TOTP code **or** a recovery code as the second proof (STORY-013-04, acceptance 2 — a person who
+ * lost their authenticator but kept a printed recovery sheet must still be able to turn 2FA off), and
+ * the two have different shapes. The bound is a length cap, not a format: 32 characters comfortably
+ * covers a ten-character recovery code with the dashes and spaces a person might type around it
+ * (`normalizeRecoveryCode` strips them) and a six-digit TOTP code alike, without letting a caller
+ * submit an arbitrarily long string to be verified against an Argon2id digest before the use-case
+ * even reads it — the identical reasoning `passwordSchema` bounds a password for.
+ */
+const disableSecondFactorCodeSchema = z
+  .string({ error: 'validation.totp_code.invalid' })
+  .trim()
+  .min(1, { error: 'validation.totp_code.invalid' })
+  .max(32, { error: 'validation.totp_code.invalid' });
+
+export const disableTotpBodySchema = z.strictObject({
+  password: passwordSchema,
+  code: disableSecondFactorCodeSchema,
+});
+
 export type ConfirmTotpBody = z.output<typeof confirmTotpBodySchema>;
 export type RegenerateRecoveryCodesBody = z.output<typeof regenerateRecoveryCodesBodySchema>;
+export type DisableTotpBody = z.output<typeof disableTotpBodySchema>;

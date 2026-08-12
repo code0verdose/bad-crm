@@ -195,6 +195,19 @@ export class FakeTotpEnrollment implements TotpEnrollmentRepositoryPort {
 
     return Promise.resolve(true);
   }
+
+  disable(userId: string): Promise<boolean> {
+    const row = this.rows.get(userId);
+
+    if (row === undefined || row.enabledAt === null) return Promise.resolve(false);
+
+    row.secretEnc = null;
+    row.enabledAt = null;
+    row.draftExpiresAt = null;
+    row.lastCounter = null;
+
+    return Promise.resolve(true);
+  }
 }
 
 interface StoredRecoveryCode extends RecoveryCodeCandidate {

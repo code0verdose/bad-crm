@@ -4,12 +4,14 @@ import { AuthenticateSessionQuery } from '@/application/identity/use-cases/authe
 import { ChangePasswordUseCase } from '@/application/identity/use-cases/change-password.use-case.js';
 import { ConfirmPasswordResetUseCase } from '@/application/identity/use-cases/confirm-password-reset.use-case.js';
 import { ConfirmTotpUseCase } from '@/application/identity/use-cases/confirm-totp.use-case.js';
+import { DisableTotpUseCase } from '@/application/identity/use-cases/disable-totp.use-case.js';
 import { EndSessionUseCase } from '@/application/identity/use-cases/end-session.use-case.js';
 import { GenerateRecoveryCodesUseCase } from '@/application/identity/use-cases/generate-recovery-codes.use-case.js';
 import { IssueSessionUseCase } from '@/application/identity/use-cases/issue-session.use-case.js';
 import { ListSessionsQuery } from '@/application/identity/use-cases/list-sessions.query.js';
 import { LoginUseCase } from '@/application/identity/use-cases/login.use-case.js';
 import { ReadRecoveryCodeStatusQuery } from '@/application/identity/use-cases/read-recovery-code-status.query.js';
+import { RecoveryCodeMatcher } from '@/application/identity/use-cases/recovery-code-matcher.use-case.js';
 import { RefreshSessionUseCase } from '@/application/identity/use-cases/refresh-session.use-case.js';
 import { RegenerateRecoveryCodesUseCase } from '@/application/identity/use-cases/regenerate-recovery-codes.use-case.js';
 import { RegisterOrganizationUseCase } from '@/application/identity/use-cases/register-organization.use-case.js';
@@ -24,6 +26,7 @@ import { DeleteCustomRoleUseCase } from '@/application/iam/use-cases/delete-cust
 import { type IamDependencies } from '@/presentation/http/http-server.types.js';
 import { AcceptInvitationUseCase } from '@/application/iam/use-cases/accept-invitation.use-case.js';
 import { DeactivateUserUseCase } from '@/application/iam/use-cases/deactivate-user.use-case.js';
+import { ResetUserMfaUseCase } from '@/application/iam/use-cases/reset-user-mfa.use-case.js';
 import { TransferOwnershipUseCase } from '@/application/iam/use-cases/transfer-ownership.use-case.js';
 import { ReactivateUserUseCase } from '@/application/iam/use-cases/reactivate-user.use-case.js';
 import { GetOrgChartQuery } from '@/application/iam/use-cases/get-org-chart.query.js';
@@ -126,6 +129,10 @@ export interface AuthApp {
   /** Ownership, so a test can seed a recipient and read back what a transfer was asked to do. */
   readonly ownership: FakeOwnershipRepository;
   readonly users: FakeUsers;
+  /** TOTP enrolment, so a suite can seed a colleague's 2FA state without a full setup/confirm flow. */
+  readonly enrollment: FakeTotpEnrollment;
+  /** Recovery codes, so a suite can seed a batch and read back what a reset or disable removed. */
+  readonly recoveryCodeRows: FakeRecoveryCodes;
   readonly organizations: FakeOrganizations;
   readonly lookup: FakeAuthLookup;
   readonly hasher: FakePasswordHasher;
@@ -398,6 +405,22 @@ export const createAuthApp = (options: AuthAppOptions = {}): AuthApp => {
       dispatcher,
       APP_URL,
     ),
+    disableTotp: new DisableTotpUseCase(
+      totpEnrollment,
+      totp,
+      mfaFields,
+      recoveryCodeRows,
+      new RecoveryCodeMatcher(recoveryCodeRows, hasher),
+      users,
+      hasher,
+      unitOfWork,
+      rateLimit,
+      clock,
+      logger,
+      audit,
+      dispatcher,
+      APP_URL,
+    ),
   };
 
   const userRoles = options.userRoles ?? new FakeUserRoleRepository();
@@ -495,6 +518,20 @@ export const createAuthApp = (options: AuthAppOptions = {}): AuthApp => {
       clock,
     ),
     reactivateUser: new ReactivateUserUseCase(unitOfWork, userLifecycle, capabilities, audit),
+    resetUserMfa: new ResetUserMfaUseCase(
+      unitOfWork,
+      users,
+      totpEnrollment,
+      recoveryCodeRows,
+      sessions,
+      userRoles,
+      capabilities,
+      rateLimit,
+      audit,
+      clock,
+      dispatcher,
+      APP_URL,
+    ),
     listEmployees: new ListEmployeesQuery(unitOfWork, employeeDirectory),
     getOrgChart: new GetOrgChartQuery(unitOfWork, employeeDirectory),
     readEmployeeProfile: new ReadEmployeeProfileQuery(unitOfWork, employeeProfiles, fields),
@@ -532,6 +569,8 @@ export const createAuthApp = (options: AuthAppOptions = {}): AuthApp => {
     clock,
     sessions,
     users,
+    enrollment: totpEnrollment,
+    recoveryCodeRows,
     organizations,
     lookup,
     hasher,

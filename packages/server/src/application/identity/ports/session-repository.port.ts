@@ -7,9 +7,23 @@
  * unreachable rather than merely unasked-for.
  */
 
-/** The reason a session stopped being valid — the `session_revoked_reason` labels of the schema. */
+/**
+ * The reason a session stopped being valid — the `session_revoked_reason` labels of the schema.
+ *
+ * `MFA_RESET_BY_ADMIN` is its own label rather than a reuse of `OFFBOARDING` (STORY-013-04,
+ * acceptance 5): the account stays `ACTIVE` and can hold a new session immediately, which is exactly
+ * what `OFFBOARDING`'s own docstring in `schema.prisma` says this enum's other members do not
+ * describe — see the migration that adds the database value,
+ * `20260812110000_mfa_reset_session_reason`.
+ */
 export type SessionRevokedReason =
-  'ROTATED' | 'REUSE_DETECTED' | 'LOGOUT' | 'REVOKED_BY_USER' | 'PASSWORD_CHANGED' | 'OFFBOARDING';
+  | 'ROTATED'
+  | 'REUSE_DETECTED'
+  | 'LOGOUT'
+  | 'REVOKED_BY_USER'
+  | 'PASSWORD_CHANGED'
+  | 'OFFBOARDING'
+  | 'MFA_RESET_BY_ADMIN';
 
 export interface SessionDraft {
   readonly userId: string;

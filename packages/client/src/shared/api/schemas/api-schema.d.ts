@@ -284,7 +284,9 @@ export interface paths {
          *     one code for all three, so a caller cannot use the distinction to learn whether an enrolment
          *     is under way. A code that was already accepted at this step answers `422 totp_code_replayed`
          *     instead, so a person retrying a stale screen is told to wait for the next code rather than
-         *     being sent to look for a typo.
+         *     being sent to look for a typo. A draft whose ciphertext the running `APP_ENCRYPTION_KEY`
+         *     cannot decrypt is none of those and answers `503 service_unavailable`: the deployment is
+         *     misconfigured, and no code the caller types would be accepted.
          *
          *     Bounded by `mfa_setup_attempt`: five attempts in fifteen minutes, escalating on repeated
          *     refusal like a login attempt. The budget is spent **before** the code is read, so attempts one
@@ -348,8 +350,56 @@ export interface paths {
          *     Either credential missing or wrong answers `403 reauthentication_required`; the two reasons
          *     are not distinguishable from outside, and neither is "this account has no TOTP enrolled",
          *     which answers the same code.
+         *
+         *     One case is deliberately **not** folded into that answer: if the stored `totpSecretEnc`
+         *     cannot be decrypted with the running `APP_ENCRYPTION_KEY`, the reply is `503
+         *     service_unavailable`. Nothing the caller sends can fix it, so telling them their code was
+         *     wrong would be false.
          */
         post: operations["regenerateRecoveryCodes"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/2fa/disable": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Turn the caller's own 2FA off.
+         * @description Requires the current password **and** a second-factor proof — a live TOTP code **or** an
+         *     unused recovery code, either is accepted. Both are checked before either is judged, on the
+         *     identical reasoning `POST /auth/2fa/recovery-codes/regenerate` documents for its own
+         *     reauthentication: short-circuiting on the password would make the two checks distinguishable
+         *     by which one this call happened to reach.
+         *
+         *     On success, in one transaction: `totpSecretEnc` and `totpEnabledAt` are cleared and **every**
+         *     recovery code is deleted — a batch left behind would silently re-arm a future enrolment
+         *     nobody scanned a QR code for. If the second factor presented was a recovery code, it is spent
+         *     as one-time through the identical atomic path the second-factor sign-in step will use
+         *     (`RecoveryCodeMatcher` / `RecoveryCodeRepositoryPort.markUsed`), not a second implementation.
+         *
+         *     Either credential missing or wrong — the password, or the code, in either accepted shape —
+         *     answers `403 reauthentication_required`; 2FA stays enabled. This includes a bearer token with
+         *     no password: **a session is not the second factor** (`T-IAM-01`), and this operation is the
+         *     one this codebase's threat model names by that phrase.
+         *
+         *     The exception is a `totpSecretEnc` the running `APP_ENCRYPTION_KEY` cannot decrypt, which
+         *     answers `503 service_unavailable` rather than the refusal above. The distinction matters here
+         *     more than on the neighbouring operations: this is the path out for somebody locked out of
+         *     their authenticator, and answering "wrong code" would send them to spend their recovery sheet
+         *     on a fault no code can clear.
+         *
+         *     `204`, not `200`: there is no secret material left to show once 2FA is off.
+         */
+        post: operations["disableTotp"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1216,6 +1266,77 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/users/{userId}/reset-mfa": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Reset a colleague's 2FA — the way back in for a lost authenticator and every code.
+         * @description Neither a password nor a code is asked of the caller: `user:reset_mfa` is the proof. In one
+         *     transaction: `totpSecretEnc` and `totpEnabledAt` are cleared, **every** recovery code is
+         *     deleted, **every** live session of the account is revoked (`session_revoked_reason
+         *     MFA_RESET_BY_ADMIN`), and `permissionsVersion` is incremented — the identical three-fact
+         *     invalidation `deactivateUser` uses, so a token minted a minute ago stops working on its next
+         *     request rather than at its own expiry (`T-IAM-06`).
+         *
+         *     The account itself is untouched: it stays `ACTIVE` and can open a new session immediately —
+         *     unlike an offboarding, this is not a way to remove somebody's access, only their compromised
+         *     or lost second factor.
+         *
+         *     `user:reset_mfa` is `dangerous`; confirming the consequences (lost recovery codes, every
+         *     session closed) is a client-side dialog before the request is sent, the same choice this
+         *     contract already makes for `deactivateUser` — there is no `X-Confirm-Dangerous` round trip
+         *     here either.
+         *
+         *     The account owner is notified by mail — the one signal that reaches them through a channel
+         *     this action, precisely because it needs no proof from the caller, does not control — sent
+         *     only when the reset actually changed something (see idempotency below): a notice that says
+         *     "your 2FA was turned off" would be false for a call that found nothing to turn off.
+         *
+         *     **`user:reset_mfa` does not reach an account that can do more than its holder.** The
+         *     operation carries the same bound every other way of touching somebody's rights carries
+         *     (`T-IAM-09`): an account may only be reached by somebody who effectively holds everything it
+         *     holds, and the organization owner may only be reached by another owner. Without it, one
+         *     holder of this permission — `owner` and `admin` both hold it — could strip the organization
+         *     owner's second factor down to a password, or a fellow administrator's, with nothing checked
+         *     beyond the capability the guard already confirmed. The owner is exempt from the subset half,
+         *     holding everything by definition; a right the organization already took from the subject with
+         *     a DENY exception does not bound anybody.
+         *
+         *     Repeating the call on an account with no 2FA answers `wasEnabled: false` and is a genuine
+         *     no-op: no session is revoked, no recovery code batch existed to delete, `permissionsVersion`
+         *     is not bumped, and no mail is sent — a permission holder looping this call against one victim
+         *     must not be able to deny them a session or fill their inbox once the account's 2FA is already
+         *     off. The rank-rule checks above still run before this idempotency check, not after, so a
+         *     second call by a caller whose own rights narrowed between the two calls is refused rather than
+         *     answered with the idempotent report — the same ordering `deactivateUser` uses.
+         *
+         *     Bounded by the `mfa_admin_reset_attempt` budget of five per fifteen minutes, keyed on the
+         *     caller and spent before the transaction opens — its own budget, not a share of the
+         *     self-service `mfa_reauth_attempt`, because this path skips the reauthentication that budget
+         *     exists to bound.
+         *
+         *     Refusals: **409 `self_lockout`** for the caller's own account — an administrator cannot use
+         *     this path to remove their own second factor, only the self-service `POST /auth/2fa/disable`
+         *     can do that — **403 `not_the_owner`** for the organization owner when the caller is not the
+         *     owner, **403 `user_forbidden`** without the permission or (`reason: permission_not_granted`)
+         *     when the subject holds a permission the caller does not, **404** for somebody of another
+         *     organization, and **422 `validation_failed`** for a `userId` that is not a UUID, the same
+         *     answer `deactivateUser` and `reactivateUser` give for the same path parameter and the same
+         *     branded schema.
+         */
+        post: operations["resetUserMfa"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/employees": {
         parameters: {
             query?: never;
@@ -1691,6 +1812,25 @@ export interface components {
              */
             currentPassword: string;
         };
+        DisableTotpRequest: {
+            /**
+             * @description Proof of account ownership. Wrong, together with a wrong or missing `code`, answers
+             *     `403 reauthentication_required` — never `401 invalid_credentials`, which this operation
+             *     does not use. A stolen access token with no password is refused here: a session is not
+             *     the second factor.
+             */
+            password: components["schemas"]["Password"];
+            /**
+             * @description Either a live 6-digit TOTP code **or** an unused recovery code — the shape of what was
+             *     typed decides which check runs, so a person who kept a printed recovery sheet but lost
+             *     their authenticator can still turn 2FA off with what they actually have. A recovery code
+             *     presented here is spent as one-time, through the same atomic path the second-factor
+             *     sign-in step uses.
+             * @example 123456
+             * @example 23456ABCDE
+             */
+            code: string;
+        };
         TotpSetupResult: {
             /**
              * @description Base32, shown as text so it can be typed into an authenticator app that has no camera —
@@ -2079,6 +2219,17 @@ export interface components {
              *     teams, projects and vaults are not restored with the account.
              */
             membershipsRestored: boolean;
+        };
+        ResetMfaResult: {
+            /** Format: uuid */
+            userId: string;
+            /**
+             * @description Whether the account had 2FA enabled a moment before this ran. `false` is not an error —
+             *     sessions still close and the permission version still moves.
+             */
+            wasEnabled: boolean;
+            recoveryCodesDeleted: number;
+            sessionsRevoked: number;
         };
         /**
          * @description `key` is what a filter matches and what the code knows a system role by; `name` is what a
@@ -2721,6 +2872,17 @@ export interface components {
          *     deliberate rather than incidental: when Redis is unreachable the rate limiter cannot count,
          *     and an uncounted login endpoint is an unlimited one, so the request is refused instead
          *     (fail closed, STORY-006-07).
+         *
+         *     The 2FA operations declare it for a second, unrelated cause: verifying a TOTP code means
+         *     decrypting `totpSecretEnc` with the running `APP_ENCRYPTION_KEY`, and a key that cannot read
+         *     the stored ciphertext is a misconfigured or rotated-without-migration deployment, not a wrong
+         *     code. Answering `403 reauthentication_required` there would tell the account holder to try
+         *     again with a code that can never be accepted, and would bury an operator-level fault in a
+         *     counter of failed attempts; the incident runbook keys on the `totp_secret_undecryptable`
+         *     security event this path logs beside the 503.
+         *
+         *     A caller can distinguish nothing from this code beyond "not now": both causes are stated
+         *     here for the operator reading the contract, and neither is reported in the body.
          */
         ServiceUnavailable: {
             headers: {
@@ -3136,6 +3298,7 @@ export interface operations {
             };
             401: components["responses"]["Unauthenticated"];
             404: components["responses"]["NotFound"];
+            422: components["responses"]["ValidationFailed"];
             500: components["responses"]["InternalError"];
         };
     };
@@ -3244,6 +3407,7 @@ export interface operations {
             422: components["responses"]["InvalidTotpCode"];
             429: components["responses"]["RateLimited"];
             500: components["responses"]["InternalError"];
+            503: components["responses"]["ServiceUnavailable"];
         };
     };
     getRecoveryCodeStatus: {
@@ -3325,8 +3489,71 @@ export interface operations {
             };
             401: components["responses"]["Unauthenticated"];
             403: components["responses"]["ReauthenticationRequired"];
+            422: components["responses"]["ValidationFailed"];
             429: components["responses"]["RateLimited"];
             500: components["responses"]["InternalError"];
+            503: components["responses"]["ServiceUnavailable"];
+        };
+    };
+    disableTotp: {
+        parameters: {
+            query?: never;
+            header: {
+                /**
+                 * @description Client-generated key, mandatory on every unsafe operation that creates an entity, sends
+                 *     mail or spends money or tokens.
+                 *
+                 *     **Today the server only requires the key; it does not yet store or replay a response.** The
+                 *     table keyed by `(key, request hash)` is a cross-cutting mechanism that has not been built —
+                 *     the open half is recorded in STORY-006-01. What the requirement buys now is that a client
+                 *     which never learned to send the header cannot be made idempotent later without a breaking
+                 *     change; what it does not buy is the convenience of getting the original `201` back instead
+                 *     of a `409` on retry. Where a lost response is genuinely ambiguous rather than merely
+                 *     inconvenient, the operation says so in its own description.
+                 *
+                 *     When the store lands: a replay carrying the same request hash will return the stored
+                 *     response, and the same key with a different hash will be refused with 409
+                 *     `idempotency_key_reuse`.
+                 *
+                 *     Declaring the parameter is not a claim that the operation will replay: the client attaches a
+                 *     key to every unsafe request, and nearly every unsafe operation therefore requires one. What
+                 *     the store will change differs per operation, and each says so in its own description:
+                 *
+                 *     * operations that create something, send mail or spend tokens are the ones a replay is *for*
+                 *       — today a lost response leaves the caller unable to tell «it did not happen» from «it
+                 *       happened and the answer was lost»;
+                 *     * operations idempotent by construction (`assignRole`, `deactivateUser`, `reactivateUser`)
+                 *       require the key but gain nothing from a stored response — asking twice for a state that is
+                 *       already there answers the same way. The key is required anyway, so a client written today
+                 *       keeps working when the store lands;
+                 *     * `POST /auth/login` and `POST /auth/refresh` will **never** replay: a stored response *is* a
+                 *       credential. Replaying it would hand back tokens that have since been rotated or revoked,
+                 *       and would let one key slip a repeat past the failed-attempt counter the lockout depends on.
+                 */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DisableTotpRequest"];
+            };
+        };
+        responses: {
+            /** @description 2FA is off. Every recovery code was deleted. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["ReauthenticationRequired"];
+            422: components["responses"]["ValidationFailed"];
+            429: components["responses"]["RateLimited"];
+            500: components["responses"]["InternalError"];
+            503: components["responses"]["ServiceUnavailable"];
         };
     };
     changePassword: {
@@ -3660,6 +3887,7 @@ export interface operations {
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
             409: components["responses"]["Conflict"];
+            422: components["responses"]["ValidationFailed"];
             429: components["responses"]["RateLimited"];
             500: components["responses"]["InternalError"];
         };
@@ -3892,6 +4120,7 @@ export interface operations {
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
             409: components["responses"]["Conflict"];
+            422: components["responses"]["ValidationFailed"];
             429: components["responses"]["RateLimited"];
             500: components["responses"]["InternalError"];
         };
@@ -4057,6 +4286,7 @@ export interface operations {
             401: components["responses"]["Unauthenticated"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
+            422: components["responses"]["ValidationFailed"];
             429: components["responses"]["RateLimited"];
             500: components["responses"]["InternalError"];
         };
@@ -4087,6 +4317,7 @@ export interface operations {
             401: components["responses"]["Unauthenticated"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
+            422: components["responses"]["ValidationFailed"];
             429: components["responses"]["RateLimited"];
             500: components["responses"]["InternalError"];
         };
@@ -4227,6 +4458,7 @@ export interface operations {
             401: components["responses"]["Unauthenticated"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
+            422: components["responses"]["ValidationFailed"];
             429: components["responses"]["RateLimited"];
             500: components["responses"]["InternalError"];
         };
@@ -4423,6 +4655,7 @@ export interface operations {
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
             409: components["responses"]["Conflict"];
+            422: components["responses"]["ValidationFailed"];
             429: components["responses"]["RateLimited"];
             500: components["responses"]["InternalError"];
         };
@@ -4454,6 +4687,7 @@ export interface operations {
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
             409: components["responses"]["Conflict"];
+            422: components["responses"]["ValidationFailed"];
             429: components["responses"]["RateLimited"];
             500: components["responses"]["InternalError"];
         };
@@ -4682,6 +4916,73 @@ export interface operations {
             500: components["responses"]["InternalError"];
         };
     };
+    resetUserMfa: {
+        parameters: {
+            query?: never;
+            header: {
+                /**
+                 * @description Client-generated key, mandatory on every unsafe operation that creates an entity, sends
+                 *     mail or spends money or tokens.
+                 *
+                 *     **Today the server only requires the key; it does not yet store or replay a response.** The
+                 *     table keyed by `(key, request hash)` is a cross-cutting mechanism that has not been built —
+                 *     the open half is recorded in STORY-006-01. What the requirement buys now is that a client
+                 *     which never learned to send the header cannot be made idempotent later without a breaking
+                 *     change; what it does not buy is the convenience of getting the original `201` back instead
+                 *     of a `409` on retry. Where a lost response is genuinely ambiguous rather than merely
+                 *     inconvenient, the operation says so in its own description.
+                 *
+                 *     When the store lands: a replay carrying the same request hash will return the stored
+                 *     response, and the same key with a different hash will be refused with 409
+                 *     `idempotency_key_reuse`.
+                 *
+                 *     Declaring the parameter is not a claim that the operation will replay: the client attaches a
+                 *     key to every unsafe request, and nearly every unsafe operation therefore requires one. What
+                 *     the store will change differs per operation, and each says so in its own description:
+                 *
+                 *     * operations that create something, send mail or spend tokens are the ones a replay is *for*
+                 *       — today a lost response leaves the caller unable to tell «it did not happen» from «it
+                 *       happened and the answer was lost»;
+                 *     * operations idempotent by construction (`assignRole`, `deactivateUser`, `reactivateUser`)
+                 *       require the key but gain nothing from a stored response — asking twice for a state that is
+                 *       already there answers the same way. The key is required anyway, so a client written today
+                 *       keeps working when the store lands;
+                 *     * `POST /auth/login` and `POST /auth/refresh` will **never** replay: a stored response *is* a
+                 *       credential. Replaying it would hand back tokens that have since been rotated or revoked,
+                 *       and would let one key slip a repeat past the failed-attempt counter the lockout depends on.
+                 */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                /**
+                 * @description Identifier of a person in the caller's organization. An id from another organization is
+                 *     answered 404, not 403 — the API does not confirm what exists in tenants the caller cannot
+                 *     see.
+                 */
+                userId: components["parameters"]["UserId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description What the reset actually revoked. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ResetMfaResult"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["ValidationFailed"];
+            429: components["responses"]["RateLimited"];
+            500: components["responses"]["InternalError"];
+        };
+    };
     listEmployees: {
         parameters: {
             query?: {
@@ -4774,6 +5075,7 @@ export interface operations {
             401: components["responses"]["Unauthenticated"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
+            422: components["responses"]["ValidationFailed"];
             429: components["responses"]["RateLimited"];
             500: components["responses"]["InternalError"];
         };
@@ -4883,6 +5185,7 @@ export interface operations {
             401: components["responses"]["Unauthenticated"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
+            422: components["responses"]["ValidationFailed"];
             429: components["responses"]["RateLimited"];
             500: components["responses"]["InternalError"];
         };
@@ -4971,6 +5274,7 @@ export interface operations {
             401: components["responses"]["Unauthenticated"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
+            422: components["responses"]["ValidationFailed"];
             429: components["responses"]["RateLimited"];
             500: components["responses"]["InternalError"];
         };

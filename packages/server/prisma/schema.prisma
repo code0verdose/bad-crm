@@ -124,10 +124,16 @@ enum UserStatus {
 ///                          (STORY-006-06, STORY-006-08);
 ///   * `OFFBOARDING`      — the account stopped being able to hold sessions: suspended, deactivated
 ///                          or softly deleted (`docs/architecture/data-model.md`, «Про каскады»).
+///   * `MFA_RESET_BY_ADMIN` — an administrator switched the account's 2FA off through
+///                          `user:reset_mfa` (STORY-013-04, acceptance 5).
 ///
 /// `OFFBOARDING` and not `USER_DELETED`, which is what this value was called: suspension deletes
 /// nothing, and the reason would have been false for the case that produces most of these rows.
 /// STORY-012-05 names the value literally, and its one deactivation operation covers both.
+///
+/// `MFA_RESET_BY_ADMIN` is deliberately its own value rather than a second use of `OFFBOARDING`:
+/// the account stays `ACTIVE` and can hold a new session immediately, which is exactly what
+/// `OFFBOARDING`'s own docstring above says this enum's members do not describe.
 enum SessionRevokedReason {
   ROTATED
   REUSE_DETECTED
@@ -135,6 +141,7 @@ enum SessionRevokedReason {
   REVOKED_BY_USER
   PASSWORD_CHANGED
   OFFBOARDING
+  MFA_RESET_BY_ADMIN
 
   @@map("session_revoked_reason")
 }

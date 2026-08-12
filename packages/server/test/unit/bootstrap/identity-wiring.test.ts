@@ -71,6 +71,7 @@ describe('wiring the authentication surface', () => {
       'changePassword',
       'confirmPasswordReset',
       'confirmTotp',
+      'disableTotp',
       'endSession',
       'listSessions',
       'login',

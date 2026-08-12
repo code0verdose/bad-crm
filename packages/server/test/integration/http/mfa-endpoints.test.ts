@@ -6,7 +6,8 @@ import { createAuthApp, type AuthApp } from '../../support/auth-app.util.js';
 
 /**
  * The 2FA surface on the wire: `POST /auth/2fa/setup`, `POST /auth/2fa/confirm`,
- * `GET /auth/2fa/recovery-codes`, `POST /auth/2fa/recovery-codes/regenerate`.
+ * `GET /auth/2fa/recovery-codes`, `POST /auth/2fa/recovery-codes/regenerate`,
+ * `POST /auth/2fa/disable`.
  *
  * What only this level can show: that the routes sit behind the authentication guard as
  * self-service (no capability check), that `Idempotency-Key` is required where the contract
@@ -278,5 +279,108 @@ describe('POST /api/v1/auth/2fa/recovery-codes/regenerate', () => {
       .expect(401);
 
     expect((response.body as { code: string }).code).toBe('unauthenticated');
+  });
+});
+
+describe('POST /api/v1/auth/2fa/disable', () => {
+  /** Enrols and returns the first of the ten plaintext recovery codes — the material `disable`
+   *  needs to test the recovery-code half of acceptance 2 without depending on a live TOTP window. */
+  const enrollAndCollectFirstCode = async (test: AuthApp, accessToken: string): Promise<string> => {
+    const setup = await authed(test, accessToken).post('/api/v1/auth/2fa/setup').expect(200);
+    const { secret } = setup.body as { secret: string };
+
+    const confirmed = await authed(test, accessToken)
+      .post('/api/v1/auth/2fa/confirm')
+      .set('Idempotency-Key', IDEMPOTENCY_KEY)
+      .send({ code: codeFor(secret, test.clock.now()), currentPassword: PASSWORD })
+      .expect(200);
+
+    const [code] = (confirmed.body as { codes: string[] }).codes;
+
+    if (code === undefined) throw new Error('confirm did not return any recovery codes');
+
+    return code;
+  };
+
+  it('turns 2FA off with a correct password and an unused recovery code — acceptance 2', async () => {
+    const test = createAuthApp();
+    const session = await signIn(test);
+    const code = await enrollAndCollectFirstCode(test, session.accessToken);
+
+    await authed(test, session.accessToken)
+      .post('/api/v1/auth/2fa/disable')
+      .set('Idempotency-Key', IDEMPOTENCY_KEY)
+      .send({ password: PASSWORD, code })
+      .expect(204);
+
+    const status = await authed(test, session.accessToken)
+      .get('/api/v1/auth/2fa/recovery-codes')
+      .expect(200);
+
+    // Every code — the one just used to disable, and the nine untouched — is gone in the same
+    // transaction (acceptance 1).
+    expect(status.body).toEqual({ total: 0, remaining: 0 });
+  });
+
+  it('refuses a correct recovery code presented with the wrong password, and disables nothing — acceptance 3', async () => {
+    const test = createAuthApp();
+    const session = await signIn(test);
+    const code = await enrollAndCollectFirstCode(test, session.accessToken);
+
+    const response = await authed(test, session.accessToken)
+      .post('/api/v1/auth/2fa/disable')
+      .set('Idempotency-Key', IDEMPOTENCY_KEY)
+      .send({ password: 'entirely-the-wrong-password', code })
+      .expect(403);
+
+    expect((response.body as { code: string }).code).toBe('reauthentication_required');
+
+    const status = await authed(test, session.accessToken)
+      .get('/api/v1/auth/2fa/recovery-codes')
+      .expect(200);
+
+    // 2FA is still on and the recovery code presented is still there to try again with the right
+    // password — a wrong password must not burn it.
+    expect(status.body).toEqual({ total: 10, remaining: 10 });
+  });
+
+  it('refuses a missing/wrong code with the correct password — acceptance 2', async () => {
+    const test = createAuthApp();
+    const session = await signIn(test);
+
+    await enrollAndCollectFirstCode(test, session.accessToken);
+
+    const response = await authed(test, session.accessToken)
+      .post('/api/v1/auth/2fa/disable')
+      .set('Idempotency-Key', IDEMPOTENCY_KEY)
+      .send({ password: PASSWORD, code: 'ZZZZZ99999' })
+      .expect(403);
+
+    expect((response.body as { code: string }).code).toBe('reauthentication_required');
+  });
+
+  it('refuses without a session', async () => {
+    const test = createAuthApp();
+
+    const response = await request(test.app)
+      .post('/api/v1/auth/2fa/disable')
+      .set('Idempotency-Key', IDEMPOTENCY_KEY)
+      .send({ password: PASSWORD, code: '000000' })
+      .expect(401);
+
+    expect((response.body as { code: string }).code).toBe('unauthenticated');
+  });
+
+  it('refuses a malformed body at the validator, before any use-case runs', async () => {
+    const test = createAuthApp();
+    const session = await signIn(test);
+
+    const response = await authed(test, session.accessToken)
+      .post('/api/v1/auth/2fa/disable')
+      .set('Idempotency-Key', IDEMPOTENCY_KEY)
+      .send({ password: PASSWORD })
+      .expect(422);
+
+    expect((response.body as { code: string }).code).toBe('validation_failed');
   });
 });

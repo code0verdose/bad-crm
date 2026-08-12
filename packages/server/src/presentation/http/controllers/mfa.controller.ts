@@ -1,6 +1,7 @@
 import { type RequestHandler } from 'express';
 
 import { type ConfirmTotpUseCase } from '@/application/identity/use-cases/confirm-totp.use-case.js';
+import { type DisableTotpUseCase } from '@/application/identity/use-cases/disable-totp.use-case.js';
 import { type ReadRecoveryCodeStatusQuery } from '@/application/identity/use-cases/read-recovery-code-status.query.js';
 import { type RegenerateRecoveryCodesUseCase } from '@/application/identity/use-cases/regenerate-recovery-codes.use-case.js';
 import { type SetupTotpUseCase } from '@/application/identity/use-cases/setup-totp.use-case.js';
@@ -14,6 +15,7 @@ import {
 } from '@/presentation/http/serializers/mfa.serializer.js';
 import {
   type confirmTotpBodySchema,
+  type disableTotpBodySchema,
   type regenerateRecoveryCodesBodySchema,
 } from '@/presentation/http/validators/mfa.validator.js';
 
@@ -32,10 +34,12 @@ export interface MfaControllerDependencies {
   readonly confirmTotp: ConfirmTotpUseCase;
   readonly recoveryCodeStatus: ReadRecoveryCodeStatusQuery;
   readonly regenerateRecoveryCodes: RegenerateRecoveryCodesUseCase;
+  readonly disableTotp: DisableTotpUseCase;
   readonly confirmTotpValidator: RequestValidator<{ body: typeof confirmTotpBodySchema }>;
   readonly regenerateRecoveryCodesValidator: RequestValidator<{
     body: typeof regenerateRecoveryCodesBodySchema;
   }>;
+  readonly disableTotpValidator: RequestValidator<{ body: typeof disableTotpBodySchema }>;
 }
 
 /**
@@ -54,6 +58,7 @@ export const createMfaController = (
   readonly confirm: RequestHandler;
   readonly recoveryCodeStatus: RequestHandler;
   readonly regenerateRecoveryCodes: RequestHandler;
+  readonly disable: RequestHandler;
 } => ({
   setup: async (_request, response) => {
     const caller = readCaller(response);
@@ -114,5 +119,24 @@ export const createMfaController = (
 
     response.setHeader('Cache-Control', NO_STORE);
     response.json(serializeRecoveryCodesIssued(result.recoveryCodes));
+  },
+
+  /**
+   * `204`, not `200`: unlike `confirm` and `regenerateRecoveryCodes`, disabling returns no secret
+   * material — there is nothing left to show once 2FA is off — so there is no body to justify a
+   * `Cache-Control: private, no-store` header either.
+   */
+  disable: async (request, response) => {
+    const caller = readCaller(response);
+    const { body } = dependencies.disableTotpValidator.read(response);
+
+    await dependencies.disableTotp.execute({
+      actor: { organizationId: caller.organizationId, userId: caller.userId },
+      password: body.password,
+      code: body.code,
+      ipAddress: clientOf(request).ipAddress,
+    });
+
+    response.status(204).send();
   },
 });

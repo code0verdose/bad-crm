@@ -15,6 +15,7 @@ import { createPermissionOverrideController } from '@/presentation/http/controll
 import { createUserPermissionsController } from '@/presentation/http/controllers/user-permissions.controller.js';
 import { createOwnershipController } from '@/presentation/http/controllers/ownership.controller.js';
 import { createUserLifecycleController } from '@/presentation/http/controllers/user-lifecycle.controller.js';
+import { createUserSecurityController } from '@/presentation/http/controllers/user-security.controller.js';
 import { createTeamController } from '@/presentation/http/controllers/team.controller.js';
 import { createUserRoleController } from '@/presentation/http/controllers/user-role.controller.js';
 import { allowedOrigins } from '@/presentation/http/cors-origin.util.js';
@@ -41,6 +42,7 @@ import {
 } from '@/presentation/http/validators/auth.validator.js';
 import {
   confirmTotpBodySchema,
+  disableTotpBodySchema,
   regenerateRecoveryCodesBodySchema,
 } from '@/presentation/http/validators/mfa.validator.js';
 import { metaQuerySchema } from '@/presentation/http/validators/meta.validator.js';
@@ -77,6 +79,7 @@ import {
   deactivateUserBodySchema,
   userLifecycleParamsSchema,
 } from '@/presentation/http/validators/user-lifecycle.validator.js';
+import { resetUserMfaParamsSchema } from '@/presentation/http/validators/user-security.validator.js';
 import {
   assignRoleBodySchema,
   userIdParamsSchema,
@@ -218,6 +221,13 @@ export const createRouteRegistry = (
     reactivateValidator: reactivateUserValidator,
   });
 
+  const resetUserMfaValidator = validate({ params: resetUserMfaParamsSchema });
+
+  const userSecurity = createUserSecurityController({
+    resetUserMfa: dependencies.iam.resetUserMfa,
+    resetUserMfaValidator,
+  });
+
   const createTeamValidator = validate({ body: createTeamBodySchema });
   const updateTeamValidator = validate({ params: teamIdParamsSchema, body: updateTeamBodySchema });
   const teamIdValidator = validate({ params: teamIdParamsSchema });
@@ -279,14 +289,17 @@ export const createRouteRegistry = (
 
   const confirmTotpValidator = validate({ body: confirmTotpBodySchema });
   const regenerateRecoveryCodesValidator = validate({ body: regenerateRecoveryCodesBodySchema });
+  const disableTotpValidator = validate({ body: disableTotpBodySchema });
 
   const mfa = createMfaController({
     setupTotp: dependencies.identity.setupTotp,
     confirmTotp: dependencies.identity.confirmTotp,
     recoveryCodeStatus: dependencies.identity.recoveryCodeStatus,
     regenerateRecoveryCodes: dependencies.identity.regenerateRecoveryCodes,
+    disableTotp: dependencies.identity.disableTotp,
     confirmTotpValidator,
     regenerateRecoveryCodesValidator,
+    disableTotpValidator,
   });
 
   const sameOrigin = createSameOriginMiddleware(
@@ -475,6 +488,15 @@ export const createRouteRegistry = (
       selfServiceReason:
         'replacing one’s own recovery-code set; authorised by reauthentication (current password and a live TOTP code) rather than by a capability, and bounded by the mfa_reauth_attempt budget of five per fifteen minutes',
       ownershipCheckedIn: 'RegenerateRecoveryCodesUseCase',
+    },
+    {
+      method: 'post',
+      path: `${API_PREFIX}/auth/2fa/disable`,
+      handlers: [requireIdempotencyKey(), disableTotpValidator.handler, mfa.disable],
+      selfService: true,
+      selfServiceReason:
+        'turning one’s own 2FA off; authorised by reauthentication (current password and either a live TOTP code or an unused recovery code) rather than by a capability — the same standing STORY-013-04 gives the administrative reset none of, and bounded by the mfa_reauth_attempt budget of five per fifteen minutes, spent in DisableTotpUseCase before either proof is read',
+      ownershipCheckedIn: 'DisableTotpUseCase',
     },
     {
       method: 'get',
@@ -733,6 +755,19 @@ export const createRouteRegistry = (
       // step an intruder needs after an offboarding, and an organization may well let more people
       // switch somebody off than switch them on.
       aclCheckedIn: 'ReactivateUserUseCase',
+    },
+    {
+      method: 'post',
+      path: `${API_PREFIX}/users/:userId/reset-mfa`,
+      handlers: [requireIdempotencyKey(), resetUserMfaValidator.handler, userSecurity.resetMfa],
+      permission: 'user:reset_mfa',
+      // The guard answers «may this caller reset anybody's 2FA». Whether *this* account may be the
+      // target — not the actor's own, not one that outranks the actor, not the organization owner
+      // unless the actor is too — is decided inside the use-case
+      // (`domain/identity/access/mfa-policy.policy.ts`, `assertNotSelfReset` and
+      // `assertMfaResetInBounds`), which is also the only place that can answer 404 rather than 403
+      // for somebody else's id.
+      aclCheckedIn: 'ResetUserMfaUseCase',
     },
     {
       method: 'get',

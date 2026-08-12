@@ -50,8 +50,12 @@ export const RATE_LIMIT_POLICIES = [
    */
   'mfa_setup_attempt',
   /**
-   * Reauthenticating with the current password and a live TOTP code before
-   * `POST /auth/2fa/recovery-codes/regenerate` is allowed to run. Keyed on the caller; 5 / 15 minutes.
+   * Reauthenticating with the current password and a live TOTP-or-recovery-code proof before
+   * `POST /auth/2fa/recovery-codes/regenerate` **or** `POST /auth/2fa/disable` is allowed to run —
+   * one shared budget for both, because both ask the identical question of the identical caller
+   * ("does whoever holds this session still control the password and the second factor") and a
+   * separate counter per route would let an attacker who exhausted one keep guessing on the other.
+   * Keyed on the caller; 5 / 15 minutes.
    */
   'mfa_reauth_attempt',
   /**
@@ -64,6 +68,22 @@ export const RATE_LIMIT_POLICIES = [
    * bounded reaching. 5 / 15 minutes (STORY-013-02, acceptance 10).
    */
   'mfa_recovery_consume_attempt',
+  /**
+   * `POST /users/{userId}/reset-mfa` — the administrative path, not the self-service one above.
+   * A budget of its own rather than a share of `mfa_reauth_attempt`, because the two answer different
+   * questions of different subjects: `mfa_reauth_attempt` asks the *caller* to re-prove their own
+   * password and code, and `user:reset_mfa` skips both proofs by design (STORY-013-04's whole reason
+   * to exist is a way back in for somebody who has neither) — there is no reauthentication here to
+   * share a counter with. Keyed on the **actor** — the administrator holding the permission, not the
+   * account being reset — the same reasoning `invitation_create` is keyed on the inviter rather than
+   * the invitee: the subject of a lock-out has to be the account whose choice is being throttled, and
+   * an idempotent repeat against an already-disabled target still spends one point, the same way
+   * `mfa_reauth_attempt` is spent before its own transaction whether or not the credentials presented
+   * turn out to be valid — a caller answers the same before either transaction opens. 5 / 15 minutes,
+   * no escalation — an authenticated, known administrator, the same class `mfa_reauth_attempt` and
+   * `invitation_create` reason from for leaving escalation out.
+   */
+  'mfa_admin_reset_attempt',
 ] as const;
 
 export type RateLimitPolicy = (typeof RATE_LIMIT_POLICIES)[number];
@@ -124,6 +144,7 @@ export interface RateLimitSubjects {
   readonly mfa_setup_attempt: UserSubject;
   readonly mfa_reauth_attempt: UserSubject;
   readonly mfa_recovery_consume_attempt: UserSubject;
+  readonly mfa_admin_reset_attempt: UserSubject;
 }
 
 /**

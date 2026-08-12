@@ -218,6 +218,27 @@ describe('PrismaTotpEnrollmentRepository', () => {
     expect(sql).toContain('totp_last_counter = NULL');
     expect(sql).toContain('totp_enabled_at IS NULL');
   });
+
+  it('disables by clearing all four columns, guarded by totp_enabled_at IS NOT NULL', async () => {
+    const client = recordingClient([{ id: USER }]);
+
+    const disabled = await inScope(client, () => enrollment.disable(USER));
+
+    expect(disabled).toBe(true);
+    const sql = client.statements[0] ?? '';
+
+    expect(sql).toContain('totp_secret_enc = NULL');
+    expect(sql).toContain('totp_enabled_at = NULL');
+    expect(sql).toContain('totp_draft_expires_at = NULL');
+    expect(sql).toContain('totp_last_counter = NULL');
+    expect(sql).toContain('totp_enabled_at IS NOT NULL');
+  });
+
+  it('reports false when the account never had 2FA enabled', async () => {
+    const client = recordingClient([]);
+
+    await expect(inScope(client, () => enrollment.disable(USER))).resolves.toBe(false);
+  });
 });
 
 describe('PrismaMfaRecoveryCodeRepository', () => {

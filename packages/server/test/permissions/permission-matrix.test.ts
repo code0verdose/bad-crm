@@ -160,6 +160,12 @@ const CALLS: Readonly<Record<string, Call>> = {
       .set('Authorization', `Bearer ${token}`)
       .set('Idempotency-Key', IDEMPOTENCY_KEY)
       .send({}),
+  'POST /api/v1/users/:userId/reset-mfa': (app, token) =>
+    request(app)
+      .post(`/api/v1/users/${IVAN}/reset-mfa`)
+      .set('Authorization', `Bearer ${token}`)
+      .set('Idempotency-Key', IDEMPOTENCY_KEY)
+      .send(),
   'PUT /api/v1/users/:userId/permission-overrides/:permission': (app, token) =>
     request(app)
       .put(`/api/v1/users/${IVAN}/permission-overrides/task%3Aread`)

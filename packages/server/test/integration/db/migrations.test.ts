@@ -179,7 +179,15 @@ describe('prisma migrate deploy', () => {
     ['user_status', ['ACTIVE', 'INVITED', 'SUSPENDED']],
     [
       'session_revoked_reason',
-      ['LOGOUT', 'OFFBOARDING', 'PASSWORD_CHANGED', 'REUSE_DETECTED', 'REVOKED_BY_USER', 'ROTATED'],
+      [
+        'LOGOUT',
+        'MFA_RESET_BY_ADMIN',
+        'OFFBOARDING',
+        'PASSWORD_CHANGED',
+        'REUSE_DETECTED',
+        'REVOKED_BY_USER',
+        'ROTATED',
+      ],
     ],
   ])('created the enum %s with exactly the labels the model declares', async (name, labels) => {
     const { rows } = await pools.owner.query<{ label: string }>(

@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 
 import { ConsumeRecoveryCodeUseCase } from '@/application/identity/use-cases/consume-recovery-code.use-case.js';
+import { RecoveryCodeMatcher } from '@/application/identity/use-cases/recovery-code-matcher.use-case.js';
 import { RateLimitedError, RecoveryCodeInvalidError } from '@/domain/shared/errors/app.errors.js';
 
 import {
@@ -29,10 +30,11 @@ const buildHarness = () => {
   const clock = new FakeClock();
   const logger = new RecordingLogger();
   const audit = new FakeAuditLogger();
+  const matcher = new RecoveryCodeMatcher(codes, hasher);
 
   const useCase = new ConsumeRecoveryCodeUseCase(
+    matcher,
     codes,
-    hasher,
     unitOfWork,
     rateLimit,
     clock,
@@ -209,8 +211,8 @@ describe('the rate limit', () => {
     const id = harness.seedCode(VALID_CODE);
 
     const limitedUseCase = new ConsumeRecoveryCodeUseCase(
+      new RecoveryCodeMatcher(harness.codes, harness.hasher),
       harness.codes,
-      harness.hasher,
       harness.unitOfWork,
       new FakeRateLimit({ limits: { mfa_recovery_consume_attempt: 0 } }),
       harness.clock,

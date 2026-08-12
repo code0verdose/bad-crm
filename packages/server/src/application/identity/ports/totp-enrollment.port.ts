@@ -80,4 +80,19 @@ export interface TotpEnrollmentRepositoryPort {
    * tell "there was a draft, and it is gone now" from "there was nothing left to discard" apart.
    */
   abandonDraft(userId: string): Promise<boolean>;
+
+  /**
+   * Turns an enabled enrolment off: every one of the four columns back to unset, in one statement
+   * (STORY-013-04, acceptance 1 and 5 — `DisableTotpUseCase` and `ResetUserMfaUseCase` are its only
+   * two callers, and neither reads the secret to produce this write).
+   *
+   * `UPDATE users SET totp_secret_enc = NULL, totp_enabled_at = NULL, totp_draft_expires_at = NULL,
+   * totp_last_counter = NULL WHERE id = $1 AND totp_enabled_at IS NOT NULL RETURNING id`. Guarded by
+   * `totp_enabled_at IS NOT NULL`, the mirror image of `beginDraft`'s guard: **answers whether the
+   * account actually had 2FA enabled a moment ago.** `false` covers "never enabled" and "a concurrent
+   * disable already cleared it" the same way every other conditional write in this port folds two
+   * states its caller does not need to tell apart — a caller that ignored the return value would
+   * write an audit row and send a mail for an account whose 2FA was already off.
+   */
+  disable(userId: string): Promise<boolean>;
 }

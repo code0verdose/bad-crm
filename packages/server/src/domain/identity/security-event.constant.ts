@@ -149,6 +149,20 @@ export const SECURITY_EVENTS = {
    * sign-in names. One event for all three, on the same reasoning as `passwordResetRefused`.
    */
   recoveryCodeRefused: 'recovery_code_refused',
+  /**
+   * The account owner turned 2FA off through `POST /auth/2fa/disable`: `totpEnabledAt` was cleared
+   * and every recovery code was deleted, in the same transaction (STORY-013-04, acceptance 1).
+   */
+  totpDisabled: 'totp_disabled',
+  /**
+   * An administrator reset a colleague's 2FA through `user:reset_mfa` (STORY-013-04, acceptance 5).
+   *
+   * A distinct name from `totpDisabled`, for the identical reason `totpEnabled` is distinct from
+   * `totpRecoveryCodesRegenerated`: the two describe different facts — one is the owner's own choice,
+   * the other is somebody else's — and an operator who has learned to expect `totpDisabled` only from
+   * a self-service call would misread this one as the same event.
+   */
+  totpResetByAdmin: 'totp_reset_by_admin',
 } as const;
 
 export type SecurityEvent = (typeof SECURITY_EVENTS)[keyof typeof SECURITY_EVENTS];

@@ -98,6 +98,8 @@ describe('the action catalogue', () => {
       'user.mfa_setup_failed',
       'user.mfa_recovery_code_used',
       'user.mfa_recovery_codes_regenerated',
+      'user.mfa_disabled',
+      'user.mfa_reset_by_admin',
       'role.created',
       'role.updated',
       'role.deleted',
