@@ -37,7 +37,7 @@
     "@opentelemetry/sdk-trace-node": "^2.10.0",
     "@opentelemetry/semantic-conventions": "^1.43.0",
     "@otplib/totp": "13.4.1",
-    "@prisma/client": "^6.19.3",
+    "@prisma/client": "^7.9.1",
     "@prisma/instrumentation": "6.19.3",
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.6",
