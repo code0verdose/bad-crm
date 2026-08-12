@@ -83,7 +83,7 @@ services:
   # Redis 8.0 added AGPLv3 as a third option (LICENSE.txt of the redis/redis repository), which is
   # the licence of this project — so from 8.0 onwards the image may ship with the distribution.
   redis:
-    image: redis:8.8.1-alpine
+    image: redis:8.10.0-alpine
     restart: unless-stopped
     # AOF with everysec fsync: a dev restart must not silently drop queued jobs mid-debugging.
     command: ['redis-server', '--appendonly', 'yes', '--appendfsync', 'everysec']
@@ -150,7 +150,7 @@ services:
   # Meilisearch — optional by design. Absent in the minimal profile, where SearchPort falls back to
   # PostgreSQL FTS (ADR-0011). meili-data is never backed up: the index is replayed from the DB.
   meilisearch:
-    image: getmeili/meilisearch:v1.51.0
+    image: getmeili/meilisearch:v1.52.0
     profiles: ['default', 'full']
     restart: unless-stopped
     environment:
