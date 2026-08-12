@@ -67,9 +67,15 @@ const SCOPES = [
 
 /**
  * Attribution is authored, not generated: no assistant trailers, no "generated with" footers, no
- * robot emoji. Matching is deliberately narrow — `CLAUDE.md` is a real file in this repository, so
- * `docs(config): document claude.md sections` stays a valid commit message while
- * `chore(lint): let claude write the config` does not.
+ * robot emoji. Matching is deliberately narrow — the word also names real paths in this repository,
+ * and a rule that forbids naming a file forces commit messages to describe changes they cannot point
+ * at. `docs(config): document claude.md sections` and `chore(config): move .claude/agents` are valid;
+ * `chore(lint): let claude write the config` is not.
+ *
+ * The path exception is the whole difference: a mention preceded by `.` or `/`, or followed by an
+ * extension or a slash, is a filename. Anything else is a byline. This was widened after a commit
+ * naming `.claude/AGENT-BRIEF.md` was refused — the file exception covered `CLAUDE.md` and nothing
+ * else, so the directory holding the project's own agents could not be mentioned at all.
  */
 const AI_ATTRIBUTION = [
   {
@@ -78,8 +84,8 @@ const AI_ATTRIBUTION = [
   },
   { pattern: /generated\s+with\b/i, hint: 'a "generated with …" footer' },
   { pattern: /🤖/u, hint: 'the robot emoji' },
-  { pattern: /\bclaude\b(?!\.md)/i, hint: 'a mention of Claude' },
-  { pattern: /\banthropic\b/i, hint: 'a mention of Anthropic' },
+  { pattern: /(?<![./\w-])claude\b(?!\.[a-z]|\/)/i, hint: 'a mention of Claude' },
+  { pattern: /(?<![./\w-])anthropic\b(?!\.[a-z]|\/)/i, hint: 'a mention of Anthropic' },
 ];
 
 const noAiAttribution = {
