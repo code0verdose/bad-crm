@@ -64,9 +64,22 @@ export interface LintOutcome {
  * its budget has genuinely got slow, which is a thing worth failing over.
  */
 export const warmUpFixtureLint = async (): Promise<void> => {
-  await eslintForFixtures().lintText('export const warmUp = 1;\n', {
-    filePath: join(fixturesRoot, 'packages/shared/src/warm-up.util.ts'),
-  });
+  // Lint the whole fixture tree once, and accept the bluntness: it is the only warm-up that provably
+  // covers what the cases exercise.
+  //
+  // Two narrower attempts failed, both silently. Warming a single `packages/shared` path missed the
+  // **client** glob, which `eslint.config.js` gives its own resolver project pointing at the real
+  // `packages/client/tsconfig.json`; paired with a per-case budget cut to 15 s, that turned an
+  // intermittent flake into a deterministic failure and — because turbo aborts on the first failed
+  // task — stopped the client suite running on `main` at all. Warming one synthetic file per package
+  // missed it too: the expensive program is built when a rule resolves a *real* specifier, and a
+  // hand-written file does not take the same path. Measured both times rather than reasoned about:
+  // the first client case stayed at 4.9 s and then 4.6 s while its neighbours took 10 ms.
+  //
+  // Linting the tree costs what the suite costs anyway. What it buys is that adding a package, a
+  // glob or a resolver to `eslint.config.js` cannot leave this warm-up behind — there is no list here
+  // to forget to update.
+  await eslintForFixtures().lintFiles([fixturesRoot]);
 };
 
 /** Lints a single fixture file, addressed by its path relative to the fixture root. */

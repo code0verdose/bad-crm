@@ -333,8 +333,16 @@ const CLEAN_FIXTURES = [
  */
 const ESLINT_WARMUP_TIMEOUT_MS = 120_000;
 
-/** After the warm-up a single fixture lints in milliseconds; the budget is slack, not a cost. */
-const CASE_TIMEOUT_MS = 15_000;
+/**
+ * After the warm-up a single fixture lints in milliseconds, so this is slack rather than a cost.
+ *
+ * Kept at thirty seconds and not tightened: the previous attempt cut it to fifteen in the same change
+ * that introduced the warm-up, and when the warm-up turned out to miss a resolver project the tighter
+ * budget converted a flake into a deterministic failure. A generous per-case budget costs nothing
+ * when the cases are fast and is the difference between a red build and a diagnosable one when they
+ * are not.
+ */
+const CASE_TIMEOUT_MS = 30_000;
 
 beforeAll(warmUpFixtureLint, ESLINT_WARMUP_TIMEOUT_MS);
 
