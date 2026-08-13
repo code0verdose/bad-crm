@@ -70,7 +70,8 @@ docs/api/openapi.yaml   ←── source of truth, правится руками
 
 ```bash
 pnpm api:gen     # openapi-typescript docs/api/openapi.yaml → api-schema.d.ts
-pnpm api:lint    # валидация спеки (Spectral)
+# Валидность спеки проверяют контрактные тесты (`packages/server/test/contract/**`).
+# Отдельного `pnpm api:lint` в проекте НЕТ: Spectral не заводили (rules/api-contract.mdc).
 ```
 
 Сгенерированный `api-schema.d.ts` **коммитится**. В CI после `pnpm api:gen` выполняется
@@ -138,8 +139,10 @@ pnpm api:lint    # валидация спеки (Spectral)
   каждый порт, который вызывает use-case, а бросают самое интересное именно порты. `RateLimitPort.
   consume` бросает `ServiceUnavailableError`, когда Redis недоступен, — значит `503` достижим на
   **каждой** операции, у которой есть бюджет лимитера, то есть на каждой операции, которой этот
-  документ назначает `429`, тогда как сам документ называет `503` только у двух операций (`login`,
-  `refresh`). Проверка «по типам брошенных ошибок» либо пропустит это расхождение целиком и
+  документ назначает `429`, тогда как сам документ называет `503` у горстки операций (сколько
+  именно — печатает `grep -c "responses/ServiceUnavailable'" docs/api/openapi.yaml`; число здесь не
+  записано намеренно, оно росло с каждым эпиком и абзац уже успел от него отстать).
+  Проверка «по типам брошенных ошибок» либо пропустит это расхождение целиком и
   останется зелёной, либо потребует `503` почти на всей поверхности API, не спросив никого, должен
   ли контракт это говорить. Оба исхода — шум под видом гейта; первый хуже, потому что выглядит
   пройденным.
@@ -414,7 +417,7 @@ API токен в URL не видит никогда.
 | У каждой операции ровно один из `x-permission` / `x-public-reason` / `x-self-service-reason`; permission — из каталога | `test/contract/route-authorization.test.ts` |
 | Ни один параметр пути или query не может нести секрет | там же |
 | Регенерация типов не забыта | `pnpm api:gen` + `git diff --exit-code` в CI |
-| Валидность самой спеки | `pnpm api:lint` (Spectral) |
+| Валидность самой спеки | `packages/server/test/contract/openapi.test.ts` — Spectral и `pnpm api:lint` в проект не заводили |
 | Отсутствие raw `fetch`/`axios` на клиенте | ESLint |
 | Ломающие изменения, permission на каждом endpoint'е, формат ошибок | Агент [`openapi-contract-guardian`](../../.claude/agents/openapi-contract-guardian.md) |
 | Право объявлено и проверяется в use-case | Агент [`permission-matrix-auditor`](../../.claude/agents/permission-matrix-auditor.md) |

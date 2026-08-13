@@ -154,7 +154,7 @@ await tx.$executeRawUnsafe(`SET app.organization_id = '${orgId}'`);   // ❌ в�
 | Механизм | Что ловит |
 |---|---|
 | ESLint `no-restricted-imports` на `@prisma/client` вне `infrastructure/persistence/**` | утечку Prisma в domain/application/presentation — ключ: строка спецификатора `@prisma/client`, **не переживает** переезд пути импорта (ADR-0027, волна B); см. раздел «Устойчивость» ниже |
-| `packages/server/test/unit/architecture/layers.test.ts` (`dependencies point inwards`) — независимая от ESLint проверка дерева импортов через `startsWithAny('@prisma/client')` для `domain` и `application` | тот же запрет вторым, самостоятельным каналом: остаётся красным, даже если ESLint-паттерн выше выключат по ошибке. Ключ тот же — строка `@prisma/client`, поэтому оба канала теряют покрытие при одном и том же переезде пути, не только один из двух |
+| `packages/server/test/unit/architecture/layers.test.ts` (`dependencies point inwards`) — независимая от ESLint проверка дерева импортов для `domain` и `application` | тот же запрет вторым, самостоятельным каналом: остаётся красным, даже если ESLint-паттерн выше выключат по ошибке. Спецификаторы **выведены из одного источника** — `layers.test.ts:9` импортирует `PRISMA_MODULE_SPECIFIERS` из `eslint.config.js`, а не повторяет строку, — поэтому переезд пути правится в одном месте и не оставляет второй канал искать строку, которой больше никто не импортирует |
 | `test/lint/architecture-rules.test.ts` → `configForRepoFile` на реальных файлах `packages/server/src/domain/**`, `application/**`, `presentation/**` | наведение обоих серверных Prisma-запретов на отгружаемый код, а не только на фикстуры (по образцу клиентского блока «the shipped client tree is really covered»): проверяет, что реальные файлы этих трёх слоёв несут `no-restricted-imports` с `group`, буквально содержащим `@prisma/client`, и `no-restricted-syntax` с селектором на `prisma`/`tx`, а `infrastructure/persistence/**` — не несёт ни того, ни другого. Ловит именно переезд пути импорта, на который фикстура `test/lint/fixtures/packages/server/src/domain/task/prisma.entity.ts` вхолостую остаётся зелёной |
 | ESLint `no-restricted-syntax` на `MemberExpression[object.name='prisma'\|'tx']` | прямые вызовы вне слоя — ключ: идентификатор `prisma`/`tx`, не путь импорта; **переживает** переезд сгенерированного клиента (ADR-0027) |
 | ESLint `no-restricted-syntax` на `$queryRawUnsafe` / `$executeRawUnsafe` | небезопасный SQL |
@@ -180,14 +180,17 @@ await tx.$executeRawUnsafe(`SET app.organization_id = '${orgId}'`);   // ❌ в�
 - **Переживает переезд.** Запрет прямого обращения `prisma.*`/`tx.*` (ESLint `no-restricted-syntax`,
   селектор `MemberExpression[object.name='prisma'\|'tx']`) ключуется на **идентификатор**, а не на путь
   импорта. Он продолжит ловить нарушение независимо от того, откуда `PrismaClient` в файл попал.
-- **Не переживает переезд без правки.** Запрет самого импорта ключуется на **строку спецификатора**
-  `@prisma/client` и продублирован в трёх местах, которые обязаны меняться синхронно: ESLint-паттерн
-  `PRISMA_OUTSIDE_PERSISTENCE` в `eslint.config.js`, независимая проверка дерева импортов в
-  `packages/server/test/unit/architecture/layers.test.ts` (строковые сравнения для слоёв `domain` и
-  `application`), и формулировка в этом самом правиле (строка 156 таблицы выше). ADR-0027 (волна B)
-  требует **добавить** новый спецификатор рядом со старым, а не заменить — `test/rules/declared-checks.test.ts`
-  проверяет, что этот документ и код продолжают называть `@prisma/client` буквально, поэтому тихо
-  убрать старый паттерн незаметно нельзя.
+- **Переезд правится в одном месте — с 2026-08-12.** Запрет импорта ключуется на строку
+  спецификатора, но строка эта живёт **в одном источнике**: `PRISMA_MODULE_SPECIFIERS` в
+  `eslint.config.js`. Оттуда её берут и ESLint-паттерн `PRISMA_OUTSIDE_PERSISTENCE`, и независимая
+  проверка дерева импортов (`layers.test.ts:9` импортирует массив, а не повторяет литерал). ADR-0027
+  (волна B) требует **добавить** новый спецификатор рядом со старым, а не заменить, и
+  `test/rules/declared-checks.test.ts` следит, что документ и код продолжают называть
+  `@prisma/client` буквально, — тихо убрать старый паттерн незаметно нельзя.
+
+  Здесь до 2026-08-12 было написано обратное: что строка продублирована в трёх местах и оба канала
+  теряют покрытие при одном переезде. Это перестало быть правдой с коммитом `7bb6c73`, а правило
+  продолжало объявлять открытым пункт, который тот коммит закрыл.
 - **Наведение против фикстур.** До этого правила ни один из серверных запретов не проверялся против
   реального дерева — только против выдуманных путей `test/lint/fixtures/**`, которые продолжают
   импортировать `@prisma/client` даже после переезда и остаются зелёными вхолостую (см.
@@ -196,10 +199,12 @@ await tx.$executeRawUnsafe(`SET app.organization_id = '${orgId}'`);   // ❌ в�
   server tree is really covered against Prisma leaking out of persistence» закрывает эту дыру для
   ESLint-стороны серверных Prisma-запретов, проверяя реальные файлы `packages/server/src/domain`,
   `application`, `presentation` и `infrastructure/persistence`. Он **не** закрывает вторую копию
-  запрета в `layers.test.ts` — та по-прежнему сверяется только с фикстурами собственного набора
-  (`source-tree.util.ts`), не с `configForRepoFile`, и её строка `'@prisma/client'` (`layers.test.ts:59,75`)
-  остаётся выведенной вручную, а не из общего источника конфигурации — это открытый пункт волны 3
-  ADR-0027, п. 3.
+  запрета в `layers.test.ts` — та сверяется с деревом исходников собственным обходом
+  (`source-tree.util.ts`), не через `configForRepoFile`. Спецификаторы она при этом **не** выводит
+  вручную: они импортируются из `eslint.config.js` (`layers.test.ts:9`), а её собственные
+  положительные контроли следят, чтобы список не оказался пустым и чтобы он всё ещё совпадал с
+  настоящим импортом в `infrastructure/persistence/prisma/prisma.client.ts`. Пункт 3 волны 3
+  ADR-0027 этим закрыт (коммит `7bb6c73`).
 
 Число мест, где `@prisma/client` встречается как **ключ** запрета, а не как обычный импорт,
 намеренно не зафиксировано числом — оно вырастет минимум на единицу в волне B (новый спецификатор

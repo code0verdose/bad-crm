@@ -20,11 +20,14 @@ export interface ConsumeRecoveryCodeInput {
 }
 
 /**
- * Spending exactly one recovery code — the atomic building block STORY-013-02 asks for, and the
- * surface `POST /auth/2fa/verify` will call once STORY-013-03 wires the second-factor sign-in step to
- * it. **Not itself reachable from any route in this delta**: nothing in `route-registry.factory.ts`
- * calls `execute`, because doing so would open a way to spend a recovery code without a pending
- * sign-in to attach the resulting session to — the part STORY-013-03 owns.
+ * Spending exactly one recovery code — the atomic building block STORY-013-02 asks for.
+ *
+ * **Reachable since 2026-08-13**, through the one caller it was written for:
+ * `VerifySecondFactorUseCase` takes the recovery-code branch of `POST /auth/2fa/verify` and delegates
+ * here (`verify-second-factor.use-case.ts`, wired in `container.factory.ts`). Until then nothing
+ * called `execute`, deliberately — spending a code with no pending sign-in to attach the resulting
+ * session to would have been a hole rather than a convenience, which is why the caller and this
+ * class shipped one story apart.
  *
  * ## The match runs a fixed number of Argon2id verifications, never fewer, never zero
  *
