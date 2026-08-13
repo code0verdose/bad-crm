@@ -13,11 +13,14 @@
  * asserted, and is, is that a 40 % longer string still reaches the DOM intact rather than being
  * truncated by the component that renders it.
  */
-import { screen } from '@testing-library/react';
+import { MantineProvider } from '@mantine/core';
+import { render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import i18next, { type i18n as I18n } from 'i18next';
-import { initReactI18next } from 'react-i18next';
+import { I18nextProvider, initReactI18next } from 'react-i18next';
+
+import { SharedUi } from '@shared';
 
 import {
   isPseudoLocalised,
@@ -199,5 +202,70 @@ describe.each([
 
     expect(marked.length).toBeGreaterThan(3);
     expect(container.querySelector('header') !== null).toBe(status === 'authenticated');
+  });
+});
+
+/**
+ * The states a screen falls into, which the two routes above never reach.
+ *
+ * The pair of cases above mounts `/login` and `/dashboard` in their **happy** state, so a string
+ * that only appears when something fails is not on screen for them to look at. That is precisely
+ * where a missing `t()` survived: `ErrorState` rendered its retry label as
+ * `{retryLabelKey}` — the raw key — while translating the message beside it, and every screen with
+ * a failed query showed a button reading `common.retry`.
+ *
+ * **Why no other test caught it.** The suite's default i18next instance runs in `cimode`, where
+ * `t(key)` returns the key. Under `cimode` a component that forgets `t()` renders **identically**
+ * to one that remembers, so `data-state.test.tsx` asserting `{ name: 'common.retry' }` passed
+ * either way and locked the defect in. Only a locale that transforms its values can tell the two
+ * apart, which is the whole reason this file exists — it just was not pointed at these components.
+ */
+describe('the shared states in a pseudo locale', () => {
+  const mountState = async (ui: React.ReactNode): Promise<HTMLElement> => {
+    const instance = await pseudoInstance();
+
+    const { container } = render(
+      <I18nextProvider i18n={instance}>
+        <MantineProvider>{ui}</MantineProvider>
+      </I18nextProvider>,
+    );
+
+    return container;
+  };
+
+  const unmarkedIn = (container: HTMLElement): string[] =>
+    textNodes(container).filter(
+      (text) => !isPseudoLocalised(text) && !NOT_A_SENTENCE.test(text) && !PROPER_NOUNS.has(text),
+    );
+
+  it('shows nothing unmarked when a query failed and offers a retry', async () => {
+    const container = await mountState(
+      <SharedUi.DataState
+        errorMessageKey="errors.route.failed"
+        onRetry={() => undefined}
+        skeleton={<p>loading</p>}
+        status="error"
+      >
+        <p>rows</p>
+      </SharedUi.DataState>,
+    );
+
+    expect(unmarkedIn(container)).toEqual([]);
+  });
+
+  /** CONTROL: the walker has to be finding this component's text, not an empty container. */
+  it('CONTROL: is looking at the failed state it names', async () => {
+    const container = await mountState(
+      <SharedUi.DataState
+        errorMessageKey="errors.route.failed"
+        onRetry={() => undefined}
+        skeleton={<p>loading</p>}
+        status="error"
+      >
+        <p>rows</p>
+      </SharedUi.DataState>,
+    );
+
+    expect(textNodes(container).filter(isPseudoLocalised).length).toBeGreaterThan(1);
   });
 });

@@ -21,8 +21,14 @@ export interface ErrorStateProps {
  *
  * The text comes from a **key**, chosen by the caller from the error `code`
  * (`rules/errors-and-toasts.mdc` §10): `detail` from `problem+json` is for the log, not for the
- * person. Until i18next lands (EPIC-008) the key is what is rendered — the substitution to
- * `t(messageKey)` is mechanical and happens here.
+ * person. Both keys are resolved here — the message and the retry label.
+ *
+ * **The label was rendered raw until 2026-08-13**, so every failed screen offered a button reading
+ * `common.retry`. Nothing caught it: the suite's default i18next runs in `cimode`, where `t(key)`
+ * returns the key, so a forgotten `t()` renders identically to a present one and
+ * `data-state.test.tsx` asserting `{ name: 'common.retry' }` passed either way. Only the pseudo
+ * locale can tell them apart, and it was pointed at two happy-path routes where no error state
+ * appears — `test/i18n/pseudo-locale.test.tsx` now covers this component directly.
  */
 export function ErrorState({
   messageKey,
@@ -43,7 +49,7 @@ export function ErrorState({
       <Stack align="flex-start" gap="sm">
         {onRetry !== undefined && (
           <Button color="danger" onClick={onRetry} size="xs" variant="outline">
-            {retryLabelKey}
+            {t(retryLabelKey)}
           </Button>
         )}
       </Stack>
