@@ -1,4 +1,5 @@
 import { type Request, type RequestHandler, type Response } from 'express';
+import { decodeJwt } from 'jose';
 
 import {
   type AuthenticatedCaller,
@@ -28,6 +29,36 @@ export const readBearerToken = (request: Request): string | undefined => {
   if (typeof header !== 'string') return undefined;
 
   return BEARER.exec(header)?.groups?.['token'];
+};
+
+/** The `scope` claim `JwtMfaPendingTokenAdapter` signs — the second factor's intermediate credential. */
+const MFA_PENDING_SCOPE = 'mfa_pending';
+
+/**
+ * Whether `bearer` names itself the second factor's intermediate credential rather than a session's
+ * access token (STORY-013-03 acceptance 3, T-IAM-04: this token must be refused on every route but
+ * `/auth/2fa/verify`).
+ *
+ * **Decoded, not verified — on purpose.** Whatever this returns, the token still has to clear
+ * `AccessTokenPort.verify` to establish a caller, so a forged or unsigned value that merely *claims*
+ * `scope: 'mfa_pending'` costs this guard nothing: it is refused here instead of one line later, with
+ * the identical 401. What decoding the claim buys is independence from a coincidence one layer down:
+ * `JwtAccessTokenAdapter.asClaims` (`infrastructure/crypto/jwt-access-token.adapter.ts`) already
+ * refuses a genuine mfa-pending token today, but only because that token carries neither `sid` nor
+ * `pv` — a mismatch of *shape*, not a check of *scope*. A token that happened to also carry a
+ * well-formed `sid` and `pv` — forged, or produced by some future bug that widens what the
+ * mfa-pending issuer signs — would clear that coincidence and authenticate as a real caller without
+ * this line. See `jwt-mfa-pending-token.adapter.ts`'s own `asClaims` doc for the same trap named from
+ * the other side.
+ */
+const isMfaPendingToken = (bearer: string): boolean => {
+  try {
+    return decodeJwt(bearer)['scope'] === MFA_PENDING_SCOPE;
+  } catch {
+    // Not well-formed enough to decode at all — not this guard's concern; `AccessTokenPort.verify`
+    // refuses it on the ordinary path below, with the same 401.
+    return false;
+  }
 };
 
 export interface AuthenticationDependencies {
@@ -115,6 +146,10 @@ const callerFromBearer = async (
   dependencies: AuthenticationDependencies,
   bearer: string,
 ): Promise<AuthenticatedCaller | undefined> => {
+  // The explicit gate of STORY-013-03 acceptance 3 — see `isMfaPendingToken`'s own doc for why this
+  // cannot be left to `AccessTokenPort.verify` alone.
+  if (isMfaPendingToken(bearer)) return undefined;
+
   try {
     return await dependencies.authenticate.execute(bearer);
   } catch (error) {
