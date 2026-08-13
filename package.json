@@ -35,6 +35,7 @@
     "db:grants": "docker compose exec -T postgres sh -c 'psql -v ON_ERROR_STOP=1 -U app_migrator -d \"$POSTGRES_DB\" -f /opt/bad-crm/sql/01-grants.sql'",
     "db:migrate": "turbo run db:migrate",
     "db:seed": "turbo run db:seed",
+    "db:provision-roles": "turbo run db:provision-roles",
     "db:seed:permissions": "turbo run db:seed:permissions",
     "db:audit-partitions": "turbo run db:audit-partitions",
     "db:reset": "turbo run db:reset",

@@ -134,6 +134,7 @@ const SUBJECT_RENDERERS: {
   mfa_setup_attempt: renderUser,
   mfa_reauth_attempt: renderUser,
   mfa_verify_attempt: renderMfaToken,
+  mfa_verify_account_attempt: renderIpUser,
   mfa_recovery_consume_attempt: renderIpUser,
   mfa_admin_reset_attempt: renderUser,
 };

@@ -1,7 +1,7 @@
 ---
 id: STORY-013-03
 epic: EPIC-013
-status: in-progress
+status: review
 blocked: false
 priority: must
 estimate: M
@@ -214,14 +214,18 @@ e2e `login-with-2fa.spec.ts` с axe. `review` означал бы «вся ис�
       (`consume-recovery-code.use-case.ts:88-91`).
 - [x] `packages/server/src/presentation/http/route-registry.factory.ts` — публичные записи с
       `publicReason` (`route-registry.factory.ts:459-463`), снапшот — `test/contract/public-routes.test.ts`.
-- [ ] `packages/client/src/app/routes/login.tsx` (+ шаг `two-factor`),
-      `pages/login/ui/two-factor-step.component.tsx`,
+- [x] Клиентский шаг — внутри `/login`, без отдельного маршрута: форма пароля меняется на форму кода
+      на месте (`pages/login/page.tsx`, `units/auth/ui/two-factor-form.component.tsx`,
       `units/auth/service/mutations/verify-second-factor.mutation.ts`,
-      `units/auth/model/validation/two-factor.schema.ts`.
+      `units/auth/model/validation/two-factor.schema.ts`). Форма положена в `units/auth/ui/`, а не в
+      `pages/login/ui/`, как значилось здесь: компонент доменный и лежит рядом с
+      `login-form.component.tsx`. `mfaToken` живёт в модульной переменной
+      (`units/auth/lib/mfa-token-storage.util.ts`) — не в URL, не в Web Storage и не в
+      `MutationCache`; наружу из мутации выходит только дедлайн.
 - [x] Серверные тесты: `mfa-pending-token-rejected-everywhere.test.ts` (табличный по `ROUTE_REGISTRY`),
       `verify-second-factor.use-case.test.ts` (п. 4–6), `login.use-case.test.ts` (п. 1, 8),
       `integration/http/mfa-endpoints.test.ts`.
-- [ ] Клиентские тесты и e2e `login-with-2fa.spec.ts` + axe (Playwright-набор именуется `.spec.ts`,
+- [x] Клиентские тесты и e2e `login-with-2fa.spec.ts` + axe (Playwright-набор именуется `.spec.ts`,
       серверные Vitest-наборы — `.test.ts`). Нагрузочный `login-flood-memory` (п. 9) вынесен вместе с
       семафором в [STORY-013-06](story-013-06-argon2-concurrency-guard.md).
 

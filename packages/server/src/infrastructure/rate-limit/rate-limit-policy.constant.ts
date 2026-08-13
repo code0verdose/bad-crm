@@ -135,6 +135,17 @@ export const RATE_LIMIT_POLICY: Readonly<Record<RateLimitPolicy, RateLimitPolicy
     blockSeconds: 5 * MINUTE,
   },
   /**
+   * The account-scoped half of the same step, which is the one that actually bounds guessing —
+   * fifteen minutes, because it has to outlive the five-minute token whose rotation it exists to
+   * survive. See the policy's own entry in `rate-limit.port.ts` for why the `jti` budget alone is
+   * not a limit.
+   */
+  mfa_verify_account_attempt: {
+    points: 5,
+    windowSeconds: 15 * MINUTE,
+    blockSeconds: 15 * MINUTE,
+  },
+  /**
    * Presenting a recovery code during the second-factor step. STORY-013-02 acceptance 10 states the
    * number directly: five attempts, fifteen minutes.
    */

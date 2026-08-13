@@ -92,6 +92,23 @@ export const RATE_LIMIT_POLICIES = [
    */
   'mfa_verify_attempt',
   /**
+   * The same second-factor step, counted against the **account** instead of the token.
+   *
+   * `mfa_verify_attempt` above is keyed on `jti`, and on its own that is not a limit on guessing: a
+   * fresh token carries a fresh budget, and a fresh token costs one correct password — which is
+   * precisely what the attacker this feature exists to stop already has. Worse, the password budget
+   * does not bound the loop either, because `LoginUseCase` resets `auth_attempt` on every verified
+   * password, the `mfa_required` branch included. So `login → five guesses → login → five guesses`
+   * runs for as long as somebody cares to run it, and a ±1-step window leaves three live codes in a
+   * million — hours of guessing from one host, not centuries.
+   *
+   * Keyed on the pair `(ipAddress, userId)`, exactly as `mfa_recovery_consume_attempt` is, and for
+   * the identical reason: the counter has to outlive the token. Fifteen minutes, matching the number
+   * `rules/security.mdc` rule 11 and STORY-013-03 acceptance 5 both state — both of which described
+   * this limit before it existed.
+   */
+  'mfa_verify_account_attempt',
+  /**
    * Presenting a recovery code on `POST /auth/2fa/verify`'s recovery path — the atomic building
    * block `ConsumeRecoveryCodeUseCase` implements, and, as of STORY-013-03, the step that actually
    * calls it. Keyed on the pair `RateLimitSubjects.mfa_recovery_consume_attempt` now declares —
@@ -218,6 +235,7 @@ export interface RateLimitSubjects {
   readonly mfa_setup_attempt: UserSubject;
   readonly mfa_reauth_attempt: UserSubject;
   readonly mfa_verify_attempt: MfaTokenSubject;
+  readonly mfa_verify_account_attempt: IpUserSubject;
   readonly mfa_recovery_consume_attempt: IpUserSubject;
   readonly mfa_admin_reset_attempt: UserSubject;
 }

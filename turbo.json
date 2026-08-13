@@ -96,6 +96,12 @@
       "dependsOn": ["^build"],
       "cache": false
     },
+    "db:provision-roles": {
+      // Runs application code (`ProvisionSystemRolesUseCase`), so `@bad-crm/shared` has to be built
+      // first — the same reason `db:seed` declares it.
+      "dependsOn": ["^build"],
+      "cache": false
+    },
     "db:audit-partitions": {
       "dependsOn": ["^build"],
       "cache": false

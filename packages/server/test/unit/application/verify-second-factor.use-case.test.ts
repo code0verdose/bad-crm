@@ -12,6 +12,7 @@ import {
   MfaCodeReplayedError,
   MfaInvalidCodeError,
   MfaTokenExpiredError,
+  RateLimitedError,
   RecoveryCodeInvalidError,
 } from '@/domain/shared/errors/app.errors.js';
 
@@ -389,7 +390,7 @@ describe('a token that cannot be used', () => {
  * budget is already gone.
  */
 describe('the attempt budget', () => {
-  it('counts the token’s jti, never the account', async () => {
+  it('counts the token’s jti', async () => {
     const test = buildHarness();
     const token = await pendingToken(test);
 
@@ -399,6 +400,37 @@ describe('the attempt budget', () => {
       policy: 'mfa_verify_attempt',
       subject: { jti: test.mfaTokens.issued[0]?.jti },
     });
+  });
+
+  /**
+   * And counts the **account** as well, which is the half that actually bounds guessing.
+   *
+   * A budget keyed on `jti` alone is not a limit on guessing a code: a new token carries a new key
+   * and therefore a fresh five, and a new token costs one correct password — which the attacker
+   * this whole feature exists to stop already has. `auth_attempt` does not close the loop either,
+   * because `LoginUseCase` resets it on every verified password, including the branch that mints
+   * this token. So the sequence `login → five guesses → login → five guesses` had no bound at all
+   * until this counter existed.
+   */
+  it('also counts the account, so a fresh token does not buy fresh attempts', async () => {
+    const test = buildHarness();
+    const token = await pendingToken(test);
+
+    await test.verify.execute({ mfaToken: token, code: TOTP_CODE, client: CLIENT });
+
+    expect(test.rateLimit.consumed).toContainEqual({
+      policy: 'mfa_verify_account_attempt',
+      subject: { userId: USER_ID, ipAddress: CLIENT.ipAddress },
+    });
+  });
+
+  it('refuses once the account budget is gone, whatever the token', async () => {
+    const test = buildHarness({ limits: { mfa_verify_account_attempt: 0 } });
+    const token = await pendingToken(test);
+
+    await expect(
+      test.verify.execute({ mfaToken: token, code: TOTP_CODE, client: CLIENT }),
+    ).rejects.toBeInstanceOf(RateLimitedError);
   });
 
   it('spends a point before the recovery-code comparisons run', async () => {
@@ -472,7 +504,7 @@ describe('the attempt budget', () => {
     /**
      * The counter itself, asserted apart from the refusal: «неверный код отвергается» stays green
      * on an implementation that never spends a point, so the number of points spent is its own
-     * assertion. Five refusals, one blocked attempt — six consumptions, all on the same jti.
+     * assertion. Five refusals, one blocked attempt — six consumptions of the token budget, all on the same jti.
      */
     it('spends exactly one point per attempt, on the one jti', async () => {
       const test = buildHarness({ limits: { mfa_verify_attempt: 5 } });
@@ -481,14 +513,16 @@ describe('the attempt budget', () => {
       await exhaust(test, token);
       await refusal(() => test.verify.execute({ mfaToken: token, code: '000000', client: CLIENT }));
 
-      expect(test.rateLimit.consumed).toHaveLength(6);
-      expect(
-        test.rateLimit.consumed.every(
-          (call) =>
-            call.policy === 'mfa_verify_attempt' &&
-            Object.keys(call.subject as object)[0] === 'jti',
-        ),
-      ).toBe(true);
+      // Filtered to the token budget, which is what this case is about. Every attempt also spends
+      // the account budget beside it (`mfa_verify_account_attempt`), and counting both together
+      // would make this assertion break whenever the other one changes — a number about two things
+      // is a number about neither.
+      const perToken = test.rateLimit.consumed.filter(
+        (call) => call.policy === 'mfa_verify_attempt',
+      );
+
+      expect(perToken).toHaveLength(6);
+      expect(perToken.every((call) => Object.keys(call.subject as object)[0] === 'jti')).toBe(true);
     });
   });
 });

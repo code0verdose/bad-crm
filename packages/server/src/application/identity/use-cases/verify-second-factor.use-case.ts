@@ -28,6 +28,7 @@ import {
   MfaCodeReplayedError,
   MfaInvalidCodeError,
   MfaTokenExpiredError,
+  RateLimitedError,
   ServiceUnavailableError,
   UnauthenticatedError,
 } from '@/domain/shared/errors/app.errors.js';
@@ -64,6 +65,7 @@ interface CompletedSignIn {
 type SecondFactorRefusal =
   | 'token_unusable'
   | 'attempts_exhausted'
+  | 'account_attempts_exhausted'
   | 'not_enrolled'
   | 'wrong_code'
   | 'replayed'
@@ -161,6 +163,33 @@ export class VerifySecondFactorUseCase {
       this.refuse('attempts_exhausted', ipMasked);
 
       throw new MfaTokenExpiredError();
+    }
+
+    // The second budget, and the one that actually bounds guessing.
+    //
+    // The budget above is keyed on `jti`, so it dies with the token — and a new token costs one
+    // correct password, which the attacker this feature exists to stop is the one who has it.
+    // `auth_attempt` does not close the loop either: `LoginUseCase` resets it on every verified
+    // password, the branch that mints this very token included. Without the counter below,
+    // `login → five guesses → login → five guesses` had no bound at all, and a ±1-step window
+    // leaves three live codes in a million — hours from one host, not centuries.
+    //
+    // Keyed on `(ipAddress, userId)` so it survives the rotation, exactly as the recovery-code
+    // budget already was. Spent **after** the token proved usable, so an expired token cannot be
+    // used to burn a stranger's budget, and **before** any comparison, so it bounds the work as
+    // well as the guesses.
+    const perAccount = await this.rateLimit.consume('mfa_verify_account_attempt', {
+      userId: claims.userId,
+      ipAddress: input.client.ipAddress,
+    });
+
+    if (!perAccount.allowed) {
+      // The token is left alone: this refusal is about the account being hammered, not about this
+      // token being spent, and voiding it would let a flood from one address end somebody else's
+      // half-finished sign-in.
+      this.refuse('account_attempts_exhausted', ipMasked);
+
+      throw new RateLimitedError(perAccount.retryAfterSeconds);
     }
 
     const completed = await this.unitOfWork.withTenant(
