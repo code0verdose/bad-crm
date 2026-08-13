@@ -1,7 +1,7 @@
 ---
 id: STORY-013-03
 epic: EPIC-013
-status: ready
+status: in-progress
 blocked: false
 priority: must
 estimate: M
@@ -181,31 +181,49 @@ STORY-013-04, и только она.
 
 ## Задачи
 
-- [ ] `packages/server/src/application/identity/use-cases/login.use-case.ts` — ветка «2FA включена» →
-      выдача `mfaToken` вместо сессии.
-- [ ] `packages/server/src/application/identity/use-cases/verify-second-factor.use-case.ts` — на шаге
-      TOTP; на шаге кода восстановления вызывает уже написанный, но ещё никуда не подключённый
-      `consume-recovery-code.use-case.ts` (STORY-013-02), и тем самым впервые делает достижимым код
-      отказа `recovery_code_invalid`, объявленный в спеке и не возвращаемый сегодня ни одним
-      маршрутом. `totp_code_replayed` достижим уже сейчас — его бросает `confirm-totp.use-case.ts:249`
-      (STORY-013-01, критерий 6); здесь он появляется на **втором** шаге, входе, с ответом 401.
-- [ ] `packages/server/src/infrastructure/identity/mfa-token.service.ts` — выпуск/проверка JWT со
-      `scope = mfa_pending` и субъектом `pending:{userId}`, `jti`-денилист в Redis, TTL 5 минут.
-      Комментарий к политике `mfa_recovery_consume_attempt` в `application/platform/ports/rate-limit.port.ts`
-      уже описывает этот субъект как существующий — привести его в соответствие вместе с реализацией.
-- [ ] `packages/server/src/presentation/http/middleware/auth.middleware.ts` — явная проверка
-      `scope !== 'mfa_pending'` для всех защищённых маршрутов.
-- [ ] Ограничители: лимит на промежуточный токен + IP-половина
-      `mfa_recovery_consume_attempt`, которой сегодня нет (STORY-013-02, критерий 10).
-- [ ] `packages/server/src/presentation/http/route-registry.factory.ts` — публичные записи с `publicReason`.
+**Статус `in-progress`, а не `review`.** Серверная половина отгружена коммитом `c5a50b6`
+(«feat(auth): read the second factor at sign-in»): пароль на учётке с 2FA покупает пятиминутный
+`mfaToken` вместо сессии, код меняется на сессию на `POST /auth/2fa/verify`, промежуточный токен
+отвергается всем остальным реестром. Открыт критерий 11 — экран второго шага входа с полем
+`autocomplete="one-time-code"`, таймером жизни токена и ссылкой на код восстановления, а вместе с ним
+e2e `login-with-2fa.spec.ts` с axe. `review` означал бы «вся история на гейте», и борд соврал бы на
+целую половину работы; `ready` означал бы «ещё не начинали», и соврал бы на другую.
+
+- [x] `packages/server/src/application/identity/use-cases/login.use-case.ts` — ветка «2FA включена» →
+      выдача `mfaToken` вместо сессии (`login.use-case.ts:292-311`, третья ветка `LoginResult`).
+- [x] `packages/server/src/application/identity/use-cases/verify-second-factor.use-case.ts` — на шаге
+      TOTP; на шаге кода восстановления делегирует целиком `consume-recovery-code.use-case.ts`
+      (STORY-013-02), и тем самым впервые делает достижимым код отказа `recovery_code_invalid`,
+      который до этой истории был объявлен в спеке и не возвращался ни одним маршрутом
+      (`verify-second-factor.use-case.ts:12,136,296`). `totp_code_replayed` был достижим и раньше —
+      его бросает `confirm-totp.use-case.ts:249` (STORY-013-01, критерий 6); здесь на **втором**
+      шаге, входе, отвечает отдельный код `mfa_code_replayed` с 401 (решение выше).
+- [x] `packages/server/src/infrastructure/crypto/jwt-mfa-pending-token.adapter.ts` за портом
+      `packages/server/src/application/identity/ports/mfa-pending-token.port.ts` — выпуск/проверка JWT
+      со `scope = mfa_pending` и субъектом `pending:{userId}`, `jti`-денилист в Redis, TTL 5 минут.
+      (Адаптер лежит в `infrastructure/crypto/`, рядом с остальным выпуском токенов, а не в
+      несуществующем `infrastructure/identity/`.)
+- [x] `packages/server/src/presentation/http/middleware/authenticate.middleware.ts` — явная проверка
+      `scope !== 'mfa_pending'` для всех защищённых маршрутов
+      (`authenticate.middleware.ts:35,44`; имя файла — `authenticate`, не `auth`).
+- [x] Ограничители: `mfa_verify_attempt` на промежуточный токен, спендится по `jti` до сравнения
+      факторов (`verify-second-factor.use-case.ts:157`). IP-половина `mfa_recovery_consume_attempt`
+      (STORY-013-02, критерий 10) закрыта раньше, отдельным коммитом `172bf24`: субъект политики —
+      `IpUserSubject` (`rate-limit.port.ts:221`), ключ рендерится `renderIpUser`
+      (`rate-limit-key.util.ts:137`), спенд — `{ userId, ipAddress }`
+      (`consume-recovery-code.use-case.ts:88-91`).
+- [x] `packages/server/src/presentation/http/route-registry.factory.ts` — публичные записи с
+      `publicReason` (`route-registry.factory.ts:459-463`), снапшот — `test/contract/public-routes.test.ts`.
 - [ ] `packages/client/src/app/routes/login.tsx` (+ шаг `two-factor`),
       `pages/login/ui/two-factor-step.component.tsx`,
       `units/auth/service/mutations/verify-second-factor.mutation.ts`,
       `units/auth/model/validation/two-factor.schema.ts`.
-- [ ] Тесты: `mfa-pending-token-rejected-everywhere.test.ts` (табличный по `ROUTE_REGISTRY`),
-      `verify-second-factor.use-case.test.ts` (п. 4–6), `auth-timing-equality.test.ts` (п. 8),
-      `login-flood-memory` нагрузочный (п. 9), e2e `login-with-2fa.spec.ts` + axe (Playwright-набор
-      именуется `.spec.ts`, серверные Vitest-наборы — `.test.ts`).
+- [x] Серверные тесты: `mfa-pending-token-rejected-everywhere.test.ts` (табличный по `ROUTE_REGISTRY`),
+      `verify-second-factor.use-case.test.ts` (п. 4–6), `login.use-case.test.ts` (п. 1, 8),
+      `integration/http/mfa-endpoints.test.ts`.
+- [ ] Клиентские тесты и e2e `login-with-2fa.spec.ts` + axe (Playwright-набор именуется `.spec.ts`,
+      серверные Vitest-наборы — `.test.ts`). Нагрузочный `login-flood-memory` (п. 9) вынесен вместе с
+      семафором в [STORY-013-06](story-013-06-argon2-concurrency-guard.md).
 
 ## Ссылки
 

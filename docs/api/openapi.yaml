@@ -57,9 +57,12 @@ paths:
   # is written first and implemented afterwards (ADR-0003). The marker is not a comment —
   # `packages/server/test/contract/planned-operations.test.ts` refuses one that names a story which
   # does not exist, and refuses one on an operation the router already serves, so it has to be
-  # deleted in the same commit that implements the route. Registration, sign-in, rotation, sign-out
-  # and the three session operations lost theirs in EPIC-006; change-password and the two
-  # password-reset operations still carry one.
+  # deleted in the same commit that implements the route. **No operation in this document carries one
+  # today** — `grep -c x-implemented-by docs/api/openapi.yaml` answers with this comment alone.
+  # Registration, sign-in, rotation, sign-out and the three session operations lost theirs in
+  # EPIC-006; change-password and the two password-reset operations lost theirs with the screens that
+  # call them. The rule is kept here because the next contract-first operation will need it, and
+  # because a marker nobody remembers is a marker nobody deletes.
   #
   # Two rules hold across the whole group and are stated once here rather than ten times below.
   #
@@ -203,7 +206,9 @@ paths:
       responses:
         '200':
           description: |
-            Either a session, or the list of organizations to pick from. Discriminated by `status`.
+            One of three: a session, the list of organizations to pick from, or the intermediate
+            token of a second-factor step. Discriminated by `status`, and only the first of the three
+            carries a refresh cookie.
           headers:
             Set-Cookie:
               $ref: '#/components/headers/RefreshCookieSetConditional'
@@ -650,7 +655,10 @@ paths:
         `{ total, remaining }` and nothing else — the plaintext codes exist nowhere after the response
         that first showed them, so there is no version of this endpoint that could return more. The
         low-codes warning at `remaining <= 3` that STORY-013-02 acceptance 6 describes is a client
-        behaviour; no client reads this endpoint yet.
+        behaviour, and it is implemented: `/settings/security` reads this count through
+        `useRecoveryCodeStatusQuery` and derives the warning from it in `use-recovery-codes.hook.ts`.
+        The threshold lives in the client because it is a product rule, not part of this contract —
+        the answer is the same two numbers whatever the screen decides to do with them.
       tags: [auth]
       x-self-service-reason: >-
         Reading the count of one's own remaining recovery codes; the plaintext values do not exist
@@ -4567,8 +4575,11 @@ components:
 
     RefreshCookieSetConditional:
       description: |
-        As `RefreshCookieSet`, but present only on the `authenticated` branch of the answer.
-        `organization_selection_required` issues no session and therefore no cookie.
+        As `RefreshCookieSet`, but present only on the `authenticated` branch of the answer. Neither
+        of the other two issues a session and so neither carries a cookie:
+        `organization_selection_required` has not chosen a tenant yet, and `mfa_required` has not
+        proved the second factor — its `mfaToken` travels in the body precisely because it is not a
+        session credential and must not be replayed by the browser on its own.
       required: false
       schema:
         type: string

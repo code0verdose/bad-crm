@@ -307,7 +307,7 @@ flowchart TD
 | `/settings/profile` | `routes/_authenticated/settings/profile.tsx` | `requireSession` | — | `ProfileFormWidget` |
 | `/settings/appearance` | `routes/_authenticated/settings/appearance.tsx` | `requireSession` | — | `AppearanceFormWidget` |
 | `/settings/notifications` | `routes/_authenticated/settings/notifications.tsx` | `requireSession` | — | `NotificationPrefsWidget` |
-| `/settings/security` | `routes/_authenticated/settings/security.tsx` | — (только `requireSession` ветки `_authenticated`) | — | `TotpSetup` + `RecoveryCodes` |
+| `/settings/security` | `routes/_authenticated/settings/security.tsx` | — (только `requireSession` ветки `_authenticated`) | — | `TotpSetup` + `RecoveryCodes` + `DisableTotp` |
 | `/settings/tokens` | `routes/_authenticated/settings/tokens.tsx` | `requireSession` | — | `ApiTokensWidget` |
 
 **Из этой таблицы построен один маршрут — `/settings/security`** (EPIC-013). Остальные пять
@@ -317,9 +317,11 @@ flowchart TD
 
 **Про отсутствие гарда на `/settings/security`: его нет, и это решение, а не пропуск.** Все операции
 экрана — self-service (в реестре маршрутов, `presentation/http/route-registry.factory.ts`, все
-четыре — `POST /auth/2fa/setup`, `/confirm`, `GET /auth/2fa/recovery-codes`, `.../regenerate` —
-помечены `selfService: true`): право защищать собственный вход нельзя не выдать. Гард сессии на `_authenticated` — весь гейт. `loader` тоже нет:
-экран читает один счётчик, и два его главных действия — мутации.
+пять — `POST /auth/2fa/setup`, `/confirm`, `GET /auth/2fa/recovery-codes`, `.../regenerate`,
+`POST /auth/2fa/disable` — помечены `selfService: true`): право защищать собственный вход нельзя не
+выдать. Отключение авторизуется переаутентификацией (пароль плюс код), а не capability, поэтому и оно
+не добавляет экрану гарда. Гард сессии на `_authenticated` — весь гейт. `loader` тоже нет:
+экран читает один счётчик, а его действия — мутации.
 
 **Чего на этом экране пока нет — списка сессий.** Виджет `SecuritySessionsWidget`, который прежняя
 редакция этой таблицы называла основным для маршрута, не существует; сервер свою половину отгрузил
@@ -327,7 +329,8 @@ flowchart TD
 EPIC-006), а клиентский экран остаётся невыполненной задачей
 [STORY-006-04](../../epics/epic-006-auth-core/stories/story-006-04-logout-and-active-sessions.md)
 («Реализовать клиентский экран `/settings/security`: список сессий, действия, `ConfirmDialog`»).
-Когда он появится, он встанет третьим блоком на этот же маршрут.
+Когда он появится, он встанет на этот же маршрут следующим блоком — третье место уже занято
+`DisableTotp`, который отгружен со STORY-013-04.
 
 ### Проекты
 
