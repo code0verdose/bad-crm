@@ -139,6 +139,22 @@ export interface RecoveryCodeQueryKeys {
   readonly status: () => readonly [string, 'status'];
 }
 
+/**
+ * Open invitations — a `list()` with no parameters, because the operation has none.
+ *
+ * `GET /invitations` accepts no filter, no page and no order: it answers with every unaccepted
+ * invitation of the organization, newest first, and the order is the server's. A key carrying
+ * anything would therefore be a second cache entry holding the same bytes.
+ *
+ * No `detail` either, and that is the contract rather than an omission: there is no
+ * `GET /invitations/{id}`. The two operations that address one invitation — re-issue and revoke —
+ * are writes, and both invalidate the group root, which is why `list()` starts with it.
+ */
+export interface InvitationQueryKeys {
+  readonly all: readonly [string];
+  readonly list: () => readonly [string, 'list'];
+}
+
 export const QueryKeys = {
   Sessions: entityQueryKeys<SessionListParams>('sessions'),
   RecoveryCodes: {
@@ -158,6 +174,10 @@ export const QueryKeys = {
     ...entityQueryKeys<EmployeeListParams>('employees'),
     orgChart: () => ['employees', 'org-chart'],
   } satisfies EmployeeQueryKeys,
+  Invitations: {
+    all: ['invitations'],
+    list: () => ['invitations', 'list'],
+  } satisfies InvitationQueryKeys,
   Teams: {
     all: ['teams'],
     list: () => ['teams', 'list'],

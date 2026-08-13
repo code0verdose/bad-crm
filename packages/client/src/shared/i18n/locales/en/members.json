@@ -21,6 +21,58 @@
     "noMail": "This installation cannot send e-mail, so nothing was posted. Pass the link on yourself.",
     "expires": "Works until {{date}}."
   },
+  "invitations": {
+    "title": "Open invitations",
+    "description": "Everybody who has been invited and has not joined yet. An invitation that has run out stays on this list — it is the one you re-issue or close.",
+    "link": "Open invitations",
+    "failed": "The open invitations could not be loaded.",
+    "expired": "Expired",
+    "revoked": "The invitation is closed and its link no longer works.",
+    "reissued": "A new link for {{email}} is ready.",
+    "cancel": "Cancel",
+    "close": "Close",
+    "column": {
+      "person": "E-mail",
+      "role": "Role",
+      "teams": "Teams",
+      "invitedBy": "Invited by",
+      "created": "Sent",
+      "expires": "Works until",
+      "actions": "Actions"
+    },
+    "empty": {
+      "title": "Nobody is waiting for an answer",
+      "description": "Every invitation sent so far has been accepted, closed or has run out and been closed."
+    },
+    "action": {
+      "resend": "Re-issue",
+      "resendAria": "Re-issue the invitation for {{email}}",
+      "revoke": "Close",
+      "revokeAria": "Close the invitation for {{email}}"
+    },
+    "resend": {
+      "title": "Re-issue the link",
+      "description": "A new link will be minted for {{email}}.",
+      "consequence": {
+        "oldLink": "The previous link stops working, including one that has already been passed on.",
+        "expiry": "The new link works for another seven days.",
+        "once": "It is shown once — the server keeps only a digest and cannot produce it again."
+      },
+      "confirm": "Re-issue",
+      "failed": "The link could not be re-issued."
+    },
+    "revoke": {
+      "title": "Close the invitation",
+      "description": "The invitation for {{email}} will be deleted.",
+      "consequence": {
+        "link": "The link stops working, whoever has it.",
+        "person": "The person can no longer join with it, and a new invitation has to be sent.",
+        "permanent": "There is no undoing this."
+      },
+      "confirm": "Close the invitation",
+      "failed": "The invitation could not be closed."
+    }
+  },
   "language": {
     "en": "English",
     "ru": "Russian"

@@ -42,11 +42,24 @@ export function AdminMembersPage() {
     <Stack gap="md">
       <SharedUi.PageHeader
         actions={
-          can('invitation:create') ? (
-            <Button component={Link} to="/admin/members/invite">
-              {t('members.invite.title')}
-            </Button>
-          ) : undefined
+          <>
+            {/*
+              The invitations screen is reachable from here because this is where it is looked for:
+              an invitation sent yesterday is not an account, so it is not in this directory at all
+              (`data-model.md`, «Про `User.status = INVITED`») — and without a way in from the
+              screen that lists people, the only route to it is a URL nobody has.
+            */}
+            {can('invitation:read') && (
+              <Button component={Link} to="/admin/members/invitations" variant="light">
+                {t('members.invitations.link')}
+              </Button>
+            )}
+            {can('invitation:create') && (
+              <Button component={Link} to="/admin/members/invite">
+                {t('members.invite.title')}
+              </Button>
+            )}
+          </>
         }
         breadcrumbs={<Breadcrumbs />}
         titleKey="members.title"

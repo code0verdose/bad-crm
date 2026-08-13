@@ -124,6 +124,37 @@ export const deactivateUser = async (
   );
 };
 
+/** What an administrative 2FA reset actually revoked — counts rather than reassurance. */
+export type ResetMfaResult = components['schemas']['ResetMfaResult'];
+
+/**
+ * Take a colleague's second factor off, when the phone and every recovery code are gone.
+ *
+ * **It lives here rather than in `units/iam` even though the operation is `iam`-tagged**, for the
+ * same reason `deactivateUser` above does: what decides the home of a call is the screen that makes
+ * it, and both are actions an administrator takes on one person from that person's personnel card.
+ * `units/iam` owns roles, permissions and invitations — the things the caller may *hold* — and a
+ * second unit reaching into the same card would split one screen across two public APIs.
+ *
+ * No signal, on the identical reasoning `deactivateUser` gives: this is issued by a button behind a
+ * confirmation, so no later request can overtake it, and a cancelled reset is worse than a slow one
+ * — the sessions are revoked either way and the caller would never learn whether they were.
+ *
+ * There is no request body. `user:reset_mfa` is the whole of the proof the server asks for: no
+ * password, no code, no reason. That is what makes the confirmation dialog the only barrier there
+ * is, and why it is the strict one.
+ */
+export const resetUserMfa = async (userId: string): Promise<ResetMfaResult> => {
+  // Minted per call rather than left to the middleware's default, because the contract marks the
+  // parameter `required` and the generated types therefore demand it at the call site — the spec
+  // making «I forgot the header» a compile error instead of a 422 found by clicking.
+  const { params } = idempotencyParams();
+
+  return unwrapApiResult(
+    await apiClient.POST('/users/{userId}/reset-mfa', { params: { ...params, path: { userId } } }),
+  );
+};
+
 /**
  * There is no `reactivateUser` here, and that is deliberate.
  *

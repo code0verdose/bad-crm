@@ -2312,8 +2312,15 @@ export interface components {
             /** Format: uuid */
             userId: string;
             /**
-             * @description Whether the account had 2FA enabled a moment before this ran. `false` is not an error —
-             *     sessions still close and the permission version still moves.
+             * @description Whether the account had 2FA enabled a moment before this ran.
+             *
+             *     `false` is not an error, and it is a **genuine no-op**: nothing was revoked, no batch
+             *     existed to delete, `permissionsVersion` does not move and no mail is sent — the counters
+             *     beside this field are all zero. An earlier version of this description claimed the
+             *     opposite ("sessions still close and the permission version still moves"), contradicting
+             *     the operation's own text two thousand lines above and the implementation in
+             *     `reset-user-mfa.use-case.ts`. A client that renders "0 sessions revoked" as a report of a
+             *     reset is reading this field wrong; say "there was no second factor" instead.
              */
             wasEnabled: boolean;
             recoveryCodesDeleted: number;

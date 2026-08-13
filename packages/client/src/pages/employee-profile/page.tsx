@@ -7,6 +7,7 @@ import { SharedLib, SharedUi } from '@shared';
 
 import { Breadcrumbs } from '@widgets/breadcrumbs';
 import { OffboardingDialog } from '@widgets/offboarding';
+import { ResetMfa } from '@widgets/reset-mfa';
 import { UserPermissions } from '@widgets/user-permissions';
 import { EmployeeService, EmployeeUi, type EmployeeApi } from '@units/employee';
 import { IamService } from '@units/iam';
@@ -70,6 +71,21 @@ export function EmployeeProfilePage() {
    * itself is still a red button offering an action that cannot be taken.
    */
   const subject = query.data !== undefined && can('user:suspend') ? query.data : undefined;
+
+  /**
+   * Who the 2FA reset would be about — `undefined` whenever there is nobody to offer it for.
+   *
+   * The same one decision as `subject` above, on a different permission, and for the same two
+   * reasons: `user:reset_mfa` is a hint rather than a gate (the endpoint refuses on its own
+   * authority), and the confirmation cannot ask anybody to type back an address the page has not
+   * got. A section drawn from `can(...)` alone would announce a destructive action while the
+   * document is still on its way — and for ever, if it comes back 403 or 404.
+   *
+   * There is deliberately **no** check for «does this person even have a second factor»: no
+   * document in the contract carries enrolment state, so the client cannot know. The server answers
+   * a reset on an account with none as a genuine no-op, and the dialog reports it as one.
+   */
+  const mfaSubject = query.data !== undefined && can('user:reset_mfa') ? query.data : undefined;
 
   return (
     <Stack gap="md">
@@ -171,6 +187,15 @@ export function EmployeeProfilePage() {
           />
         </Tabs.Panel>
       </Tabs>
+
+      {/*
+        Outside the tabs, at the foot of the card. A reset is about the **account** rather than
+        about the personnel form or the permission matrix, so it belongs to neither panel — and a
+        destructive control that appeared and vanished as somebody switched tabs would be the worst
+        of both places. Last on the page, for the reason `rules/design-system.mdc` §17 gives:
+        everything above is about keeping this record usable.
+      */}
+      {mfaSubject !== undefined && <ResetMfa email={mfaSubject.email} userId={userId} />}
     </Stack>
   );
 }

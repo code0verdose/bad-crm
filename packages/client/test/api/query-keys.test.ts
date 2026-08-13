@@ -78,3 +78,30 @@ describe('the factory is typed', () => {
     expect(key).toHaveLength(3);
   });
 });
+
+/**
+ * The invitations group, whose `list()` takes no parameters — the operation accepts none.
+ *
+ * `GET /invitations` has no filter, no page and no order, so a key that carried anything would be a
+ * second cache entry for the same bytes; and both mutations of the screen invalidate by the group
+ * root, which is only reachable if `list()` starts with it.
+ */
+describe('the invitations group', () => {
+  it('is reached by invalidating its root, which is what both mutations do', async () => {
+    const client = new QueryClient();
+
+    client.setQueryData(QueryKeys.Invitations.list(), ['stale']);
+    await client.invalidateQueries({ queryKey: QueryKeys.Invitations.all });
+
+    expect(client.getQueryState(QueryKeys.Invitations.list())?.isInvalidated).toBe(true);
+  });
+
+  it('leaves a neighbouring group alone', async () => {
+    const client = new QueryClient();
+
+    client.setQueryData(QueryKeys.Permissions.mine(), 'kept');
+    await client.invalidateQueries({ queryKey: QueryKeys.Invitations.all });
+
+    expect(client.getQueryState(QueryKeys.Permissions.mine())?.isInvalidated).toBe(false);
+  });
+});

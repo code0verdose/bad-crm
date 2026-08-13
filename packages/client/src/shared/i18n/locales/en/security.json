@@ -65,6 +65,40 @@
     },
     "done": "Two-factor authentication is off. Your password is now the only thing that signs you in."
   },
+  "reset": {
+    "title": "Two-factor authentication",
+    "description": "If this person has lost both their authenticator app and every recovery code, resetting the second factor is the only way back into their account.",
+    "trigger": "Reset two-factor authentication",
+    "close": "Close",
+    "cancel": "Cancel",
+    "submit": "Reset it",
+    "dialog": {
+      "title": "Reset this person's two-factor authentication?",
+      "description": "This removes the second factor from the account of «{{email}}». You are not asked for their password or a code — your permission is the whole of the proof, so read the list below before confirming."
+    },
+    "consequence": {
+      "passwordOnly": "Their password becomes the only thing between their account and anybody who learns it, until they set the second factor up again themselves.",
+      "codes": "Every recovery code they still have stops working and is deleted. The same ones cannot be brought back.",
+      "sessions": "Every session is closed — they are signed out on every device within a second, not at token expiry.",
+      "notified": "They are emailed about it, and that notice cannot be switched off.",
+      "accessKept": "Nothing else changes: the account stays active, keeps its roles, and can sign in again with the password alone. This is not a way to remove somebody's access."
+    },
+    "confirmLabel": "Type the email address to confirm",
+    "confirmHint": "Type «{{email}}» — this lowers somebody's account to a password alone, and the row you came from is one mis-click away.",
+    "failed": {
+      "title": "Nothing was reset"
+    },
+    "done": {
+      "title": "The second factor is off.",
+      "codes": "Recovery codes deleted: {{count}}",
+      "sessions": "Sessions revoked: {{count}}",
+      "next": "Turning it back on is theirs to do: tell them to open Security in their own settings and enrol again. Nobody else can do it for them."
+    },
+    "already": {
+      "title": "This account had no second factor — nothing was changed",
+      "description": "Two-factor authentication was already off before this run, so there was no session to close and no recovery code to delete. Nothing was written and nobody was emailed. This is what resetting the wrong person looks like, and what a second run looks like — not a failure."
+    }
+  },
   "codes": {
     "title": "Recovery codes",
     "description": "Ten one-time codes. Each one signs you in once, when the authenticator app is not available.",
@@ -76,7 +110,7 @@
     },
     "none": {
       "title": "No recovery codes left",
-      "description": "Every code has been used. The authenticator app is now the only way in, and an administrator reset does not exist yet — so issue a new set below while the app still works."
+      "description": "Every code has been used. The authenticator app is now the only way in — issue a new set below while it still works. If the app goes too, only an administrator with the right to reset your second factor can let you back in."
     },
     "regenerate": {
       "title": "Replace recovery codes",

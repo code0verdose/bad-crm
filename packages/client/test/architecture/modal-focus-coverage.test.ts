@@ -58,7 +58,10 @@ const OWNERS: Readonly<Record<string, string>> = {
   'units/auth/ui/recovery-codes-dialog.component.tsx': 'widgets/recovery-codes.test.tsx',
   'widgets/app-shell/app-shell.widget.tsx': 'widgets/app-shell.test.tsx',
   'widgets/disable-totp/ui/disable-totp-dialog.component.tsx': 'widgets/disable-totp.test.tsx',
+  'widgets/invitation-list/ui/invitation-confirm-dialog.component.tsx':
+    'widgets/invitation-list.test.tsx',
   'widgets/offboarding/offboarding-dialog.widget.tsx': 'widgets/offboarding.test.tsx',
+  'widgets/reset-mfa/ui/reset-mfa-dialog.component.tsx': 'widgets/reset-mfa.test.tsx',
   'widgets/role-matrix/ui/role-matrix-preview-modal.component.tsx':
     'widgets/role-matrix-preview-modal.test.tsx',
   'widgets/team-detail/ui/team-delete-dialog.component.tsx': 'widgets/team-detail.test.tsx',

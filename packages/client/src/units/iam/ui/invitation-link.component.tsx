@@ -8,6 +8,16 @@ import { type IamApi } from '@units/iam';
 export interface InvitationLinkProps {
   readonly invitation: IamApi.MintedInvitation;
   readonly onCopy: (url: string) => void;
+  /**
+   * The opening sentence, which is the one thing the two callers say differently: the invite screen
+   * has just created an invitation, the list has just replaced the link of one that existed.
+   *
+   * A prop rather than a second component, because everything else — the warning when this
+   * installation has no relay, the copy control, the expiry — is the same panel, and criterion 3 of
+   * STORY-012-08 asks for that panel and not for a variant of it. It defaults to the invite screen's
+   * sentence so that caller stays untouched.
+   */
+  readonly titleKey?: string;
 }
 
 /**
@@ -21,12 +31,16 @@ export interface InvitationLinkProps {
  * `role="status"` rather than an alert: nothing went wrong, and a screen reader should hear that
  * the invitation exists without being interrupted mid-sentence.
  */
-export function InvitationLink({ invitation, onCopy }: InvitationLinkProps) {
+export function InvitationLink({
+  invitation,
+  onCopy,
+  titleKey = 'members.invite.created',
+}: InvitationLinkProps) {
   const { t, i18n } = useTranslation();
 
   return (
     <Stack gap="sm" role="status">
-      <Text fw={600}>{t('members.invite.created', { email: invitation.email })}</Text>
+      <Text fw={600}>{t(titleKey, { email: invitation.email })}</Text>
 
       {invitation.mailDispatched ? (
         <Text>{t('members.invite.sent', { email: invitation.email })}</Text>

@@ -148,14 +148,68 @@ export type MintedInvitation = components['schemas']['MintedInvitation'];
  *
  * No `signal`: this is issued by pressing a button, not by a changing query key, so there is no
  * later request that could overtake it.
- *
- * The reads and the other two writes of this surface (`GET /invitations`,
- * `POST /invitations/{id}/resend`, `DELETE /invitations/{id}`) exist on the server and are not here
- * yet: the screen that lists open invitations is STORY-012-04, and a client function nobody calls is
- * a contract nobody checks.
  */
 export const createInvitation = async (draft: InvitationDraft): Promise<MintedInvitation> => {
   const { params } = idempotencyParams();
 
   return unwrapApiResult(await apiClient.POST('/invitations', { body: draft, params }));
+};
+
+/**
+ * One open invitation as the list carries it — **ids, no names, and no token**.
+ *
+ * The absence is the contract's, not an omission here: the schema has no `token` and no digest, so
+ * the credential exists in exactly one response and this read is not it. What the row does carry is
+ * `roleId`, `teamIds` and `invitedById`; turning those into names is a different permission and
+ * therefore a different request, made by the screen only when its reader may be told
+ * (STORY-012-08, D1).
+ */
+export type Invitation = components['schemas']['Invitation'];
+
+/**
+ * Every invitation of the organization that nobody has accepted yet, newest first.
+ *
+ * No parameters, because the operation takes none: no filter, no page, no order — the order is the
+ * server's (`ORDER BY created_at DESC`) and the answer is the whole set. Expired ones are in it on
+ * purpose; they are exactly the rows somebody came here to re-issue or close.
+ *
+ * The `signal` is required rather than optional, like the other queries here: this is a query, and
+ * a query is always cancellable (`rules/tanstack-query.mdc` §4).
+ */
+export const fetchInvitations = async (signal: AbortSignal): Promise<readonly Invitation[]> =>
+  unwrapApiResult(await apiClient.GET('/invitations', { signal })).items;
+
+/**
+ * Mints a new link for an invitation that already exists, and kills the previous one.
+ *
+ * No `idempotencyParams()`, and it is not an omission — the same reasoning as
+ * `writePermissionOverride` above: this operation declares no `Idempotency-Key` parameter
+ * (`header?: never` in the generated operation), so a call site claiming one would be claiming a
+ * parameter the contract does not have. The middleware still attaches the header to every unsafe
+ * request.
+ *
+ * No `signal`: it is issued by confirming a dialog, not by a changing query key.
+ */
+export const resendInvitation = async (invitationId: string): Promise<MintedInvitation> =>
+  unwrapApiResult(
+    await apiClient.POST('/invitations/{invitationId}/resend', {
+      params: { path: { invitationId } },
+    }),
+  );
+
+/**
+ * Closes an invitation early. The row goes, so the link stops working rather than being filtered
+ * out by everybody who reads the table.
+ *
+ * Answers `204` and nothing else, which is why the mutation above it invalidates the list instead
+ * of removing the row from the cache: what the list looks like afterwards is the server's answer,
+ * and a row deleted optimistically would hide the two refusals that make this operation
+ * interesting — `404` for one already closed and `409` for one already accepted.
+ */
+export const revokeInvitation = async (invitationId: string): Promise<void> => {
+  unwrapApiResult(
+    await apiClient.DELETE('/invitations/{invitationId}', {
+      params: { path: { invitationId } },
+    }),
+  );
 };

@@ -8,6 +8,7 @@ export * from './forgot-password/index.js';
 export * from './login/index.js';
 export * from './reset-password/index.js';
 export * from './admin-roles/index.js';
+export * from './admin-members-invitations/index.js';
 export * from './admin-members-invite/index.js';
 export * from './accept-invite/index.js';
 export * from './employee-profile/index.js';
