@@ -6,6 +6,7 @@
 export * from './app-loading.component.js';
 export * from './authenticated-layout.component.js';
 export * from './route-error.component.js';
+export * from './route-forbidden.component.js';
 export * from './route-not-found.component.js';
 export * from './root-layout.component.js';
 export * from './route-pending.component.js';

@@ -20,7 +20,12 @@ import { IamService } from '@units/iam';
  * is a screen that can open and then refuse everything on it.
  */
 export const Route = createFileRoute('/_authenticated/admin/members/invite')({
-  beforeLoad: IamService.IamGuards.requirePermission('invitation:create'),
+  beforeLoad: IamService.IamGuards.requirePermission({
+    permission: 'invitation:create',
+    // `/admin/**` is in everybody's navigation, so its existence is no secret and the
+    // refusal names what is missing (`ux-architecture.md` → «403 vs 404»).
+    whenDenied: 'forbidden',
+  }),
   component: AdminMembersInvitePage,
   staticData: { crumbKey: 'members.invite.title' },
 });

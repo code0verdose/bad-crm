@@ -20,7 +20,12 @@ import { IamService } from '@units/iam';
  * person may open on themselves and therefore carries no guard at all.
  */
 export const Route = createFileRoute('/_authenticated/admin/members/')({
-  beforeLoad: IamService.IamGuards.requirePermission('user:read'),
+  beforeLoad: IamService.IamGuards.requirePermission({
+    permission: 'user:read',
+    // `/admin/**` is in everybody's navigation, so its existence is no secret and the
+    // refusal names what is missing (`ux-architecture.md` → «403 vs 404»).
+    whenDenied: 'forbidden',
+  }),
   validateSearch: EmployeeModel.memberListSearchSchema,
   component: AdminMembersPage,
   staticData: { crumbKey: 'members.title' },

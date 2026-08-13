@@ -165,7 +165,7 @@ afterEach(() => {
 
 describe('/admin/teams/$teamId', () => {
   /**
-   * The route guard: `Route.beforeLoad` runs `requirePermission('team:read')` before
+   * The route guard: `Route.beforeLoad` runs `requirePermission({ permission: 'team:read', … })` before
    * `TeamDetailPage` mounts. `src/app/routes/**` sits outside the coverage report, so a deleted
    * `beforeLoad` here is invisible to every metric while every other case in this suite passes —
    * each of them grants `team:read` in `startAt`'s default. Without this guard actually attached,
@@ -173,10 +173,12 @@ describe('/admin/teams/$teamId', () => {
    * table being drawn at all is what makes the button's absence mean «no permission» rather than
    * «still loading» (`team-list.test.tsx:235`, `team-detail.test.tsx` throughout).
    */
-  it('is not there at all for somebody who may not read teams', async () => {
+  it('is refused to somebody who may not read teams, by name', async () => {
     await startAt({ granted: [] });
 
-    expect(await screen.findByText('errors.not_found.title')).toBeInTheDocument();
+    // Forbidden rather than «nothing here»: the section is visible to every colleague, so the
+    // refusal is allowed to name the permission (`ux-architecture.md`, «403 vs 404»).
+    expect(await screen.findByTestId('forbidden-state')).toHaveTextContent('team:read');
     expect(sent.some((call) => call.url.endsWith(`/teams/${TEAM}`))).toBe(false);
   });
 });

@@ -117,6 +117,12 @@
     "too_small": "This value is too small.",
     "unrecognized_keys": "This value carries fields that do not belong here."
   },
+  "forbidden": {
+    "action": "Back to the dashboard",
+    "description": "This section exists, and your account is not allowed to open it. An administrator of your organization can grant the permission below.",
+    "permissionLabel": "Permission needed:",
+    "title": "You may not open this section"
+  },
   "not_found": {
     "action": "Back to the dashboard",
     "description": "This address does not lead anywhere in this installation.",

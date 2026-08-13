@@ -21,7 +21,12 @@ import { IamModel, IamService } from '@units/iam';
  * mistyped query string.
  */
 export const Route = createFileRoute('/_authenticated/admin/roles')({
-  beforeLoad: IamService.IamGuards.requirePermission('role:read'),
+  beforeLoad: IamService.IamGuards.requirePermission({
+    permission: 'role:read',
+    // `/admin/**` is in everybody's navigation, so its existence is no secret and the
+    // refusal names what is missing (`ux-architecture.md` → «403 vs 404»).
+    whenDenied: 'forbidden',
+  }),
   validateSearch: IamModel.rolesSearchSchema,
   component: AdminRolesPage,
   staticData: { crumbKey: 'roles.title' },

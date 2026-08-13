@@ -264,9 +264,11 @@ flowchart TD
 - Файлы — `src/app/routes/**`, file-based, дерево генерируется в `routeTree.gen.ts`.
 - Гарды — переиспользуемые функции юнита, который владеет решением, а не общего `app/`. Существуют
   два: `redirectIfAuthed` и `requireSession` в `units/auth/lib/guards` (сессия — забота `units/auth`)
-  и `requirePermission(p)` в `units/iam/service/guards` (`IamService.IamGuards.requirePermission`),
-  потому что права приехали с EPIC-011 и живут в `units/iam`. Гард сессии бросает
-  `redirect({ to: '/login', search: { redirect } })`, гард права — `notFound()` (см. «403 vs 404»).
+  и `requirePermission({ permission, whenDenied })` в `units/iam/service/guards`
+  (`IamService.IamGuards.requirePermission`), потому что права приехали с EPIC-011 и живут в
+  `units/iam`. Гард сессии бросает `redirect({ to: '/login', search: { redirect } })`; гард права —
+  `PermissionDeniedError` (экран 403) или `notFound()`, и **выбор обязателен на каждом вызове**
+  (см. «403 vs 404»).
   `requireProjectMember`, `requireAnyPermission(...p)`, `requireVaultUnlocked` в таблицах ниже —
   **проектируемые**: их заведут эпики своих доменов (проекты — EPIC-014, vault — M4+), в коде их
   пока нет.
@@ -582,8 +584,9 @@ Empty — первая неделя работы: карточка-привет�
 **Состояния.** Loading — skeleton-колонки с 3 карточками-плейсхолдерами. Empty (доска без задач) —
 `EmptyState` в первой колонке с «Создать задачу» и ссылкой на импорт. Empty (не подошёл фильтр) —
 другой текст и кнопка «Сбросить фильтры». Error — inline `DataState` на месте доски с retry, тоста
-нет. No-access — маршрут не отдаётся: `requireProjectMember` бросает `notFound()` (не 403, см.
-раздел прав).
+нет. No-access — маршрут не отдаётся: `requireProjectMember` бросает `notFound()`, а гард права на
+доске вызывается с `whenDenied: 'not-found'` — доска принадлежит закрытому контуру, где секрет сам
+факт существования (не 403; см. «403 vs 404»).
 
 **В URL.** Все фильтры, swimlane, открытая задача (`?task=`). Ширина колонок и свёрнутые swimlane —
 в `localStorage`, они не имеют смысла при пересылке ссылки.
@@ -803,8 +806,9 @@ email — `nameOf()` в `member-table.component.tsx`), должность, от�
 
 **Состояния.** Loading (таблица и график) — `TextSkeleton`. Empty — «сотрудников не найдено»/«не
 подошёл фильтр» с раздельными текстами. Error — inline `DataState` с retry, отдельно для таблицы и для
-графика (переключение вида не тянет за собой состояние другого). No-access к разделу — 404 (гард
-`requirePermission('user:read')`, см. врезку «403 vs 404» выше — тот же нерешённый вопрос).
+графика (переключение вида не тянет за собой состояние другого). No-access к разделу — **403**
+(`requirePermission({ permission: 'user:read', whenDenied: 'forbidden' })`, экран `ForbiddenState`
+называет `user:read`; см. раздел «403 vs 404» выше).
 
 **В URL.** `memberListSearchSchema` — `q`, `status[]` (пусто = дефолт «активные и приглашённые», который
 решает **сервер**), `role[]`, `team[]` (id, до 20), `sort=name|-name|hiredAt|-hiredAt`, `page`,
@@ -1474,28 +1478,54 @@ can('vault_item:read', 'EDITOR');         // второй аргумент — a
   случаев тоже должен быть 404 — иначе разница видна в сети.
 - **403 (`errorComponent` с `ForbiddenState`)** — когда существование ресурса не секрет внутри
   организации: разделы `/admin/**`, `/reports/**`, `/delivery/**`, страница сотрудника. Экран
-  объясняет, какого права не хватает, и предлагает «Запросить доступ» (создаёт заявку владельцу) и
-  «Вернуться на дашборд».
+  объясняет, какого права не хватает (ключ каталога показывается дословно — это та строка, которую
+  человек назовёт администратору), и предлагает «Вернуться на дашборд».
+  **Кнопки «Запросить доступ» на экране нет и не будет до появления самого механизма заявок:**
+  в продукте нет ни заявки, ни адресата, ни уведомления, а кнопка, которая ничего не открывает,
+  хуже её отсутствия — она обещает путь, которого не существует, и человек ждёт ответа, который
+  никто не отправит. Эпик, который заведёт заявки на доступ, добавляет кнопку сюда и в
+  `ForbiddenState` тем же коммитом.
 
 Правило: если пользователь может узнать о существовании ресурса легальным путём (он есть в
 оргструктуре, в списке разделов) — 403; если ресурс принадлежит закрытому контуру — 404.
 
-> **Расхождение, не закрытое решением (зафиксировано 2026-08-12).** Отгруженный
-> `requirePermission` (`units/iam/service/guards/require-permission.guard.ts`, EPIC-011) на **любой**
-> нехватке права бросает `notFound()`, в том числе на `/admin/members`, `/admin/teams`,
-> `/admin/roles` — то есть ровно на разделах, которым абзац выше предписывает 403. Комментарий в
-> самом гарде ссылается при этом на **этот** раздел как на обоснование 404. Компонента
-> `ForbiddenState` в `shared/ui` нет вовсе, поэтому 403-ветку сегодня нечем отрисовать.
-> Правило и код надо свести — либо разделы админки переводятся на 403 вместе с появлением
-> `ForbiddenState`, либо правило признаёт 404 единым ответом гарда, — но выбор здесь не сделан и
-> молча в документ не вписывается (`CLAUDE.md`, «Порядок источников истины»).
+> **Решение принято 2026-08-13: код сведён к правилу.** До этой даты здесь стояла врезка
+> «расхождение, не закрытое решением»: отгруженный `requirePermission` (EPIC-011) бросал
+> `notFound()` на **любой** нехватке права, включая `/admin/members`, `/admin/teams`,
+> `/admin/roles`, а `ForbiddenState` в `shared/ui` не существовал вовсе. Обоснование в комментарии
+> гарда ссылалось на инвариант 2 `CLAUDE.md` — и это была подмена: инвариант требует 404 для
+> **чужой организации**, а не для нехватки права внутри своей. Внутри своей организации сервер
+> отвечает 403 (`*_forbidden` → 403 в `packages/shared/src/errors/error-code.enums.ts`), так что
+> один и тот же отказ читался как 403 в сети и как «не найдено» на экране.
+>
+> Что сделано:
+>
+> - `requirePermission` принимает **обязательный** `whenDenied: 'forbidden' | 'not-found'` —
+>   значения по умолчанию нет ни у одного из вариантов. Умолчание — ровно та ошибка, которую это
+>   решение закрывает: `'not-found'` по умолчанию превратил бы админку в «здесь ничего нет» (так и
+>   было), а `'forbidden'` по умолчанию молча достался бы первому доменному ресурсу с ACL (проекты,
+>   EPIC-014) и начал бы подтверждать существование чужих проектов любому, кто угадает URL. Маршрут,
+>   который не выбрал, **не компилируется**;
+> - `'forbidden'` бросает `PermissionDeniedError` (`units/iam/lib/errors`) — обычную ошибку, поэтому
+>   роутер отдаёт её в `errorComponent`, а `notFound()` остался за закрытым контуром и попадает в
+>   `notFoundComponent`, который обязан быть неотличим от «нет такого адреса»;
+> - `RouteError` (`app/ui`, он же `defaultErrorComponent`) распознаёт отказ и рисует
+>   `RouteForbidden` → `SharedUi.ForbiddenState`; обычные ошибки маршрута идут прежним путём.
+>   Разведение живёт в одном месте, поэтому следующий закрытый гардом раздел получает правильный
+>   экран, ничего не подключая;
+> - все пять сегодняшних вызовов гарда — `/admin/**` — выбрали `'forbidden'`; закрытого контура
+>   среди маршрутов пока нет.
+>
+> Тесты: `packages/client/test/routes/permission-guard.test.tsx` (обе ветки гарда, отрисовка 403 на
+> `/admin/roles`, «обычная ошибка остаётся обычной»), `packages/client/test/ui/forbidden-state.test.tsx`
+> (экран, оба языка, `axe` в обеих темах).
 
 ### Гарды в `beforeLoad`
 
 ```ts
 // units/iam/service/guards/require-permission.guard.ts — как это отгружено
 export const requirePermission =
-  (permission: SharedPermissions.PermissionKey) =>
+  ({ permission, whenDenied }: RequirePermissionOptions) =>
   async ({ context }: PermissionGuardArgs): Promise<void> => {
     // Тот же кеш, из которого читают компоненты: гард и экран спрашивают один раз на двоих.
     const view = await context.queryClient.ensureQueryData({
@@ -1508,8 +1538,20 @@ export const requirePermission =
     // `isPermissionKey` в два `Set` — `permissions` и `denied` — плюс флаг `isOwner`.)
     if (SharedPermissions.can(view, permission)) return;
 
-    throw notFound(); // см. врезку «403 vs 404» выше: это расхождение, а не решение
+    // Закрытый контур: маршрута для этого человека просто нет.
+    if (whenDenied === 'not-found') throw notFound();
+
+    // Открытый раздел: обычная ошибка → `errorComponent` → `ForbiddenState` с именем права.
+    throw new PermissionDeniedError(permission);
   };
+```
+
+```ts
+// как это вызывается в маршруте — выбор обязателен, умолчания нет
+beforeLoad: IamService.IamGuards.requirePermission({
+  permission: 'role:read',
+  whenDenied: 'forbidden',
+}),
 ```
 
 Сессию гард права не проверяет — это делает `requireSession` на `_authenticated`, а до него ветка

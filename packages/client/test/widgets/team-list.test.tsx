@@ -130,18 +130,21 @@ afterEach(() => {
 
 describe('/admin/teams', () => {
   /**
-   * The route guard, not the widget: `Route.beforeLoad` runs `requirePermission('team:read')`
-   * before `AdminTeamsPage` is ever mounted. `src/app/routes/**` is excluded from the coverage
+   * The route guard, not the widget: `Route.beforeLoad` runs
+   * `requirePermission({ permission: 'team:read', whenDenied: 'forbidden' })` before
+   * `AdminTeamsPage` is ever mounted. `src/app/routes/**` is excluded from the coverage
    * report (`vitest.config.ts` — the closing `});` of `createFileRoute` cannot be exercised by
    * anything short of navigation), so a `beforeLoad` deleted from the route file was invisible to
    * every metric while every case in this suite kept passing — each of them starts `startAt` with a
    * grant that includes `team:read`. `navigation.test.tsx` documents the same failure by hand; this
    * is the assertion against the actual route.
    */
-  it('is not there at all for somebody who may not read teams', async () => {
+  it('is refused to somebody who may not read teams, by name', async () => {
     await startAt({ granted: [] });
 
-    expect(await screen.findByText('errors.not_found.title')).toBeInTheDocument();
+    // Forbidden rather than «nothing here»: `/admin/teams` is a section, not a resource whose
+    // existence is confidential (`ux-architecture.md`, «403 vs 404»).
+    expect(await screen.findByTestId('forbidden-state')).toHaveTextContent('team:read');
     // The guard runs in `beforeLoad`, before the loader: a request that reached the server here
     // would mean the screen rendered first and was refused per row, not kept off the page entirely.
     expect(sent.some((call) => call.url.endsWith('/teams'))).toBe(false);

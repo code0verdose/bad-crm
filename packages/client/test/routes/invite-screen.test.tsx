@@ -104,12 +104,14 @@ afterEach(() => {
 });
 
 describe('/admin/members/invite', () => {
-  it('is not there at all for somebody who may not invite', async () => {
-    // Not «forbidden»: the same answer the server gives for a resource of another organization, so
-    // a screen cannot be used to find out what exists (`ux-architecture.md`, «403 vs 404»).
+  it('refuses somebody who may not invite, and says what they are missing', async () => {
+    // Forbidden, not «nothing here»: the section is in everybody's navigation, so naming
+    // `invitation:create` leaks nothing and turns the refusal into something an administrator can
+    // grant (`ux-architecture.md`, «403 vs 404»).
     await startAt(['task:read']);
 
-    expect(await screen.findByText('errors.not_found.title')).toBeInTheDocument();
+    expect(await screen.findByTestId('forbidden-state')).toHaveTextContent('invitation:create');
+    expect(screen.queryByText('errors.not_found.title')).not.toBeInTheDocument();
     expect(sent.some((call) => call.method === 'POST')).toBe(false);
   });
 

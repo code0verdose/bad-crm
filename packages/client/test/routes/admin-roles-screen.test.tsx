@@ -167,12 +167,15 @@ afterEach(() => {
 });
 
 describe('/admin/roles', () => {
-  it('is not there at all for somebody who may not read roles', async () => {
-    // Not «forbidden»: the same answer the server gives for a resource of another organization, so
-    // the screen cannot be used to find out what exists (`ux-architecture.md`, «403 vs 404»).
+  it('refuses somebody who may not read roles, and says what they are missing', async () => {
+    // Forbidden, not «nothing here»: `/admin/**` is in everybody's navigation, so its existence is
+    // not a secret inside the organization, and the refusal is allowed to be useful
+    // (`ux-architecture.md`, «403 vs 404»). The closed contour keeps the 404 — see
+    // `test/routes/permission-guard.test.tsx` for both halves.
     await startAt('/admin/roles', []);
 
-    expect(await screen.findByText('errors.not_found.title')).toBeInTheDocument();
+    expect(await screen.findByTestId('forbidden-state')).toHaveTextContent('role:read');
+    expect(screen.queryByText('errors.not_found.title')).not.toBeInTheDocument();
     expect(sent.some((request) => request.url.endsWith('/roles'))).toBe(false);
   });
 

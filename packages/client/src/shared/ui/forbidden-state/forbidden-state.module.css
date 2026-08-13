@@ -1,0 +1,13 @@
+/* Tokens only — no literal colour, no literal spacing (`rules/design-system.mdc` §3). */
+.root {
+  align-items: flex-start;
+  /* A raised surface with body text on it: that pair is the one measured for contrast in both
+     schemes (`test/theme/tokens.test.ts`). A tinted «warning» surface would look more urgent and
+     would put an unmeasured pair on the screen — and the refusal is a policy, not an alarm. */
+  background-color: var(--bc-surface-raised);
+  border: 1px solid var(--bc-border);
+  border-radius: var(--mantine-radius-md);
+  /* No fixed height: the Russian text runs longer and has to grow at 200 % zoom
+     (`rules/a11y.mdc` §4, `rules/i18n.mdc` §15). */
+  padding: var(--mantine-spacing-xl) var(--mantine-spacing-lg);
+}

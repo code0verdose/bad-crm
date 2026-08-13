@@ -21,7 +21,12 @@ import { TeamModel } from '@units/team';
  * page that renders and fills with 403s.
  */
 export const Route = createFileRoute('/_authenticated/admin/teams/')({
-  beforeLoad: IamService.IamGuards.requirePermission('team:read'),
+  beforeLoad: IamService.IamGuards.requirePermission({
+    permission: 'team:read',
+    // `/admin/**` is in everybody's navigation, so its existence is no secret and the
+    // refusal names what is missing (`ux-architecture.md` → «403 vs 404»).
+    whenDenied: 'forbidden',
+  }),
   validateSearch: TeamModel.teamListSearchSchema,
   component: AdminTeamsPage,
   staticData: { crumbKey: 'teams.title' },

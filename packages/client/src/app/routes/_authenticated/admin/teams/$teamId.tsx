@@ -19,7 +19,12 @@ import { IamService } from '@units/iam';
  * see. The screen shows that as its error state, which is why there is nothing to arrange here.
  */
 export const Route = createFileRoute('/_authenticated/admin/teams/$teamId')({
-  beforeLoad: IamService.IamGuards.requirePermission('team:read'),
+  beforeLoad: IamService.IamGuards.requirePermission({
+    permission: 'team:read',
+    // `/admin/**` is in everybody's navigation, so its existence is no secret and the
+    // refusal names what is missing (`ux-architecture.md` → «403 vs 404»).
+    whenDenied: 'forbidden',
+  }),
   component: TeamDetailPage,
   staticData: { crumbKey: 'teams.detail.title' },
 });
