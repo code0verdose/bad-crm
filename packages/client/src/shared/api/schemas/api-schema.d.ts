@@ -220,6 +220,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/auth/2fa/verify": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Present the second factor and receive a session */
+        post: operations["verifySecondFactor"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/auth/2fa/setup": {
         parameters: {
             query?: never;
@@ -1736,7 +1753,50 @@ export interface components {
          * @description A session, or the choice that has to be made before one exists. Discriminated by `status`, so
          *     a client switches on a field rather than on the presence of another one.
          */
-        LoginResult: components["schemas"]["AuthenticatedSession"] | components["schemas"]["OrganizationSelectionRequired"];
+        LoginResult: components["schemas"]["AuthenticatedSession"] | components["schemas"]["OrganizationSelectionRequired"] | components["schemas"]["MfaRequired"];
+        /**
+         * @description The password was right and the account has a second factor, so no session was issued.
+         *
+         *     The body carries the intermediate token and nothing else — no user, no organization, no
+         *     tokens. Until the second factor is presented the caller is owed no facts about the account
+         *     behind the password, and a body shaped like a session would hand over exactly what this step
+         *     withholds (STORY-013-03, acceptance 1). No `Set-Cookie` accompanies it.
+         *
+         *     `mfaToken` is presented to `POST /auth/2fa/verify` and is refused on every other route
+         *     (acceptance 3). It lives five minutes, is spent by one successful verification, and is voided
+         *     outright after five failed codes — after which the password step has to be repeated.
+         */
+        MfaRequired: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            status: "mfa_required";
+            /** @description The intermediate credential. Not a session token; carries no rights. */
+            mfaToken: string;
+            /**
+             * @description Seconds the token has left, so the client can show a countdown. A duration rather than a
+             *     timestamp: it cannot be wrong about the clock on the reader's machine.
+             * @example 300
+             */
+            expiresIn: number;
+        };
+        /**
+         * @description The intermediate token and one code. `code` takes **either** six digits from an authenticator
+         *     or a recovery code — which one it is decides the branch on the server, and narrowing this
+         *     field to six digits would refuse every recovery code before it was ever compared
+         *     (STORY-013-03, acceptance 7).
+         */
+        VerifySecondFactorRequest: {
+            /**
+             * @description Exactly as `POST /auth/login` returned it. Its meaning rests on a signature, so nothing
+             *     about its shape is asserted here — a second, weaker opinion about what a valid token
+             *     looks like is one that drifts the day the issuer changes.
+             */
+            mfaToken: string;
+            /** @description Six digits from the authenticator app, or one unused recovery code. */
+            code: string;
+        };
         RegisterOrganizationRequest: {
             organization: {
                 /**
@@ -2848,81 +2908,26 @@ export interface components {
             };
         };
         /**
-         * @description A recovery code was presented and refused: unknown, already used, or belonging to a different
-         *     account. One answer for all three, on the same reasoning as `InvalidCredentials` — telling
-         *     them apart would let somebody holding a stolen or guessed code learn whether it was ever real.
+         * @description The second step of signing in refused. One status, four codes, and they are kept apart
+         *     because they ask the person in front of the screen to do four different things.
          *
-         *     **Not referenced by any operation yet.** The only caller is the second-factor sign-in step
-         *     (`POST /auth/2fa/verify`, STORY-013-03), which does not exist: `ConsumeRecoveryCodeUseCase` is
-         *     written and tested but wired to neither the container nor the route registry, because spending
-         *     a code without a pending sign-in to attach the resulting session to would be a hole rather
-         *     than a convenience. Declared here so the sign-in step lands against a contract that already
-         *     names its refusal, and listed as deferred surface in STORY-013-02.
+         *     - `mfa_token_expired` — the intermediate token is expired, unknown, already spent by a
+         *       successful verification, or voided after five failed codes. One code for all four, so the
+         *       answer never says whether a particular sign-in was started or finished. The client returns
+         *       to the password step.
+         *     - `mfa_invalid_code` — the authenticator code did not match. Look again.
+         *     - `mfa_code_replayed` — that code was already accepted once in this 30-second step. Reachable
+         *       only by presenting a code that *was* correct, which is why it is not folded into the one
+         *       above: «that code was already used» and «check the app» are different instructions.
+         *     - `recovery_code_invalid` — the recovery code was unknown, already spent, or another
+         *       account's. One answer for all three, on the same reasoning `InvalidCredentials` documents.
+         *
+         *     All four are **401 rather than 422**: no session exists at this step and the second factor
+         *     *is* the credential being judged. The enrolment endpoints answer 422 for their own codes,
+         *     where the caller is already authenticated and what is wrong is a submitted field
+         *     (`packages/shared/src/errors/error-code.enums.ts`).
          */
-        RecoveryCodeInvalid: {
-            headers: {
-                [name: string]: unknown;
-            };
-            content: {
-                "application/problem+json": components["schemas"]["Problem"];
-            };
-        };
-        /**
-         * @description The intermediate token of the second-factor step is gone: expired, never issued, already
-         *     spent by a successful verification, or voided after too many failed attempts. One answer for
-         *     all four — telling them apart would say whether a particular sign-in was completed, and how
-         *     long ago it started.
-         *
-         *     `401`, and the whole reason a separate code exists rather than reusing one of the `confirm`
-         *     codes: this refusal is reached before any session exists, so the second factor *is* the
-         *     credential being judged (the same reasoning `RecoveryCodeInvalid` above records). The client
-         *     answers it by sending the person back to the password step, which issues a fresh token.
-         *
-         *     **Not referenced by any operation yet.** Its only caller is `POST /auth/2fa/verify`
-         *     (STORY-013-03), which is not published yet; declared here so the sign-in step lands against
-         *     a contract that already names its refusals.
-         */
-        MfaTokenExpired: {
-            headers: {
-                [name: string]: unknown;
-            };
-            content: {
-                "application/problem+json": components["schemas"]["Problem"];
-            };
-        };
-        /**
-         * @description The second factor presented on the sign-in step did not match. A separate code from
-         *     `invalid_totp_code`, which stays `422` on `POST /auth/2fa/confirm`, because the two mean
-         *     different things to a client: `confirm` is called with a live session and a wrong field,
-         *     while here the code is the credential and there is no session to keep. A single code cannot
-         *     answer both statuses — `AppError` derives the status from the code
-         *     (`packages/server/src/domain/shared/errors/app.errors.ts`) — and moving the existing one to
-         *     `401` would make a typo during enrolment log the person out, since `401` tells the client to
-         *     refresh and then drop its session.
-         *
-         *     **Not referenced by any operation yet**, for the same reason as `MfaTokenExpired` above.
-         */
-        MfaInvalidCode: {
-            headers: {
-                [name: string]: unknown;
-            };
-            content: {
-                "application/problem+json": components["schemas"]["Problem"];
-            };
-        };
-        /**
-         * @description The code presented on the sign-in step matches the time step that was already accepted once
-         *     (`totp_last_counter`). Kept apart from `mfa_invalid_code` for the reason
-         *     `totp_code_replayed` is kept apart from `invalid_totp_code`: this one is reachable only by
-         *     presenting a code that *was* correct, so the anti-replay predicate is the cause rather than
-         *     a typo, and the client says «that code was already used» instead of «check the app».
-         *
-         *     `401` rather than the `422` its enrolment-time twin carries — same step, same reasoning as
-         *     `MfaInvalidCode` above.
-         *
-         *     **Not referenced by any operation yet**, for the same reason as `MfaTokenExpired` above.
-         */
-        MfaCodeReplayed: {
+        SecondFactorRefused: {
             headers: {
                 [name: string]: unknown;
             };
@@ -3385,6 +3390,40 @@ export interface operations {
             };
             401: components["responses"]["Unauthenticated"];
             500: components["responses"]["InternalError"];
+        };
+    };
+    verifySecondFactor: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["VerifySecondFactorRequest"];
+            };
+        };
+        responses: {
+            /**
+             * @description The second factor matched. A session is issued here and only here — the intermediate
+             *     token is spent in the same step and never verifies again.
+             */
+            200: {
+                headers: {
+                    "Set-Cookie": components["headers"]["RefreshCookieSet"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuthenticatedSession"];
+                };
+            };
+            401: components["responses"]["SecondFactorRefused"];
+            403: components["responses"]["AccountSuspended"];
+            422: components["responses"]["ValidationFailed"];
+            429: components["responses"]["RateLimited"];
+            500: components["responses"]["InternalError"];
+            503: components["responses"]["ServiceUnavailable"];
         };
     };
     setupTotp: {

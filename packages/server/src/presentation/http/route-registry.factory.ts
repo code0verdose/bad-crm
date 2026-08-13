@@ -43,6 +43,7 @@ import {
 import {
   confirmTotpBodySchema,
   disableTotpBodySchema,
+  verifySecondFactorBodySchema,
   regenerateRecoveryCodesBodySchema,
 } from '@/presentation/http/validators/mfa.validator.js';
 import { metaQuerySchema } from '@/presentation/http/validators/meta.validator.js';
@@ -266,9 +267,13 @@ export const createRouteRegistry = (
     revokeValidator: revokeRoleValidator,
   });
 
+  const verifySecondFactorValidator = validate({ body: verifySecondFactorBodySchema });
+
   const auth = createAuthController({
     register: dependencies.identity.register,
     login: dependencies.identity.login,
+    verifySecondFactor: dependencies.identity.verifySecondFactor,
+    verifySecondFactorValidator,
     refresh: dependencies.identity.refresh,
     endSession: dependencies.identity.endSession,
     changePassword: dependencies.identity.changePassword,
@@ -448,6 +453,14 @@ export const createRouteRegistry = (
       selfServiceReason:
         'same subject and object as signing out, over the rest of one’s own sessions; there is no capability that could grant it to anybody else',
       ownershipCheckedIn: 'EndSessionUseCase.revokeOthers',
+    },
+    {
+      method: 'post',
+      path: `${API_PREFIX}/auth/2fa/verify`,
+      handlers: [verifySecondFactorValidator.handler, auth.verifySecondFactor],
+      public: true,
+      publicReason:
+        'the second step of signing in: the caller holds an intermediate token and no session, and the session a permission would be read from is what this operation issues. Bounded by the mfa_verify_attempt budget of five per five minutes keyed on the token itself, spent in VerifySecondFactorUseCase before either factor is compared, and the token is voided outright on the sixth attempt',
     },
     {
       method: 'post',

@@ -5,6 +5,7 @@ import { type ConfirmPasswordResetUseCase } from '@/application/identity/use-cas
 import { type EndSessionUseCase } from '@/application/identity/use-cases/end-session.use-case.js';
 import { type LoginUseCase } from '@/application/identity/use-cases/login.use-case.js';
 import { type RefreshSessionUseCase } from '@/application/identity/use-cases/refresh-session.use-case.js';
+import { type VerifySecondFactorUseCase } from '@/application/identity/use-cases/verify-second-factor.use-case.js';
 import { type RegisterOrganizationUseCase } from '@/application/identity/use-cases/register-organization.use-case.js';
 import { type RequestPasswordResetUseCase } from '@/application/identity/use-cases/request-password-reset.use-case.js';
 import { UnauthenticatedError } from '@/domain/shared/errors/app.errors.js';
@@ -18,6 +19,7 @@ import {
 } from '@/presentation/http/refresh-cookie.util.js';
 import {
   serializeAuthenticatedSession,
+  serializeMfaRequired,
   serializeOrganizationSelection,
 } from '@/presentation/http/serializers/auth.serializer.js';
 import {
@@ -27,6 +29,7 @@ import {
   type registerBodySchema,
   type resetPasswordBodySchema,
 } from '@/presentation/http/validators/auth.validator.js';
+import { type verifySecondFactorBodySchema } from '@/presentation/http/validators/mfa.validator.js';
 
 export interface AuthControllerDependencies {
   readonly register: RegisterOrganizationUseCase;
@@ -38,6 +41,10 @@ export interface AuthControllerDependencies {
   readonly confirmPasswordReset: ConfirmPasswordResetUseCase;
   readonly registerValidator: RequestValidator<{ body: typeof registerBodySchema }>;
   readonly loginValidator: RequestValidator<{ body: typeof loginBodySchema }>;
+  readonly verifySecondFactor: VerifySecondFactorUseCase;
+  readonly verifySecondFactorValidator: RequestValidator<{
+    body: typeof verifySecondFactorBodySchema;
+  }>;
   readonly changePasswordValidator: RequestValidator<{ body: typeof changePasswordBodySchema }>;
   readonly forgotPasswordValidator: RequestValidator<{ body: typeof forgotPasswordBodySchema }>;
   readonly resetPasswordValidator: RequestValidator<{ body: typeof resetPasswordBodySchema }>;
@@ -56,6 +63,7 @@ export const createAuthController = (
 ): {
   readonly register: RequestHandler;
   readonly login: RequestHandler;
+  readonly verifySecondFactor: RequestHandler;
   readonly refresh: RequestHandler;
   readonly logout: RequestHandler;
   readonly changePassword: RequestHandler;
@@ -105,6 +113,47 @@ export const createAuthController = (
 
       return;
     }
+
+    if (result.status === 'mfa_required') {
+      // Same reasoning as the branch above, and one more: the refresh cookie is what a session is
+      // *held* by, so setting it here would hand out half a session to somebody who has presented
+      // one factor (STORY-013-03, acceptance 1 — no access token, no refresh token, no `Session`).
+      response.json(
+        serializeMfaRequired({
+          mfaToken: result.mfaToken,
+          expiresInSeconds: result.expiresInSeconds,
+        }),
+      );
+
+      return;
+    }
+
+    setRefreshCookie(response, result.session.refreshToken, result.session.refreshExpiresAt);
+    response.json(
+      serializeAuthenticatedSession({
+        accessToken: result.session.accessToken,
+        expiresInSeconds: result.session.expiresInSeconds,
+        user: result.user,
+        organization: result.organization,
+      }),
+    );
+  },
+
+  /**
+   * The second step of signing in: the intermediate token plus a code, in exchange for a session.
+   *
+   * Anonymous by necessity — there is no session yet, which is the whole point of the step — and so
+   * it lives beside `login` rather than in `mfa.controller.ts`, where every handler reads a caller
+   * the guard already established.
+   */
+  verifySecondFactor: async (request, response) => {
+    const { body } = dependencies.verifySecondFactorValidator.read(response);
+
+    const result = await dependencies.verifySecondFactor.execute({
+      mfaToken: body.mfaToken,
+      code: body.code,
+      client: clientOf(request),
+    });
 
     setRefreshCookie(response, result.session.refreshToken, result.session.refreshExpiresAt);
     response.json(

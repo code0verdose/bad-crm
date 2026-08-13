@@ -17,6 +17,11 @@ import { ListSessionsQuery } from '@/application/identity/use-cases/list-session
 import { LoginUseCase } from '@/application/identity/use-cases/login.use-case.js';
 import { ReadRecoveryCodeStatusQuery } from '@/application/identity/use-cases/read-recovery-code-status.query.js';
 import { RecoveryCodeMatcher } from '@/application/identity/use-cases/recovery-code-matcher.use-case.js';
+import { ConsumeRecoveryCodeUseCase } from '@/application/identity/use-cases/consume-recovery-code.use-case.js';
+import { VerifySecondFactorUseCase } from '@/application/identity/use-cases/verify-second-factor.use-case.js';
+import { JwtMfaPendingTokenAdapter } from '@/infrastructure/crypto/jwt-mfa-pending-token.adapter.js';
+import { RedisTokenDenylistAdapter } from '@/infrastructure/redis/redis-token-denylist.adapter.js';
+import { detachedTokenDenylist } from '@/infrastructure/redis/detached-token-denylist.adapter.js';
 import { RefreshSessionUseCase } from '@/application/identity/use-cases/refresh-session.use-case.js';
 import { RegenerateRecoveryCodesUseCase } from '@/application/identity/use-cases/regenerate-recovery-codes.use-case.js';
 import { RegisterOrganizationUseCase } from '@/application/identity/use-cases/register-organization.use-case.js';
@@ -270,6 +275,7 @@ export const buildContainer = (input: ContainerInput): AppContainer => {
     mail: mailer,
     mailDispatcher,
     audit,
+    redis: input.redis,
   });
 
   const authClient = identity.authClient;
@@ -612,6 +618,12 @@ const buildIdentity = (input: {
   readonly mail: MailPort;
   readonly mailDispatcher: MailDispatchPort;
   readonly audit: AuditLoggerPort;
+  /**
+   * Needed for the one-shot denylist behind the second factor's intermediate token, on the same
+   * terms as the limiter above: present in a real installation, absent in a container built without
+   * it, and fail-closed either way rather than silently letting a spent token through.
+   */
+  readonly redis: RedisConnection | undefined;
 }): IdentityWiring => {
   const unitOfWork =
     input.database === undefined ? detachedUnitOfWork() : new PrismaUnitOfWork(input.database.base);
@@ -638,6 +650,18 @@ const buildIdentity = (input: {
   });
   const refreshTokens = new Sha256RefreshTokenAdapter();
   const resetTokens = new Sha256ResetTokenAdapter();
+
+  // The same `JWT_SECRET` the access token is signed with: the two are told apart by their `scope`
+  // claim and by an explicit check in `authenticate.middleware.ts`, not by separate keys, so a
+  // self-hosted installation gains no new secret to generate, store and rotate.
+  const mfaPendingTokens = new JwtMfaPendingTokenAdapter(
+    input.env.JWT_SECRET,
+    input.clock,
+    input.idGenerator,
+    input.redis === undefined
+      ? detachedTokenDenylist()
+      : new RedisTokenDenylistAdapter(input.redis.client, input.logger),
+  );
   const accessTokens = new JwtAccessTokenAdapter(input.env.JWT_SECRET, input.clock);
   const addresses = new HmacAddressHasher(input.env.APP_ENCRYPTION_KEY);
   // Own instance rather than one shared with `buildIam`'s `fields`: both wrap the same key and hold
@@ -684,8 +708,10 @@ const buildIdentity = (input: {
       authLookup,
       hasher,
       users,
+      totpEnrollment,
       unitOfWork,
       issueSession,
+      mfaPendingTokens,
       input.rateLimit,
       input.logger,
       input.audit,
@@ -803,6 +829,32 @@ const buildIdentity = (input: {
       input.audit,
       input.mailDispatcher,
       input.env.APP_URL,
+    ),
+    verifySecondFactor: new VerifySecondFactorUseCase(
+      mfaPendingTokens,
+      totpEnrollment,
+      totp,
+      fields,
+      // Its own instance rather than one shared with `disableTotp`: the two spend a recovery code
+      // for different reasons and are bounded by different budgets, and the use-case holds no state
+      // that sharing would save.
+      new ConsumeRecoveryCodeUseCase(
+        new RecoveryCodeMatcher(recoveryCodeRows, hasher),
+        recoveryCodeRows,
+        unitOfWork,
+        input.rateLimit,
+        input.clock,
+        input.logger,
+        input.audit,
+      ),
+      users,
+      organizations,
+      unitOfWork,
+      issueSession,
+      input.rateLimit,
+      input.clock,
+      input.logger,
+      input.audit,
     ),
   };
 

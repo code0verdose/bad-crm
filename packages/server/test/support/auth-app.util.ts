@@ -95,6 +95,10 @@ import {
   RecordingLogger,
 } from './identity-doubles.util.js';
 import { FakeRecoveryCodes, FakeTotpEnrollment } from './mfa-doubles.util.js';
+import { type TokenDenylistPort } from '@/application/identity/ports/token-denylist.port.js';
+import { JwtMfaPendingTokenAdapter } from '@/infrastructure/crypto/jwt-mfa-pending-token.adapter.js';
+import { VerifySecondFactorUseCase } from '@/application/identity/use-cases/verify-second-factor.use-case.js';
+import { ConsumeRecoveryCodeUseCase } from '@/application/identity/use-cases/consume-recovery-code.use-case.js';
 import {
   FakeCustomRoleRepository,
   FakeEmployeeDirectoryRepository,
@@ -286,6 +290,29 @@ export const createAuthApp = (options: AuthAppOptions = {}): AuthApp => {
   );
   const mfaFields = new AesFieldEncryption(Buffer.alloc(32, 7).toString('base64'));
 
+  /**
+   * An in-memory denylist, and it has to be here rather than `detachedTokenDenylist()`.
+   *
+   * The detached stand-in is **fail-closed**: it throws `ServiceUnavailableError` from both methods,
+   * because a container built without Redis must not silently let a spent token verify twice. That
+   * is right in production and useless in a harness — every request to `/auth/2fa/verify` would
+   * answer 503 and no scenario could reach the behaviour it means to assert.
+   */
+  const spentTokens = new Set<string>();
+  const tokenDenylist: TokenDenylistPort = {
+    revoke: async (key) => {
+      spentTokens.add(key);
+    },
+    isRevoked: async (key) => spentTokens.has(key),
+  };
+
+  const mfaPendingTokens = new JwtMfaPendingTokenAdapter(
+    'test-jwt-secret-value-at-least-32-chars!!',
+    clock,
+    new FakeIdGenerator(),
+    tokenDenylist,
+  );
+
   const identity = {
     register: new RegisterOrganizationUseCase(
       bootstrap,
@@ -301,8 +328,10 @@ export const createAuthApp = (options: AuthAppOptions = {}): AuthApp => {
       lookup,
       hasher,
       users,
+      totpEnrollment,
       unitOfWork,
       issueSession,
+      mfaPendingTokens,
       rateLimit,
       logger,
       audit,
@@ -420,6 +449,29 @@ export const createAuthApp = (options: AuthAppOptions = {}): AuthApp => {
       audit,
       dispatcher,
       APP_URL,
+    ),
+    verifySecondFactor: new VerifySecondFactorUseCase(
+      mfaPendingTokens,
+      totpEnrollment,
+      totp,
+      mfaFields,
+      new ConsumeRecoveryCodeUseCase(
+        new RecoveryCodeMatcher(recoveryCodeRows, hasher),
+        recoveryCodeRows,
+        unitOfWork,
+        rateLimit,
+        clock,
+        logger,
+        audit,
+      ),
+      users,
+      organizations,
+      unitOfWork,
+      issueSession,
+      rateLimit,
+      clock,
+      logger,
+      audit,
     ),
   };
 

@@ -3,7 +3,9 @@ import {
   type AuthLookupPort,
   type AuthUserRecord,
 } from '@/application/identity/ports/auth-lookup.port.js';
+import { type MfaPendingTokenPort } from '@/application/identity/ports/mfa-pending-token.port.js';
 import { type PasswordHasherPort } from '@/application/identity/ports/password-hasher.port.js';
+import { type TotpEnrollmentRepositoryPort } from '@/application/identity/ports/totp-enrollment.port.js';
 import { type UserRepositoryPort } from '@/application/identity/ports/user-repository.port.js';
 import {
   type IssuedSession,
@@ -46,16 +48,40 @@ export interface SessionOrganization {
   readonly slug: string;
 }
 
+/**
+ * A sign-in that went all the way through — the shape `POST /auth/login` answers when no second
+ * factor stands in the way, and the shape `POST /auth/2fa/verify` answers when one did.
+ *
+ * Exported as its own name because `VerifySecondFactorUseCase` returns exactly this: the two halves
+ * of one sign-in must not answer two subtly different bodies, and a type alias is what keeps that
+ * from drifting one field at a time.
+ */
+export type AuthenticatedLogin = {
+  readonly status: 'authenticated';
+  readonly session: IssuedSession;
+  readonly user: SessionProfile;
+  readonly organization: SessionOrganization;
+};
+
 export type LoginResult =
-  | {
-      readonly status: 'authenticated';
-      readonly session: IssuedSession;
-      readonly user: SessionProfile;
-      readonly organization: SessionOrganization;
-    }
+  | AuthenticatedLogin
   | {
       readonly status: 'organization_selection_required';
       readonly organizations: readonly SessionOrganization[];
+    }
+  | {
+      /**
+       * The password was right and it is not enough: acceptance 1. No `Session` row exists, no
+       * access token and no refresh cookie were minted — `mfaToken` is the entire result, and it is
+       * good for five minutes at `POST /auth/2fa/verify` and nowhere else.
+       */
+      readonly status: 'mfa_required';
+      readonly mfaToken: string;
+      /**
+       * What is left of the token's life, so the screen can show a timer (acceptance 11) without
+       * decoding a JWT it has no business reading.
+       */
+      readonly expiresInSeconds: number;
     };
 
 /**
@@ -117,14 +143,35 @@ const describeOrganization = (user: AuthUserRecord): SessionOrganization => ({
  * The line carries no email, and it carries the reason for the refusal that the *answer*
  * deliberately does not: `outcome` separating a wrong password from a suspended account is
  * operational information, and it stays operational because a log is not a response body.
+ *
+ * ## The second factor is asked for last, and only once one account is known
+ *
+ * `totpEnabledAt` is a column of the `users` row **inside one organization**, not a property of a
+ * person: one address can hold accounts in two organizations and have 2FA on in only one of them.
+ * So the enrolment is read in the branch where exactly one usable candidate remains — after the
+ * organization picker, never before it. Asking for a code earlier would either demand a factor the
+ * chosen account does not have, or answer "which of your organizations has 2FA" to somebody who has
+ * proved one password; and it could not be built anyway, because `MfaPendingTokenSubject` needs an
+ * `organizationId` and `TotpEnrollmentRepositoryPort` only resolves inside `withTenant`.
+ *
+ * That ordering is also what makes acceptance 8 structural rather than a matter of which line comes
+ * first: before a password verifies, this use-case has opened no tenant scope, so there is no state
+ * from which "this address has a second factor" could be read at all.
+ *
+ * The re-hash still happens on that branch. It is the same argument as for the ordinary sign-in —
+ * this is the one moment the plaintext exists and the person has proved they know it — and skipping
+ * it would mean an account with 2FA never has its digest upgraded, which is precisely the account
+ * one would least like to leave on old parameters.
  */
 export class LoginUseCase {
   constructor(
     private readonly authLookup: AuthLookupPort,
     private readonly hasher: PasswordHasherPort,
     private readonly users: UserRepositoryPort,
+    private readonly enrollment: TotpEnrollmentRepositoryPort,
     private readonly unitOfWork: UnitOfWorkPort,
     private readonly issueSession: IssueSessionUseCase,
+    private readonly mfaTokens: MfaPendingTokenPort,
     private readonly rateLimit: RateLimitPort,
     private readonly logger: LoggerPort,
     private readonly audit: AuditLoggerPort,
@@ -206,6 +253,8 @@ export class LoginUseCase {
 
     const result = await this.openSession(user, input);
 
+    if (result === null) return this.awaitSecondFactor(user, ipMasked);
+
     // After the transaction committed, so the line describes a session that exists. The identifiers
     // are written explicitly rather than left to the ambient context: sign-in is a public route, so
     // the guard never ran and the context still says `userId: null` at this point — this line is
@@ -223,6 +272,45 @@ export class LoginUseCase {
     );
 
     return result;
+  }
+
+  /**
+   * The half-open door: a five-minute token and nothing else.
+   *
+   * Minted **after** the transaction closed, not inside it. Signing the token writes nothing to the
+   * database and the transaction has no reason to be held open across it — and, more to the point,
+   * a token minted inside a transaction that then rolls back would be a live credential for a
+   * sign-in that never happened.
+   *
+   * Nothing is written to the audit trail here. A trail entry is a record of something that
+   * happened, and what happened so far is a password check whose *outcome* is this log line — the
+   * sign-in itself is recorded by `VerifySecondFactorUseCase` if and when it completes.
+   */
+  private async awaitSecondFactor(
+    user: AuthUserRecord,
+    ipMasked: string,
+  ): Promise<Extract<LoginResult, { status: 'mfa_required' }>> {
+    const pending = await this.mfaTokens.issue({
+      userId: user.userId,
+      organizationId: user.organizationId,
+    });
+
+    this.logger.info(
+      {
+        event: SECURITY_EVENTS.signInSucceeded,
+        outcome: 'mfa_required',
+        userId: user.userId,
+        organizationId: user.organizationId,
+        ipMasked,
+      },
+      'credential verified, waiting for the second factor',
+    );
+
+    return {
+      status: 'mfa_required',
+      mfaToken: pending.token,
+      expiresInSeconds: pending.expiresInSeconds,
+    };
   }
 
   /**
@@ -291,10 +379,17 @@ export class LoginUseCase {
     return verified;
   }
 
+  /**
+   * The session, or `null` when the account's second factor still has to be presented.
+   *
+   * The enrolment is read **inside** the same transaction as the re-hash and the session, so both
+   * outcomes cost the same reads and the same scope: a branch that skipped the transaction entirely
+   * for one of the two would make "does this account have 2FA" measurable from outside.
+   */
   private async openSession(
     user: AuthUserRecord,
     input: LoginInput,
-  ): Promise<Extract<LoginResult, { status: 'authenticated' }>> {
+  ): Promise<AuthenticatedLogin | null> {
     const session = await this.unitOfWork.withTenant(
       { organizationId: user.organizationId, userId: user.userId },
       async () => {
@@ -304,6 +399,12 @@ export class LoginUseCase {
         if (this.hasher.needsRehash(user.passwordHash)) {
           await this.users.updatePasswordHash(user.userId, await this.hasher.hash(input.password));
         }
+
+        const enrollment = await this.enrollment.find(user.userId);
+
+        // A confirmed enrolment, not a draft: `enabledAt` is what `commitEnrollment` sets, and a
+        // secret nobody has proved possession of yet must not be able to lock its own owner out.
+        if (enrollment !== null && enrollment.enabledAt !== null) return null;
 
         const issued = await this.issueSession.execute({
           userId: user.userId,
@@ -328,6 +429,8 @@ export class LoginUseCase {
         return issued;
       },
     );
+
+    if (session === null) return null;
 
     return {
       status: 'authenticated',

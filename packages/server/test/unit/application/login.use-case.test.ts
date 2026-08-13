@@ -25,6 +25,7 @@ import {
   RecordingLogger,
   USER_ID,
 } from '../../support/identity-doubles.util.js';
+import { FakeMfaPendingTokens, JournalingTotpEnrollment } from './second-factor-doubles.util.js';
 
 const PASSWORD = 'correct-horse-battery';
 
@@ -41,7 +42,9 @@ interface Harness {
   readonly accessTokens: FakeAccessTokens;
   readonly rateLimit: FakeRateLimit;
   readonly logger: RecordingLogger;
-  /** What the hasher and the limiter did, in the order they did it. */
+  readonly enrollment: JournalingTotpEnrollment;
+  readonly mfaTokens: FakeMfaPendingTokens;
+  /** What the hasher, the limiter and the enrolment read did, in the order they did it. */
   readonly journal: string[];
 }
 
@@ -62,6 +65,8 @@ const harness = (
   const rateLimit = new FakeRateLimit({ ...rateLimitOptions, journal });
   const audit = new FakeAuditLogger(failingAudit);
   const logger = new RecordingLogger();
+  const enrollment = new JournalingTotpEnrollment(journal);
+  const mfaTokens = new FakeMfaPendingTokens(clock);
 
   const issue = new IssueSessionUseCase(
     sessions,
@@ -74,7 +79,18 @@ const harness = (
   );
 
   return {
-    login: new LoginUseCase(lookup, hasher, userRows, unitOfWork, issue, rateLimit, logger, audit),
+    login: new LoginUseCase(
+      lookup,
+      hasher,
+      userRows,
+      enrollment,
+      unitOfWork,
+      issue,
+      mfaTokens,
+      rateLimit,
+      logger,
+      audit,
+    ),
     lookup,
     hasher,
     users: userRows,
@@ -84,8 +100,20 @@ const harness = (
     accessTokens,
     rateLimit,
     logger,
+    enrollment,
+    mfaTokens,
     journal,
   };
+};
+
+/** Marks `userId` as an account whose enrolment is confirmed and live. */
+const enable2fa = (test: Harness, userId: string = USER_ID): void => {
+  test.enrollment.rows.set(userId, {
+    secretEnc: 'enc:SECRET',
+    enabledAt: new Date('2026-07-01T00:00:00.000Z'),
+    draftExpiresAt: null,
+    lastCounter: 42,
+  });
 };
 
 const refusal = async (
@@ -601,6 +629,228 @@ describe('signing in', () => {
 
       expect(error.code).toBe('service_unavailable');
       expect(hasher.verified).toEqual([]);
+    });
+  });
+});
+
+/**
+ * The second-factor branch: a correct password on an account with 2FA opens a five-minute window,
+ * not a session (STORY-013-03, acceptance 1).
+ *
+ * The assertions are deliberately about what did **not** happen — no session row, no access token,
+ * no refresh token, no audit entry — because the failure mode this branch exists to prevent is a
+ * sign-in that quietly completes anyway and answers `mfa_required` on top of a live session.
+ */
+describe('an account with the second factor enabled', () => {
+  it('answers mfa_required with a token instead of a session', async () => {
+    const test = harness();
+
+    enable2fa(test);
+
+    const result = await test.login.execute({
+      email: 'ada@example.com',
+      password: PASSWORD,
+      client: CLIENT,
+    });
+
+    expect(result.status).toBe('mfa_required');
+
+    if (result.status !== 'mfa_required') return;
+
+    expect(result.mfaToken).toBe(test.mfaTokens.issued[0]?.token);
+    expect(result.expiresInSeconds).toBe(300);
+  });
+
+  it('issues neither a session row, nor an access token, nor a refresh token', async () => {
+    const test = harness();
+
+    enable2fa(test);
+    await test.login.execute({ email: 'ada@example.com', password: PASSWORD, client: CLIENT });
+
+    expect(test.sessions.rows.size).toBe(0);
+    expect(test.accessTokens.issued).toEqual([]);
+  });
+
+  it('writes nothing to the audit trail — nobody has signed in yet', async () => {
+    const test = harness();
+
+    enable2fa(test);
+    await test.login.execute({ email: 'ada@example.com', password: PASSWORD, client: CLIENT });
+
+    expect(test.audit.events).toEqual([]);
+  });
+
+  /**
+   * The token names the account **and its organization**, which is the whole reason the second
+   * factor cannot be asked for before the organization is known: `totpEnabledAt` is a column of the
+   * `users` row inside one organization, not a property of a person.
+   */
+  it('mints the token for the account and organization the password opened', async () => {
+    const test = harness();
+
+    enable2fa(test);
+    await test.login.execute({ email: 'ada@example.com', password: PASSWORD, client: CLIENT });
+
+    expect(test.mfaTokens.issued).toEqual([
+      expect.objectContaining({
+        subject: { userId: USER_ID, organizationId: ORGANIZATION_ID },
+      }) as unknown,
+    ]);
+  });
+
+  /**
+   * Acceptance 8, as a property of *order* rather than of a response body: until the password has
+   * verified, nothing on this path has read the enrolment columns, so there is no state from which
+   * «this address has 2FA» could leak — by timing or otherwise.
+   */
+  it('reads the enrolment only after a password verified, and never for a wrong one', async () => {
+    const verified = harness();
+
+    enable2fa(verified);
+    await verified.login.execute({ email: 'ada@example.com', password: PASSWORD, client: CLIENT });
+
+    expect(verified.journal.indexOf('password:verify')).toBeLessThan(
+      verified.journal.indexOf('totp-enrollment:find'),
+    );
+
+    const refused = harness();
+
+    enable2fa(refused);
+    await refusal(() =>
+      refused.login.execute({
+        email: 'ada@example.com',
+        password: 'wrong-password',
+        client: CLIENT,
+      }),
+    );
+
+    expect(refused.journal).not.toContain('totp-enrollment:find');
+    expect(refused.mfaTokens.issued).toEqual([]);
+  });
+
+  /** A draft nobody has confirmed is not a second factor: the account signs in as it always did. */
+  it('ignores an enrolment that was drafted and never confirmed', async () => {
+    const test = harness();
+
+    test.enrollment.rows.set(USER_ID, {
+      secretEnc: 'enc:SECRET',
+      enabledAt: null,
+      draftExpiresAt: new Date('2026-07-29T10:05:00.000Z'),
+      lastCounter: null,
+    });
+
+    const result = await test.login.execute({
+      email: 'ada@example.com',
+      password: PASSWORD,
+      client: CLIENT,
+    });
+
+    expect(result.status).toBe('authenticated');
+    expect(test.mfaTokens.issued).toEqual([]);
+  });
+
+  /** The digest is still upgraded: otherwise an account with 2FA would never get a re-hash at all. */
+  it('still re-hashes a digest stored with older parameters', async () => {
+    const test = harness();
+
+    enable2fa(test);
+    test.hasher.rehashNeeded = true;
+    await test.login.execute({ email: 'ada@example.com', password: PASSWORD, client: CLIENT });
+
+    expect(test.users.rehashed).toEqual([
+      { userId: USER_ID, passwordHash: `$argon2id$hashed:${PASSWORD}` },
+    ]);
+  });
+
+  it('records the branch at info, with no address and no email', async () => {
+    const test = harness();
+
+    enable2fa(test);
+    await test.login.execute({ email: 'ada@example.com', password: PASSWORD, client: CLIENT });
+
+    const [line] = test.logger.lines.filter((entry) => entry.level === 'info');
+
+    expect(line?.fields).toMatchObject({
+      event: SECURITY_EVENTS.signInSucceeded,
+      outcome: 'mfa_required',
+      userId: USER_ID,
+      organizationId: ORGANIZATION_ID,
+      ipMasked: '203.0.113.0/24',
+    });
+    expect(JSON.stringify(line)).not.toContain('ada@example.com');
+    expect(JSON.stringify(line)).not.toContain('203.0.113.42');
+  });
+
+  /**
+   * The order this story had to decide: **the organization is chosen first, the second factor is
+   * asked for afterwards**.
+   *
+   * One address may hold accounts in two organizations, and `totpEnabledAt` belongs to one of those
+   * rows rather than to the person. Asking for a code before the picker would mean asking for the
+   * second factor of an account the caller may not even be signing in to — and answering
+   * `mfa_required` there would say *which* of somebody's organizations has 2FA switched on, to
+   * somebody who has so far only proved one password.
+   */
+  describe('an address with accounts in two organizations', () => {
+    const two = [
+      authUser(),
+      authUser({
+        userId: 'c0ffee00-0000-4000-8000-000000000001',
+        organizationId: '1d0f8a2b-6c34-4e51-b8aa-9f2e7c5d31b4',
+        organizationName: 'Side Project',
+        organizationSlug: 'side-project',
+      }),
+    ];
+
+    it('asks which organization first, without touching either enrolment', async () => {
+      const test = harness(two);
+
+      enable2fa(test);
+
+      const result = await test.login.execute({
+        email: 'ada@example.com',
+        password: PASSWORD,
+        client: CLIENT,
+      });
+
+      expect(result.status).toBe('organization_selection_required');
+      expect(test.mfaTokens.issued).toEqual([]);
+      expect(test.journal).not.toContain('totp-enrollment:find');
+    });
+
+    it('asks for the second factor of the account the repeat call named', async () => {
+      const test = harness(two);
+
+      enable2fa(test);
+
+      const result = await test.login.execute({
+        email: 'ada@example.com',
+        password: PASSWORD,
+        organizationSlug: 'bad-company',
+        client: CLIENT,
+      });
+
+      expect(result.status).toBe('mfa_required');
+      expect(test.mfaTokens.issued[0]?.subject).toEqual({
+        userId: USER_ID,
+        organizationId: ORGANIZATION_ID,
+      });
+    });
+
+    it('signs the other account in directly — its own row has no second factor', async () => {
+      const test = harness(two);
+
+      enable2fa(test);
+
+      const result = await test.login.execute({
+        email: 'ada@example.com',
+        password: PASSWORD,
+        organizationSlug: 'side-project',
+        client: CLIENT,
+      });
+
+      expect(result.status).toBe('authenticated');
+      expect(test.mfaTokens.issued).toEqual([]);
     });
   });
 });

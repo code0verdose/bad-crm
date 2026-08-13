@@ -46,6 +46,12 @@ const EXPECTED_PUBLIC_ROUTES: readonly string[] = [
   'POST /api/v1/auth/login',
   'POST /api/v1/auth/forgot-password',
   'POST /api/v1/auth/reset-password',
+  // The second step of signing in. Anonymous for the same reason `login` is — no session exists
+  // yet — but reviewed on a narrower question than the other four: it is reachable only by somebody
+  // already holding an intermediate token, which costs a correct password to obtain, and it is
+  // bounded by a budget keyed on that token rather than on the caller (STORY-013-03, acceptance 3
+  // and 5). Its addition to this list on 2026-08-13 is the review this file exists to force.
+  'POST /api/v1/auth/2fa/verify',
   // Accepting an invitation creates the account that would otherwise hold the session.
   'POST /api/v1/invitations/accept',
   // Client-side crash reports: the browser that failed may be the one that could not sign in.

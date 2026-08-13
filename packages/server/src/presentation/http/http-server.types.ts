@@ -52,6 +52,7 @@ import { type ChangePasswordUseCase } from '@/application/identity/use-cases/cha
 import { type ConfirmPasswordResetUseCase } from '@/application/identity/use-cases/confirm-password-reset.use-case.js';
 import { type ConfirmTotpUseCase } from '@/application/identity/use-cases/confirm-totp.use-case.js';
 import { type DisableTotpUseCase } from '@/application/identity/use-cases/disable-totp.use-case.js';
+import { type VerifySecondFactorUseCase } from '@/application/identity/use-cases/verify-second-factor.use-case.js';
 import { type EndSessionUseCase } from '@/application/identity/use-cases/end-session.use-case.js';
 import { type ListSessionsQuery } from '@/application/identity/use-cases/list-sessions.query.js';
 import { type LoginUseCase } from '@/application/identity/use-cases/login.use-case.js';
@@ -125,6 +126,7 @@ export interface IdentityDependencies {
   readonly recoveryCodeStatus: ReadRecoveryCodeStatusQuery;
   readonly regenerateRecoveryCodes: RegenerateRecoveryCodesUseCase;
   readonly disableTotp: DisableTotpUseCase;
+  readonly verifySecondFactor: VerifySecondFactorUseCase;
 }
 
 /**

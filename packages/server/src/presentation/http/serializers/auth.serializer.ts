@@ -33,6 +33,13 @@ export interface AuthenticatedSessionResponse {
   };
 }
 
+export interface MfaRequiredResponse {
+  readonly status: 'mfa_required';
+  readonly mfaToken: string;
+  /** `expiresIn` on the wire, like `AuthenticatedSessionResponse` — seconds, never a timestamp. */
+  readonly expiresIn: number;
+}
+
 export interface OrganizationSelectionResponse {
   readonly status: 'organization_selection_required';
   readonly organizations: readonly {
@@ -73,6 +80,26 @@ export const serializeAuthenticatedSession = (input: {
     name: input.organization.name,
     slug: input.organization.slug,
   },
+});
+
+/**
+ * The answer to a password that was right on an account with a second factor.
+ *
+ * It carries the intermediate token and how long it lives, and **nothing else** — no user, no
+ * organization, no session. That is the point of the step: until the second factor is presented,
+ * the caller has proved a password and is owed no facts about the account behind it, so a body
+ * shaped like a session would leak exactly what acceptance 1 refuses to issue.
+ *
+ * `expiresInSeconds` rather than a timestamp: the client shows a countdown, and a duration cannot
+ * be wrong about the clock on the reader's machine.
+ */
+export const serializeMfaRequired = (input: {
+  readonly mfaToken: string;
+  readonly expiresInSeconds: number;
+}): MfaRequiredResponse => ({
+  status: 'mfa_required',
+  mfaToken: input.mfaToken,
+  expiresIn: input.expiresInSeconds,
 });
 
 export const serializeOrganizationSelection = (

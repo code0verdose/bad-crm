@@ -267,6 +267,55 @@ export class RecoveryCodeInvalidError extends AppError {
   }
 }
 
+/**
+ * The intermediate token of the second-factor sign-in step is not usable: expired, never issued,
+ * already spent by a successful verification, or voided after five refused codes.
+ *
+ * **One error for all four, and it takes no argument saying which** — the same construction
+ * `PasswordResetTokenInvalidError` uses, for the same reason: a constructor with a reason puts the
+ * distinction one throw site away from the response body, and telling "expired" from "already
+ * spent" would confirm to the holder of a guessed token that a particular sign-in was completed.
+ *
+ * `401`, unlike the enrolment-time codes it sits beside: no session exists at this step, so the
+ * second factor **is** the credential being judged (`error-code.enums.ts`, `mfa_token_expired`).
+ */
+export class MfaTokenExpiredError extends AppError {
+  constructor() {
+    super('mfa_token_expired', 'That sign-in step is no longer usable');
+  }
+}
+
+/**
+ * The second factor presented at sign-in did not match.
+ *
+ * A distinct code from `invalid_totp_code`, which stays **422** on `POST /auth/2fa/confirm`: one
+ * code carries exactly one status — `AppError` derives it and refuses to take one from the caller —
+ * and both statuses are right for their own step (STORY-013-03, «Решения, принятые до начала
+ * работы»). Also covers an account whose enrolment disappeared between the two steps: no secret
+ * means no code can match, and saying so specifically would answer a question about somebody else's
+ * account state.
+ */
+export class MfaInvalidCodeError extends AppError {
+  constructor() {
+    super('mfa_invalid_code', 'That second-factor code is not valid');
+  }
+}
+
+/**
+ * The code presented at sign-in was correct, and its time step had already been accepted.
+ *
+ * Kept apart from `MfaInvalidCodeError` for the reason `TotpCodeReplayedError` is kept apart from
+ * `InvalidTotpCodeError`: this one is reachable only by presenting a code that *was* right, so the
+ * client can say «that code was already used» instead of «check your app». Reached both when
+ * `TotpPort.verify` refuses a step at or before `totp_last_counter` and when the conditional
+ * `advanceCounter` loses the race to a concurrent verification of the same step.
+ */
+export class MfaCodeReplayedError extends AppError {
+  constructor() {
+    super('mfa_code_replayed', 'That code has already been used to sign in');
+  }
+}
+
 /** The body exceeded the 1 MB limit; files never travel through the API (ADR-0015). */
 export class PayloadTooLargeError extends AppError {
   constructor(details?: ErrorDetails, cause?: unknown) {

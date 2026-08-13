@@ -72,6 +72,25 @@ export const disableTotpBodySchema = z.strictObject({
   code: disableSecondFactorCodeSchema,
 });
 
+/**
+ * `POST /auth/2fa/verify` — the second step of signing in.
+ *
+ * `code` carries `disableSecondFactorCodeSchema` rather than `totpCodeSchema`, and the width is the
+ * point: this field accepts **either** six digits from an authenticator or a recovery code, and
+ * which one it is decides the branch inside `VerifySecondFactorUseCase`. Narrowing it to six digits
+ * here would refuse every recovery code before the use-case ever saw it — acceptance 7 of
+ * STORY-013-03 is that both arrive at the same field.
+ *
+ * `mfaToken` is checked for nothing but presence and a sane ceiling. Its meaning is decided by a
+ * signature the validator cannot verify, and a shape rule here would be a second, weaker opinion
+ * about what a valid token looks like — one that drifts the day the issuer changes.
+ */
+export const verifySecondFactorBodySchema = z.strictObject({
+  mfaToken: z.string().trim().min(1).max(4096),
+  code: disableSecondFactorCodeSchema,
+});
+
 export type ConfirmTotpBody = z.output<typeof confirmTotpBodySchema>;
+export type VerifySecondFactorBody = z.output<typeof verifySecondFactorBodySchema>;
 export type RegenerateRecoveryCodesBody = z.output<typeof regenerateRecoveryCodesBodySchema>;
 export type DisableTotpBody = z.output<typeof disableTotpBodySchema>;

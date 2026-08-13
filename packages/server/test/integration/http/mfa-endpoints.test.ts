@@ -384,3 +384,133 @@ describe('POST /api/v1/auth/2fa/disable', () => {
     expect((response.body as { code: string }).code).toBe('validation_failed');
   });
 });
+
+/**
+ * The step that makes 2FA mean anything: sign-in reading the second factor.
+ *
+ * Everything above enables and disables it. Until this route existed, a person could turn 2FA on
+ * and the sign-in form would still let their password alone through — the feature was decorative,
+ * which is exactly why STORY-013-03 blocked on an exit existing first.
+ *
+ * Only this level shows the two halves agreeing on the wire: that `POST /auth/login` stops at an
+ * intermediate token and sets **no** cookie, and that the same token plus a live code comes back as
+ * a real session from the identical stack the product runs.
+ */
+describe('POST /api/v1/auth/2fa/verify', () => {
+  /** Enrols and hands back the secret, so a scenario can compute a live code for itself. */
+  const enrol = async (test: AuthApp, accessToken: string): Promise<string> => {
+    const setup = await authed(test, accessToken).post('/api/v1/auth/2fa/setup').expect(200);
+    const { secret } = setup.body as { secret: string };
+
+    await authed(test, accessToken)
+      .post('/api/v1/auth/2fa/confirm')
+      .set('Idempotency-Key', IDEMPOTENCY_KEY)
+      .send({ code: codeFor(secret, test.clock.now()), currentPassword: PASSWORD })
+      .expect(200);
+
+    // Past the 30-second step that `confirm` just consumed. Without it the sign-in below would
+    // present the identical code, and the anti-replay predicate would refuse it as
+    // `mfa_code_replayed` — correctly: the same digits inside one step *are* a replay, whichever
+    // endpoint saw them first. The clock is the harness's own, which is also what the adapter reads.
+    test.clock.advance(31);
+
+    return secret;
+  };
+
+  it('stops sign-in at an intermediate token once 2FA is on — acceptance 1', async () => {
+    const test = createAuthApp();
+    const first = await signIn(test);
+    await enrol(test, first.accessToken);
+
+    const response = await request(test.app)
+      .post('/api/v1/auth/login')
+      .send({ email: 'ada@example.com', password: PASSWORD })
+      .expect(200);
+
+    const body = response.body as { status: string; mfaToken?: string; accessToken?: string };
+
+    expect(body.status).toBe('mfa_required');
+    expect(body.mfaToken).toEqual(expect.any(String));
+    // No session, and no half of one: the access token is absent from the body and the refresh
+    // cookie was never set. A `Set-Cookie` here would hand out the durable half of a session to
+    // somebody who has presented exactly one factor.
+    expect(body.accessToken).toBeUndefined();
+    expect(response.headers['set-cookie']).toBeUndefined();
+  });
+
+  it('exchanges the token and a live code for a session — acceptance 2', async () => {
+    const test = createAuthApp();
+    const first = await signIn(test);
+    const secret = await enrol(test, first.accessToken);
+
+    const pending = await request(test.app)
+      .post('/api/v1/auth/login')
+      .send({ email: 'ada@example.com', password: PASSWORD })
+      .expect(200);
+
+    const { mfaToken } = pending.body as { mfaToken: string };
+
+    const verified = await request(test.app)
+      .post('/api/v1/auth/2fa/verify')
+      .send({ mfaToken, code: codeFor(secret, test.clock.now()) })
+      .expect(200);
+
+    const session = verified.body as { status: string; accessToken: string };
+
+    expect(session.status).toBe('authenticated');
+    expect(session.accessToken).toEqual(expect.any(String));
+    expect(verified.headers['set-cookie']).toBeDefined();
+  });
+
+  it('refuses the same token a second time — acceptance 2, one use only', async () => {
+    const test = createAuthApp();
+    const first = await signIn(test);
+    const secret = await enrol(test, first.accessToken);
+
+    const pending = await request(test.app)
+      .post('/api/v1/auth/login')
+      .send({ email: 'ada@example.com', password: PASSWORD })
+      .expect(200);
+
+    const { mfaToken } = pending.body as { mfaToken: string };
+    const code = codeFor(secret, test.clock.now());
+
+    await request(test.app).post('/api/v1/auth/2fa/verify').send({ mfaToken, code }).expect(200);
+
+    // The second attempt is refused by the denylist rather than by the code being stale — the same
+    // token, replayed, is what a stolen intermediate credential looks like.
+    const replayed = await request(test.app)
+      .post('/api/v1/auth/2fa/verify')
+      .send({ mfaToken, code })
+      .expect(401);
+
+    expect((replayed.body as { code: string }).code).toBe('mfa_token_expired');
+  });
+
+  it('refuses a wrong code without spending the token — acceptance 5', async () => {
+    const test = createAuthApp();
+    const first = await signIn(test);
+    const secret = await enrol(test, first.accessToken);
+
+    const pending = await request(test.app)
+      .post('/api/v1/auth/login')
+      .send({ email: 'ada@example.com', password: PASSWORD })
+      .expect(200);
+
+    const { mfaToken } = pending.body as { mfaToken: string };
+
+    const refused = await request(test.app)
+      .post('/api/v1/auth/2fa/verify')
+      .send({ mfaToken, code: '000000' })
+      .expect(401);
+
+    expect((refused.body as { code: string }).code).toBe('mfa_invalid_code');
+
+    // Still usable: a mistyped digit must not cost the whole sign-in, which is the difference
+    // between the attempt counter and the token being voided outright.
+    await request(test.app)
+      .post('/api/v1/auth/2fa/verify')
+      .send({ mfaToken, code: codeFor(secret, test.clock.now()) })
+      .expect(200);
+  });
+});
