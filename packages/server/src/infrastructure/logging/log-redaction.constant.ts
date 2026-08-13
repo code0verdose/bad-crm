@@ -53,6 +53,17 @@ export const REDACTED_PATHS: readonly string[] = [
   '*.base32Secret',
   '*.secretEnc',
   '*.recoveryCodes',
+  /**
+   * The third instance of the same gap, and the reason it is worth stating as a habit rather than
+   * as three fixes: the intermediate credential of the second-factor step is spelled `mfaToken`
+   * everywhere it exists — the sign-in response, the verify request body, the client's own module
+   * variable — and `*.token` does not cover it, because pino matches a whole key.
+   *
+   * It is not a session token, but it is one half of what a session costs: whoever holds it and one
+   * code gets one. Nothing logs it today, which is precisely the argument this file already rejects
+   * two comments above — the net exists for the line somebody adds while debugging a sign-in.
+   */
+  '*.mfaToken',
   // The same keys one level up: `logger.info({ password })` has no parent object for `*.` to match.
   'password',
   'token',
@@ -68,4 +79,5 @@ export const REDACTED_PATHS: readonly string[] = [
   'base32Secret',
   'secretEnc',
   'recoveryCodes',
+  'mfaToken',
 ];

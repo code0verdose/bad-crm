@@ -106,7 +106,9 @@ const guardedRoutes = (): readonly RouteDeclaration[] => {
   const verifyPath = `${API_PREFIX}/auth/2fa/verify`;
 
   return createRouteRegistry(createTestApp().container.http).filter((route) => {
-    if (route.path === verifyPath) return false; // not registered yet; excluded defensively
+    // The one route this token is *for*: it authenticates by presenting the token as a body field,
+    // not as a bearer credential, so the guard under test never runs for it.
+    if (route.path === verifyPath) return false;
     if (!requiresAuthentication(route)) return false;
     if (isSelfServiceRoute(route) && route.credential === 'refresh-cookie') return false;
 

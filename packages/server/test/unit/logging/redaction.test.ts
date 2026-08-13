@@ -57,6 +57,7 @@ describe('secret redaction', () => {
     ['base32Secret', { totp: { base32Secret: 's3cr3t-token' } }],
     ['secretEnc', { user: { secretEnc: 's3cr3t-token' } }],
     ['recoveryCodes', { result: { recoveryCodes: 's3cr3t-token' } }],
+    ['mfaToken', { result: { mfaToken: 's3cr3t-token' } }],
   ])('replaces %s with the placeholder', (_path, payload) => {
     const destination = capturingDestination();
 
@@ -104,6 +105,7 @@ describe('secret redaction', () => {
         '*.base32Secret',
         '*.secretEnc',
         '*.recoveryCodes',
+        '*.mfaToken',
       ]),
     );
   });

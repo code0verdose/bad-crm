@@ -102,11 +102,15 @@ const asClaims = (payload: RawClaims): MfaPendingTokenClaims | undefined => {
  * spent token. Folding it into `mfa_token_expired` would also be actively misleading here in a way
  * it is not for the limiter: an operator paging on a spike of "second factor token expired" during a
  * Redis outage is chasing a UX complaint, not the infrastructure failure actually happening. `503`
- * is the honest answer, it is a status this API already returns from the same sign-in flow for the
- * identical dependency (`docs/api/openapi.yaml`, `login`), and it costs nothing extra: `verify` is
- * only ever reached after `RateLimitPort.consume` has already required the same Redis to be up
- * (STORY-013-03, acceptance 9), so the outage this adapter's `503` reports is one the caller's own
- * rate-limit check would very likely have already reported first.
+ * is the honest answer, and it is a status this API already returns from the same sign-in flow for
+ * the identical dependency (`docs/api/openapi.yaml`, `login`).
+ *
+ * **This adapter is reached before the limiter, not after.** `VerifySecondFactorUseCase` verifies
+ * the token first and only then spends a budget, because the subject of that budget *is* the
+ * token's `jti` and a `jti` read out of an unverified string would be a counter the caller picks.
+ * So during a Redis outage the `503` a caller sees comes from here rather than from the limiter —
+ * the earlier draft of this comment claimed the opposite ordering, which was wrong about its own
+ * caller. Both answers are the same status for the same dependency; only the source differs.
  */
 export class JwtMfaPendingTokenAdapter implements MfaPendingTokenPort {
   private readonly secret: Uint8Array;
