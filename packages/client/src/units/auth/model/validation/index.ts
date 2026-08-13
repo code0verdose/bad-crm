@@ -7,3 +7,4 @@ export * from './login-search.schema.js';
 export * from './session-identity.schema.js';
 export * from './totp-code.schema.js';
 export * from './totp-confirm-form.schema.js';
+export * from './two-factor.schema.js';

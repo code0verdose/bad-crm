@@ -1,7 +1,7 @@
 import { useMutation, type UseMutationResult } from '@tanstack/react-query';
 
 import { login, type LoginCredentials, type LoginResult } from '@units/auth/api';
-import { adoptSession, emitAuthEvent } from '@units/auth/lib';
+import { adoptSession, clearMfaToken, emitAuthEvent, setMfaToken } from '@units/auth/lib';
 import { authSession } from '@units/auth/service/stores';
 import { type SessionIdentity } from '@units/auth/types';
 
@@ -9,12 +9,24 @@ import { type SessionIdentity } from '@units/auth/types';
  * What the sign-in resolves to — deliberately not what the server answered.
  *
  * `status` is the branch the form renders on; `identity` is who was signed in, or `null` when the
- * answer carried no session — a choice of organization, or one this client could not read. There is
- * no third field, and the absence is the whole point.
+ * answer carried no session — a choice of organization, a second factor still owed, or an answer
+ * this client could not read.
+ *
+ * `secondFactorExpiresAt` is the one thing the second step needs that is safe to keep: the instant
+ * the intermediate token dies, in epoch milliseconds, so the step can count down to it. The token
+ * itself is **not** here and never will be — it goes to `lib/mfa-token-storage.util.ts` for the
+ * reason the docstring below gives about the access token, which applies word for word to a
+ * credential that buys a session in one more request.
+ *
+ * An instant rather than the `expiresIn` seconds the contract reports: a duration cannot be wrong
+ * about the reader's clock, which is why the server sends one, and a countdown cannot be right
+ * without a fixed end, which is why it is turned into one here — once, at the moment the answer
+ * arrived, rather than on every render.
  */
 export interface LoginOutcome {
   readonly status: LoginResult['status'];
   readonly identity: SessionIdentity | null;
+  readonly secondFactorExpiresAt: number | null;
 }
 
 /**
@@ -37,11 +49,30 @@ export interface LoginOutcome {
  * `adoptSession` does the taking apart — the same function the rotation uses, so the token reaches
  * memory by exactly one path — and it is called here rather than in `onSuccess` because this is the
  * last moment the raw answer exists.
+ *
+ * **The `mfa_required` answer is treated exactly the same way, and for exactly the same reason.**
+ * Its `mfaToken` is not a session token — it is refused everywhere but `POST /auth/2fa/verify` — but
+ * it plus one code *is* a session, so it goes to `lib/mfa-token-storage.util.ts` and what comes back
+ * out is a deadline. A screen that later inspected this mutation would find a number and a status,
+ * which is all a screen has any business finding (STORY-013-03, acceptance 1 and 11).
  */
-const adoptLoginResult = (result: LoginResult): LoginOutcome => ({
-  status: result.status,
-  identity: result.status === 'authenticated' ? adoptSession(result) : null,
-});
+const adoptLoginResult = (result: LoginResult): LoginOutcome => {
+  if (result.status === 'mfa_required') {
+    setMfaToken(result.mfaToken);
+
+    return {
+      status: result.status,
+      identity: null,
+      secondFactorExpiresAt: Date.now() + result.expiresIn * 1_000,
+    };
+  }
+
+  return {
+    status: result.status,
+    identity: result.status === 'authenticated' ? adoptSession(result) : null,
+    secondFactorExpiresAt: null,
+  };
+};
 
 /**
  * Exchanges credentials for a session, and tells the rest of the application exactly once.
@@ -72,7 +103,16 @@ export const useLoginMutation = (): UseMutationResult<LoginOutcome, Error, Login
     // like `state.data` — stripping one and keeping the other secures the cheaper of the two.
     gcTime: 0,
 
-    mutationFn: async (credentials: LoginCredentials) => adoptLoginResult(await login(credentials)),
+    mutationFn: async (credentials: LoginCredentials) => {
+      // Sending a password ends whatever step was in progress, whichever way this request goes: the
+      // answer supersedes it, and a refusal leaves nobody on a screen that could spend it. Clearing
+      // before the request rather than after means there is no window in which a token nothing owns
+      // is still readable — including the window a failed request would otherwise leave open for
+      // good.
+      clearMfaToken();
+
+      return adoptLoginResult(await login(credentials));
+    },
 
     onSuccess: (outcome) => {
       if (outcome.identity === null) return;

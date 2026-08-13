@@ -98,6 +98,7 @@ describe('what a successful sign-in leaves in the mutation cache', () => {
     expect(result.current.data).toEqual({
       status: 'authenticated',
       identity: { userId: USER_ID, organizationId: ORGANIZATION_ID },
+      secondFactorExpiresAt: null,
     });
     expect(cacheContents(queryClient)).not.toContain(ACCESS_TOKEN);
   });
@@ -182,6 +183,7 @@ describe('what a successful sign-in leaves in the mutation cache', () => {
     expect(result.current.data).toEqual({
       status: 'organization_selection_required',
       identity: null,
+      secondFactorExpiresAt: null,
     });
   });
 });

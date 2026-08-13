@@ -9,3 +9,4 @@ export * from './session-status-badge.component.js';
 export * from './totp-code-field.component.js';
 export * from './totp-confirm-form.component.js';
 export * from './totp-qr.component.js';
+export * from './two-factor-form.component.js';

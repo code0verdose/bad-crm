@@ -24,6 +24,18 @@ import { AuthService, AuthUi } from '@units/auth';
  * recovery screens: the public branch has no `AppShell.Main` to be the landmark, and content that
  * sits in no landmark at all is an `axe` violation and a screen reader with nowhere to jump
  * (`rules/a11y.mdc` §20).
+ *
+ * **Two steps, one route** (STORY-013-03, acceptance 11). The second factor is not a page of its
+ * own and must not become one: the step is held together by an intermediate token that lives five
+ * minutes in memory, and a URL for it would be a URL that survives a reload with nothing behind it
+ * — or, worse, a URL somebody could be invited to carry the token in. Which step is on screen is
+ * decided by the unit hook and swapped in place; the heading changes with it, so what the page is
+ * about is announced by the route announcer rather than left saying «Sign in» over a form that asks
+ * for a code.
+ *
+ * The way to `/forgot-password` belongs to the password step only. On the second step the password
+ * has already been accepted, and offering to reset it there would invite somebody to abandon a
+ * sign-in that is one code from finishing.
  */
 export function LoginPage() {
   const { t } = useTranslation();
@@ -32,17 +44,30 @@ export function LoginPage() {
 
   return (
     <PublicScreen>
-      <SharedUi.PageHeader titleKey="auth.login.title" />
-
-      <AuthUi.LoginForm
-        isPending={login.isPending}
-        noticeKey={login.noticeKey}
-        onSubmit={login.submit}
+      <SharedUi.PageHeader
+        titleKey={login.step === 'password' ? 'auth.login.title' : 'auth.twoFactor.title'}
       />
 
-      <Anchor component={Link} to="/forgot-password">
-        {t('auth.login.forgotPassword')}
-      </Anchor>
+      {login.step === 'password' ? (
+        <>
+          <AuthUi.LoginForm
+            isPending={login.isPending}
+            noticeKey={login.noticeKey}
+            onSubmit={login.submit}
+          />
+
+          <Anchor component={Link} to="/forgot-password">
+            {t('auth.login.forgotPassword')}
+          </Anchor>
+        </>
+      ) : (
+        <AuthUi.TwoFactorForm
+          failureKey={login.secondFactor.failureKey}
+          isPending={login.secondFactor.isPending}
+          onSubmit={login.secondFactor.submit}
+          secondsLeft={login.secondFactor.secondsLeft}
+        />
+      )}
     </PublicScreen>
   );
 }

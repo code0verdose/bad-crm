@@ -22,6 +22,8 @@ import { I18nextProvider, initReactI18next } from 'react-i18next';
 
 import { SharedUi } from '@shared';
 
+import { AuthUi } from '@units/auth';
+
 import {
   isPseudoLocalised,
   PSEUDO_MARKERS,
@@ -267,5 +269,59 @@ describe('the shared states in a pseudo locale', () => {
     );
 
     expect(textNodes(container).filter(isPseudoLocalised).length).toBeGreaterThan(1);
+  });
+});
+
+/**
+ * The second-factor step, which neither route above ever reaches.
+ *
+ * `/login` is mounted in its happy state, so the step that appears *after* a correct password is
+ * not on screen for the walker to look at — and the whole client suite runs in `cimode`, where a
+ * component that forgot `t()` renders identically to one that remembers. Every string of this step
+ * would therefore be invisible to both gates at once, which is exactly the hole `ErrorState` fell
+ * through before this file was pointed at it.
+ *
+ * The countdown is asserted here for the same reason and no other: `cimode` answers with the key and
+ * drops the interpolation, so `{{time}}` can only be shown to work where a real catalogue is loaded.
+ */
+describe('the second-factor step in a pseudo locale', () => {
+  const mountStep = async (): Promise<HTMLElement> => {
+    const instance = await pseudoInstance();
+
+    const { container } = render(
+      <I18nextProvider i18n={instance}>
+        <MantineProvider>
+          <AuthUi.TwoFactorForm
+            failureKey="errors.code.mfa_invalid_code"
+            isPending={false}
+            onSubmit={() => undefined}
+            secondsLeft={287}
+          />
+        </MantineProvider>
+      </I18nextProvider>,
+    );
+
+    return container;
+  };
+
+  it('shows nothing that did not come from the catalogue', async () => {
+    const unmarked = textNodes(await mountStep()).filter(
+      (text) => !isPseudoLocalised(text) && !NOT_A_SENTENCE.test(text) && !PROPER_NOUNS.has(text),
+    );
+
+    expect(unmarked).toEqual([]);
+  });
+
+  it('puts the time left into the sentence that has a place for it', async () => {
+    const container = await mountStep();
+
+    expect(container.textContent).toContain('4:47');
+  });
+
+  /** CONTROL: the walker has to be finding this step's text, not an empty container. */
+  it('CONTROL: is looking at the step it names', async () => {
+    const container = await mountStep();
+
+    expect(textNodes(container).filter(isPseudoLocalised).length).toBeGreaterThan(3);
   });
 });

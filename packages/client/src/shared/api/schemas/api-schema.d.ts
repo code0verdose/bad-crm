@@ -338,7 +338,10 @@ export interface paths {
          * @description `{ total, remaining }` and nothing else — the plaintext codes exist nowhere after the response
          *     that first showed them, so there is no version of this endpoint that could return more. The
          *     low-codes warning at `remaining <= 3` that STORY-013-02 acceptance 6 describes is a client
-         *     behaviour; no client reads this endpoint yet.
+         *     behaviour, and it is implemented: `/settings/security` reads this count through
+         *     `useRecoveryCodeStatusQuery` and derives the warning from it in `use-recovery-codes.hook.ts`.
+         *     The threshold lives in the client because it is a product rule, not part of this contract —
+         *     the answer is the same two numbers whatever the screen decides to do with them.
          */
         get: operations["getRecoveryCodeStatus"];
         put?: never;
@@ -3137,8 +3140,11 @@ export interface components {
          */
         RefreshCookieSet: string;
         /**
-         * @description As `RefreshCookieSet`, but present only on the `authenticated` branch of the answer.
-         *     `organization_selection_required` issues no session and therefore no cookie.
+         * @description As `RefreshCookieSet`, but present only on the `authenticated` branch of the answer. Neither
+         *     of the other two issues a session and so neither carries a cookie:
+         *     `organization_selection_required` has not chosen a tenant yet, and `mfa_required` has not
+         *     proved the second factor — its `mfaToken` travels in the body precisely because it is not a
+         *     session credential and must not be replayed by the browser on its own.
          * @example bad_crm_refresh=<opaque>; Max-Age=2592000; Path=/api/v1/auth; HttpOnly; Secure; SameSite=Lax
          */
         RefreshCookieSetConditional: string;
@@ -3236,7 +3242,11 @@ export interface operations {
             };
         };
         responses: {
-            /** @description Either a session, or the list of organizations to pick from. Discriminated by `status`. */
+            /**
+             * @description One of three: a session, the list of organizations to pick from, or the intermediate
+             *     token of a second-factor step. Discriminated by `status`, and only the first of the three
+             *     carries a refresh cookie.
+             */
             200: {
                 headers: {
                     "Set-Cookie": components["headers"]["RefreshCookieSetConditional"];

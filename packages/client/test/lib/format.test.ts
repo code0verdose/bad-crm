@@ -180,6 +180,21 @@ describe('durations', () => {
   it('splits the number so the words around it come from the catalogue', () => {
     expect(SharedLib.durationParts(450)).toEqual({ hours: 7, minutes: 30 });
   });
+
+  /**
+   * The countdown form, in seconds — what the second-factor step shows for the life of its
+   * intermediate token. `4:07` reads the same in both languages, which is why it is built rather
+   * than translated; the sentence around it is not.
+   */
+  it.each([
+    [300, '5:00'],
+    [247, '4:07'],
+    [61, '1:01'],
+    [9, '0:09'],
+    [0, '0:00'],
+  ])('renders %i seconds as %s', (seconds, expected) => {
+    expect(SharedLib.formatSecondsClock(seconds)).toBe(expected);
+  });
 });
 
 describe('relative time', () => {

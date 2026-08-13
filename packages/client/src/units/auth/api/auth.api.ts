@@ -1,10 +1,19 @@
-import { apiClient, idempotencyParams, unwrapApiResult, type components } from '@shared/api';
+import {
+  apiClient,
+  idempotencyParams,
+  unwrapApiResult,
+  type components,
+  type RefreshedSession,
+} from '@shared/api';
 
 /** What `POST /auth/login` accepts, straight from the contract. */
 export type LoginCredentials = components['schemas']['LoginRequest'];
 
 /** A session, or the choice that has to be made before one exists. Discriminated by `status`. */
 export type LoginResult = components['schemas']['LoginResult'];
+
+/** The intermediate token and one code — six digits or a recovery code, the server decides which. */
+export type SecondFactorProof = components['schemas']['VerifySecondFactorRequest'];
 
 /** The address a reset link is asked for. Nothing else: an organization would have to be known. */
 export type ForgotPasswordRequest = components['schemas']['ForgotPasswordRequest'];
@@ -34,6 +43,26 @@ export type ResetPasswordRequest = components['schemas']['ResetPasswordRequest']
  */
 export const login = async (credentials: LoginCredentials): Promise<LoginResult> =>
   unwrapApiResult(await apiClient.POST('/auth/login', { body: credentials }));
+
+/**
+ * Spends the intermediate token on one code and gets the session the password step withheld.
+ *
+ * It sits beside `login` rather than in `mfa.api.ts` because of what it *is* from the client's
+ * side: the second half of signing in, not a way of protecting an account somebody is already
+ * signed in to. The five calls next door all require a session; this one exists precisely because
+ * there is not one yet.
+ *
+ * No `Idempotency-Key`, and that is the contract rather than an omission: the operation is not
+ * repeatable by construction — the token is spent by the first success and the code is refused a
+ * second time as `mfa_code_replayed`. A retry with the same key would have to be *answered from a
+ * store* with a session, which is a session handed out for a request that presented no live proof.
+ *
+ * The answer is an `AuthenticatedSession` — the same document `POST /auth/login` returns when no
+ * second factor stands in the way — so it is taken apart by the same `adoptSession`, and the refresh
+ * half arrives in `Set-Cookie` as always.
+ */
+export const verifySecondFactor = async (proof: SecondFactorProof): Promise<RefreshedSession> =>
+  unwrapApiResult(await apiClient.POST('/auth/2fa/verify', { body: proof }));
 
 /**
  * Ends the session this request belongs to. Answers 204 whether or not it was still alive, so there

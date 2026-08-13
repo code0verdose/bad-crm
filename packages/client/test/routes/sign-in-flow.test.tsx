@@ -73,6 +73,15 @@ const session = () =>
 let sessionRevoked = false;
 
 /**
+ * Whether the account behind `EMAIL` carries a second factor. Same reasoning as the flag above: the
+ * transport cannot be swapped once the application has captured it.
+ */
+let secondFactorRequired = false;
+
+/** What the password step answers for such an account — no session, no cookie, one short-lived token. */
+const MFA_TOKEN = 'mfa-token-1';
+
+/**
  * The caller's own rights, which the shell asks for as soon as it mounts: the navigation hides the
  * entries this person cannot open (STORY-011-10). An empty set is the honest fixture here — this
  * file is about the session, and a menu of one entry is what a signed-in nobody sees.
@@ -89,7 +98,14 @@ const api = (requests: string[]) => (request: Request) => {
   requests.push(pathname);
 
   if (sessionRevoked) return Promise.resolve(new Response(null, { status: 401 }));
-  if (pathname.endsWith('/auth/login')) return Promise.resolve(session());
+  if (pathname.endsWith('/auth/2fa/verify')) return Promise.resolve(session());
+  if (pathname.endsWith('/auth/login')) {
+    return Promise.resolve(
+      secondFactorRequired
+        ? json({ status: 'mfa_required', mfaToken: MFA_TOKEN, expiresIn: 300 })
+        : session(),
+    );
+  }
   if (pathname.endsWith('/me/permissions')) return Promise.resolve(noPermissions());
   if (pathname.endsWith('/auth/logout'))
     return Promise.resolve(new Response(null, { status: 204 }));
@@ -160,6 +176,7 @@ beforeEach(() => {
   localStorage.clear();
   setCimodeLanguage();
   sessionRevoked = false;
+  secondFactorRequired = false;
 });
 
 afterEach(() => {
@@ -340,5 +357,66 @@ describe('signing out', () => {
     });
 
     expect(requests.filter((path) => path.endsWith('/auth/refresh'))).toHaveLength(1);
+  });
+});
+
+/**
+ * The same round trip for an account that carries a second factor (STORY-013-03).
+ *
+ * Assembled through the real entry point rather than around the hook, because what this is about is
+ * the seam: the password step swaps itself for the code step **inside** `/login`, and the session
+ * that finally exists is carried to the originally requested page by the same guard as any other —
+ * `redirectIfAuthed`, once, with no screen navigating on its own.
+ */
+describe('signing in when the account carries a second factor', () => {
+  it('asks for a code instead of a session, then lands on the page that was asked for', async () => {
+    secondFactorRequired = true;
+    const user = userEvent.setup();
+    const requests: string[] = [];
+    const { app } = await startApplication(requests);
+
+    await signIn(user, app);
+
+    // Still on `/login`, under its own heading: the password bought a step, not a session.
+    expect(
+      await app.findByRole('heading', { level: 1, name: 'auth.twoFactor.title' }),
+    ).toBeInTheDocument();
+    expect(window.location.pathname).toBe('/login');
+
+    const code = app.getByLabelText(/auth\.twoFactor\.code\.label/);
+
+    // The caret is on the field that appeared, not on a submit button that no longer exists.
+    await waitFor(() => {
+      expect(document.activeElement).toBe(code);
+    });
+
+    /**
+     * The intermediate token is a credential, and the walk to the published router is the same one
+     * `__TSR_ROUTER__` opens for the access token. It must find nothing — while the request below
+     * proves the token is nevertheless there to be spent, which is the positive control that keeps
+     * this from passing on an application that simply lost it.
+     */
+    const published = (globalThis as unknown as PublishedRouter).__TSR_ROUTER__;
+    const states =
+      published?.options.context.queryClient
+        .getMutationCache()
+        .getAll()
+        .map((mutation) => mutation.state) ?? [];
+
+    expect(published).toBeDefined();
+    expect(JSON.stringify(states)).not.toContain(MFA_TOKEN);
+
+    await user.type(code, '123456');
+    await user.click(app.getByRole('button', { name: 'auth.twoFactor.submit' }));
+
+    expect(
+      await app.findByText('dashboard.range.last30Days · dashboard.scope.org'),
+    ).toBeInTheDocument();
+    expect(window.location.pathname).toBe('/dashboard');
+    expect(requests.filter((path) => path.includes('/auth/'))).toEqual([
+      '/api/v1/auth/refresh',
+      '/api/v1/auth/login',
+      '/api/v1/auth/2fa/verify',
+    ]);
   });
 });
