@@ -16,6 +16,7 @@ import { serializeEmployee } from '@/presentation/http/serializers/employee.seri
 const row: EmployeeProfileRow = {
   userId: '018f4a3b-2c1d-7a41-9f00-2b7c1d0e5ad1',
   email: 'ivan@example.test',
+  status: 'SUSPENDED',
   firstName: 'Ivan',
   lastName: 'Petrov',
   jobTitle: 'Backend engineer',
@@ -43,6 +44,7 @@ describe('a colleague without `employee:view_personal_data`', () => {
     profile: row,
     audience: { personal: false, cost: false },
     emergencyContact: null,
+    accountStatus: null,
   });
 
   it('sees who the person is and how to work with them', () => {
@@ -68,6 +70,7 @@ describe('HR, and the person reading their own record', () => {
     profile: row,
     audience: { personal: true, cost: false },
     emergencyContact: 'sister, +7 900 000-00-00',
+    accountStatus: null,
   });
 
   it('sees the employment', () => {
@@ -103,7 +106,12 @@ describe('no audience of this serializer emits money', () => {
     ['finance', { personal: false, cost: true }],
     ['somebody holding every employee capability there is', { personal: true, cost: true }],
   ])('%s receives no `cost*` key', (_name, audience) => {
-    const answer = serializeEmployee({ profile: row, audience, emergencyContact: null });
+    const answer = serializeEmployee({
+      profile: row,
+      audience,
+      emergencyContact: null,
+      accountStatus: 'ACTIVE',
+    });
 
     expect(Object.keys(answer).filter((key) => key.toLowerCase().startsWith('cost'))).toEqual([]);
   });
@@ -119,10 +127,67 @@ describe('the finance audience is not the top of a ladder', () => {
       profile: row,
       audience: { personal: false, cost: true },
       emergencyContact: null,
+      accountStatus: null,
     });
 
     for (const key of HR_KEYS) expect(answer).not.toHaveProperty(key);
     // CONTROL: the public half arrived, so the absence above is about the audience.
     expect(answer).toMatchObject({ firstName: 'Ivan' });
+  });
+});
+
+/**
+ * The state of the account, which is a **fourth** shape rather than a widening of the third.
+ *
+ * The decision is made by the use-case (`seesAccountStatus`, STORY-012-09 D4) and arrives here as a
+ * value or as `null`. `null` is unambiguous: `users.status` is `NOT NULL`, so it can only ever mean
+ * «not for this reader», and the key is then absent rather than present and empty — the client is
+ * not the filter.
+ */
+describe('the state of the account travels independently of the employment half', () => {
+  it.each([
+    ['a colleague', { personal: false, cost: false }],
+    ['HR', { personal: true, cost: false }],
+    ['finance', { personal: false, cost: true }],
+  ])('is absent for %s when the use-case refused it', (_name, audience) => {
+    const answer = serializeEmployee({
+      profile: row,
+      audience,
+      emergencyContact: null,
+      accountStatus: null,
+    });
+
+    expect(answer).not.toHaveProperty('status');
+    // CONTROL: the record arrived, so the absence is about the level rather than about an empty
+    // answer — and the row does carry a status, so there was something to leak.
+    expect(answer).toMatchObject({ firstName: 'Ivan' });
+    expect(row.status).toBe('SUSPENDED');
+  });
+
+  it.each([
+    ['a colleague holding user:read', { personal: false, cost: false }],
+    ['HR holding user:read', { personal: true, cost: false }],
+  ])('is emitted for %s, with the value resolved above', (_name, audience) => {
+    const answer = serializeEmployee({
+      profile: row,
+      audience,
+      emergencyContact: null,
+      accountStatus: 'SUSPENDED',
+    });
+
+    expect(answer).toHaveProperty('status', 'SUSPENDED');
+  });
+
+  it('is emitted from what the use-case resolved, not from the row beside it', () => {
+    // The row is the wrong source: it carries the state whether or not the caller may see it, and a
+    // serializer reading it would be a second answer to a question already decided.
+    const answer = serializeEmployee({
+      profile: { ...row, status: 'SUSPENDED' },
+      audience: { personal: false, cost: false },
+      emergencyContact: null,
+      accountStatus: 'ACTIVE',
+    });
+
+    expect(answer).toHaveProperty('status', 'ACTIVE');
   });
 });

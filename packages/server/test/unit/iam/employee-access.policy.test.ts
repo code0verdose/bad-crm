@@ -6,6 +6,7 @@ import {
   canEditProfile,
   canReadProfile,
   profileAudience,
+  seesAccountStatus,
   seesEmploymentOfOthers,
   SELF_SERVICE_FIELDS,
 } from '@/domain/iam/access/employee-access.policy.js';
@@ -156,6 +157,84 @@ describe('which audiences a caller belongs to', () => {
         COLLEAGUE,
       ),
     ).toEqual({ personal: true, cost: true });
+  });
+});
+
+/**
+ * Who may see whether an account is switched off (STORY-012-09, D4).
+ *
+ * A different question from the one above it, and the whole table is that difference: the record and
+ * the account are different objects, `/employees/{userId}` has no guard because a person always
+ * reads their own record, and `user:read` is the right to read accounts.
+ */
+describe('who sees the state of the account', () => {
+  const cases = [
+    {
+      name: 'my own, holding nothing at all',
+      actor: actorWith([]),
+      subject: ME,
+      expected: true,
+    },
+    {
+      name: 'somebody else’s, with user:read',
+      actor: actorWith(['user:read']),
+      subject: COLLEAGUE,
+      expected: true,
+    },
+    {
+      name: 'somebody else’s, with employee:read alone',
+      actor: actorWith(['employee:read']),
+      subject: COLLEAGUE,
+      expected: false,
+    },
+    {
+      name: 'somebody else’s, with the whole personnel half and no user:read',
+      // `employee:view_personal_data` buys the employment — contract, dates, capacity — and says
+      // nothing about whether the person still has a way in.
+      actor: actorWith(['employee:read', 'employee:update', 'employee:view_personal_data']),
+      subject: COLLEAGUE,
+      expected: false,
+    },
+    {
+      name: 'somebody else’s, for the owner, whose permission set is empty by construction',
+      actor: actorWith([], { isOwner: true }),
+      subject: COLLEAGUE,
+      expected: true,
+    },
+    {
+      name: 'somebody else’s, when user:read is taken away by a DENY override',
+      // The override is what an organization uses to take one right from one person; reading the
+      // granted set directly would treat it as still held.
+      actor: actorWith(['user:read'], {
+        denied: new Set<SharedPermissions.PermissionKey>(['user:read']),
+      }),
+      subject: COLLEAGUE,
+      expected: false,
+    },
+    {
+      name: 'my own, even when user:read is denied to me',
+      actor: actorWith(['user:read'], {
+        denied: new Set<SharedPermissions.PermissionKey>(['user:read']),
+      }),
+      subject: ME,
+      expected: true,
+    },
+  ] as const;
+
+  it.each(cases)('$name → $expected', ({ actor, subject, expected }) => {
+    expect(seesAccountStatus(actor, subject)).toBe(expected);
+  });
+
+  it('is not the same question as the personal audience, in either direction', () => {
+    // Written as one, `employee:view_personal_data` would have carried the state of the account and
+    // `user:read` would have carried the employment half. Neither implies the other.
+    const hr = actorWith(['employee:view_personal_data']);
+    const accounts = actorWith(['user:read']);
+
+    expect(profileAudience(hr, COLLEAGUE).personal).toBe(true);
+    expect(seesAccountStatus(hr, COLLEAGUE)).toBe(false);
+    expect(profileAudience(accounts, COLLEAGUE).personal).toBe(false);
+    expect(seesAccountStatus(accounts, COLLEAGUE)).toBe(true);
   });
 });
 

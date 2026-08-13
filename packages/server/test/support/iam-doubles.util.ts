@@ -57,6 +57,7 @@ import {
 } from '../../src/application/iam/ports/user-lifecycle-repository.port.js';
 import {
   type DirectoryFacets,
+  type DirectoryStatus,
   type EmployeeDirectoryFilter,
   type EmployeeDirectoryPage,
   type EmployeeDirectoryRepositoryPort,
@@ -607,22 +608,41 @@ export class FakeEmployeeProfileRepository implements EmployeeProfileRepositoryP
   readonly rows = new Map<string, EmployeeProfileRow>();
   /** Accounts that exist here; anybody else is «another organization», i.e. 404. */
   readonly accounts = new Set<string>();
+  /**
+   * The state of each account, for the tests that care. Absent means `ACTIVE`, which is what an
+   * account is from the moment it exists — the state lives on `users`, not on the personnel record,
+   * so it survives an edit of the profile the way the column does.
+   */
+  readonly statuses = new Map<string, DirectoryStatus>();
 
   byUserId(userId: string): Promise<EmployeeProfileRow | null> {
     const stored = this.rows.get(userId);
 
-    if (stored !== undefined) return Promise.resolve(stored);
+    if (stored !== undefined) return Promise.resolve({ ...stored, status: this.statusOf(userId) });
 
     // An account with no row yet is an **empty** profile, not «not found»: 404 on this endpoint
     // means «no such person here», which is what tenancy depends on.
-    return Promise.resolve(this.accounts.has(userId) ? emptyProfile(userId) : null);
+    return Promise.resolve(
+      this.accounts.has(userId) ? emptyProfile(userId, this.statusOf(userId)) : null,
+    );
+  }
+
+  /** Not stored on the profile row: an edit of the record must not be able to move it. */
+  private statusOf(userId: string): DirectoryStatus {
+    return this.statuses.get(userId) ?? 'ACTIVE';
   }
 
   upsert(userId: string, patch: EmployeeProfilePatch): Promise<EmployeeProfileRow | null> {
     if (!this.accounts.has(userId)) return Promise.resolve(null);
 
-    const existing = this.rows.get(userId) ?? emptyProfile(userId);
-    const next = { ...existing, ...definedOnly(patch) } as EmployeeProfileRow;
+    const existing = this.rows.get(userId) ?? emptyProfile(userId, this.statusOf(userId));
+    const next = {
+      ...existing,
+      ...definedOnly(patch),
+      // Last, and deliberately after the patch: the state of the account is not a field of the
+      // personnel record, and a patch that carried one must not be able to set it.
+      status: this.statusOf(userId),
+    } as EmployeeProfileRow;
 
     this.rows.set(userId, next);
 
@@ -640,8 +660,9 @@ export class FakeEmployeeProfileRepository implements EmployeeProfileRepositoryP
   }
 }
 
-const emptyProfile = (userId: string): EmployeeProfileRow => ({
+const emptyProfile = (userId: string, status: DirectoryStatus = 'ACTIVE'): EmployeeProfileRow => ({
   userId,
+  status,
   email: `${userId}@example.test`,
   firstName: '',
   lastName: '',

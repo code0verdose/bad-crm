@@ -47,6 +47,7 @@ const actorWith = (granted: readonly string[], userId = ME): Actor => ({
 const row = (overrides: Partial<EmployeeProfileRow> = {}): EmployeeProfileRow => ({
   userId: ME,
   email: 'ivan@example.test',
+  status: 'ACTIVE',
   firstName: 'Ivan',
   lastName: 'Petrov',
   jobTitle: null,
@@ -253,5 +254,75 @@ describe('reading a profile', () => {
         subjectUserId: COLLEAGUE,
       }),
     ).rejects.toBeInstanceOf(NotFoundError);
+  });
+
+  /**
+   * The state of the account is resolved **here**, and refused here (STORY-012-09, D4).
+   *
+   * `null` rather than «resolve it and let the serializer drop it», for the reason the emergency
+   * contact is not decrypted for a caller who may not read it: a value that was never resolved
+   * cannot be emitted, logged or snapshotted by mistake. The row keeps carrying the state either
+   * way, so these cases are about what leaves this layer, not about what the repository returned.
+   */
+  describe('the state of the account', () => {
+    const suspended = (userId: string): FakeProfiles =>
+      new FakeProfiles({ stored: row({ userId, status: 'SUSPENDED' }) });
+
+    it('is refused to a colleague who may read the record but holds no user:read', async () => {
+      const profiles = suspended(COLLEAGUE);
+
+      const visible = await read(profiles).execute({
+        actor: actorWith(['employee:read', 'employee:view_personal_data']),
+        subjectUserId: COLLEAGUE,
+      });
+
+      expect(visible.accountStatus).toBeNull();
+      // CONTROL: the row this caller was given does carry the state, so the `null` above is the
+      // decision and not an empty read.
+      expect(visible.profile.status).toBe('SUSPENDED');
+    });
+
+    it('is resolved for user:read', async () => {
+      const visible = await read(suspended(COLLEAGUE)).execute({
+        actor: actorWith(['employee:read', 'user:read']),
+        subjectUserId: COLLEAGUE,
+      });
+
+      expect(visible.accountStatus).toBe('SUSPENDED');
+    });
+
+    it('is resolved on one’s own record without any capability', async () => {
+      const visible = await read(suspended(ME)).execute({
+        actor: actorWith([]),
+        subjectUserId: ME,
+      });
+
+      expect(visible.accountStatus).toBe('SUSPENDED');
+    });
+
+    it('is refused by an edit at the same level it is refused by a read', async () => {
+      // PATCH answers with the same document: a caller who may not see the state must not receive
+      // it as the reply to a rename.
+      const profiles = new FakeProfiles();
+
+      const visible = await write(profiles).execute({
+        actor: actorWith(['employee:update']),
+        subjectUserId: COLLEAGUE,
+        patch: { jobTitle: 'Engineer' },
+      });
+
+      expect(visible.accountStatus).toBeNull();
+      expect(visible.profile.status).toBe('ACTIVE');
+    });
+
+    it('is resolved by an edit for a caller who may see it', async () => {
+      const visible = await write(new FakeProfiles()).execute({
+        actor: actorWith(['employee:update', 'user:read']),
+        subjectUserId: COLLEAGUE,
+        patch: { jobTitle: 'Engineer' },
+      });
+
+      expect(visible.accountStatus).toBe('ACTIVE');
+    });
   });
 });

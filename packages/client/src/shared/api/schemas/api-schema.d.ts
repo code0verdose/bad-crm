@@ -1445,6 +1445,12 @@ export interface paths {
          *       second: knowing somebody's hiring date is not knowing what they are paid, and an
          *       administrator holds the first without the second (`permission-model.md` §4.1).
          *
+         *     `status` — the state of the **account** rather than of the record — is a fourth, independent
+         *     level: `user:read`, or the record being one's own. This route has no permission guard, since
+         *     a person always reads their own record, so a caller with none of the above still gets the
+         *     public half of anybody's record — and must not learn from it whether that account is
+         *     switched off.
+         *
          *     A field a caller may not see is **absent from the document**, not present and empty: the
          *     client is not the filter, because anybody can read a response.
          *
@@ -2229,6 +2235,9 @@ export interface components {
          * @description A personnel record, in the shape this caller is allowed to see. The employment fields below
          *     the first block are present **only** for the person themselves and for
          *     `employee:view_personal_data`; a caller without it does not receive the keys at all.
+         *
+         *     `status` is a **separate** question with a separate level — it is a fact about the account,
+         *     not about the personnel record — and is described on the property itself.
          */
         EmployeeProfile: {
             /** Format: uuid */
@@ -2243,6 +2252,22 @@ export interface components {
             managerId: string | null;
             timezone: string;
             skills: string[];
+            /**
+             * @description The state of the **account**, present only for a caller holding `user:read` and for the
+             *     person themselves; anybody else does not receive the key at all.
+             *
+             *     Not in the shape every colleague sees, because `/admin/members/{userId}` has no guard —
+             *     a person always reads their own record — so a `status` in the public half would tell any
+             *     employee whether any colleague's account is switched off.
+             *
+             *     It is here rather than derived from `terminatedAt` on the client: that date is an
+             *     editable HR field under `employee:update`, and an administrator entering a leaving date
+             *     in advance would otherwise make a working account render as disabled.
+             *
+             *     Absence means «you may not see this», never «the account is fine».
+             * @enum {string}
+             */
+            status?: "ACTIVE" | "SUSPENDED" | "INVITED";
             /** @enum {string} */
             employmentType?: "FULL_TIME" | "PART_TIME" | "CONTRACTOR" | "INTERN";
             /**

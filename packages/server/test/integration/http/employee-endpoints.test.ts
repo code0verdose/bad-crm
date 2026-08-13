@@ -191,6 +191,7 @@ describe('PATCH /api/v1/employees/{userId}', () => {
     employeeProfiles.rows.set(COLLEAGUE, {
       userId: COLLEAGUE,
       email: 'ivan@example.test',
+      status: 'ACTIVE',
       firstName: 'Ivan',
       lastName: 'Petrov',
       jobTitle: null,
@@ -396,6 +397,7 @@ describe('GET /api/v1/employees/{userId}', () => {
     employeeProfiles.rows.set(COLLEAGUE, {
       userId: COLLEAGUE,
       email: 'ivan@example.test',
+      status: 'ACTIVE',
       firstName: 'Ivan',
       lastName: 'Petrov',
       jobTitle: 'Backend engineer',
@@ -457,5 +459,125 @@ describe('GET /api/v1/employees/{userId}', () => {
     const response = await read(test, token, COLLEAGUE).expect(403);
 
     expect((response.body as { reason: string }).reason).toBe('permission_not_granted');
+  });
+
+  /**
+   * The state of the **account**, which is a different question from the personnel record.
+   *
+   * The card at `/admin/members/{userId}` has no guard — a person reads their own record, and the
+   * route cannot tell the two apart before the use-case does — so putting `status` in the shape
+   * every colleague receives would tell any employee whether any other employee's account is
+   * switched off. It is therefore behind `user:read`, or the record being one's own (STORY-012-09,
+   * decision D4).
+   *
+   * Not derived from `terminatedAt`: that is an editable HR field under `employee:update`, and the
+   * first administrator to enter a leaving date in advance would otherwise see «disabled» on an
+   * account that works.
+   */
+  describe('the state of the account', () => {
+    const withStatus = async (
+      granted: readonly SharedPermissions.PermissionKey[],
+      status: 'ACTIVE' | 'SUSPENDED' = 'SUSPENDED',
+    ): Promise<Record<string, unknown>> => {
+      const employeeProfiles = new FakeEmployeeProfileRepository();
+      const { test, token } = await signedIn({
+        employeeProfiles,
+        capabilities: capabilities(granted),
+      });
+
+      employeeProfiles.accounts.add(COLLEAGUE);
+      employeeProfiles.statuses.set(COLLEAGUE, status);
+
+      const response = await read(test, token, COLLEAGUE).expect(200);
+
+      return response.body as Record<string, unknown>;
+    };
+
+    it('is absent for a colleague who may read the record but not the account', async () => {
+      // `employee:read` without `user:read` is exactly the caller the decision is about: they open
+      // the card, and the card must not say whether the person still has a way in.
+      const body = await withStatus(['employee:read']);
+
+      expect(body).not.toHaveProperty('status');
+      // CONTROL: the record itself did arrive, so the absence above is about the level and not
+      // about an empty answer.
+      expect(body).toHaveProperty('userId', COLLEAGUE);
+    });
+
+    it('is absent for the personal audience too, which is a different question', async () => {
+      // `employee:view_personal_data` buys the employment half — contract, dates, capacity — and
+      // says nothing about whether the account is switched off.
+      const body = await withStatus(['employee:read', 'employee:view_personal_data']);
+
+      expect(body).not.toHaveProperty('status');
+      expect(body).toHaveProperty('employmentType');
+    });
+
+    it('is there for `user:read`, with the value the account actually holds', async () => {
+      const body = await withStatus(['employee:read', 'user:read']);
+
+      expect(body).toHaveProperty('status', 'SUSPENDED');
+    });
+
+    it('says ACTIVE rather than nothing when the account is on', async () => {
+      // The absence of the key means «you may not see this», never «the account is fine» — a screen
+      // that read absence as health would show an active badge to every colleague.
+      const body = await withStatus(['employee:read', 'user:read'], 'ACTIVE');
+
+      expect(body).toHaveProperty('status', 'ACTIVE');
+    });
+
+    it('is there on one’s own record without any capability at all', async () => {
+      // Somebody who cannot see that their own account is suspended gets an interface lying to them
+      // about themselves.
+      const employeeProfiles = new FakeEmployeeProfileRepository();
+      const { test, token, userId } = await signedIn({
+        employeeProfiles,
+        capabilities: capabilities([]),
+      });
+
+      employeeProfiles.accounts.add(userId);
+
+      const response = await read(test, token, userId).expect(200);
+
+      expect(response.body).toHaveProperty('status', 'ACTIVE');
+    });
+
+    it('comes back from an edit at the same level, not only from a read', async () => {
+      // PATCH answers with the same document, so a caller who may not see the state must not
+      // receive it as the reply to a rename either.
+      const employeeProfiles = new FakeEmployeeProfileRepository();
+      const { test, token } = await signedIn({
+        employeeProfiles,
+        capabilities: capabilities(['employee:read', 'employee:update']),
+      });
+
+      employeeProfiles.accounts.add(COLLEAGUE);
+      employeeProfiles.statuses.set(COLLEAGUE, 'SUSPENDED');
+
+      const response = await patch(test, token, COLLEAGUE, { firstName: 'Ivan' }).expect(200);
+
+      expect(response.body).not.toHaveProperty('status');
+      expect(response.body).toMatchObject({ firstName: 'Ivan' });
+    });
+
+    it('cannot be moved by an edit of the personnel record', async () => {
+      // The column lives on `users`; a PATCH of the profile that carried a `status` must change
+      // nothing, and the answer must keep saying what the account actually holds.
+      const employeeProfiles = new FakeEmployeeProfileRepository();
+      const { test, token } = await signedIn({
+        employeeProfiles,
+        capabilities: capabilities(['employee:read', 'employee:update', 'user:read']),
+      });
+
+      employeeProfiles.accounts.add(COLLEAGUE);
+      employeeProfiles.statuses.set(COLLEAGUE, 'SUSPENDED');
+
+      await patch(test, token, COLLEAGUE, { firstName: 'Ivan', status: 'ACTIVE' }).expect(422);
+
+      const response = await read(test, token, COLLEAGUE).expect(200);
+
+      expect(response.body).toHaveProperty('status', 'SUSPENDED');
+    });
   });
 });

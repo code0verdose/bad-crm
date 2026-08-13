@@ -1,3 +1,4 @@
+import { type DirectoryStatus } from '@/application/iam/ports/employee-directory-repository.port.js';
 import {
   type EmployeeProfilePatch,
   type EmployeeProfileRepositoryPort,
@@ -15,6 +16,7 @@ import {
   employmentPeriodRefused,
   managerCycleRefused,
   profileAudience,
+  seesAccountStatus,
   type ProfileAudience,
 } from '@/domain/iam/access/employee-access.policy.js';
 import { closesManagerCycle } from '@/domain/iam/org-chart.util.js';
@@ -49,6 +51,16 @@ export interface VisibleEmployeeProfile {
   readonly audience: ProfileAudience;
   /** Decrypted only when the caller may see it, and only then. */
   readonly emergencyContact: string | null;
+  /**
+   * The state of the account **when this caller may see it**, and `null` when they may not.
+   *
+   * Resolved here rather than left to the serializer for the reason the emergency contact is
+   * decrypted here: the decision belongs one layer below the shape it produces, and a value that
+   * was never resolved cannot be emitted, logged or snapshotted by mistake. `null` is unambiguous —
+   * the column is `NOT NULL`, so it can only ever mean «not for this reader»
+   * (`seesAccountStatus`, STORY-012-09 D4).
+   */
+  readonly accountStatus: DirectoryStatus | null;
 }
 
 /**
@@ -210,6 +222,9 @@ export class WriteEmployeeProfileUseCase {
       // `.personal`, never «belongs to some audience»: the cost audience is about rates, and a
       // relative's phone number is not a rate.
       emergencyContact: audience.personal ? this.fields.decrypt(profile.emergencyContactEnc) : null,
+      // A third, independent level: the account is not the record, and this answer is the same one
+      // the read below gives — an edit must not hand back more than a read of the same document.
+      accountStatus: seesAccountStatus(actor, profile.userId) ? profile.status : null,
     };
   }
 }
@@ -251,6 +266,7 @@ export class ReadEmployeeProfileQuery {
           emergencyContact: audience.personal
             ? this.fields.decrypt(profile.emergencyContactEnc)
             : null,
+          accountStatus: seesAccountStatus(input.actor, profile.userId) ? profile.status : null,
         };
       },
     );

@@ -1,3 +1,4 @@
+import { type DirectoryStatus } from '@/application/iam/ports/employee-directory-repository.port.js';
 import {
   type EmployeeProfilePatch,
   type EmployeeProfileRepositoryPort,
@@ -34,14 +35,17 @@ export class PrismaEmployeeProfileRepository
       const organizationId = this.organizationId('byUserId');
       const account = await tx.user.findFirst({
         where: { organizationId, id: userId, deletedAt: null },
-        select: { email: true, employeeProfile: true },
+        select: { email: true, status: true, employeeProfile: true },
       });
 
       if (account === null) return null;
 
       return account.employeeProfile === null
-        ? emptyRow(userId, account.email)
-        : toRow({ ...account.employeeProfile, user: { email: account.email } });
+        ? emptyRow(userId, account.email, account.status)
+        : toRow({
+            ...account.employeeProfile,
+            user: { email: account.email, status: account.status },
+          });
     });
   }
 
@@ -54,7 +58,7 @@ export class PrismaEmployeeProfileRepository
       // constraint violation.
       const account = await tx.user.findFirst({
         where: { organizationId, id: userId, deletedAt: null },
-        select: { email: true },
+        select: { email: true, status: true },
       });
 
       if (account === null) return null;
@@ -75,7 +79,7 @@ export class PrismaEmployeeProfileRepository
           ...definedOnly(patch),
         },
         update: definedOnly(patch),
-        include: { user: { select: { email: true } } },
+        include: { user: { select: { email: true, status: true } } },
       });
 
       return toRow(profile);
@@ -114,9 +118,11 @@ const definedOnly = (patch: EmployeeProfilePatch): Record<string, unknown> =>
   );
 
 /** What a person looks like before anybody has filled anything in. Not stored — computed on read. */
-const emptyRow = (userId: string, email: string): EmployeeProfileRow => ({
+const emptyRow = (userId: string, email: string, status: DirectoryStatus): EmployeeProfileRow => ({
   userId,
   email,
+  // From the account, which exists whether or not anybody has filled the record in.
+  status,
   firstName: '',
   lastName: '',
   jobTitle: null,
@@ -145,10 +151,11 @@ const toRow = (profile: {
   readonly timezone: string;
   readonly skills: string[];
   readonly emergencyContactEnc: string | null;
-  readonly user: { readonly email: string };
+  readonly user: { readonly email: string; readonly status: DirectoryStatus };
 }): EmployeeProfileRow => ({
   userId: profile.userId,
   email: profile.user.email,
+  status: profile.user.status,
   firstName: profile.firstName,
   lastName: profile.lastName,
   jobTitle: profile.jobTitle,

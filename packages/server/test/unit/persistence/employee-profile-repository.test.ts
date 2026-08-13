@@ -44,7 +44,11 @@ const storedProfile = {
 
 const recordingClient = (
   state: {
-    account?: { email: string; employeeProfile: typeof storedProfile | null } | null;
+    account?: {
+      email: string;
+      status: 'ACTIVE' | 'SUSPENDED' | 'INVITED';
+      employeeProfile: typeof storedProfile | null;
+    } | null;
     upserted?: typeof storedProfile;
     links?: { userId: string; managerId: string | null }[];
   } = {},
@@ -64,7 +68,7 @@ const recordingClient = (
     employeeProfile: {
       upsert: record('upsert', {
         ...(state.upserted ?? storedProfile),
-        user: { email: 'ivan@example.test' },
+        user: { email: 'ivan@example.test', status: state.account?.status ?? 'ACTIVE' },
       }),
       findMany: record('findMany', state.links ?? []),
     },
@@ -92,7 +96,7 @@ const argsOf = (recorder: Recorder, name: string): Record<string, unknown> =>
 describe('reading a profile', () => {
   it('answers an empty profile for an account nobody has filled in yet', async () => {
     const recorder = recordingClient({
-      account: { email: 'ivan@example.test', employeeProfile: null },
+      account: { email: 'ivan@example.test', status: 'ACTIVE', employeeProfile: null },
     });
 
     const profile = await inScope(recorder, (repository) => repository.byUserId(USER));
@@ -115,12 +119,35 @@ describe('reading a profile', () => {
 
   it('hands the ciphertext on without decrypting it', async () => {
     const recorder = recordingClient({
-      account: { email: 'ivan@example.test', employeeProfile: storedProfile },
+      account: { email: 'ivan@example.test', status: 'ACTIVE', employeeProfile: storedProfile },
     });
 
     const profile = await inScope(recorder, (repository) => repository.byUserId(USER));
 
     expect(profile?.emergencyContactEnc).toBe('v1:iv:tag:ct');
+  });
+
+  /**
+   * The state of the account comes from `users`, on **both** paths through this method.
+   *
+   * The empty-profile path is the one that matters for the card: somebody suspended before anybody
+   * filled their record in has no `employee_profiles` row at all, and a default of `ACTIVE` there
+   * would render a disabled account as a working one.
+   */
+  it.each([
+    ['a filled-in record', storedProfile],
+    ['an account nobody has filled in yet', null],
+  ])('reads the state of the account beside %s', async (_name, employeeProfile) => {
+    const recorder = recordingClient({
+      account: { email: 'ivan@example.test', status: 'SUSPENDED', employeeProfile },
+    });
+
+    const profile = await inScope(recorder, (repository) => repository.byUserId(USER));
+
+    expect(profile?.status).toBe('SUSPENDED');
+    // Asked for explicitly: a `select` that stopped naming it would answer `undefined`, and every
+    // assertion above would still pass.
+    expect(argsOf(recorder, 'user.findFirst')['select']).toMatchObject({ status: true });
   });
 });
 
@@ -140,7 +167,7 @@ describe('writing a profile', () => {
     // A profile created by an edit that only set a job title still needs a name, and an empty string
     // is the honest «not filled in yet» rather than a guess at what the person is called.
     const recorder = recordingClient({
-      account: { email: 'ivan@example.test', employeeProfile: null },
+      account: { email: 'ivan@example.test', status: 'ACTIVE', employeeProfile: null },
     });
 
     await inScope(recorder, (repository) => repository.upsert(USER, { jobTitle: 'Engineer' }));
@@ -160,9 +187,26 @@ describe('writing a profile', () => {
     expect(args.where).toEqual({ organizationId_userId: { organizationId: ORG, userId: USER } });
   });
 
+  it('answers with the state of the account, which an edit of the record cannot move', async () => {
+    // The column lives on `users`; the upsert has to include it back or the answer to a PATCH would
+    // carry `undefined` where a read carries the state.
+    const recorder = recordingClient({
+      account: { email: 'ivan@example.test', status: 'SUSPENDED', employeeProfile: storedProfile },
+    });
+
+    const profile = await inScope(recorder, (repository) =>
+      repository.upsert(USER, { jobTitle: 'Engineer' }),
+    );
+
+    expect(profile?.status).toBe('SUSPENDED');
+    expect(argsOf(recorder, 'upsert')['include']).toEqual({
+      user: { select: { email: true, status: true } },
+    });
+  });
+
   it('copies the skills array, which arrives readonly', async () => {
     const recorder = recordingClient({
-      account: { email: 'ivan@example.test', employeeProfile: null },
+      account: { email: 'ivan@example.test', status: 'ACTIVE', employeeProfile: null },
     });
 
     await inScope(recorder, (repository) => repository.upsert(USER, { skills: ['ts', 'sql'] }));

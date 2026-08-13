@@ -7,10 +7,29 @@
  * (`rules/tenancy-rls.mdc`, 9).
  */
 
+import { type DirectoryStatus } from '@/application/iam/ports/employee-directory-repository.port.js';
+
 /** A profile as the screens and the policies read it. The emergency contact is **ciphertext**. */
 export interface EmployeeProfileRow {
   readonly userId: string;
   readonly email: string;
+  /**
+   * The state of the **account** the record belongs to — `users.status`, not a column of the
+   * profile.
+   *
+   * Read here because the card has to be able to say «this account is switched off» when it is
+   * opened by a direct link, with no directory row in the cache to derive it from. **Not** derived
+   * from `terminatedAt`: that is an editable HR field under `employee:update`, and a leaving date
+   * entered in advance would otherwise turn a working account into a disabled one on screen.
+   *
+   * The vocabulary is the directory's rather than a second restatement of `UserStatus`;
+   * `test/unit/persistence/tenant-tables.test.ts` compares that one against the datamodel, so a
+   * value added to the enum cannot drift past both.
+   *
+   * Absent from `EmployeeProfilePatch` on purpose: this endpoint edits a personnel record, and the
+   * account is switched off and on by `/users/{userId}/deactivate` and `/reactivate`.
+   */
+  readonly status: DirectoryStatus;
   readonly firstName: string;
   readonly lastName: string;
   readonly jobTitle: string | null;

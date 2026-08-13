@@ -131,6 +131,33 @@ export const seesEmploymentOfOthers = (actor: Actor): boolean =>
 export const canReadProfile = (actor: Actor, subjectUserId: string): Decision =>
   actor.userId === subjectUserId ? allow() : authorizeCapability(actor, 'employee:read');
 
+/**
+ * May this actor see **whether the account is switched off** — `user:read`, or it being their own?
+ *
+ * A separate question from `profileAudience` above, deliberately, and the separation is the whole of
+ * the decision (STORY-012-09, D4):
+ *
+ *   * the record and the account are different objects. `employee:view_personal_data` buys the
+ *     employment half — contract, dates, capacity — and answers nothing about whether the person
+ *     still has a way in; `user:read` is the right to read accounts, which is what this is;
+ *   * the route has **no guard**. A person always reads their own personnel record, so
+ *     `/employees/{userId}` cannot demand a capability before the use-case knows whose record it is
+ *     — and a `status` in the half every colleague receives would therefore tell any employee
+ *     whether any other employee's account is disabled;
+ *   * one's own is always visible, and that is not a concession: somebody who cannot see that their
+ *     own account is suspended is looking at an interface lying to them about themselves.
+ *
+ * **Not** derived from `terminatedAt`. That is an editable HR field under `employee:update` rather
+ * than a property of the account; the two agreeing today is a coincidence, and the first
+ * administrator to enter a leaving date in advance would make a working account render as disabled.
+ *
+ * A `boolean` rather than a `Decision`, like `profileAudience` and `seesEmploymentOfOthers` beside
+ * it: this shapes an answer the caller is entitled to receive and never refuses a request, so there
+ * is no 403 for a `DenyReason` to explain (`rules/permissions.mdc`, 4 — which is about the refusals).
+ */
+export const seesAccountStatus = (actor: Actor, subjectUserId: string): boolean =>
+  actor.userId === subjectUserId || authorizeCapability(actor, 'user:read').allowed;
+
 /** The refusal a cycle produces, kept here so the use-case names a decision rather than a string. */
 export const managerCycleRefused = (): Decision => deny('manager_cycle_detected');
 
