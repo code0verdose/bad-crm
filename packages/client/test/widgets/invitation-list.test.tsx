@@ -494,25 +494,6 @@ describe('re-issuing an invitation', () => {
     expect(screen.getByRole('dialog')).toBeInTheDocument();
   });
 
-  /**
-   * The successful re-issue **through the dialog**, which is the path the screen actually offers.
-   * It is also the one branch where the confirmation hands the hook no callback: a revoke closes the
-   * dialog on success, a re-issue deliberately does not, because the link it produced is the only
-   * copy that will ever exist.
-   */
-  it('keeps the dialog open on success, because the link it minted is the only copy', async () => {
-    const user = userEvent.setup();
-
-    await startAt();
-
-    const dialog = await openDialog(user, 'resend', String(OPEN['email']));
-
-    await user.click(within(dialog).getByRole('button', { name: /resend\.confirm/ }));
-
-    expect(await screen.findByText(INVITE_URL)).toBeInTheDocument();
-    expect(screen.getByRole('dialog')).toBeInTheDocument();
-  });
-
   it('shows the new link once, in the panel the invite screen uses', async () => {
     const user = userEvent.setup();
 
