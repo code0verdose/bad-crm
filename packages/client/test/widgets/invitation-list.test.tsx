@@ -474,6 +474,45 @@ describe('closing an invitation', () => {
 });
 
 describe('re-issuing an invitation', () => {
+  /**
+   * The refusal path of the *other* action, and it needed its own case rather than trusting the
+   * revoke one above: the two live on separate `failureKey` branches of `useInvitationList`, and
+   * neither is reached by the other's test. Until this existed, the sentence a person reads when a
+   * re-issue fails was asserted by nothing at all.
+   */
+  it('shows the refusal when the re-issue is refused, and keeps the dialog open', async () => {
+    const user = userEvent.setup();
+
+    await startAt({ resend: () => problem('invitation_already_accepted', 409) });
+
+    const dialog = await openDialog(user, 'resend', String(OPEN['email']));
+
+    await user.click(within(dialog).getByRole('button', { name: /resend\.confirm/ }));
+
+    expect(await within(dialog).findByText(/resend\.failed/)).toBeInTheDocument();
+    expect(screen.getAllByText('errors.code.invitation_already_accepted')).toHaveLength(1);
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+  });
+
+  /**
+   * The successful re-issue **through the dialog**, which is the path the screen actually offers.
+   * It is also the one branch where the confirmation hands the hook no callback: a revoke closes the
+   * dialog on success, a re-issue deliberately does not, because the link it produced is the only
+   * copy that will ever exist.
+   */
+  it('keeps the dialog open on success, because the link it minted is the only copy', async () => {
+    const user = userEvent.setup();
+
+    await startAt();
+
+    const dialog = await openDialog(user, 'resend', String(OPEN['email']));
+
+    await user.click(within(dialog).getByRole('button', { name: /resend\.confirm/ }));
+
+    expect(await screen.findByText(INVITE_URL)).toBeInTheDocument();
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+  });
+
   it('shows the new link once, in the panel the invite screen uses', async () => {
     const user = userEvent.setup();
 
