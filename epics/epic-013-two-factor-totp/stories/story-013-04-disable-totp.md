@@ -118,9 +118,13 @@ estimate: S
       `pages/settings-security/page.tsx` (маршрут `app/routes/_authenticated/settings/security.tsx`).
 - [x] `packages/client/src/units/auth/service/mutations/disable-totp.mutation.ts` +
       `units/auth/model/validation/disable-totp-form.schema.ts`.
-- [ ] Административный сброс на клиенте (критерий 10): диалога под
-      `<Can permission="user:reset_mfa">` и мутации `units/iam/service/mutations/reset-user-mfa.mutation.ts`
-      нет — `reset-mfa` вызывается только напрямую по API; см. «Что отложено».
+- [x] Административный сброс на клиенте (критерий 10) — отгружен 2026-08-14 (`a5bf8b3`):
+      секция «Two-factor authentication» внизу карточки сотрудника за `can('user:reset_mfa')`,
+      `widgets/reset-mfa/` с диалогом подтверждения третьего уровня (ввод адреса обратно, как у
+      офбординга рядом) и отчётом после успеха. Мутация легла в
+      `units/employee/service/mutations/reset-user-mfa.mutation.ts`, а не в `units/iam`, как значилось
+      здесь: прецедент `deactivateUser` — та же iam-операция с той же карточки — уже живёт в
+      `units/employee`, и два места для одной ответственности разошлись бы на первой правке.
 - [x] Тесты: `test/unit/application/disable-totp.use-case.test.ts` (п. 1–3, включая рейс по счётчику
       TOTP, недешифруемый секрет, отсутствующая запись credential),
       `test/unit/application/recovery-code-matcher.use-case.test.ts`,

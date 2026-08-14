@@ -1,7 +1,7 @@
 ---
 id: STORY-012-08
 epic: EPIC-012
-status: backlog
+status: in-progress
 blocked: false
 priority: must
 estimate: M
@@ -124,33 +124,40 @@ STORY-012-04 (справочник перечисляет **учётные за�
 
 ## Задачи
 
-- [ ] `packages/client/src/units/iam/api/iam.api.ts` — `fetchInvitations`, `resendInvitation`,
+- [x] `packages/client/src/units/iam/api/iam.api.ts` — `fetchInvitations`, `resendInvitation`,
       `revokeInvitation` (типы из сгенерированной схемы, `apiClient`, без raw `fetch`); удалить
       комментарий-заглушку на месте их отсутствия.
-- [ ] `units/iam/service/queries/invitations.query.ts` + ключ в фабрике `QueryKeys`
+- [x] `units/iam/service/queries/invitations.query.ts` + ключ в фабрике `QueryKeys`
       (`shared/lib/enums`), `signal` пробрасывается в запрос.
-- [ ] `units/iam/service/mutations/resend-invitation.mutation.ts`,
+- [x] `units/iam/service/mutations/resend-invitation.mutation.ts`,
       `revoke-invitation.mutation.ts` — пессимистичные, `invalidateQueries` по ключу списка,
       `onSuccess` → один тост.
-- [ ] `units/iam/service/hooks/use-invitation-list.hook.ts` — публичное API юнита для `ui`
+- [x] `units/iam/service/hooks/use-invitation-list.hook.ts` — публичное API юнита для `ui`
       (список + оба действия + производные «просрочено»); утилита сравнения с часами — `*.util.ts`,
       не в теле компонента.
-- [ ] `widgets/invitation-list/` — виджет с таблицей, `invitation-revoke-dialog.component.tsx`;
+- [x] `widgets/invitation-list/` — виджет с таблицей, `invitation-revoke-dialog.component.tsx`;
       переиспользование `units/iam/ui/invitation-link.component.tsx` для минтованной ссылки.
-- [ ] `pages/admin-members-invitations/page.tsx` + маршрут
+- [x] `pages/admin-members-invitations/page.tsx` + маршрут
       `app/routes/_authenticated/admin/members/invitations.tsx` с
       `requirePermission('invitation:read')`.
-- [ ] Ссылки со справочника и с формы приглашения на новый экран.
-- [ ] i18n: ключи `members.invitations.*` в `en` и `ru`.
-- [ ] [`ux-architecture.md`](../../../docs/architecture/ux-architecture.md) — строка маршрута в
+- [x] Ссылки со справочника и с формы приглашения на новый экран.
+- [x] i18n: ключи `members.invitations.*` в `en` и `ru`.
+- [x] [`ux-architecture.md`](../../../docs/architecture/ux-architecture.md) — строка маршрута в
       таблице и раздел экрана; снять абзац «Отгружено не полностью: ссылку нельзя переслать
       повторно, и нет списка приглашений» в разделе «Приглашение сотрудника».
-- [ ] Тесты: компонентные на список/просроченное/пустое/ошибку, на оба диалога и на ловушку фокуса,
+- [x] Тесты: компонентные на список/просроченное/пустое/ошибку, на оба диалога и на ловушку фокуса,
       на скрытие кнопок без прав; тест мутаций (инвалидация ключа, один тост); проверка, что
       `GET /invitations` получает свой `describe` в `invitation-endpoints.test.ts` — сегодня он
       вызывается внутри чужих тестов и своего описания не имеет.
-- [ ] Бюджет бандла: экран не должен вытолкнуть initial JS за лимит `.size-limit.js` (учесть урок
+- [x] Бюджет бандла: экран не должен вытолкнуть initial JS за лимит `.size-limit.js` (учесть урок
       STORY-012-03/04 — barrel и `sideEffects`).
+
+
+> **Все пункты выше отгружены 2026-08-14 (`a5bf8b3`, `2f40142`).** Статус истории — `in-progress`, а
+> не `review`, потому что коммит-гейт по этой дельте прогнан **не полностью**: были `typecheck`,
+> `lint`, `build`, `test` и `coverage:baseline` (все зелёные), но не агенты `test-coverage`,
+> `security-auditor`, `production-readiness` и `commit-hygiene`. Поставить `review` без них значило бы
+> отметить галочку, которую нечем подтвердить.
 
 ## Ссылки
 
@@ -216,12 +223,14 @@ STORY-012-04 (справочник перечисляет **учётные за�
 
 ## Definition of Done
 
-- [ ] Тесты написаны первыми (TDD), проходят, изменённый код покрыт; базовая линия покрытия не просела
+- [x] Тесты написаны первыми (TDD), проходят, изменённый код покрыт; базовая линия покрытия не просела —
+      `coverage:baseline` проходит, client branches −0.36 при допуске 0.5 (три ветки названы выше)
 - [ ] Commit-гейт зелёный (test-coverage, security-auditor, production-readiness, commit-hygiene,
       stale-claims-auditor)
 - [ ] Проектные гейты: `fsd-architecture-linter`, `permission-matrix-auditor`,
       `openapi-contract-guardian` (контракт не меняется — сверка в обе стороны), `i18n-coverage-checker`
-- [ ] a11y: клавиатура, ловушка фокуса в диалоге, `axe` на экране
-- [ ] EN + RU, ноль хардкод-строк
+- [x] a11y: клавиатура, ловушка фокуса в диалоге, `axe` на экране — диалог в реестре
+      `test/architecture/modal-focus-coverage.test.ts`
+- [x] EN + RU, ноль хардкод-строк — `pnpm i18n:check` 583/583 в обоих языках
 - [ ] Документация обновлена (`ux-architecture.md`) + запись в `docs/brain/`
-- [ ] Борд пересобран (`/pm sync`)
+- [x] Борд пересобран (`/pm sync`)
