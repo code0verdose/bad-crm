@@ -7,6 +7,7 @@ import { SharedLib, SharedUi } from '@shared';
 
 import { Breadcrumbs } from '@widgets/breadcrumbs';
 import { OffboardingDialog } from '@widgets/offboarding';
+import { Reactivation } from '@widgets/reactivation';
 import { ResetMfa } from '@widgets/reset-mfa';
 import { UserPermissions } from '@widgets/user-permissions';
 import { EmployeeService, EmployeeUi, type EmployeeApi } from '@units/employee';
@@ -87,6 +88,39 @@ export function EmployeeProfilePage() {
    */
   const mfaSubject = query.data !== undefined && can('user:reset_mfa') ? query.data : undefined;
 
+  /**
+   * The leaving date to show beside «this account is switched off» — and `undefined` whenever there
+   * is no such plate to draw.
+   *
+   * **`status`, never `terminatedAt`.** The date is an editable HR field under `employee:update`;
+   * deriving the account state from it would render a working account as disabled for every person
+   * whose notice period was entered in advance (decision D4 of STORY-012-09). The date rides along
+   * as decoration and is `null` when this caller was not shown the employment half of the document.
+   *
+   * **Absence of `status` draws nothing.** The key reaches a holder of `user:read` and the person
+   * themselves; for anybody else it is not sent at all, and «you may not see this» is not «the
+   * account is fine» (`docs/api/openapi.yaml`, `EmployeeProfile.status`).
+   */
+  const suspendedSince =
+    query.data !== undefined && query.data.status === 'SUSPENDED'
+      ? (query.data.terminatedAt ?? null)
+      : undefined;
+
+  /**
+   * Who the reactivation would be about — the same one decision `subject` above is, on the state as
+   * well as the permission.
+   *
+   * The permission is a hint and never a gate: the endpoint refuses on its own authority, and what
+   * the check prevents is offering an action that would always answer 403 (`ux-architecture.md`,
+   * принцип 6). The state is the other half — there is nothing to bring back on an account that was
+   * never off, and after a successful run the record is read again and this section stops being
+   * drawn, which is why the dialog inside it aims the focus at the page heading on its way out.
+   */
+  const returnable =
+    query.data !== undefined && query.data.status === 'SUSPENDED' && can('user:reactivate')
+      ? query.data
+      : undefined;
+
   return (
     <Stack gap="md">
       <SharedUi.PageHeader
@@ -100,6 +134,15 @@ export function EmployeeProfilePage() {
         breadcrumbs={<Breadcrumbs />}
         titleKey="employee.title"
       />
+
+      {/*
+        Above the tabs rather than inside one: what it says is true of the whole card, and a plate
+        that appeared and vanished as somebody switched between «Profile» and «Roles» would be a
+        fact about the account presented as a property of a tab.
+      */}
+      {suspendedSince !== undefined && (
+        <EmployeeUi.SuspendedAccountNotice terminatedAt={suspendedSince} />
+      )}
 
       {subject !== undefined && (
         <OffboardingDialog
@@ -196,6 +239,14 @@ export function EmployeeProfilePage() {
         everything above is about keeping this record usable.
       */}
       {mfaSubject !== undefined && <ResetMfa email={mfaSubject.email} userId={userId} />}
+
+      {/*
+        Last, and below the 2FA reset: everything above is about a record somebody is working with,
+        and this section exists only while nobody can. It is deliberately **not** in the header
+        beside the offboarding control — a heading row carrying «Deactivate» next to «Bring back»
+        turns the most consequential state a person has into a pair of adjacent switches.
+      */}
+      {returnable !== undefined && <Reactivation email={returnable.email} userId={userId} />}
     </Stack>
   );
 }

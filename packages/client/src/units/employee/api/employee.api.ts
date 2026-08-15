@@ -155,14 +155,32 @@ export const resetUserMfa = async (userId: string): Promise<ResetMfaResult> => {
   );
 };
 
+/** What a reactivation restored — and, in `membershipsRestored`, what it deliberately did not. */
+export type ReactivationResult = components['schemas']['ReactivationResult'];
+
 /**
- * There is no `reactivateUser` here, and that is deliberate.
+ * Switch an account back on.
  *
- * `POST /users/{userId}/reactivate` exists on the server and is covered there, but no screen calls
- * it yet: the button belongs on the personnel record of a suspended person, and the profile document
- * does not carry `status` — only a directory row does. Adding the field is a contract change worth
- * doing on purpose rather than in passing.
+ * The counterpart of `deactivateUser` above, and it arrives with its screen rather than before it:
+ * this function was written once during STORY-012-05 and deleted unused, because a client function
+ * nobody calls is a contract nobody checks. What kept the screen away until now was the personnel
+ * document carrying no `status`; it does now (decision D4 of STORY-012-09), so the card can tell
+ * whether there is anything to bring back.
  *
- * A client function nobody calls is a contract nobody checks (the same reason `fetchInvitations`
- * is absent), so it arrives with its screen.
+ * No signal, on the reasoning both neighbours give: this is issued by a button behind a
+ * confirmation, so no later request can overtake it — and a cancelled reactivation is worse than a
+ * slow one, since the account comes back either way and the caller would never learn that it had.
+ *
+ * There is no request body. Which account is in the path, and `user:reactivate` plus the rank rule
+ * is the whole of the proof the server asks for.
  */
+export const reactivateUser = async (userId: string): Promise<ReactivationResult> => {
+  // Minted per call rather than left to the middleware's default, because the contract marks the
+  // parameter `required` and the generated types therefore demand it at the call site — the spec
+  // making «I forgot the header» a compile error instead of a 422 found by clicking.
+  const { params } = idempotencyParams();
+
+  return unwrapApiResult(
+    await apiClient.POST('/users/{userId}/reactivate', { params: { ...params, path: { userId } } }),
+  );
+};

@@ -127,5 +127,50 @@
   },
   "chart": {
     "failed": "The org chart could not be loaded."
+  },
+  "reactivate": {
+    "title": "Bring this account back",
+    "description": "Deactivating closed the way in. This opens it again — and only that.",
+    "trigger": "Bring the account back",
+    "dialog": {
+      "title": "Bring the account back",
+      "description": "{{email}} will be able to sign in again, from the moment you confirm."
+    },
+    "restored": {
+      "title": "What comes back",
+      "signIn": "Signing in, everywhere — with the password the person already has."
+    },
+    "roles": {
+      "named": "Every role the account still holds: {{roles}}. Deactivating never took them away, so they all come back at once.",
+      "none": "The account holds no role, so it comes back with nothing beyond the ability to sign in.",
+      "pending": "Reading which roles the account holds…",
+      "unavailable": "The roles this account holds could not be read. It keeps all of them regardless — check them on the «Roles» tab before you confirm.",
+      "hidden": "The account keeps every role it held. You may not read which ones, so ask somebody who can if that matters here."
+    },
+    "limits": {
+      "title": "What does not come back",
+      "description": "These were given up when the account was switched off, and are handed out again by a person who decides so today — not by this button.",
+      "teams": "Team memberships, with whatever they carried.",
+      "projects": "Taking part in projects.",
+      "vaults": "Access to shared vaults, which needs a key handed over again."
+    },
+    "submit": "Bring the account back",
+    "cancel": "Cancel",
+    "close": "Close",
+    "failed": {
+      "title": "Not brought back — nothing was changed"
+    },
+    "done": {
+      "title": "The account is on again",
+      "description": "The person can sign in with their existing password. Anything still signed in as them from before stays signed out."
+    },
+    "notRestored": {
+      "title": "Still revoked — grant these again if they are needed",
+      "description": "The account came back; what it belonged to did not. Nobody is told about the list below, so whoever needs it back has to be added by hand."
+    },
+    "already": {
+      "title": "Already on — this run changed nothing",
+      "description": "The account was active before this run: nothing was written and no trail entry was made. This is what a second tab, or a second administrator, looks like — not a failure."
+    }
   }
 }

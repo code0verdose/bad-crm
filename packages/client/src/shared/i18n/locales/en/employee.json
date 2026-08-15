@@ -23,5 +23,10 @@
   "loadFailed": "This record could not be loaded.",
   "tab": {
     "profile": "Profile"
+  },
+  "suspended": {
+    "title": "This account is switched off",
+    "description": "The person cannot sign in. Their tasks, hours and history are untouched, and an administrator can bring the account back.",
+    "since": "Left on {{date}}."
   }
 }
