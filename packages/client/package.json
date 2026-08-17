@@ -35,7 +35,7 @@
     "react-dom": "19.2.8",
     "react-i18next": "17.0.11",
     "zod": "4.4.3",
-    "zustand": "^5.0.14"
+    "zustand": "^5.0.15"
   },
   "devDependencies": {
     "@size-limit/file": "13.0.3",
