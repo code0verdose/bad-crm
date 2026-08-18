@@ -150,7 +150,7 @@ services:
   # Meilisearch — optional by design. Absent in the minimal profile, where SearchPort falls back to
   # PostgreSQL FTS (ADR-0011). meili-data is never backed up: the index is replayed from the DB.
   meilisearch:
-    image: getmeili/meilisearch:v1.52.0
+    image: getmeili/meilisearch:v1.53.0
     profiles: ['default', 'full']
     restart: unless-stopped
     environment:
@@ -180,7 +180,7 @@ services:
   # which has been unmaintained since 2020 — Mailpit is actively released, ships its own readiness
   # probe, persists messages and supports the same "accept anything" SMTP behaviour.
   mailpit:
-    image: axllent/mailpit:v1.30.6
+    image: axllent/mailpit:v1.30.7
     profiles: ['default', 'full']
     restart: unless-stopped
     environment:
