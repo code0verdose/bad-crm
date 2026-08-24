@@ -15,9 +15,9 @@
     "format:check": "prettier --check --ignore-path ../../.prettierignore ."
   },
   "devDependencies": {
-    "@axe-core/playwright": "4.12.1",
+    "@axe-core/playwright": "4.13.0",
     "@playwright/test": "1.62.1",
-    "@types/node": "26.1.2",
+    "@types/node": "26.2.0",
     "typescript": "5.9.3"
   }
 }
