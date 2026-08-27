@@ -31,7 +31,7 @@ const signedIn = async (
 ): Promise<{ test: AuthApp; token: string }> => {
   const test = createAuthApp(options);
 
-  await request(test.app)
+  await request(test.server())
     .post('/api/v1/auth/register')
     .set('Idempotency-Key', IDEMPOTENCY_KEY)
     .send({
@@ -40,7 +40,7 @@ const signedIn = async (
     })
     .expect(201);
 
-  const response = await request(test.app)
+  const response = await request(test.server())
     .post('/api/v1/auth/login')
     .send({ email: 'ada@example.com', password: PASSWORD })
     .expect(200);
@@ -78,7 +78,7 @@ describe('GET /api/v1/roles', () => {
     } as AuthAppOptions;
     const { test, token } = await signedIn(reader);
 
-    const response = await request(test.app)
+    const response = await request(test.server())
       .get('/api/v1/roles')
       .set('Authorization', `Bearer ${token}`)
       .expect(200);
@@ -104,7 +104,7 @@ describe('GET /api/v1/roles', () => {
   it('needs the capability', async () => {
     const { test, token } = await signedIn();
 
-    const response = await request(test.app)
+    const response = await request(test.server())
       .get('/api/v1/roles')
       .set('Authorization', `Bearer ${token}`)
       .expect(403);
@@ -117,7 +117,7 @@ describe('POST /api/v1/roles', () => {
   it('creates a role made of what the author holds', async () => {
     const { test, token } = await signedIn(author());
 
-    const response = await request(test.app)
+    const response = await request(test.server())
       .post('/api/v1/roles')
       .set('Authorization', `Bearer ${token}`)
       .set('Idempotency-Key', IDEMPOTENCY_KEY)
@@ -157,7 +157,7 @@ describe('POST /api/v1/roles', () => {
       customRoles: new FakeCustomRoleRepository({ duplicateKey: true }),
     });
 
-    const response = await request(test.app)
+    const response = await request(test.server())
       .post('/api/v1/roles')
       .set('Authorization', `Bearer ${token}`)
       .set('Idempotency-Key', IDEMPOTENCY_KEY)
@@ -170,7 +170,7 @@ describe('POST /api/v1/roles', () => {
   it('refuses a role containing a permission the author lacks', async () => {
     const { test, token } = await signedIn(author());
 
-    const response = await request(test.app)
+    const response = await request(test.server())
       .post('/api/v1/roles')
       .set('Authorization', `Bearer ${token}`)
       .set('Idempotency-Key', IDEMPOTENCY_KEY)
@@ -197,7 +197,7 @@ describe('POST /api/v1/roles', () => {
     } as AuthAppOptions;
     const { test, token } = await signedIn(dangerous);
 
-    const refused = await request(test.app)
+    const refused = await request(test.server())
       .post('/api/v1/roles')
       .set('Authorization', `Bearer ${token}`)
       .set('Idempotency-Key', IDEMPOTENCY_KEY)
@@ -207,7 +207,7 @@ describe('POST /api/v1/roles', () => {
     expect(refused.body).toMatchObject({ code: 'confirmation_required' });
     expect(test.customRoles.roles.size).toBe(0);
 
-    await request(test.app)
+    await request(test.server())
       .post('/api/v1/roles')
       .set('Authorization', `Bearer ${token}`)
       .set('Idempotency-Key', IDEMPOTENCY_KEY)
@@ -234,7 +234,7 @@ describe('POST /api/v1/roles', () => {
     // found by that upsert and rewritten — name, composition and all — for everybody holding it.
     const { test, token } = await signedIn(author());
 
-    await request(test.app)
+    await request(test.server())
       .post('/api/v1/roles')
       .set('Authorization', `Bearer ${token}`)
       .set('Idempotency-Key', IDEMPOTENCY_KEY)
@@ -249,7 +249,7 @@ describe('POST /api/v1/roles', () => {
     // exists», which is an answer about something else entirely.
     const { test, token } = await signedIn(author());
 
-    const response = await request(test.app)
+    const response = await request(test.server())
       .post('/api/v1/roles')
       .set('Authorization', `Bearer ${token}`)
       .set('Idempotency-Key', IDEMPOTENCY_KEY)
@@ -262,14 +262,14 @@ describe('POST /api/v1/roles', () => {
   it('refuses a key nobody declared and a key shaped like a label', async () => {
     const { test, token } = await signedIn(author());
 
-    await request(test.app)
+    await request(test.server())
       .post('/api/v1/roles')
       .set('Authorization', `Bearer ${token}`)
       .set('Idempotency-Key', IDEMPOTENCY_KEY)
       .send({ key: 'writer', name: 'Writer', permissions: ['task:teleport'] })
       .expect(422);
 
-    await request(test.app)
+    await request(test.server())
       .post('/api/v1/roles')
       .set('Authorization', `Bearer ${token}`)
       .set('Idempotency-Key', IDEMPOTENCY_KEY)
@@ -284,7 +284,7 @@ describe('POST /api/v1/roles', () => {
     // case per bound, all four could be deleted and the file would still read as fully covered.
     const { test, token } = await signedIn(author());
     const post = (body: Record<string, unknown>): request.Test =>
-      request(test.app)
+      request(test.server())
         .post('/api/v1/roles')
         .set('Authorization', `Bearer ${token}`)
         .set('Idempotency-Key', IDEMPOTENCY_KEY)
@@ -309,7 +309,7 @@ describe('POST /api/v1/roles', () => {
   it('needs the capability', async () => {
     const { test, token } = await signedIn();
 
-    await request(test.app)
+    await request(test.server())
       .post('/api/v1/roles')
       .set('Authorization', `Bearer ${token}`)
       .set('Idempotency-Key', IDEMPOTENCY_KEY)
@@ -345,7 +345,7 @@ describe('PATCH /api/v1/roles/{roleId}', () => {
     const customRoles = withRole({ holders: ['ivan', 'petr'] });
     const { test, token } = await signedIn({ ...author(), customRoles });
 
-    await request(test.app)
+    await request(test.server())
       .patch(`/api/v1/roles/${ROLE_ID}`)
       .set('Authorization', `Bearer ${token}`)
       .send({ name: 'Writer', permissions: [] })
@@ -360,7 +360,7 @@ describe('PATCH /api/v1/roles/{roleId}', () => {
     const customRoles = withRole({ isSystem: true });
     const { test, token } = await signedIn({ ...author(), customRoles });
 
-    const response = await request(test.app)
+    const response = await request(test.server())
       .patch(`/api/v1/roles/${ROLE_ID}`)
       .set('Authorization', `Bearer ${token}`)
       .send({ name: 'Manager', permissions: [] })
@@ -378,7 +378,7 @@ describe('PATCH /api/v1/roles/{roleId}', () => {
       customRoles: new FakeCustomRoleRepository(),
     });
 
-    const response = await request(test.app)
+    const response = await request(test.server())
       .patch(`/api/v1/roles/${ROLE_ID}`)
       .set('Authorization', `Bearer ${token}`)
       .send({ name: 'Writer', permissions: [] })
@@ -412,7 +412,7 @@ describe('the two write capabilities are not one', () => {
   it('refuses a deletion to somebody who may only edit', async () => {
     const { test, token } = await signedIn(onlyGranted('role:update'));
 
-    const response = await request(test.app)
+    const response = await request(test.server())
       .delete(`/api/v1/roles/${ROLE_ID}`)
       .set('Authorization', `Bearer ${token}`)
       .expect(403);
@@ -423,7 +423,7 @@ describe('the two write capabilities are not one', () => {
   it('refuses an edit to somebody who may only delete', async () => {
     const { test, token } = await signedIn(onlyGranted('role:delete'));
 
-    const response = await request(test.app)
+    const response = await request(test.server())
       .patch(`/api/v1/roles/${ROLE_ID}`)
       .set('Authorization', `Bearer ${token}`)
       .send({ name: 'Writer', permissions: [] })
@@ -449,7 +449,7 @@ describe('DELETE /api/v1/roles/{roleId}', () => {
 
     const { test, token } = await signedIn({ ...author(), customRoles });
 
-    await request(test.app)
+    await request(test.server())
       .delete(`/api/v1/roles/${ROLE_ID}`)
       .set('Authorization', `Bearer ${token}`)
       .expect(204);
@@ -466,7 +466,7 @@ describe('DELETE /api/v1/roles/{roleId}', () => {
       customRoles: new FakeCustomRoleRepository(),
     });
 
-    const response = await request(test.app)
+    const response = await request(test.server())
       .delete(`/api/v1/roles/${ROLE_ID}`)
       .set('Authorization', `Bearer ${token}`)
       .expect(404);

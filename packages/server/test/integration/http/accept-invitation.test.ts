@@ -47,7 +47,7 @@ const openInvitation = (
 };
 
 const accept = (test: AuthApp, token: string, body: Record<string, unknown> = {}): request.Test =>
-  request(test.app)
+  request(test.server())
     .post('/api/v1/invitations/accept')
     .set('Idempotency-Key', IDEMPOTENCY_KEY)
     .send({ token, password: PASSWORD, locale: 'ru', ...body });
@@ -137,7 +137,7 @@ describe('POST /api/v1/invitations/accept', () => {
 
     const answers = await Promise.all(
       Array.from({ length: 6 }, (_unused, index) =>
-        request(test.app)
+        request(test.server())
           .post('/api/v1/invitations/accept')
           .set('Idempotency-Key', String(index).padStart(32, '0'))
           .send({ token, password: PASSWORD, locale: 'ru' }),
@@ -156,7 +156,7 @@ describe('POST /api/v1/invitations/accept', () => {
 
     await accept(test, token).expect(201);
 
-    const second = await request(test.app)
+    const second = await request(test.server())
       .post('/api/v1/invitations/accept')
       .set('Idempotency-Key', 'd'.repeat(32))
       .send({ token, password: PASSWORD, locale: 'ru' })

@@ -42,7 +42,7 @@ const cookieHeader = (response: { headers: Record<string, unknown> }): string =>
 const signIn = async (
   test: AuthApp,
 ): Promise<{ accessToken: string; cookie: string; sessionId: string }> => {
-  const response = await request(test.app)
+  const response = await request(test.server())
     .post('/api/v1/auth/login')
     .send({ email: 'ada@example.com', password: PASSWORD })
     .expect(200);
@@ -58,7 +58,7 @@ describe('POST /api/v1/auth/register', () => {
   it('creates the organization, signs the owner in and sets the refresh cookie', async () => {
     const test = createAuthApp();
 
-    const response = await request(test.app)
+    const response = await request(test.server())
       .post('/api/v1/auth/register')
       .set('Idempotency-Key', IDEMPOTENCY_KEY)
       .send(REGISTRATION)
@@ -77,7 +77,7 @@ describe('POST /api/v1/auth/register', () => {
   it('carries every cookie attribute the contract publishes', async () => {
     const test = createAuthApp();
 
-    const response = await request(test.app)
+    const response = await request(test.server())
       .post('/api/v1/auth/register')
       .set('Idempotency-Key', IDEMPOTENCY_KEY)
       .send(REGISTRATION)
@@ -99,7 +99,7 @@ describe('POST /api/v1/auth/register', () => {
   it('never puts the refresh token in the body', async () => {
     const test = createAuthApp();
 
-    const response = await request(test.app)
+    const response = await request(test.server())
       .post('/api/v1/auth/register')
       .set('Idempotency-Key', IDEMPOTENCY_KEY)
       .send(REGISTRATION)
@@ -114,7 +114,7 @@ describe('POST /api/v1/auth/register', () => {
   it('refuses a request without an Idempotency-Key, naming the header', async () => {
     const test = createAuthApp();
 
-    const response = await request(test.app)
+    const response = await request(test.server())
       .post('/api/v1/auth/register')
       .send(REGISTRATION)
       .expect(422);
@@ -129,7 +129,7 @@ describe('POST /api/v1/auth/register', () => {
   it('refuses a key that is too short to be one', async () => {
     const test = createAuthApp();
 
-    const response = await request(test.app)
+    const response = await request(test.server())
       .post('/api/v1/auth/register')
       .set('Idempotency-Key', 'short')
       .send(REGISTRATION);
@@ -140,7 +140,7 @@ describe('POST /api/v1/auth/register', () => {
   it('reports a weak password on the field, with no password in the answer', async () => {
     const test = createAuthApp();
 
-    const response = await request(test.app)
+    const response = await request(test.server())
       .post('/api/v1/auth/register')
       .set('Idempotency-Key', IDEMPOTENCY_KEY)
       .send({ ...REGISTRATION, owner: { ...REGISTRATION.owner, password: 'qwertyuiop12' } }) // scan-secrets:allow gitleaks:allow
@@ -155,7 +155,7 @@ describe('POST /api/v1/auth/register', () => {
   it('takes the locale and timezone from the form when it supplies them', async () => {
     const test = createAuthApp();
 
-    const response = await request(test.app)
+    const response = await request(test.server())
       .post('/api/v1/auth/register')
       .set('Idempotency-Key', IDEMPOTENCY_KEY)
       .send({
@@ -170,7 +170,7 @@ describe('POST /api/v1/auth/register', () => {
   it('refuses an unknown field rather than ignoring it', async () => {
     const test = createAuthApp();
 
-    const response = await request(test.app)
+    const response = await request(test.server())
       .post('/api/v1/auth/register')
       .set('Idempotency-Key', IDEMPOTENCY_KEY)
       .send({ ...REGISTRATION, organisation: { name: 'typo' } });
@@ -181,7 +181,7 @@ describe('POST /api/v1/auth/register', () => {
   it('answers 403 when the installation does not accept new organizations', async () => {
     const test = createAuthApp({ registrationOpen: false });
 
-    const response = await request(test.app)
+    const response = await request(test.server())
       .post('/api/v1/auth/register')
       .set('Idempotency-Key', IDEMPOTENCY_KEY)
       .send(REGISTRATION)
@@ -196,7 +196,7 @@ describe('POST /api/v1/auth/login', () => {
   it('returns a session and sets the cookie', async () => {
     const test = createAuthApp();
 
-    const response = await request(test.app)
+    const response = await request(test.server())
       .post('/api/v1/auth/login')
       .send({ email: 'ada@example.com', password: PASSWORD })
       .expect(200);
@@ -209,11 +209,11 @@ describe('POST /api/v1/auth/login', () => {
   it('answers an unknown address and a wrong password identically', async () => {
     const test = createAuthApp();
 
-    const unknown = await request(test.app)
+    const unknown = await request(test.server())
       .post('/api/v1/auth/login')
       .send({ email: 'nobody@example.com', password: PASSWORD })
       .expect(401);
-    const wrong = await request(test.app)
+    const wrong = await request(test.server())
       .post('/api/v1/auth/login')
       .send({ email: 'ada@example.com', password: 'wrong-password-here' })
       .expect(401);
@@ -240,7 +240,7 @@ describe('POST /api/v1/auth/login', () => {
       ],
     });
 
-    const response = await request(test.app)
+    const response = await request(test.server())
       .post('/api/v1/auth/login')
       .send({ email: 'ada@example.com', password: PASSWORD })
       .expect(200);
@@ -263,7 +263,7 @@ describe('POST /api/v1/auth/login', () => {
       ],
     });
 
-    const response = await request(test.app)
+    const response = await request(test.server())
       .post('/api/v1/auth/login')
       .send({ email: 'ada@example.com', password: PASSWORD, organizationSlug: 'side-project' })
       .expect(200);
@@ -279,7 +279,7 @@ describe('POST /api/v1/auth/login', () => {
   it('signs in a client that sends no user agent', async () => {
     const test = createAuthApp();
 
-    const response = await request(test.app)
+    const response = await request(test.server())
       .post('/api/v1/auth/login')
       .set('User-Agent', '')
       .send({ email: 'ada@example.com', password: PASSWORD })
@@ -291,7 +291,7 @@ describe('POST /api/v1/auth/login', () => {
   it('normalises the address before it looks anything up', async () => {
     const test = createAuthApp();
 
-    const response = await request(test.app)
+    const response = await request(test.server())
       .post('/api/v1/auth/login')
       .send({ email: '  Ada@Example.COM ', password: PASSWORD });
 
@@ -301,7 +301,7 @@ describe('POST /api/v1/auth/login', () => {
   it('reports a suspended account with its own code and issues no cookie', async () => {
     const test = createAuthApp({ accounts: [authUser({ status: 'SUSPENDED' })] });
 
-    const response = await request(test.app)
+    const response = await request(test.server())
       .post('/api/v1/auth/login')
       .send({ email: 'ada@example.com', password: PASSWORD })
       .expect(403);
@@ -316,7 +316,7 @@ describe('POST /api/v1/auth/refresh', () => {
     const test = createAuthApp();
     const session = await signIn(test);
 
-    const response = await request(test.app)
+    const response = await request(test.server())
       .post('/api/v1/auth/refresh')
       .set('Cookie', session.cookie)
       .set('Origin', ORIGIN)
@@ -329,7 +329,7 @@ describe('POST /api/v1/auth/refresh', () => {
   it('clears the cookie on every refusal', async () => {
     const test = createAuthApp();
 
-    const response = await request(test.app)
+    const response = await request(test.server())
       .post('/api/v1/auth/refresh')
       .set('Cookie', 'bad_crm_refresh=never-issued')
       .expect(401);
@@ -342,7 +342,7 @@ describe('POST /api/v1/auth/refresh', () => {
   it('refuses a request with no cookie at all', async () => {
     const test = createAuthApp();
 
-    const response = await request(test.app).post('/api/v1/auth/refresh');
+    const response = await request(test.server()).post('/api/v1/auth/refresh');
 
     expect(response.status).toBe(401);
   });
@@ -353,7 +353,9 @@ describe('POST /api/v1/auth/refresh', () => {
     async (cookie) => {
       const test = createAuthApp();
 
-      const response = await request(test.app).post('/api/v1/auth/refresh').set('Cookie', cookie);
+      const response = await request(test.server())
+        .post('/api/v1/auth/refresh')
+        .set('Cookie', cookie);
 
       expect(response.status).toBe(401);
     },
@@ -367,7 +369,7 @@ describe('POST /api/v1/auth/refresh', () => {
     const test = createAuthApp();
     const session = await signIn(test);
 
-    const response = await request(test.app)
+    const response = await request(test.server())
       .post('/api/v1/auth/refresh')
       .set('Cookie', session.cookie)
       .set('Origin', 'https://evil.example')
@@ -395,7 +397,7 @@ describe('POST /api/v1/auth/refresh', () => {
     const test = createAuthApp();
     const session = await signIn(test);
 
-    const response = await request(test.app)
+    const response = await request(test.server())
       .post('/api/v1/auth/refresh')
       .set('Cookie', session.cookie)
       .set('Origin', 'https://evil.example')
@@ -408,7 +410,7 @@ describe('POST /api/v1/auth/refresh', () => {
     const test = createAuthApp();
     const session = await signIn(test);
 
-    const response = await request(test.app)
+    const response = await request(test.server())
       .post('/api/v1/auth/refresh')
       .set('Cookie', session.cookie);
 
@@ -421,7 +423,7 @@ describe('the sessions of the caller', () => {
     const test = createAuthApp();
     const session = await signIn(test);
 
-    const response = await request(test.app)
+    const response = await request(test.server())
       .get('/api/v1/auth/sessions')
       .set('Authorization', `Bearer ${session.accessToken}`)
       .expect(200);
@@ -439,7 +441,7 @@ describe('the sessions of the caller', () => {
   it('refuses without a bearer token', async () => {
     const test = createAuthApp();
 
-    const response = await request(test.app).get('/api/v1/auth/sessions');
+    const response = await request(test.server()).get('/api/v1/auth/sessions');
 
     expect(response.status).toBe(401);
   });
@@ -447,7 +449,7 @@ describe('the sessions of the caller', () => {
   it('refuses a malformed Authorization header', async () => {
     const test = createAuthApp();
 
-    const response = await request(test.app)
+    const response = await request(test.server())
       .get('/api/v1/auth/sessions')
       .set('Authorization', 'Basic ada:secret');
 
@@ -462,7 +464,7 @@ describe('the sessions of the caller', () => {
     const test = createAuthApp();
     const session = await signIn(test);
 
-    const response = await request(test.app)
+    const response = await request(test.server())
       .get('/api/v1/auth/sessions')
       .set('Cookie', session.cookie);
 
@@ -473,7 +475,7 @@ describe('the sessions of the caller', () => {
     const test = createAuthApp();
     const session = await signIn(test);
 
-    await request(test.app)
+    await request(test.server())
       .delete(`/api/v1/auth/sessions/${session.sessionId}`)
       .set('Authorization', `Bearer ${session.accessToken}`)
       .expect(204);
@@ -485,7 +487,7 @@ describe('the sessions of the caller', () => {
     const test = createAuthApp();
     const session = await signIn(test);
 
-    const response = await request(test.app)
+    const response = await request(test.server())
       .delete(`/api/v1/auth/sessions/${session.sessionId}`)
       .set('Authorization', `Bearer ${session.accessToken}`)
       .expect(204);
@@ -502,7 +504,7 @@ describe('the sessions of the caller', () => {
     const other = await signIn(test);
     const current = await signIn(test);
 
-    const response = await request(test.app)
+    const response = await request(test.server())
       .delete(`/api/v1/auth/sessions/${other.sessionId}`)
       .set('Authorization', `Bearer ${current.accessToken}`)
       .expect(204);
@@ -515,7 +517,7 @@ describe('the sessions of the caller', () => {
     const test = createAuthApp();
     const session = await signIn(test);
 
-    const response = await request(test.app)
+    const response = await request(test.server())
       .delete('/api/v1/auth/sessions/4f1c2f4a-0a6d-4a7b-9a1e-2d3c4b5a6f70')
       .set('Authorization', `Bearer ${session.accessToken}`)
       .expect(404);
@@ -527,7 +529,7 @@ describe('the sessions of the caller', () => {
     const test = createAuthApp();
     const session = await signIn(test);
 
-    const response = await request(test.app)
+    const response = await request(test.server())
       .delete('/api/v1/auth/sessions/not-a-uuid')
       .set('Authorization', `Bearer ${session.accessToken}`);
 
@@ -540,7 +542,7 @@ describe('the sessions of the caller', () => {
 
     await signIn(test);
 
-    const response = await request(test.app)
+    const response = await request(test.server())
       .post('/api/v1/auth/sessions/revoke-others')
       .set('Authorization', `Bearer ${first.accessToken}`)
       .expect(200);
@@ -554,7 +556,7 @@ describe('POST /api/v1/auth/logout', () => {
     const test = createAuthApp();
     const session = await signIn(test);
 
-    const response = await request(test.app)
+    const response = await request(test.server())
       .post('/api/v1/auth/logout')
       .set('Authorization', `Bearer ${session.accessToken}`)
       .expect(204);
@@ -571,7 +573,10 @@ describe('POST /api/v1/auth/logout', () => {
     const test = createAuthApp();
     const session = await signIn(test);
 
-    await request(test.app).post('/api/v1/auth/logout').set('Cookie', session.cookie).expect(204);
+    await request(test.server())
+      .post('/api/v1/auth/logout')
+      .set('Cookie', session.cookie)
+      .expect(204);
 
     expect(test.sessions.rows.get(session.sessionId)?.revokedAt).not.toBeNull();
   });
@@ -580,7 +585,7 @@ describe('POST /api/v1/auth/logout', () => {
     const test = createAuthApp();
     const session = await signIn(test);
 
-    const response = await request(test.app)
+    const response = await request(test.server())
       .post('/api/v1/auth/logout')
       .set('Authorization', 'Bearer access.no-such-session')
       .set('Cookie', session.cookie);
@@ -591,7 +596,7 @@ describe('POST /api/v1/auth/logout', () => {
   it('refuses when neither credential resolves to a session', async () => {
     const test = createAuthApp();
 
-    const response = await request(test.app).post('/api/v1/auth/logout');
+    const response = await request(test.server()).post('/api/v1/auth/logout');
 
     expect(response.status).toBe(401);
   });
@@ -599,7 +604,7 @@ describe('POST /api/v1/auth/logout', () => {
   it('refuses a cookie that was never issued', async () => {
     const test = createAuthApp();
 
-    const response = await request(test.app)
+    const response = await request(test.server())
       .post('/api/v1/auth/logout')
       .set('Cookie', 'bad_crm_refresh=never-issued');
 
@@ -611,13 +616,13 @@ describe('POST /api/v1/auth/logout', () => {
     const test = createAuthApp();
     const session = await signIn(test);
 
-    const response = await request(test.app)
+    const response = await request(test.server())
       .post('/api/v1/auth/logout')
       .set('Authorization', `Bearer ${session.accessToken}`);
 
     expect(response.status).toBe(204);
 
-    await request(test.app)
+    await request(test.server())
       .get('/api/v1/auth/sessions')
       .set('Authorization', `Bearer ${session.accessToken}`)
       .expect(401);
@@ -636,7 +641,7 @@ describe('what the authentication surface writes to the log', () => {
     const test = createAuthApp();
     const session = await signIn(test);
 
-    await request(test.app)
+    await request(test.server())
       .get('/api/v1/auth/sessions')
       .set('Authorization', `Bearer ${session.accessToken}`)
       .expect(200);
@@ -672,7 +677,7 @@ describe('what the authentication surface writes to the log', () => {
     const test = createAuthApp();
     const session = await signIn(test);
 
-    await request(test.app)
+    await request(test.server())
       .post('/api/v1/auth/refresh')
       .set('Cookie', session.cookie)
       .set('Origin', ORIGIN)

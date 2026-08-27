@@ -58,11 +58,11 @@ const bothSignedIn = async (
     ...(options.rateLimit === undefined ? {} : { rateLimit: options.rateLimit }),
   });
 
-  const admin = await request(test.app)
+  const admin = await request(test.server())
     .post('/api/v1/auth/login')
     .send({ email: OWNER, password: PASSWORD })
     .expect(200);
-  const colleague = await request(test.app)
+  const colleague = await request(test.server())
     .post('/api/v1/auth/login')
     .send({ email: COLLEAGUE_EMAIL, password: PASSWORD })
     .expect(200);
@@ -90,7 +90,7 @@ const enableTotp = async (test: AuthApp, userId: string): Promise<void> => {
 };
 
 const resetMfa = (test: AuthApp, token: string, userId: string, key = IDEMPOTENCY_KEY) =>
-  request(test.app)
+  request(test.server())
     .post(`/api/v1/users/${userId}/reset-mfa`)
     .set('Authorization', `Bearer ${token}`)
     .set('Idempotency-Key', key);
@@ -137,7 +137,7 @@ describe('POST /api/v1/users/{userId}/reset-mfa', () => {
 
     // The positive control: the colleague's session, opened during sign-in, is still live — a repeat
     // that changed nothing must not have touched it.
-    const after = await request(test.app)
+    const after = await request(test.server())
       .post('/api/v1/auth/refresh')
       .set('Cookie', colleagueCookie)
       .set('Origin', APP_URL)
@@ -170,7 +170,7 @@ describe('POST /api/v1/users/{userId}/reset-mfa', () => {
   it('refuses resetting one’s own account — 409 self_lockout — acceptance 7', async () => {
     const test = createAuthApp({ capabilities: capabilities(['user:reset_mfa']) });
 
-    await request(test.app)
+    await request(test.server())
       .post('/api/v1/auth/register')
       .set('Idempotency-Key', IDEMPOTENCY_KEY)
       .send({
@@ -179,7 +179,7 @@ describe('POST /api/v1/users/{userId}/reset-mfa', () => {
       })
       .expect(201);
 
-    const login = await request(test.app)
+    const login = await request(test.server())
       .post('/api/v1/auth/login')
       .send({ email: OWNER, password: PASSWORD })
       .expect(200);
@@ -226,7 +226,7 @@ describe('POST /api/v1/users/{userId}/reset-mfa', () => {
     expect(test.dispatcher.dispatched).toEqual([]);
     expect(test.audit.events.map((event) => event.action)).not.toContain('user.mfa_reset_by_admin');
 
-    const after = await request(test.app)
+    const after = await request(test.server())
       .post('/api/v1/auth/refresh')
       .set('Cookie', colleagueCookie)
       .set('Origin', APP_URL)
@@ -326,7 +326,7 @@ describe('ending the sessions of the person whose 2FA is reset', () => {
 
     // The positive control. Without it, a cookie that never worked would make the 401 below prove
     // nothing at all.
-    const before = await request(test.app)
+    const before = await request(test.server())
       .post('/api/v1/auth/refresh')
       .set('Cookie', colleagueCookie)
       .set('Origin', APP_URL)
@@ -334,7 +334,7 @@ describe('ending the sessions of the person whose 2FA is reset', () => {
 
     await resetMfa(test, adminToken, COLLEAGUE).expect(200);
 
-    const after = await request(test.app)
+    const after = await request(test.server())
       .post('/api/v1/auth/refresh')
       .set('Cookie', cookieOf(before))
       .set('Origin', APP_URL)

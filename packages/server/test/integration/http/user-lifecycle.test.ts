@@ -50,7 +50,7 @@ const signedIn = async (
 ): Promise<{ test: AuthApp; token: string; userId: string }> => {
   const test = createAuthApp(options);
 
-  await request(test.app)
+  await request(test.server())
     .post('/api/v1/auth/register')
     .set('Idempotency-Key', IDEMPOTENCY_KEY)
     .send({
@@ -59,7 +59,7 @@ const signedIn = async (
     })
     .expect(201);
 
-  const response = await request(test.app)
+  const response = await request(test.server())
     .post('/api/v1/auth/login')
     .send({ email: OWNER, password: PASSWORD })
     .expect(200);
@@ -92,14 +92,14 @@ const seedColleague = (test: AuthApp, ownerId: string, teams = 0): void => {
 };
 
 const deactivate = (test: AuthApp, token: string, userId: string, key = IDEMPOTENCY_KEY) =>
-  request(test.app)
+  request(test.server())
     .post(`/api/v1/users/${userId}/deactivate`)
     .set('Authorization', `Bearer ${token}`)
     .set('Idempotency-Key', key)
     .send({ reason: 'left the company' });
 
 const reactivate = (test: AuthApp, token: string, userId: string, key = IDEMPOTENCY_KEY) =>
-  request(test.app)
+  request(test.server())
     .post(`/api/v1/users/${userId}/reactivate`)
     .set('Authorization', `Bearer ${token}`)
     .set('Idempotency-Key', key)
@@ -341,7 +341,7 @@ describe('POST /api/v1/users/{userId}/deactivate', () => {
 
     seedColleague(test, userId);
 
-    const response = await request(test.app)
+    const response = await request(test.server())
       .post(`/api/v1/users/${COLLEAGUE}/deactivate`)
       .set('Authorization', `Bearer ${token}`)
       .set('Idempotency-Key', IDEMPOTENCY_KEY)
@@ -536,11 +536,11 @@ describe('ending the sessions of the person being offboarded', () => {
       capabilities: capabilities(['user:suspend']),
     });
 
-    const admin = await request(test.app)
+    const admin = await request(test.server())
       .post('/api/v1/auth/login')
       .send({ email: OWNER, password: PASSWORD })
       .expect(200);
-    const colleague = await request(test.app)
+    const colleague = await request(test.server())
       .post('/api/v1/auth/login')
       .send({ email: COLLEAGUE_EMAIL, password: PASSWORD })
       .expect(200);
@@ -581,7 +581,7 @@ describe('ending the sessions of the person being offboarded', () => {
 
     // The positive control. Without it, a cookie that never worked — a wrong `Origin`, a misspelt
     // name — would make the 401 below prove nothing at all.
-    const before = await request(test.app)
+    const before = await request(test.server())
       .post('/api/v1/auth/refresh')
       .set('Cookie', colleagueCookie)
       .set('Origin', APP_URL)
@@ -589,7 +589,7 @@ describe('ending the sessions of the person being offboarded', () => {
 
     await deactivate(test, adminToken, COLLEAGUE).expect(200);
 
-    const after = await request(test.app)
+    const after = await request(test.server())
       .post('/api/v1/auth/refresh')
       .set('Cookie', cookieOf(before))
       .set('Origin', APP_URL)

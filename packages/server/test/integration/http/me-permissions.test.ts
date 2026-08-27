@@ -22,7 +22,7 @@ const signedIn = async (
 ): Promise<{ test: AuthApp; token: string }> => {
   const test = createAuthApp(capabilities === undefined ? {} : { capabilities });
 
-  await request(test.app)
+  await request(test.server())
     .post('/api/v1/auth/register')
     .set('Idempotency-Key', IDEMPOTENCY_KEY)
     .send({
@@ -31,7 +31,7 @@ const signedIn = async (
     })
     .expect(201);
 
-  const response = await request(test.app)
+  const response = await request(test.server())
     .post('/api/v1/auth/login')
     .send({ email: 'ada@example.com', password: PASSWORD })
     .expect(200);
@@ -49,7 +49,7 @@ describe('GET /api/v1/me/permissions', () => {
       permissionsVersion: 4,
     });
 
-    const response = await request(test.app)
+    const response = await request(test.server())
       .get('/api/v1/me/permissions')
       .set('Authorization', `Bearer ${token}`)
       .expect(200);
@@ -76,12 +76,12 @@ describe('GET /api/v1/me/permissions', () => {
       permissionsVersion: 1,
     });
 
-    const first = await request(test.app)
+    const first = await request(test.server())
       .get('/api/v1/me/permissions')
       .set('Authorization', `Bearer ${token}`)
       .expect(200);
 
-    const second = await request(test.app)
+    const second = await request(test.server())
       .get('/api/v1/me/permissions')
       .set('Authorization', `Bearer ${token}`)
       .set('If-None-Match', first.headers['etag'] ?? '')
@@ -111,12 +111,12 @@ describe('GET /api/v1/me/permissions', () => {
       permissionsVersion: 8,
     });
 
-    const first = await request(before.test.app)
+    const first = await request(before.test.server())
       .get('/api/v1/me/permissions')
       .set('Authorization', `Bearer ${before.token}`)
       .expect(200);
 
-    const second = await request(after.test.app)
+    const second = await request(after.test.server())
       .get('/api/v1/me/permissions')
       .set('Authorization', `Bearer ${after.token}`)
       .set('If-None-Match', first.headers['etag'] ?? '')
@@ -130,7 +130,7 @@ describe('GET /api/v1/me/permissions', () => {
 
     // A query parameter is the shape this endpoint deliberately does not have — reading another
     // person's rights is a different operation, gated by `permission:override_read`.
-    const response = await request(test.app)
+    const response = await request(test.server())
       .get('/api/v1/me/permissions?userId=018f4a3b-2c1d-7a41-9f00-2b7c1d0e5a99')
       .set('Authorization', `Bearer ${token}`);
 
@@ -141,7 +141,7 @@ describe('GET /api/v1/me/permissions', () => {
   it('needs a session', async () => {
     const test = createAuthApp();
 
-    const response = await request(test.app).get('/api/v1/me/permissions');
+    const response = await request(test.server()).get('/api/v1/me/permissions');
 
     expect(response.status).toBe(401);
   });

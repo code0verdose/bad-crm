@@ -18,13 +18,13 @@ const UNKNOWN = 'nobody@example.com';
 const NEW_PASSWORD = 'staple-generator-lantern';
 
 const forgot = (test: AuthApp, email: string): request.Test =>
-  request(test.app)
+  request(test.server())
     .post('/api/v1/auth/forgot-password')
     .set('Idempotency-Key', IDEMPOTENCY_KEY)
     .send({ email });
 
 const reset = (test: AuthApp, body: Record<string, unknown>): request.Test =>
-  request(test.app)
+  request(test.server())
     .post('/api/v1/auth/reset-password')
     .set('Idempotency-Key', IDEMPOTENCY_KEY)
     .send(body);
@@ -72,7 +72,7 @@ describe('POST /api/v1/auth/forgot-password', () => {
   it('requires the Idempotency-Key the contract declares', async () => {
     const test = createAuthApp();
 
-    const response = await request(test.app)
+    const response = await request(test.server())
       .post('/api/v1/auth/forgot-password')
       .send({ email: KNOWN });
 
@@ -139,7 +139,7 @@ describe('POST /api/v1/auth/reset-password', () => {
     expect(response.body).toEqual({});
     expect(response.headers['set-cookie']).toBeUndefined();
 
-    await request(test.app)
+    await request(test.server())
       .post('/api/v1/auth/login')
       .send({ email: KNOWN, password: NEW_PASSWORD })
       .expect(200);
@@ -148,7 +148,7 @@ describe('POST /api/v1/auth/reset-password', () => {
   it('closes every session the account had, including the one that asked', async () => {
     const test = createAuthApp();
 
-    const signedIn = await request(test.app)
+    const signedIn = await request(test.server())
       .post('/api/v1/auth/login')
       .send({ email: KNOWN, password: 'correct-horse-battery' })
       .expect(200);
@@ -158,7 +158,7 @@ describe('POST /api/v1/auth/reset-password', () => {
 
     await reset(test, { token, newPassword: NEW_PASSWORD }).expect(204);
 
-    const after = await request(test.app)
+    const after = await request(test.server())
       .get('/api/v1/auth/sessions')
       .set('Authorization', `Bearer ${accessToken}`);
 
@@ -231,7 +231,7 @@ describe('POST /api/v1/auth/reset-password', () => {
     const test = createAuthApp();
     const token = await startReset(test);
 
-    const response = await request(test.app)
+    const response = await request(test.server())
       .post(`/api/v1/auth/reset-password?token=${token}`)
       .set('Idempotency-Key', IDEMPOTENCY_KEY)
       .send({ newPassword: NEW_PASSWORD });
@@ -266,7 +266,7 @@ describe('POST /api/v1/auth/reset-password', () => {
 
     expect(response.status).toBe(204);
 
-    const signedIn = await request(withMail.app)
+    const signedIn = await request(withMail.server())
       .post('/api/v1/auth/login')
       .send({ email: KNOWN, password: NEW_PASSWORD });
 

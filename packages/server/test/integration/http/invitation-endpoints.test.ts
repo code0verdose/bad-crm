@@ -30,7 +30,7 @@ const signedIn = async (
 ): Promise<{ test: AuthApp; token: string }> => {
   const test = createAuthApp({ capabilities: INVITER, ...options });
 
-  await request(test.app)
+  await request(test.server())
     .post('/api/v1/auth/register')
     .set('Idempotency-Key', IDEMPOTENCY_KEY)
     .send({
@@ -39,7 +39,7 @@ const signedIn = async (
     })
     .expect(201);
 
-  const response = await request(test.app)
+  const response = await request(test.server())
     .post('/api/v1/auth/login')
     .send({ email: 'ada@example.com', password: PASSWORD })
     .expect(200);
@@ -48,7 +48,7 @@ const signedIn = async (
 };
 
 const invite = (test: AuthApp, token: string, body: Record<string, unknown> = {}): request.Test =>
-  request(test.app)
+  request(test.server())
     .post('/api/v1/invitations')
     .set('Authorization', `Bearer ${token}`)
     .set('Idempotency-Key', IDEMPOTENCY_KEY)
@@ -77,7 +77,7 @@ describe('POST /api/v1/invitations', () => {
     const { id, inviteUrl } = created.body as { id: string; inviteUrl: string };
     const token_ = inviteUrl.split('/').pop() ?? '';
 
-    const listed = await request(test.app)
+    const listed = await request(test.server())
       .get('/api/v1/invitations')
       .set('Authorization', `Bearer ${token}`)
       .expect(200);
@@ -127,7 +127,7 @@ describe('POST /api/v1/invitations', () => {
 
     await invite(test, token).expect(201);
 
-    const response = await request(test.app)
+    const response = await request(test.server())
       .post('/api/v1/invitations')
       .set('Authorization', `Bearer ${token}`)
       .set('Idempotency-Key', 'a'.repeat(32))
@@ -170,7 +170,7 @@ describe('POST /api/v1/invitations', () => {
 
     await invite(test, token).expect(201);
 
-    const refused = await request(test.app)
+    const refused = await request(test.server())
       .post('/api/v1/invitations')
       .set('Authorization', `Bearer ${token}`)
       .set('Idempotency-Key', 'b'.repeat(32))
@@ -205,7 +205,7 @@ describe('POST /api/v1/invitations/{id}/resend', () => {
     const { id, inviteUrl } = created.body as { id: string; inviteUrl: string };
     const before = test.invitations.digests.get(id);
 
-    const resent = await request(test.app)
+    const resent = await request(test.server())
       .post(`/api/v1/invitations/${id}/resend`)
       .set('Authorization', `Bearer ${token}`)
       .expect(200);
@@ -224,7 +224,7 @@ describe('POST /api/v1/invitations/{id}/resend', () => {
 
     test.invitations.markAccepted(id);
 
-    const response = await request(test.app)
+    const response = await request(test.server())
       .post(`/api/v1/invitations/${id}/resend`)
       .set('Authorization', `Bearer ${token}`)
       .expect(409);
@@ -237,7 +237,7 @@ describe('POST /api/v1/invitations/{id}/resend', () => {
   it('answers 404 for an invitation nobody here has', async () => {
     const { test, token } = await signedIn();
 
-    const response = await request(test.app)
+    const response = await request(test.server())
       .post(`/api/v1/invitations/${ROLE_ID}/resend`)
       .set('Authorization', `Bearer ${token}`)
       .expect(404);
@@ -253,7 +253,7 @@ describe('DELETE /api/v1/invitations/{id}', () => {
     const created = await invite(test, token).expect(201);
     const { id } = created.body as { id: string };
 
-    await request(test.app)
+    await request(test.server())
       .delete(`/api/v1/invitations/${id}`)
       .set('Authorization', `Bearer ${token}`)
       .expect(204);
@@ -268,12 +268,12 @@ describe('DELETE /api/v1/invitations/{id}', () => {
     const created = await invite(test, token).expect(201);
     const { id } = created.body as { id: string };
 
-    await request(test.app)
+    await request(test.server())
       .delete(`/api/v1/invitations/${id}`)
       .set('Authorization', `Bearer ${token}`)
       .expect(204);
 
-    const second = await request(test.app)
+    const second = await request(test.server())
       .delete(`/api/v1/invitations/${id}`)
       .set('Authorization', `Bearer ${token}`)
       .expect(404);

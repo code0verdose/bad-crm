@@ -40,7 +40,7 @@ describe('with no reverse proxy in front (the default)', () => {
   it('ignores an X-Forwarded-For the client wrote itself', async () => {
     const test = createAuthApp({ trustedProxyHops: 0 });
 
-    await signIn(test.app, FORGED);
+    await signIn(test.server(), FORGED);
 
     expect(maskedAddressOf(test)).toBe('127.0.0.0/24');
   });
@@ -48,7 +48,7 @@ describe('with no reverse proxy in front (the default)', () => {
   it('records the socket address when no header is sent at all', async () => {
     const test = createAuthApp({ trustedProxyHops: 0 });
 
-    await signIn(test.app);
+    await signIn(test.server());
 
     expect(maskedAddressOf(test)).toBe('127.0.0.0/24');
   });
@@ -61,7 +61,7 @@ describe('with no reverse proxy in front (the default)', () => {
   it('counts the attempt against the address the socket reports', async () => {
     const test = createAuthApp({ trustedProxyHops: 0 });
 
-    await signIn(test.app, FORGED);
+    await signIn(test.server(), FORGED);
 
     // Loopback is reported as `::ffff:127.0.0.1` on a dual-stack listener and as `127.0.0.1` on an
     // IPv4-only one, so the assertion is about which of the two addresses was counted rather than
@@ -77,7 +77,7 @@ describe('with one trusted hop configured', () => {
   it('takes the entry that hop appended', async () => {
     const test = createAuthApp({ trustedProxyHops: 1 });
 
-    await signIn(test.app, FORGED);
+    await signIn(test.server(), FORGED);
 
     expect(maskedAddressOf(test)).toBe('198.51.100.0/24');
     // The positive control for the pair above: with a hop configured the header *is* believed, so
@@ -93,7 +93,7 @@ describe('with one trusted hop configured', () => {
   it('ignores the entries a client prepended in front of it', async () => {
     const test = createAuthApp({ trustedProxyHops: 1 });
 
-    await signIn(test.app, `10.0.0.1, 192.0.2.55, ${FORGED}`);
+    await signIn(test.server(), `10.0.0.1, 192.0.2.55, ${FORGED}`);
 
     expect(maskedAddressOf(test)).toBe('198.51.100.0/24');
   });

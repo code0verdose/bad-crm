@@ -36,7 +36,7 @@ const signedIn = async (
 ): Promise<{ test: AuthApp; token: string; userId: string }> => {
   const test = createAuthApp(options);
 
-  await request(test.app)
+  await request(test.server())
     .post('/api/v1/auth/register')
     .set('Idempotency-Key', IDEMPOTENCY_KEY)
     .send({
@@ -45,7 +45,7 @@ const signedIn = async (
     })
     .expect(201);
 
-  const response = await request(test.app)
+  const response = await request(test.server())
     .post('/api/v1/auth/login')
     .send({ email: OWNER, password: PASSWORD })
     .expect(200);
@@ -78,7 +78,7 @@ const populated = (): FakeEmployeeDirectoryRepository => {
 };
 
 const list = (test: AuthApp, token: string, query = ''): request.Test =>
-  request(test.app).get(`/api/v1/employees${query}`).set('Authorization', `Bearer ${token}`);
+  request(test.server()).get(`/api/v1/employees${query}`).set('Authorization', `Bearer ${token}`);
 
 interface ListBody {
   readonly items: { userId: string; lastName: string; hiredAt?: string }[];
@@ -177,7 +177,9 @@ describe('GET /api/v1/employees', () => {
 
 describe('GET /api/v1/employees/org-chart', () => {
   const chart = (test: AuthApp, token: string): request.Test =>
-    request(test.app).get('/api/v1/employees/org-chart').set('Authorization', `Bearer ${token}`);
+    request(test.server())
+      .get('/api/v1/employees/org-chart')
+      .set('Authorization', `Bearer ${token}`);
 
   it('is a route of its own, not a personnel record called «org-chart»', async () => {
     const employeeDirectory = populated();

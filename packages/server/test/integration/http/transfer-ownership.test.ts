@@ -36,7 +36,7 @@ const signedIn = async (
 ): Promise<{ test: AuthApp; token: string; userId: string }> => {
   const test = createAuthApp(options);
 
-  await request(test.app)
+  await request(test.server())
     .post('/api/v1/auth/register')
     .set('Idempotency-Key', IDEMPOTENCY_KEY)
     .send({
@@ -45,7 +45,7 @@ const signedIn = async (
     })
     .expect(201);
 
-  const response = await request(test.app)
+  const response = await request(test.server())
     .post('/api/v1/auth/login')
     .send({ email: OWNER, password: PASSWORD })
     .expect(200);
@@ -64,7 +64,7 @@ const seedHeir = (test: AuthApp, ownerId: string, status: string = 'ACTIVE'): vo
 };
 
 const transfer = (test: AuthApp, token: string, body: Record<string, unknown>) =>
-  request(test.app)
+  request(test.server())
     .post('/api/v1/organization/transfer-ownership')
     .set('Authorization', `Bearer ${token}`)
     .set('Idempotency-Key', IDEMPOTENCY_KEY)

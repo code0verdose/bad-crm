@@ -21,7 +21,7 @@ interface SignedIn {
 }
 
 const signIn = async (test: AuthApp): Promise<SignedIn> => {
-  const response = await request(test.app)
+  const response = await request(test.server())
     .post('/api/v1/auth/login')
     .send({ email: 'ada@example.com', password: PASSWORD })
     .expect(200);
@@ -34,7 +34,7 @@ const changePassword = (
   accessToken: string,
   body: Record<string, unknown> = { currentPassword: PASSWORD, newPassword: NEW_PASSWORD },
 ): request.Test =>
-  request(test.app)
+  request(test.server())
     .post('/api/v1/auth/change-password')
     .set('Authorization', `Bearer ${accessToken}`)
     .set('Idempotency-Key', IDEMPOTENCY_KEY)
@@ -66,10 +66,10 @@ describe('POST /api/v1/auth/change-password', () => {
 
     await changePassword(test, current.accessToken).expect(204);
 
-    const mine = await request(test.app)
+    const mine = await request(test.server())
       .get('/api/v1/auth/sessions')
       .set('Authorization', `Bearer ${current.accessToken}`);
-    const theirs = await request(test.app)
+    const theirs = await request(test.server())
       .get('/api/v1/auth/sessions')
       .set('Authorization', `Bearer ${other.accessToken}`);
 
@@ -86,7 +86,7 @@ describe('POST /api/v1/auth/change-password', () => {
 
     await changePassword(test, current.accessToken).expect(204);
 
-    const response = await request(test.app)
+    const response = await request(test.server())
       .get('/api/v1/auth/sessions')
       .set('Authorization', `Bearer ${current.accessToken}`)
       .expect(200);
@@ -103,10 +103,10 @@ describe('POST /api/v1/auth/change-password', () => {
 
     await changePassword(test, session.accessToken).expect(204);
 
-    const withOld = await request(test.app)
+    const withOld = await request(test.server())
       .post('/api/v1/auth/login')
       .send({ email: 'ada@example.com', password: PASSWORD });
-    const withNew = await request(test.app)
+    const withNew = await request(test.server())
       .post('/api/v1/auth/login')
       .send({ email: 'ada@example.com', password: NEW_PASSWORD });
 
@@ -158,7 +158,7 @@ describe('POST /api/v1/auth/change-password', () => {
     const test = createAuthApp();
     const session = await signIn(test);
 
-    const response = await request(test.app)
+    const response = await request(test.server())
       .post('/api/v1/auth/change-password')
       .set('Authorization', `Bearer ${session.accessToken}`)
       .send({ currentPassword: PASSWORD, newPassword: NEW_PASSWORD });
@@ -169,7 +169,7 @@ describe('POST /api/v1/auth/change-password', () => {
   it('is behind the authentication guard', async () => {
     const test = createAuthApp();
 
-    const response = await request(test.app)
+    const response = await request(test.server())
       .post('/api/v1/auth/change-password')
       .set('Idempotency-Key', IDEMPOTENCY_KEY)
       .send({ currentPassword: PASSWORD, newPassword: NEW_PASSWORD });
@@ -207,10 +207,10 @@ describe('POST /api/v1/auth/change-password', () => {
 
     expect(response.status).toBe(204);
 
-    const withOld = await request(test.app)
+    const withOld = await request(test.server())
       .post('/api/v1/auth/login')
       .send({ email: 'ada@example.com', password: PASSWORD });
-    const withNew = await request(test.app)
+    const withNew = await request(test.server())
       .post('/api/v1/auth/login')
       .send({ email: 'ada@example.com', password: NEW_PASSWORD });
 

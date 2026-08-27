@@ -35,7 +35,7 @@ const signedIn = async (
 ): Promise<{ test: AuthApp; token: string; userId: string }> => {
   const test = createAuthApp(options);
 
-  await request(test.app)
+  await request(test.server())
     .post('/api/v1/auth/register')
     .set('Idempotency-Key', IDEMPOTENCY_KEY)
     .send({
@@ -44,7 +44,7 @@ const signedIn = async (
     })
     .expect(201);
 
-  const response = await request(test.app)
+  const response = await request(test.server())
     .post('/api/v1/auth/login')
     .send({ email: OWNER, password: PASSWORD })
     .expect(200);
@@ -60,7 +60,7 @@ const patch = (
   userId: string,
   body: Record<string, unknown>,
 ): request.Test =>
-  request(test.app)
+  request(test.server())
     .patch(`/api/v1/employees/${userId}`)
     .set('Authorization', `Bearer ${token}`)
     .send(body);
@@ -301,7 +301,9 @@ describe('PATCH /api/v1/employees/{userId}', () => {
 
 describe('GET /api/v1/employees/{userId}', () => {
   const read = (test: AuthApp, token: string, userId: string): request.Test =>
-    request(test.app).get(`/api/v1/employees/${userId}`).set('Authorization', `Bearer ${token}`);
+    request(test.server())
+      .get(`/api/v1/employees/${userId}`)
+      .set('Authorization', `Bearer ${token}`);
 
   it('gives the person their own employment, emergency contact included', async () => {
     const employeeProfiles = new FakeEmployeeProfileRepository();

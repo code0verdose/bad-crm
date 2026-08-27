@@ -34,16 +34,18 @@ const ADMIN = {
   permissionsVersion: 1,
 };
 
-const signedIn = async (options: AuthAppOptions = {}): Promise<{ test: AuthApp; token: string }> => {
+const signedIn = async (
+  options: AuthAppOptions = {},
+): Promise<{ test: AuthApp; token: string }> => {
   const test = createAuthApp(options);
 
-  await request(test.app)
+  await request(test.server())
     .post('/api/v1/auth/register')
     .set('Idempotency-Key', IDEMPOTENCY_KEY)
     .send(REGISTRATION)
     .expect(201);
 
-  const response = await request(test.app)
+  const response = await request(test.server())
     .post('/api/v1/auth/login')
     .send({ email: 'ada@example.com', password: PASSWORD })
     .expect(200);
@@ -63,7 +65,7 @@ describe('PUT /api/v1/users/{userId}/permission-overrides/{permission}', () => {
       },
     });
 
-    await request(test.app)
+    await request(test.server())
       .put(url('invoice:issue'))
       .set('Authorization', `Bearer ${token}`)
       .send({ effect: 'ALLOW', reason: REASON })
@@ -85,16 +87,18 @@ describe('PUT /api/v1/users/{userId}/permission-overrides/{permission}', () => {
     });
     const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
 
-    await request(test.app)
+    await request(test.server())
       .put(url('invoice:issue'))
       .set('Authorization', `Bearer ${token}`)
       .send({ effect: 'ALLOW', reason: REASON, expiresAt })
       .expect(204);
 
-    expect((await test.overrides.find(IVAN, 'invoice:issue'))?.expiresAt).toEqual(new Date(expiresAt));
+    expect((await test.overrides.find(IVAN, 'invoice:issue'))?.expiresAt).toEqual(
+      new Date(expiresAt),
+    );
 
     // `null` and «absent» mean the same thing, and a client that clears the field sends the first.
-    await request(test.app)
+    await request(test.server())
       .put(url('invoice:issue'))
       .set('Authorization', `Bearer ${token}`)
       .send({ effect: 'ALLOW', reason: REASON, expiresAt: null })
@@ -128,7 +132,7 @@ describe('PUT /api/v1/users/{userId}/permission-overrides/{permission}', () => {
       overrides,
     });
 
-    await request(test.app)
+    await request(test.server())
       .put(url('invoice:issue'))
       .set('Authorization', `Bearer ${token}`)
       .send({ effect: 'ALLOW', reason: 'back from leave and covering billing again' })
@@ -140,13 +144,19 @@ describe('PUT /api/v1/users/{userId}/permission-overrides/{permission}', () => {
 
   it('refuses to hand out a permission the caller does not hold', async () => {
     const { test, token } = await signedIn({
-      capabilities: { isOwner: false, granted: ['permission:override'], denied: [], roleKeys: [], permissionsVersion: 1 },
+      capabilities: {
+        isOwner: false,
+        granted: ['permission:override'],
+        denied: [],
+        roleKeys: [],
+        permissionsVersion: 1,
+      },
       capabilitiesByUser: {
         [IVAN]: { isOwner: false, granted: [], denied: [], roleKeys: [], permissionsVersion: 1 },
       },
     });
 
-    const response = await request(test.app)
+    const response = await request(test.server())
       .put(url('vault_item:export'))
       .set('Authorization', `Bearer ${token}`)
       .send({ effect: 'ALLOW', reason: REASON })
@@ -158,13 +168,19 @@ describe('PUT /api/v1/users/{userId}/permission-overrides/{permission}', () => {
 
   it('allows a DENY of the same permission, because taking away is not a way to gain', async () => {
     const { test, token } = await signedIn({
-      capabilities: { isOwner: false, granted: ['permission:override'], denied: [], roleKeys: [], permissionsVersion: 1 },
+      capabilities: {
+        isOwner: false,
+        granted: ['permission:override'],
+        denied: [],
+        roleKeys: [],
+        permissionsVersion: 1,
+      },
       capabilitiesByUser: {
         [IVAN]: { isOwner: false, granted: [], denied: [], roleKeys: [], permissionsVersion: 1 },
       },
     });
 
-    await request(test.app)
+    await request(test.server())
       .put(url('vault_item:export'))
       .set('Authorization', `Bearer ${token}`)
       .send({ effect: 'DENY', reason: REASON })
@@ -185,7 +201,7 @@ describe('PUT /api/v1/users/{userId}/permission-overrides/{permission}', () => {
       },
     });
 
-    const response = await request(test.app)
+    const response = await request(test.server())
       .put(url('invoice:issue'))
       .set('Authorization', `Bearer ${token}`)
       .send({ effect: 'DENY', reason: REASON })
@@ -203,7 +219,7 @@ describe('PUT /api/v1/users/{userId}/permission-overrides/{permission}', () => {
       capabilities: { ...ADMIN, granted: [...ADMIN.granted], denied: [] },
     });
 
-    const response = await request(test.app)
+    const response = await request(test.server())
       .put(url('invoice:issue'))
       .set('Authorization', `Bearer ${token}`)
       // Six characters. The database checks the same bound, so the two cannot drift.
@@ -219,7 +235,7 @@ describe('PUT /api/v1/users/{userId}/permission-overrides/{permission}', () => {
       capabilities: { ...ADMIN, granted: [...ADMIN.granted], denied: [] },
     });
 
-    await request(test.app)
+    await request(test.server())
       .put(url('invoice:teleport'))
       .set('Authorization', `Bearer ${token}`)
       .send({ effect: 'ALLOW', reason: REASON })
@@ -234,7 +250,7 @@ describe('PUT /api/v1/users/{userId}/permission-overrides/{permission}', () => {
       userRoles: new FakeUserRoleRepository({ knownUsers: [] }),
     });
 
-    const response = await request(test.app)
+    const response = await request(test.server())
       .put(url('invoice:issue'))
       .set('Authorization', `Bearer ${token}`)
       .send({ effect: 'ALLOW', reason: REASON })
@@ -246,7 +262,7 @@ describe('PUT /api/v1/users/{userId}/permission-overrides/{permission}', () => {
   it('needs the capability', async () => {
     const { test, token } = await signedIn();
 
-    await request(test.app)
+    await request(test.server())
       .put(url('invoice:issue'))
       .set('Authorization', `Bearer ${token}`)
       .send({ effect: 'ALLOW', reason: REASON })
@@ -277,7 +293,7 @@ describe('DELETE /api/v1/users/{userId}/permission-overrides/{permission}', () =
       overrides,
     });
 
-    await request(test.app)
+    await request(test.server())
       .delete(url('invoice:issue'))
       .set('Authorization', `Bearer ${token}`)
       .expect(204);
@@ -294,7 +310,7 @@ describe('DELETE /api/v1/users/{userId}/permission-overrides/{permission}', () =
       },
     });
 
-    await request(test.app)
+    await request(test.server())
       .delete(url('invoice:issue'))
       .set('Authorization', `Bearer ${token}`)
       .expect(204);

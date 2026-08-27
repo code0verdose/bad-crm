@@ -23,7 +23,7 @@ const signedIn = async (
 ): Promise<{ test: AuthApp; token: string }> => {
   const test = createAuthApp(options);
 
-  await request(test.app)
+  await request(test.server())
     .post('/api/v1/auth/register')
     .set('Idempotency-Key', IDEMPOTENCY_KEY)
     .send({
@@ -32,7 +32,7 @@ const signedIn = async (
     })
     .expect(201);
 
-  const response = await request(test.app)
+  const response = await request(test.server())
     .post('/api/v1/auth/login')
     .send({ email: 'ada@example.com', password: PASSWORD })
     .expect(200);
@@ -89,7 +89,7 @@ describe('POST /api/v1/roles/preview-changes', () => {
     const customRoles = twoRoles();
     const { test, token } = await signedIn(editor(customRoles));
 
-    const response = await request(test.app)
+    const response = await request(test.server())
       .post('/api/v1/roles/preview-changes')
       .set('Authorization', `Bearer ${token}`)
       .send(DRAFT)
@@ -140,7 +140,7 @@ describe('POST /api/v1/roles/preview-changes', () => {
     } as AuthAppOptions;
     const { test, token } = await signedIn(reader);
 
-    const response = await request(test.app)
+    const response = await request(test.server())
       .post('/api/v1/roles/preview-changes')
       .set('Authorization', `Bearer ${token}`)
       .send({ changes: [{ roleId: WRITERS, permissions: [] }] })
@@ -160,7 +160,7 @@ describe('POST /api/v1/roles/preview-changes', () => {
     // finishable, and a key repeated inside a role would hit the unique index and answer 500.
     const { test, token } = await signedIn(editor(twoRoles()));
     const post = (body: object): request.Test =>
-      request(test.app)
+      request(test.server())
         .post('/api/v1/roles/preview-changes')
         .set('Authorization', `Bearer ${token}`)
         .send(body);
@@ -187,7 +187,7 @@ describe('POST /api/v1/roles/preview-changes', () => {
     // screen and a database stop agreeing.
     const { test, token } = await signedIn(editor(twoRoles()));
 
-    const response = await request(test.app)
+    const response = await request(test.server())
       .post('/api/v1/roles/preview-changes')
       .set('Authorization', `Bearer ${token}`)
       .send({
@@ -204,7 +204,7 @@ describe('POST /api/v1/roles/preview-changes', () => {
 
 describe('POST /api/v1/roles/apply-changes', () => {
   const apply = (test: AuthApp, token: string, body: object = DRAFT): request.Test =>
-    request(test.app)
+    request(test.server())
       .post('/api/v1/roles/apply-changes')
       .set('Authorization', `Bearer ${token}`)
       .set('Idempotency-Key', IDEMPOTENCY_KEY)
@@ -254,7 +254,7 @@ describe('POST /api/v1/roles/apply-changes', () => {
     expect(refused.body).toMatchObject({ code: 'confirmation_required' });
     expect(test.customRoles.roles.get(WRITERS)?.permissions).toEqual(['task:read']);
 
-    await request(test.app)
+    await request(test.server())
       .post('/api/v1/roles/apply-changes')
       .set('Authorization', `Bearer ${token}`)
       .set('Idempotency-Key', IDEMPOTENCY_KEY)

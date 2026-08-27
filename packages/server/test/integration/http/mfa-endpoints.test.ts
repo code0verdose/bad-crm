@@ -26,7 +26,7 @@ interface SignedIn {
 }
 
 const signIn = async (test: AuthApp): Promise<SignedIn> => {
-  const response = await request(test.app)
+  const response = await request(test.server())
     .post('/api/v1/auth/login')
     .send({ email: 'ada@example.com', password: PASSWORD })
     .expect(200);
@@ -50,14 +50,16 @@ const codeFor = (secret: string, at: Date): string =>
   });
 
 const authed = (test: AuthApp, accessToken: string): request.Agent =>
-  request.agent(test.app).set('Authorization', `Bearer ${accessToken}`) as unknown as request.Agent;
+  request
+    .agent(test.server())
+    .set('Authorization', `Bearer ${accessToken}`) as unknown as request.Agent;
 
 describe('POST /api/v1/auth/2fa/setup', () => {
   it('drafts a secret and returns it with its URI and QR code, without enabling 2FA', async () => {
     const test = createAuthApp();
     const session = await signIn(test);
 
-    const response = await request(test.app)
+    const response = await request(test.server())
       .post('/api/v1/auth/2fa/setup')
       .set('Authorization', `Bearer ${session.accessToken}`)
       .expect(200);
@@ -72,7 +74,7 @@ describe('POST /api/v1/auth/2fa/setup', () => {
   it('refuses without a session', async () => {
     const test = createAuthApp();
 
-    const response = await request(test.app).post('/api/v1/auth/2fa/setup').expect(401);
+    const response = await request(test.server()).post('/api/v1/auth/2fa/setup').expect(401);
 
     expect((response.body as { code: string }).code).toBe('unauthenticated');
   });
@@ -82,7 +84,7 @@ describe('POST /api/v1/auth/2fa/setup', () => {
     const test = createAuthApp();
     const session = await signIn(test);
 
-    const response = await request(test.app)
+    const response = await request(test.server())
       .post('/api/v1/auth/2fa/setup')
       .set('Authorization', `Bearer ${session.accessToken}`)
       .expect(200);
@@ -96,14 +98,14 @@ describe('POST /api/v1/auth/2fa/confirm', () => {
     const test = createAuthApp();
     const session = await signIn(test);
 
-    const setup = await request(test.app)
+    const setup = await request(test.server())
       .post('/api/v1/auth/2fa/setup')
       .set('Authorization', `Bearer ${session.accessToken}`)
       .expect(200);
 
     const { secret } = setup.body as { secret: string };
 
-    const response = await request(test.app)
+    const response = await request(test.server())
       .post('/api/v1/auth/2fa/confirm')
       .set('Authorization', `Bearer ${session.accessToken}`)
       .set('Idempotency-Key', IDEMPOTENCY_KEY)
@@ -127,14 +129,14 @@ describe('POST /api/v1/auth/2fa/confirm', () => {
     const test = createAuthApp();
     const session = await signIn(test);
 
-    const setup = await request(test.app)
+    const setup = await request(test.server())
       .post('/api/v1/auth/2fa/setup')
       .set('Authorization', `Bearer ${session.accessToken}`)
       .expect(200);
 
     const { secret } = setup.body as { secret: string };
 
-    const response = await request(test.app)
+    const response = await request(test.server())
       .post('/api/v1/auth/2fa/confirm')
       .set('Authorization', `Bearer ${session.accessToken}`)
       .set('Idempotency-Key', IDEMPOTENCY_KEY)
@@ -157,12 +159,12 @@ describe('POST /api/v1/auth/2fa/confirm', () => {
     const test = createAuthApp();
     const session = await signIn(test);
 
-    await request(test.app)
+    await request(test.server())
       .post('/api/v1/auth/2fa/setup')
       .set('Authorization', `Bearer ${session.accessToken}`)
       .expect(200);
 
-    const response = await request(test.app)
+    const response = await request(test.server())
       .post('/api/v1/auth/2fa/confirm')
       .set('Authorization', `Bearer ${session.accessToken}`)
       .set('Idempotency-Key', IDEMPOTENCY_KEY)
@@ -176,7 +178,7 @@ describe('POST /api/v1/auth/2fa/confirm', () => {
     const test = createAuthApp();
     const session = await signIn(test);
 
-    const response = await request(test.app)
+    const response = await request(test.server())
       .post('/api/v1/auth/2fa/confirm')
       .set('Authorization', `Bearer ${session.accessToken}`)
       .set('Idempotency-Key', IDEMPOTENCY_KEY)
@@ -272,7 +274,7 @@ describe('POST /api/v1/auth/2fa/recovery-codes/regenerate', () => {
   it('refuses without a session', async () => {
     const test = createAuthApp();
 
-    const response = await request(test.app)
+    const response = await request(test.server())
       .post('/api/v1/auth/2fa/recovery-codes/regenerate')
       .set('Idempotency-Key', IDEMPOTENCY_KEY)
       .send({ currentPassword: PASSWORD, totpCode: '000000' })
@@ -362,7 +364,7 @@ describe('POST /api/v1/auth/2fa/disable', () => {
   it('refuses without a session', async () => {
     const test = createAuthApp();
 
-    const response = await request(test.app)
+    const response = await request(test.server())
       .post('/api/v1/auth/2fa/disable')
       .set('Idempotency-Key', IDEMPOTENCY_KEY)
       .send({ password: PASSWORD, code: '000000' })
@@ -422,7 +424,7 @@ describe('POST /api/v1/auth/2fa/verify', () => {
     const first = await signIn(test);
     await enrol(test, first.accessToken);
 
-    const response = await request(test.app)
+    const response = await request(test.server())
       .post('/api/v1/auth/login')
       .send({ email: 'ada@example.com', password: PASSWORD })
       .expect(200);
@@ -443,14 +445,14 @@ describe('POST /api/v1/auth/2fa/verify', () => {
     const first = await signIn(test);
     const secret = await enrol(test, first.accessToken);
 
-    const pending = await request(test.app)
+    const pending = await request(test.server())
       .post('/api/v1/auth/login')
       .send({ email: 'ada@example.com', password: PASSWORD })
       .expect(200);
 
     const { mfaToken } = pending.body as { mfaToken: string };
 
-    const verified = await request(test.app)
+    const verified = await request(test.server())
       .post('/api/v1/auth/2fa/verify')
       .send({ mfaToken, code: codeFor(secret, test.clock.now()) })
       .expect(200);
@@ -467,7 +469,7 @@ describe('POST /api/v1/auth/2fa/verify', () => {
     const first = await signIn(test);
     const secret = await enrol(test, first.accessToken);
 
-    const pending = await request(test.app)
+    const pending = await request(test.server())
       .post('/api/v1/auth/login')
       .send({ email: 'ada@example.com', password: PASSWORD })
       .expect(200);
@@ -475,11 +477,14 @@ describe('POST /api/v1/auth/2fa/verify', () => {
     const { mfaToken } = pending.body as { mfaToken: string };
     const code = codeFor(secret, test.clock.now());
 
-    await request(test.app).post('/api/v1/auth/2fa/verify').send({ mfaToken, code }).expect(200);
+    await request(test.server())
+      .post('/api/v1/auth/2fa/verify')
+      .send({ mfaToken, code })
+      .expect(200);
 
     // The second attempt is refused by the denylist rather than by the code being stale — the same
     // token, replayed, is what a stolen intermediate credential looks like.
-    const replayed = await request(test.app)
+    const replayed = await request(test.server())
       .post('/api/v1/auth/2fa/verify')
       .send({ mfaToken, code })
       .expect(401);
@@ -492,14 +497,14 @@ describe('POST /api/v1/auth/2fa/verify', () => {
     const first = await signIn(test);
     const secret = await enrol(test, first.accessToken);
 
-    const pending = await request(test.app)
+    const pending = await request(test.server())
       .post('/api/v1/auth/login')
       .send({ email: 'ada@example.com', password: PASSWORD })
       .expect(200);
 
     const { mfaToken } = pending.body as { mfaToken: string };
 
-    const refused = await request(test.app)
+    const refused = await request(test.server())
       .post('/api/v1/auth/2fa/verify')
       .send({ mfaToken, code: '000000' })
       .expect(401);
@@ -508,7 +513,7 @@ describe('POST /api/v1/auth/2fa/verify', () => {
 
     // Still usable: a mistyped digit must not cost the whole sign-in, which is the difference
     // between the attempt counter and the token being voided outright.
-    await request(test.app)
+    await request(test.server())
       .post('/api/v1/auth/2fa/verify')
       .send({ mfaToken, code: codeFor(secret, test.clock.now()) })
       .expect(200);

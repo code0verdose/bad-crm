@@ -34,13 +34,13 @@ describe('POST /api/v1/auth/login under a budget of five', () => {
     const test = limitedApp({ auth_attempt: 5 });
 
     for (let attempt = 1; attempt <= 5; attempt += 1) {
-      await request(test.app)
+      await request(test.server())
         .post('/api/v1/auth/login')
         .send({ email: 'ada@example.com', password: 'wrong-password' })
         .expect(401);
     }
 
-    const refused = await request(test.app)
+    const refused = await request(test.server())
       .post('/api/v1/auth/login')
       .send({ email: 'ada@example.com', password: 'wrong-password' })
       .expect(429);
@@ -60,14 +60,14 @@ describe('POST /api/v1/auth/login under a budget of five', () => {
   it('verifies no digest at all once the budget is gone', async () => {
     const test = limitedApp({ auth_attempt: 1 });
 
-    await request(test.app)
+    await request(test.server())
       .post('/api/v1/auth/login')
       .send({ email: 'ada@example.com', password: 'wrong-password' })
       .expect(401);
 
     const verifiedBefore = test.hasher.verified.length;
 
-    await request(test.app)
+    await request(test.server())
       .post('/api/v1/auth/login')
       .send({ email: 'ada@example.com', password: 'wrong-password' })
       .expect(429);
@@ -79,13 +79,13 @@ describe('POST /api/v1/auth/login under a budget of five', () => {
     const test = limitedApp({ auth_attempt: 5 });
 
     for (let attempt = 1; attempt <= 4; attempt += 1) {
-      await request(test.app)
+      await request(test.server())
         .post('/api/v1/auth/login')
         .send({ email: 'ada@example.com', password: 'wrong-password' })
         .expect(401);
     }
 
-    await request(test.app)
+    await request(test.server())
       .post('/api/v1/auth/login')
       .send({ email: 'ada@example.com', password: PASSWORD })
       .expect(200);
@@ -95,7 +95,7 @@ describe('POST /api/v1/auth/login under a budget of five', () => {
     const after: number[] = [];
 
     for (let attempt = 1; attempt <= 5; attempt += 1) {
-      const response = await request(test.app)
+      const response = await request(test.server())
         .post('/api/v1/auth/login')
         .send({ email: 'ada@example.com', password: 'wrong-password' });
 
@@ -112,16 +112,16 @@ describe('POST /api/v1/auth/login under a budget of five', () => {
   it('keeps a second account on the same address out of the first one’s budget', async () => {
     const test = limitedApp({ auth_attempt: 1 });
 
-    await request(test.app)
+    await request(test.server())
       .post('/api/v1/auth/login')
       .send({ email: 'ada@example.com', password: 'wrong-password' })
       .expect(401);
-    await request(test.app)
+    await request(test.server())
       .post('/api/v1/auth/login')
       .send({ email: 'ada@example.com', password: 'wrong-password' })
       .expect(429);
 
-    const other = await request(test.app)
+    const other = await request(test.server())
       .post('/api/v1/auth/login')
       .send({ email: 'grace@example.com', password: 'wrong-password' });
 
@@ -135,7 +135,7 @@ describe('POST /api/v1/auth/register under a budget of three', () => {
     const test = limitedApp({ organization_registration: 3 });
 
     for (let attempt = 1; attempt <= 3; attempt += 1) {
-      await request(test.app)
+      await request(test.server())
         .post('/api/v1/auth/register')
         .set('Idempotency-Key', IDEMPOTENCY_KEY)
         .send({
@@ -145,7 +145,7 @@ describe('POST /api/v1/auth/register under a budget of three', () => {
         .expect(201);
     }
 
-    const refused = await request(test.app)
+    const refused = await request(test.server())
       .post('/api/v1/auth/register')
       .set('Idempotency-Key', IDEMPOTENCY_KEY)
       .send({ ...REGISTRATION, organization: { name: 'Company 4', slug: 'company-4' } })
@@ -162,7 +162,7 @@ describe('POST /api/v1/auth/refresh under the ambient budget', () => {
       rateLimit: { limits: { api_request: 1 }, retryAfterSeconds: RETRY_AFTER_SECONDS },
     });
 
-    const signedIn = await request(test.app)
+    const signedIn = await request(test.server())
       .post('/api/v1/auth/login')
       .send({ email: 'ada@example.com', password: PASSWORD })
       .expect(200);
@@ -171,12 +171,12 @@ describe('POST /api/v1/auth/refresh under the ambient budget', () => {
       .find((value) => value.startsWith('bad_crm_refresh='))
       ?.split(';')[0];
 
-    await request(test.app)
+    await request(test.server())
       .post('/api/v1/auth/refresh')
       .set('Cookie', cookie ?? '')
       .expect(200);
 
-    const refused = await request(test.app)
+    const refused = await request(test.server())
       .post('/api/v1/auth/refresh')
       .set('Cookie', cookie ?? '')
       .expect(429);
@@ -195,7 +195,7 @@ describe('when the counter store cannot be reached', () => {
   it('refuses the sign-in with service_unavailable instead of admitting it', async () => {
     const test = createAuthApp({ rateLimit: { unavailable: true } });
 
-    const response = await request(test.app)
+    const response = await request(test.server())
       .post('/api/v1/auth/login')
       .send({ email: 'ada@example.com', password: PASSWORD })
       .expect(503);

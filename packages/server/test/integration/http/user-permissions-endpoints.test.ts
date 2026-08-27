@@ -48,13 +48,13 @@ const signedIn = async (
 ): Promise<{ test: AuthApp; token: string }> => {
   const test = createAuthApp(options);
 
-  await request(test.app)
+  await request(test.server())
     .post('/api/v1/auth/register')
     .set('Idempotency-Key', IDEMPOTENCY_KEY)
     .send(REGISTRATION)
     .expect(201);
 
-  const response = await request(test.app)
+  const response = await request(test.server())
     .post('/api/v1/auth/login')
     .send({ email: 'ada@example.com', password: PASSWORD })
     .expect(200);
@@ -97,7 +97,7 @@ const stateOf = (body: Body, key: string): StateResponse => {
 };
 
 const read = (test: AuthApp, token: string, userId = IVAN): request.Test =>
-  request(test.app)
+  request(test.server())
     .get(`/api/v1/users/${userId}/permissions`)
     .set('Authorization', `Bearer ${token}`);
 
@@ -306,7 +306,7 @@ describe('GET /api/v1/users/{userId}/permissions', () => {
   it('needs a session', async () => {
     const test = createAuthApp();
 
-    const response = await request(test.app).get(`/api/v1/users/${IVAN}/permissions`);
+    const response = await request(test.server()).get(`/api/v1/users/${IVAN}/permissions`);
 
     expect(response.status).toBe(401);
   });

@@ -23,16 +23,18 @@ const REGISTRATION = {
   owner: { email: 'ada@example.com', password: PASSWORD },
 };
 
-const signedIn = async (options: AuthAppOptions = {}): Promise<{ test: AuthApp; token: string }> => {
+const signedIn = async (
+  options: AuthAppOptions = {},
+): Promise<{ test: AuthApp; token: string }> => {
   const test = createAuthApp(options);
 
-  await request(test.app)
+  await request(test.server())
     .post('/api/v1/auth/register')
     .set('Idempotency-Key', IDEMPOTENCY_KEY)
     .send(REGISTRATION)
     .expect(201);
 
-  const response = await request(test.app)
+  const response = await request(test.server())
     .post('/api/v1/auth/login')
     .send({ email: 'ada@example.com', password: PASSWORD })
     .expect(200);
@@ -44,7 +46,7 @@ describe('POST /api/v1/users/{userId}/roles', () => {
   it('refuses a caller with no role:assign, before the body is even parsed', async () => {
     const { test, token } = await signedIn();
 
-    const response = await request(test.app)
+    const response = await request(test.server())
       .post(`/api/v1/users/${IVAN}/roles`)
       .set('Authorization', `Bearer ${token}`)
       .set('Idempotency-Key', IDEMPOTENCY_KEY)
@@ -62,10 +64,16 @@ describe('POST /api/v1/users/{userId}/roles', () => {
 
   it('assigns the role and bumps the version when the caller holds the right', async () => {
     const { test, token } = await signedIn({
-      capabilities: { isOwner: false, granted: ['role:assign', 'task:read'], denied: [], roleKeys: [], permissionsVersion: 3 },
+      capabilities: {
+        isOwner: false,
+        granted: ['role:assign', 'task:read'],
+        denied: [],
+        roleKeys: [],
+        permissionsVersion: 3,
+      },
     });
 
-    await request(test.app)
+    await request(test.server())
       .post(`/api/v1/users/${IVAN}/roles`)
       .set('Authorization', `Bearer ${token}`)
       .set('Idempotency-Key', IDEMPOTENCY_KEY)
@@ -83,11 +91,17 @@ describe('POST /api/v1/users/{userId}/roles', () => {
     userRoles.assignments.add(`${IVAN}:${ROLE}`);
 
     const { test, token } = await signedIn({
-      capabilities: { isOwner: false, granted: ['role:assign', 'task:read'], denied: [], roleKeys: [], permissionsVersion: 1 },
+      capabilities: {
+        isOwner: false,
+        granted: ['role:assign', 'task:read'],
+        denied: [],
+        roleKeys: [],
+        permissionsVersion: 1,
+      },
       userRoles,
     });
 
-    await request(test.app)
+    await request(test.server())
       .post(`/api/v1/users/${IVAN}/roles`)
       .set('Authorization', `Bearer ${token}`)
       .set('Idempotency-Key', IDEMPOTENCY_KEY)
@@ -101,11 +115,17 @@ describe('POST /api/v1/users/{userId}/roles', () => {
 
   it('answers 404 for a person of another organization, never 403', async () => {
     const { test, token } = await signedIn({
-      capabilities: { isOwner: false, granted: ['role:assign', 'task:read'], denied: [], roleKeys: [], permissionsVersion: 1 },
+      capabilities: {
+        isOwner: false,
+        granted: ['role:assign', 'task:read'],
+        denied: [],
+        roleKeys: [],
+        permissionsVersion: 1,
+      },
       userRoles: new FakeUserRoleRepository({ knownUsers: [] }),
     });
 
-    const response = await request(test.app)
+    const response = await request(test.server())
       .post(`/api/v1/users/${IVAN}/roles`)
       .set('Authorization', `Bearer ${token}`)
       .set('Idempotency-Key', IDEMPOTENCY_KEY)
@@ -118,10 +138,16 @@ describe('POST /api/v1/users/{userId}/roles', () => {
 
   it('rejects an expiry in the past rather than accepting a grant that never applies', async () => {
     const { test, token } = await signedIn({
-      capabilities: { isOwner: false, granted: ['role:assign', 'task:read'], denied: [], roleKeys: [], permissionsVersion: 1 },
+      capabilities: {
+        isOwner: false,
+        granted: ['role:assign', 'task:read'],
+        denied: [],
+        roleKeys: [],
+        permissionsVersion: 1,
+      },
     });
 
-    const response = await request(test.app)
+    const response = await request(test.server())
       .post(`/api/v1/users/${IVAN}/roles`)
       .set('Authorization', `Bearer ${token}`)
       .set('Idempotency-Key', IDEMPOTENCY_KEY)
@@ -134,7 +160,7 @@ describe('POST /api/v1/users/{userId}/roles', () => {
   it('needs a session at all', async () => {
     const test = createAuthApp();
 
-    const response = await request(test.app)
+    const response = await request(test.server())
       .post(`/api/v1/users/${IVAN}/roles`)
       .set('Idempotency-Key', IDEMPOTENCY_KEY)
       .send({ roleId: ROLE });
@@ -153,11 +179,17 @@ describe('DELETE /api/v1/users/{userId}/roles/{roleId}', () => {
     userRoles.assignments.add(`${IVAN}:${ROLE}`);
 
     const { test, token } = await signedIn({
-      capabilities: { isOwner: false, granted: ['role:revoke'], denied: [], roleKeys: [], permissionsVersion: 1 },
+      capabilities: {
+        isOwner: false,
+        granted: ['role:revoke'],
+        denied: [],
+        roleKeys: [],
+        permissionsVersion: 1,
+      },
       userRoles,
     });
 
-    await request(test.app)
+    await request(test.server())
       .delete(`/api/v1/users/${IVAN}/roles/${ROLE}`)
       .set('Authorization', `Bearer ${token}`)
       .expect(204);
@@ -179,11 +211,17 @@ describe('DELETE /api/v1/users/{userId}/roles/{roleId}', () => {
     userRoles.assignments.add(`${IVAN}:${ROLE}`);
 
     const { test, token } = await signedIn({
-      capabilities: { isOwner: false, granted: ['role:revoke'], denied: [], roleKeys: [], permissionsVersion: 1 },
+      capabilities: {
+        isOwner: false,
+        granted: ['role:revoke'],
+        denied: [],
+        roleKeys: [],
+        permissionsVersion: 1,
+      },
       userRoles,
     });
 
-    const response = await request(test.app)
+    const response = await request(test.server())
       .delete(`/api/v1/users/${IVAN}/roles/${ROLE}`)
       .set('Authorization', `Bearer ${token}`)
       .expect(409);
