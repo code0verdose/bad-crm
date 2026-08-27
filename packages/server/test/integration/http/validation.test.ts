@@ -65,7 +65,7 @@ const VALID_ID = '3f1c2b4e-9a5d-4c7b-8e21-6d0f5a7c9b34';
 
 describe('a rejected request names every field that was wrong', () => {
   it('answers 422 as a problem document with one entry per invalid field', async () => {
-    const response = await request(probeApp().app)
+    const response = await request(probeApp().server())
       .post(`/things/${VALID_ID}`)
       .send({ title: '', amount: { value: '10', currency: 'EUR' } });
     const body = response.body as ProblemBody;
@@ -80,7 +80,7 @@ describe('a rejected request names every field that was wrong', () => {
   });
 
   it('points at a nested field in dot notation', async () => {
-    const response = await request(probeApp().app)
+    const response = await request(probeApp().server())
       .post(`/things/${VALID_ID}`)
       .send({ title: 'ok', amount: { value: '10', currency: 'EUR' } });
     const body = response.body as ProblemBody;
@@ -96,7 +96,7 @@ describe('a rejected request names every field that was wrong', () => {
    * as a 500 somewhere down the call stack — or worse, as `LIMIT NaN`.
    */
   it('rejects an uncoercible query parameter at the boundary instead of passing NaN inwards', async () => {
-    const response = await request(probeApp().app).get('/things?page=abc&enabled=true');
+    const response = await request(probeApp().server()).get('/things?page=abc&enabled=true');
     const body = response.body as ProblemBody;
 
     expect(response.status).toBe(422);
@@ -104,7 +104,7 @@ describe('a rejected request names every field that was wrong', () => {
   });
 
   it('reports failures of the params, the query and the body in one response', async () => {
-    const response = await request(probeApp().app)
+    const response = await request(probeApp().server())
       .post('/things/not-a-uuid?page=0')
       .send({ title: '', amount: { value: 1, currency: 'EUR' } });
     const body = response.body as ProblemBody;
@@ -116,14 +116,14 @@ describe('a rejected request names every field that was wrong', () => {
 
 describe('an accepted request arrives coerced', () => {
   it('hands the controller the parsed values, not the strings from the URL', async () => {
-    const response = await request(probeApp().app).get('/things?page=3&enabled=false');
+    const response = await request(probeApp().server()).get('/things?page=3&enabled=false');
 
     expect(response.status).toBe(200);
     expect(response.body).toEqual({ page: 3, pageType: 'number', enabled: false });
   });
 
   it('applies a default the schema declares, so the controller never checks for undefined', async () => {
-    const response = await request(probeApp().app)
+    const response = await request(probeApp().server())
       .post(`/things/${VALID_ID}`)
       .send({ title: 'ok', amount: { value: 10, currency: 'EUR' } });
 
@@ -138,7 +138,7 @@ describe('an accepted request arrives coerced', () => {
 
 describe('the shape of every problem document', () => {
   it('carries type, title, status, code and requestId', async () => {
-    const response = await request(probeApp().app).get('/things/foreign');
+    const response = await request(probeApp().server()).get('/things/foreign');
     const body = response.body as ProblemBody;
 
     expect(body.type).toBe('https://bad-crm.dev/problems/task-not-found');
@@ -155,13 +155,13 @@ describe('the shape of every problem document', () => {
    * failing test rather than a leak nobody notices.
    */
   it('omits instance, and identifies the occurrence by requestId alone', async () => {
-    const response = await request(probeApp().app).get('/things/foreign');
+    const response = await request(probeApp().server()).get('/things/foreign');
 
     expect((response.body as ProblemBody).instance).toBeUndefined();
   });
 
   it('never carries detail on a 500', async () => {
-    const response = await request(probeApp().app).get('/things/broken');
+    const response = await request(probeApp().server()).get('/things/broken');
     const body = response.body as ProblemBody;
 
     expect(response.status).toBe(500);
@@ -170,19 +170,19 @@ describe('the shape of every problem document', () => {
   });
 
   it('carries detail below 500, where it is our own sentence', async () => {
-    const response = await request(probeApp().app).get('/things?page=abc&enabled=true');
+    const response = await request(probeApp().server()).get('/things?page=abc&enabled=true');
 
     expect((response.body as ProblemBody).detail).toBeTruthy();
   });
 
   it('leaves errors out of a problem that is not about fields', async () => {
-    const response = await request(probeApp().app).get('/things/foreign');
+    const response = await request(probeApp().server()).get('/things/foreign');
 
     expect((response.body as ProblemBody).errors).toBeUndefined();
   });
 
   it('answers an unmatched path with route_not_found rather than a resource code', async () => {
-    const response = await request(probeApp().app).get('/nothing-here');
+    const response = await request(probeApp().server()).get('/nothing-here');
     const body = response.body as ProblemBody;
 
     expect(response.status).toBe(404);
@@ -198,7 +198,7 @@ describe('the shape of every problem document', () => {
  */
 describe('a denial across organizations is indistinguishable from a missing resource', () => {
   it('answers 404 task_not_found for a resource of another organization', async () => {
-    const response = await request(probeApp().app).get('/things/foreign');
+    const response = await request(probeApp().server()).get('/things/foreign');
 
     expect(response.status).toBe(404);
     expect((response.body as ProblemBody).code).toBe('task_not_found');
@@ -206,7 +206,7 @@ describe('a denial across organizations is indistinguishable from a missing reso
   });
 
   it('answers 403 task_forbidden only inside the caller own organization', async () => {
-    const response = await request(probeApp().app).get('/things/denied');
+    const response = await request(probeApp().server()).get('/things/denied');
 
     expect(response.status).toBe(403);
     expect((response.body as ProblemBody).code).toBe('task_forbidden');
@@ -215,7 +215,7 @@ describe('a denial across organizations is indistinguishable from a missing reso
 
 describe('throttling', () => {
   it('answers 429 rate_limited with Retry-After, so a client knows when to come back', async () => {
-    const response = await request(probeApp().app).get('/things/throttled');
+    const response = await request(probeApp().server()).get('/things/throttled');
 
     expect(response.status).toBe(429);
     expect(response.headers['retry-after']).toBe('30');
