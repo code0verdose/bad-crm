@@ -58,7 +58,7 @@ export interface VisibleEmployeeProfile {
    * decrypted here: the decision belongs one layer below the shape it produces, and a value that
    * was never resolved cannot be emitted, logged or snapshotted by mistake. `null` is unambiguous —
    * the column is `NOT NULL`, so it can only ever mean «not for this reader»
-   * (`seesAccountStatus`, STORY-012-09 D4).
+   * (`seesAccountStatus`, STORY-012-09 D4 and D4-бис).
    */
   readonly accountStatus: DirectoryStatus | null;
 }

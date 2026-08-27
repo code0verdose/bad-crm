@@ -464,11 +464,17 @@ describe('GET /api/v1/employees/{userId}', () => {
   /**
    * The state of the **account**, which is a different question from the personnel record.
    *
-   * The card at `/admin/members/{userId}` has no guard — a person reads their own record, and the
-   * route cannot tell the two apart before the use-case does — so putting `status` in the shape
-   * every colleague receives would tell any employee whether any other employee's account is
-   * switched off. It is therefore behind `user:read`, or the record being one's own (STORY-012-09,
-   * decision D4).
+   * The card at `/employees/{userId}` declares no capability guard — a person reads their own
+   * record, and the route cannot tell the two apart before the use-case does — so the level lives on
+   * the field. It is `employee:read`, or the record being one's own (STORY-012-09, D4 and D4-бис):
+   * the same barrier that lets somebody else's record be read at all, chosen so that the card and
+   * the directory row — which has carried `status` for every holder of `employee:read` since
+   * STORY-012-04 — cannot disagree about one person.
+   *
+   * The consequence, and it is the point rather than an accident: **every document this route
+   * successfully returns carries the state**, because there is no caller who may read a record and
+   * not its account. The refusal case below is therefore a refusal of the whole record, not of one
+   * field — which is what «protected identically on both surfaces» means here.
    *
    * Not derived from `terminatedAt`: that is an editable HR field under `employee:update`, and the
    * first administrator to enter a leaving date in advance would otherwise see «disabled» on an
@@ -493,38 +499,56 @@ describe('GET /api/v1/employees/{userId}', () => {
       return response.body as Record<string, unknown>;
     };
 
-    it('is absent for a colleague who may read the record but not the account', async () => {
-      // `employee:read` without `user:read` is exactly the caller the decision is about: they open
-      // the card, and the card must not say whether the person still has a way in.
+    it('is there for a colleague who may read the record, with the value the account holds', async () => {
+      // `employee:read` alone is exactly the caller D4-бис is about: the directory already tells
+      // them this, so the card telling them the same thing is the fix rather than a leak.
       const body = await withStatus(['employee:read']);
 
-      expect(body).not.toHaveProperty('status');
-      // CONTROL: the record itself did arrive, so the absence above is about the level and not
-      // about an empty answer.
-      expect(body).toHaveProperty('userId', COLLEAGUE);
+      expect(body).toHaveProperty('status', 'SUSPENDED');
     });
 
-    it('is absent for the personal audience too, which is a different question', async () => {
-      // `employee:view_personal_data` buys the employment half — contract, dates, capacity — and
-      // says nothing about whether the account is switched off.
-      const body = await withStatus(['employee:read', 'employee:view_personal_data']);
-
-      expect(body).not.toHaveProperty('status');
-      expect(body).toHaveProperty('employmentType');
-    });
-
-    it('is there for `user:read`, with the value the account actually holds', async () => {
-      const body = await withStatus(['employee:read', 'user:read']);
+    it('is not bought by the personal audience, which is a different question', async () => {
+      // The two travel independently: `employee:read` buys the state and none of the employment,
+      // and this is the direction a ladder would have got wrong.
+      const body = await withStatus(['employee:read']);
 
       expect(body).toHaveProperty('status', 'SUSPENDED');
+      expect(body).not.toHaveProperty('employmentType');
+    });
+
+    it('arrives beside the employment half for HR, not instead of it', async () => {
+      const body = await withStatus(['employee:read', 'employee:view_personal_data']);
+
+      expect(body).toHaveProperty('status', 'SUSPENDED');
+      expect(body).toHaveProperty('employmentType');
     });
 
     it('says ACTIVE rather than nothing when the account is on', async () => {
       // The absence of the key means «you may not see this», never «the account is fine» — a screen
       // that read absence as health would show an active badge to every colleague.
-      const body = await withStatus(['employee:read', 'user:read'], 'ACTIVE');
+      const body = await withStatus(['employee:read'], 'ACTIVE');
 
       expect(body).toHaveProperty('status', 'ACTIVE');
+    });
+
+    it('is refused with the whole record rather than on its own', async () => {
+      // There is no document without the state any more, so «may not see the state» can only be
+      // «may not see the record». A colleague holding nothing gets 403 and no body to inspect.
+      const employeeProfiles = new FakeEmployeeProfileRepository();
+      const { test, token } = await signedIn({
+        employeeProfiles,
+        capabilities: capabilities([]),
+      });
+
+      employeeProfiles.accounts.add(COLLEAGUE);
+      employeeProfiles.statuses.set(COLLEAGUE, 'SUSPENDED');
+
+      const response = await read(test, token, COLLEAGUE).expect(403);
+
+      // The body is a problem document, not a record: its `status` is the HTTP code, and nothing of
+      // the account travels in it.
+      expect(response.body).not.toHaveProperty('userId');
+      expect(response.body).toMatchObject({ status: 403, reason: 'permission_not_granted' });
     });
 
     it('is there on one’s own record without any capability at all', async () => {
@@ -544,8 +568,8 @@ describe('GET /api/v1/employees/{userId}', () => {
     });
 
     it('comes back from an edit at the same level, not only from a read', async () => {
-      // PATCH answers with the same document, so a caller who may not see the state must not
-      // receive it as the reply to a rename either.
+      // PATCH answers with the same document, so an edit must not hand back more — or less — than a
+      // read of the same record by the same caller.
       const employeeProfiles = new FakeEmployeeProfileRepository();
       const { test, token } = await signedIn({
         employeeProfiles,
@@ -557,8 +581,7 @@ describe('GET /api/v1/employees/{userId}', () => {
 
       const response = await patch(test, token, COLLEAGUE, { firstName: 'Ivan' }).expect(200);
 
-      expect(response.body).not.toHaveProperty('status');
-      expect(response.body).toMatchObject({ firstName: 'Ivan' });
+      expect(response.body).toMatchObject({ firstName: 'Ivan', status: 'SUSPENDED' });
     });
 
     it('cannot be moved by an edit of the personnel record', async () => {
@@ -567,7 +590,7 @@ describe('GET /api/v1/employees/{userId}', () => {
       const employeeProfiles = new FakeEmployeeProfileRepository();
       const { test, token } = await signedIn({
         employeeProfiles,
-        capabilities: capabilities(['employee:read', 'employee:update', 'user:read']),
+        capabilities: capabilities(['employee:read', 'employee:update']),
       });
 
       employeeProfiles.accounts.add(COLLEAGUE);

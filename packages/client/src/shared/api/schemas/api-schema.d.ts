@@ -1446,10 +1446,12 @@ export interface paths {
          *       administrator holds the first without the second (`permission-model.md` §4.1).
          *
          *     `status` — the state of the **account** rather than of the record — is a fourth, independent
-         *     level: `user:read`, or the record being one's own. This route has no permission guard, since
-         *     a person always reads their own record, so a caller with none of the above still gets the
-         *     public half of anybody's record — and must not learn from it whether that account is
-         *     switched off.
+         *     level: `employee:read`, or the record being one's own. That is the same barrier that lets
+         *     somebody else's record be read at all, chosen so that this one fact is protected identically
+         *     on both surfaces that carry it: the directory row (`GET /employees`) has handed `status` to
+         *     every holder of `employee:read` since STORY-012-04. This route declares **no** permission
+         *     guard — a person always reads their own record — so the level lives on the field rather than
+         *     on the route (STORY-012-09, D4-бис).
          *
          *     A field a caller may not see is **absent from the document**, not present and empty: the
          *     client is not the filter, because anybody can read a response.
@@ -2253,12 +2255,15 @@ export interface components {
             timezone: string;
             skills: string[];
             /**
-             * @description The state of the **account**, present only for a caller holding `user:read` and for the
-             *     person themselves; anybody else does not receive the key at all.
+             * @description The state of the **account**, present only for a caller holding `employee:read` and for
+             *     the person themselves; anybody else does not receive the key at all.
              *
-             *     Not in the shape every colleague sees, because `/admin/members/{userId}` has no guard —
-             *     a person always reads their own record — so a `status` in the public half would tell any
-             *     employee whether any colleague's account is switched off.
+             *     The level is on the field rather than on the route, because `/employees/{userId}`
+             *     declares no guard — a person always reads their own record. `employee:read` is the same
+             *     right that lets somebody else's record be read at all, so `status` never travels further
+             *     than the document describing it, and the card and the directory row (which carries the
+             *     same field for the same holder since STORY-012-04) can no longer disagree about one
+             *     person (STORY-012-09, D4-бис).
              *
              *     It is here rather than derived from `terminatedAt` on the client: that date is an
              *     editable HR field under `employee:update`, and an administrator entering a leaving date

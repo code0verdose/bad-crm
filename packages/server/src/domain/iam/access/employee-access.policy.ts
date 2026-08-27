@@ -132,20 +132,42 @@ export const canReadProfile = (actor: Actor, subjectUserId: string): Decision =>
   actor.userId === subjectUserId ? allow() : authorizeCapability(actor, 'employee:read');
 
 /**
- * May this actor see **whether the account is switched off** — `user:read`, or it being their own?
+ * May this actor see **whether the account is switched off** — `employee:read`, or it being their
+ * own?
  *
- * A separate question from `profileAudience` above, deliberately, and the separation is the whole of
- * the decision (STORY-012-09, D4):
+ * A separate question from `profileAudience` above, deliberately: the record and the account are
+ * different objects, and `employee:view_personal_data` buys the employment half — contract, dates,
+ * capacity — while answering nothing about whether the person still has a way in.
  *
- *   * the record and the account are different objects. `employee:view_personal_data` buys the
- *     employment half — contract, dates, capacity — and answers nothing about whether the person
- *     still has a way in; `user:read` is the right to read accounts, which is what this is;
- *   * the route has **no guard**. A person always reads their own personnel record, so
- *     `/employees/{userId}` cannot demand a capability before the use-case knows whose record it is
- *     — and a `status` in the half every colleague receives would therefore tell any employee
- *     whether any other employee's account is disabled;
- *   * one's own is always visible, and that is not a concession: somebody who cannot see that their
- *     own account is suspended is looking at an interface lying to them about themselves.
+ * **The level is `employee:read` rather than `user:read`, and the reason is that the two surfaces
+ * carrying this one fact have different base barriers** (STORY-012-09, D4-бис):
+ *
+ *   * the directory (`GET /employees`) is closed behind `employee:read` and has handed `status` to
+ *     every one of its readers since STORY-012-04;
+ *   * the card route `/employees/{userId}` declares **no capability guard at all** — a person always
+ *     reads their own personnel record, so the registry cannot demand one before the use-case knows
+ *     whose record it is. That is what D4 was written for: without a level on the field, a `status`
+ *     in the half every caller receives would be a fact about somebody else's account travelling on
+ *     an unguarded route.
+ *
+ * `employee:read` closes exactly that and equalises the surfaces with **one** right. Reading
+ * somebody else's record already needs it (`canReadProfile` below), so the field now travels with
+ * precisely the document it describes: whoever may read the card may read its state, and the list
+ * and the card can no longer disagree about the same person.
+ *
+ * That coincidence is a property of the **read** and not of this function. `PATCH` answers with the
+ * same document under `employee:update`, which is not `employee:read` — an editor of somebody's
+ * record who may not read it still gets the record back **without** the state. So the refusal here
+ * is reachable and load-bearing rather than a formality the read makes redundant.
+ *
+ * Rejected: narrowing the directory to `user:read` instead. It moves the permission matrix in the
+ * narrowing direction on already-shipped behaviour, breaks the status column for a custom role
+ * holding `employee:read`, and edits another story's surface (STORY-012-04) for a symmetry no threat
+ * asks for. A holder of `user:read` **without** `employee:read` loses nothing real here: they cannot
+ * read the colleague's record at all.
+ *
+ * One's own is always visible, and that is not a concession: somebody who cannot see that their own
+ * account is suspended is looking at an interface lying to them about themselves.
  *
  * **Not** derived from `terminatedAt`. That is an editable HR field under `employee:update` rather
  * than a property of the account; the two agreeing today is a coincidence, and the first
@@ -156,7 +178,7 @@ export const canReadProfile = (actor: Actor, subjectUserId: string): Decision =>
  * is no 403 for a `DenyReason` to explain (`rules/permissions.mdc`, 4 — which is about the refusals).
  */
 export const seesAccountStatus = (actor: Actor, subjectUserId: string): boolean =>
-  actor.userId === subjectUserId || authorizeCapability(actor, 'user:read').allowed;
+  actor.userId === subjectUserId || authorizeCapability(actor, 'employee:read').allowed;
 
 /** The refusal a cycle produces, kept here so the use-case names a decision rather than a string. */
 export const managerCycleRefused = (): Decision => deny('manager_cycle_detected');

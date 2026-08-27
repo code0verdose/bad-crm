@@ -257,7 +257,13 @@ describe('reading a profile', () => {
   });
 
   /**
-   * The state of the account is resolved **here**, and refused here (STORY-012-09, D4).
+   * The state of the account is resolved **here**, and refused here (STORY-012-09, D4 and D4-бис).
+   *
+   * The level is `employee:read`, or the record being one's own — the same barrier as reading
+   * somebody else's record at all, so that the card and the directory row cannot disagree about one
+   * person. On a **read** that makes the two coincide; on a **write** it does not, and that is what
+   * the last two cases are: `employee:update` alone edits a colleague's record without being
+   * allowed to read the state of their account, so the refusal is still reachable and still needed.
    *
    * `null` rather than «resolve it and let the serializer drop it», for the reason the emergency
    * contact is not decrypted for a caller who may not read it: a value that was never resolved
@@ -268,7 +274,18 @@ describe('reading a profile', () => {
     const suspended = (userId: string): FakeProfiles =>
       new FakeProfiles({ stored: row({ userId, status: 'SUSPENDED' }) });
 
-    it('is refused to a colleague who may read the record but holds no user:read', async () => {
+    it('is resolved for a colleague holding employee:read alone', async () => {
+      // The caller D4-бис is about: the directory row already tells them this, so the card telling
+      // them the same thing is the point of the decision.
+      const visible = await read(suspended(COLLEAGUE)).execute({
+        actor: actorWith(['employee:read']),
+        subjectUserId: COLLEAGUE,
+      });
+
+      expect(visible.accountStatus).toBe('SUSPENDED');
+    });
+
+    it('is not bought by the personnel half, which is a different question', async () => {
       const profiles = suspended(COLLEAGUE);
 
       const visible = await read(profiles).execute({
@@ -276,18 +293,9 @@ describe('reading a profile', () => {
         subjectUserId: COLLEAGUE,
       });
 
-      expect(visible.accountStatus).toBeNull();
-      // CONTROL: the row this caller was given does carry the state, so the `null` above is the
-      // decision and not an empty read.
-      expect(visible.profile.status).toBe('SUSPENDED');
-    });
-
-    it('is resolved for user:read', async () => {
-      const visible = await read(suspended(COLLEAGUE)).execute({
-        actor: actorWith(['employee:read', 'user:read']),
-        subjectUserId: COLLEAGUE,
-      });
-
+      // The employment half arrived on its own permission, and the state on `employee:read`;
+      // neither implies the other, which is why they are separate flags.
+      expect(visible.audience.personal).toBe(true);
       expect(visible.accountStatus).toBe('SUSPENDED');
     });
 
@@ -300,9 +308,9 @@ describe('reading a profile', () => {
       expect(visible.accountStatus).toBe('SUSPENDED');
     });
 
-    it('is refused by an edit at the same level it is refused by a read', async () => {
-      // PATCH answers with the same document: a caller who may not see the state must not receive
-      // it as the reply to a rename.
+    it('is refused by an edit to a caller who may write the record but not read it', async () => {
+      // `employee:update` without `employee:read` is a real caller — editing is not reading — so a
+      // PATCH must not hand back as the reply to a rename what a GET would have refused.
       const profiles = new FakeProfiles();
 
       const visible = await write(profiles).execute({
@@ -312,12 +320,13 @@ describe('reading a profile', () => {
       });
 
       expect(visible.accountStatus).toBeNull();
+      // CONTROL: the row does carry the state, so the `null` is the decision and not an empty write.
       expect(visible.profile.status).toBe('ACTIVE');
     });
 
     it('is resolved by an edit for a caller who may see it', async () => {
       const visible = await write(new FakeProfiles()).execute({
-        actor: actorWith(['employee:update', 'user:read']),
+        actor: actorWith(['employee:update', 'employee:read']),
         subjectUserId: COLLEAGUE,
         patch: { jobTitle: 'Engineer' },
       });

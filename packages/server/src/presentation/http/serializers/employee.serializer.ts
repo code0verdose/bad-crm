@@ -5,9 +5,9 @@ import { type VisibleEmployeeProfile } from '@/application/iam/use-cases/write-e
  *
  * Four rather than two because the two questions are **independent**: how much of the employment
  * record this caller may read (`employee:view_personal_data`, or it being their own) and whether
- * they may see the state of the account (`user:read`, or it being their own). Neither implies the
- * other, and the use-case answers both before this file runs — `accountStatus` arrives `null` when
- * the second is refused, so there is no level to decide here (STORY-012-09, D4).
+ * they may see the state of the account (`employee:read`, or it being their own). Neither implies
+ * the other, and the use-case answers both before this file runs — `accountStatus` arrives `null`
+ * when the second is refused, so there is no level to decide here (STORY-012-09, D4-бис).
  *
  * **The filtering is here, and it is by construction rather than by deletion**: each branch builds the
  * object it is allowed to build, so a field a caller may not see is never assigned rather than
@@ -35,7 +35,11 @@ export interface PublicEmployeeResponse {
   readonly skills: readonly string[];
 }
 
-/** Additionally, for `user:read` and for the person themselves: whether the account is switched on. */
+/**
+ * Additionally, for `employee:read` and for the person themselves: whether the account is switched
+ * on. The same barrier that lets somebody else's record be read at all, so the field never travels
+ * further than the document describing it (STORY-012-09, D4-бис).
+ */
 export interface AccountEmployeeResponse extends PublicEmployeeResponse {
   readonly status: string;
 }
@@ -49,7 +53,7 @@ export interface PersonalEmployeeResponse extends PublicEmployeeResponse {
   readonly emergencyContact: string | null;
 }
 
-/** Both halves at once — the person reading their own record, and HR holding `user:read`. */
+/** Both halves at once — the person reading their own record, and HR reading somebody else's. */
 export interface PersonalAccountEmployeeResponse
   extends PersonalEmployeeResponse, AccountEmployeeResponse {}
 

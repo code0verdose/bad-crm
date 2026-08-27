@@ -139,7 +139,7 @@ describe('the finance audience is not the top of a ladder', () => {
 /**
  * The state of the account, which is a **fourth** shape rather than a widening of the third.
  *
- * The decision is made by the use-case (`seesAccountStatus`, STORY-012-09 D4) and arrives here as a
+ * The decision is made by the use-case (`seesAccountStatus`, STORY-012-09 D4-бис) and arrives here as a
  * value or as `null`. `null` is unambiguous: `users.status` is `NOT NULL`, so it can only ever mean
  * «not for this reader», and the key is then absent rather than present and empty — the client is
  * not the filter.
@@ -165,8 +165,8 @@ describe('the state of the account travels independently of the employment half'
   });
 
   it.each([
-    ['a colleague holding user:read', { personal: false, cost: false }],
-    ['HR holding user:read', { personal: true, cost: false }],
+    ['a colleague holding employee:read', { personal: false, cost: false }],
+    ['HR holding employee:read', { personal: true, cost: false }],
   ])('is emitted for %s, with the value resolved above', (_name, audience) => {
     const answer = serializeEmployee({
       profile: row,

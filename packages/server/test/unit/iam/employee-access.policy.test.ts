@@ -161,11 +161,18 @@ describe('which audiences a caller belongs to', () => {
 });
 
 /**
- * Who may see whether an account is switched off (STORY-012-09, D4).
+ * Who may see whether an account is switched off (STORY-012-09, D4-бис).
  *
- * A different question from the one above it, and the whole table is that difference: the record and
- * the account are different objects, `/employees/{userId}` has no guard because a person always
- * reads their own record, and `user:read` is the right to read accounts.
+ * The barrier is `employee:read` — the right to read somebody else's personnel record at all — or
+ * the record being one's own. It was `user:read` until D4-бис, and the two surfaces that carry this
+ * one fact then disagreed: the directory row hands `status` to every holder of `employee:read`
+ * (STORY-012-04), while the card demanded `user:read`. A custom role or a DENY override holding one
+ * and not the other saw the same fact in the list and not on the card, which makes the restriction a
+ * nuisance rather than a rule.
+ *
+ * What the level is **not** is a widening of the personnel audience: `employee:view_personal_data`
+ * buys the employment half and answers nothing about whether the person still has a way in. The two
+ * still travel independently, and the cases below pin both directions down.
  */
 describe('who sees the state of the account', () => {
   const cases = [
@@ -176,22 +183,30 @@ describe('who sees the state of the account', () => {
       expected: true,
     },
     {
-      name: 'somebody else’s, with user:read',
-      actor: actorWith(['user:read']),
+      name: 'somebody else’s, with employee:read — the same barrier as reading the record',
+      actor: actorWith(['employee:read']),
       subject: COLLEAGUE,
       expected: true,
     },
     {
-      name: 'somebody else’s, with employee:read alone',
-      actor: actorWith(['employee:read']),
+      name: 'somebody else’s, with user:read alone and no employee:read',
+      // Reading accounts is not reading personnel records: this caller cannot read the colleague's
+      // record at all (`canReadProfile`), so there is no document for the field to travel on.
+      actor: actorWith(['user:read']),
       subject: COLLEAGUE,
       expected: false,
     },
     {
-      name: 'somebody else’s, with the whole personnel half and no user:read',
+      name: 'somebody else’s, holding nothing at all',
+      actor: actorWith([]),
+      subject: COLLEAGUE,
+      expected: false,
+    },
+    {
+      name: 'somebody else’s, with the personnel half and no employee:read',
       // `employee:view_personal_data` buys the employment — contract, dates, capacity — and says
       // nothing about whether the person still has a way in.
-      actor: actorWith(['employee:read', 'employee:update', 'employee:view_personal_data']),
+      actor: actorWith(['employee:view_personal_data']),
       subject: COLLEAGUE,
       expected: false,
     },
@@ -202,19 +217,19 @@ describe('who sees the state of the account', () => {
       expected: true,
     },
     {
-      name: 'somebody else’s, when user:read is taken away by a DENY override',
+      name: 'somebody else’s, when employee:read is taken away by a DENY override',
       // The override is what an organization uses to take one right from one person; reading the
       // granted set directly would treat it as still held.
-      actor: actorWith(['user:read'], {
-        denied: new Set<SharedPermissions.PermissionKey>(['user:read']),
+      actor: actorWith(['employee:read'], {
+        denied: new Set<SharedPermissions.PermissionKey>(['employee:read']),
       }),
       subject: COLLEAGUE,
       expected: false,
     },
     {
-      name: 'my own, even when user:read is denied to me',
-      actor: actorWith(['user:read'], {
-        denied: new Set<SharedPermissions.PermissionKey>(['user:read']),
+      name: 'my own, even when employee:read is denied to me',
+      actor: actorWith(['employee:read'], {
+        denied: new Set<SharedPermissions.PermissionKey>(['employee:read']),
       }),
       subject: ME,
       expected: true,
@@ -227,14 +242,24 @@ describe('who sees the state of the account', () => {
 
   it('is not the same question as the personal audience, in either direction', () => {
     // Written as one, `employee:view_personal_data` would have carried the state of the account and
-    // `user:read` would have carried the employment half. Neither implies the other.
+    // the directory reader would have carried the employment half. Neither implies the other.
     const hr = actorWith(['employee:view_personal_data']);
-    const accounts = actorWith(['user:read']);
+    const directory = actorWith(['employee:read']);
 
     expect(profileAudience(hr, COLLEAGUE).personal).toBe(true);
     expect(seesAccountStatus(hr, COLLEAGUE)).toBe(false);
-    expect(profileAudience(accounts, COLLEAGUE).personal).toBe(false);
-    expect(seesAccountStatus(accounts, COLLEAGUE)).toBe(true);
+    expect(profileAudience(directory, COLLEAGUE).personal).toBe(false);
+    expect(seesAccountStatus(directory, COLLEAGUE)).toBe(true);
+  });
+
+  it('travels with the record it describes: every reader of a colleague’s card sees it', () => {
+    // The point of D4-бис. `canReadProfile` lets a colleague's record be read on `employee:read`,
+    // and the directory row already hands `status` to that same holder — so anybody who can read
+    // the document at all now sees the same fact on both surfaces.
+    const directory = actorWith(['employee:read']);
+
+    expect(canReadProfile(directory, COLLEAGUE).allowed).toBe(true);
+    expect(seesAccountStatus(directory, COLLEAGUE)).toBe(true);
   });
 });
 
