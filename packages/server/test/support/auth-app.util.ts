@@ -1,4 +1,7 @@
+import { createServer, type Server } from 'node:http';
+
 import { type Express } from 'express';
+import { afterEach } from 'vitest';
 
 import { AuthenticateSessionQuery } from '@/application/identity/use-cases/authenticate-session.query.js';
 import { ChangePasswordUseCase } from '@/application/identity/use-cases/change-password.use-case.js';
@@ -164,7 +167,37 @@ export interface AuthApp {
    * mixed in, and which values never appear at all.
    */
   readonly logLines: () => string[];
+  /**
+   * A `Server` for this app, already listening — call it instead of handing `app` itself to
+   * `request()` when a test makes more than one HTTP call.
+   *
+   * `supertest` wraps a bare Express app in a brand-new `http.Server` and binds it to a fresh
+   * ephemeral port on **every single call** (`request(test.app).post(...)`, then
+   * `request(test.app).delete(...)`, and so on) — it only reuses an existing server when the object
+   * passed in is already listening (`Test#serverAddress` skips `.listen()` once `app.address()` is
+   * truthy). A suite that signs in and then acts — most of them — was paying for a fresh
+   * listen/close cycle per request: a `describe` block of a few `it`s easily opens and tears down a
+   * hundred loopback listeners. Sequentially that is merely wasteful; under load (another package
+   * building, a busy CI runner) it is flaky — some of those cycles land close enough together that a
+   * request gets **`Error: socket hang up`** on a socket the previous cycle had not finished
+   * releasing, on a different, unrelated test each time. `test/setup/http-agent.setup.ts` already
+   * fixed the sibling failure mode this same churn causes (a reused *client*-side keep-alive socket
+   * outliving the server it pointed at); this is the other half — the churn of *server* binds itself.
+   *
+   * Memoized per `AuthApp`, so every call in one test reuses the same listener; closed by the
+   * `afterEach` below, so the next test starts from zero rather than accumulating open sockets over
+   * the file.
+   */
+  readonly server: () => Server;
 }
+
+/** Every listener `AuthApp#server()` has opened for the test that is currently running. */
+const openServers = new Set<Server>();
+
+afterEach(() => {
+  for (const server of openServers) server.close();
+  openServers.clear();
+});
 
 export interface AuthAppOptions {
   readonly registrationOpen?: boolean;
@@ -613,8 +646,21 @@ export const createAuthApp = (options: AuthAppOptions = {}): AuthApp => {
     options.trustedProxyHops === undefined ? {} : { TRUSTED_PROXY_HOPS: options.trustedProxyHops },
   );
 
+  const app = createHttpServer({ ...testApp.container.http, identity, iam });
+
+  let listening: Server | undefined;
+  const server = (): Server => {
+    if (listening === undefined) {
+      listening = createServer(app);
+      listening.listen(0);
+      openServers.add(listening);
+    }
+    return listening;
+  };
+
   return {
-    app: createHttpServer({ ...testApp.container.http, identity, iam }),
+    app,
+    server,
     iam,
     userLifecycle,
     ownership,

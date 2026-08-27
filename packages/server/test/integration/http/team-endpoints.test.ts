@@ -45,7 +45,7 @@ const signedIn = async (
 ): Promise<{ test: AuthApp; token: string }> => {
   const test = createAuthApp(options);
 
-  await request(test.app)
+  await request(test.server())
     .post('/api/v1/auth/register')
     .set('Idempotency-Key', IDEMPOTENCY_KEY)
     .send({
@@ -54,7 +54,7 @@ const signedIn = async (
     })
     .expect(201);
 
-  const response = await request(test.app)
+  const response = await request(test.server())
     .post('/api/v1/auth/login')
     .send({ email: 'ada@example.com', password: PASSWORD })
     .expect(200);
@@ -85,7 +85,7 @@ describe('POST /api/v1/teams', () => {
     const teams = new FakeTeamRepository();
     const { test, token } = await signedIn(admin(teams));
 
-    const response = await request(test.app)
+    const response = await request(test.server())
       .post('/api/v1/teams')
       .set('Authorization', `Bearer ${token}`)
       .set('Idempotency-Key', IDEMPOTENCY_KEY)
@@ -112,7 +112,7 @@ describe('POST /api/v1/teams', () => {
   it('normalises the slug rather than storing two spellings of one team', async () => {
     const { test, token } = await signedIn(admin());
 
-    const response = await request(test.app)
+    const response = await request(test.server())
       .post('/api/v1/teams')
       .set('Authorization', `Bearer ${token}`)
       .set('Idempotency-Key', IDEMPOTENCY_KEY)
@@ -138,7 +138,7 @@ describe('POST /api/v1/teams', () => {
   ])('refuses %s', async (_case, body) => {
     const { test, token } = await signedIn(admin());
 
-    const response = await request(test.app)
+    const response = await request(test.server())
       .post('/api/v1/teams')
       .set('Authorization', `Bearer ${token}`)
       .set('Idempotency-Key', IDEMPOTENCY_KEY)
@@ -159,7 +159,7 @@ describe('POST /api/v1/teams', () => {
       teams: new FakeTeamRepository({ duplicateSlug: true }),
     });
 
-    const response = await request(test.app)
+    const response = await request(test.server())
       .post('/api/v1/teams')
       .set('Authorization', `Bearer ${token}`)
       .set('Idempotency-Key', IDEMPOTENCY_KEY)
@@ -173,7 +173,7 @@ describe('POST /api/v1/teams', () => {
   it('needs the capability', async () => {
     const { test, token } = await signedIn();
 
-    const response = await request(test.app)
+    const response = await request(test.server())
       .post('/api/v1/teams')
       .set('Authorization', `Bearer ${token}`)
       .set('Idempotency-Key', IDEMPOTENCY_KEY)
@@ -192,7 +192,7 @@ describe('POST /api/v1/teams', () => {
       },
     });
 
-    const response = await request(test.app)
+    const response = await request(test.server())
       .post('/api/v1/teams')
       .set('Authorization', `Bearer ${token}`)
       .set('Idempotency-Key', IDEMPOTENCY_KEY)
@@ -215,7 +215,7 @@ describe('GET /api/v1/teams', () => {
       teams,
     });
 
-    const response = await request(test.app)
+    const response = await request(test.server())
       .get('/api/v1/teams')
       .set('Authorization', `Bearer ${token}`)
       .expect(200);
@@ -241,7 +241,7 @@ describe('GET /api/v1/teams', () => {
       capabilities: { ...ADMIN, granted: ['team:read'] },
     });
 
-    const response = await request(test.app)
+    const response = await request(test.server())
       .get('/api/v1/teams')
       .set('Authorization', `Bearer ${token}`)
       .expect(200);
@@ -252,7 +252,7 @@ describe('GET /api/v1/teams', () => {
   it('needs the capability', async () => {
     const { test, token } = await signedIn();
 
-    const response = await request(test.app)
+    const response = await request(test.server())
       .get('/api/v1/teams')
       .set('Authorization', `Bearer ${token}`)
       .expect(403);
@@ -273,7 +273,7 @@ describe('GET /api/v1/teams/{teamId}', () => {
       teams,
     });
 
-    const response = await request(test.app)
+    const response = await request(test.server())
       .get(`/api/v1/teams/${TEAM_ID}`)
       .set('Authorization', `Bearer ${token}`)
       .expect(200);
@@ -298,7 +298,7 @@ describe('GET /api/v1/teams/{teamId}', () => {
       teams: seeded(),
     });
 
-    const response = await request(test.app)
+    const response = await request(test.server())
       .get(`/api/v1/teams/${TEAM_ID}`)
       .set('Authorization', `Bearer ${token}`)
       .expect(200);
@@ -312,7 +312,7 @@ describe('GET /api/v1/teams/{teamId}', () => {
       capabilities: { ...ADMIN, granted: ['team:read'] },
     });
 
-    const response = await request(test.app)
+    const response = await request(test.server())
       .get(`/api/v1/teams/${TEAM_ID}`)
       .set('Authorization', `Bearer ${token}`)
       .expect(404);
@@ -335,7 +335,7 @@ describe('GET /api/v1/teams/{teamId}', () => {
       teams,
     });
 
-    const response = await request(test.app)
+    const response = await request(test.server())
       .get(`/api/v1/teams/${TEAM_ID}`)
       .set('Authorization', `Bearer ${token}`)
       .expect(404);
@@ -351,7 +351,7 @@ describe('GET /api/v1/teams/{teamId}', () => {
   it('answers 403, not 404, when the caller may not read teams at all', async () => {
     const { test, token } = await signedIn();
 
-    const response = await request(test.app)
+    const response = await request(test.server())
       .get(`/api/v1/teams/${TEAM_ID}`)
       .set('Authorization', `Bearer ${token}`)
       .expect(403);
@@ -365,7 +365,7 @@ describe('PATCH /api/v1/teams/{teamId}', () => {
     const teams = seeded();
     const { test, token } = await signedIn(admin(teams));
 
-    await request(test.app)
+    await request(test.server())
       .patch(`/api/v1/teams/${TEAM_ID}`)
       .set('Authorization', `Bearer ${token}`)
       .send({ name: 'Platform', slug: 'platform' })
@@ -387,7 +387,7 @@ describe('PATCH /api/v1/teams/{teamId}', () => {
 
     const { test, token } = await signedIn(admin(teams));
 
-    await request(test.app)
+    await request(test.server())
       .patch(`/api/v1/teams/${TEAM_ID}`)
       .set('Authorization', `Bearer ${token}`)
       .send({ name: 'Backend', slug: 'backend' })
@@ -408,7 +408,7 @@ describe('PATCH /api/v1/teams/{teamId}', () => {
 
     const { test, token } = await signedIn(admin(teams));
 
-    await request(test.app)
+    await request(test.server())
       .patch(`/api/v1/teams/${TEAM_ID}`)
       .set('Authorization', `Bearer ${token}`)
       .send({ name: 'Platform', slug: 'platform' })
@@ -421,7 +421,7 @@ describe('PATCH /api/v1/teams/{teamId}', () => {
   it('answers 404 for a team this organization cannot see', async () => {
     const { test, token } = await signedIn(admin());
 
-    const response = await request(test.app)
+    const response = await request(test.server())
       .patch(`/api/v1/teams/${TEAM_ID}`)
       .set('Authorization', `Bearer ${token}`)
       .send({ name: 'Platform', slug: 'platform' })
@@ -442,7 +442,7 @@ describe('PATCH /api/v1/teams/{teamId}', () => {
 
     const { test, token } = await signedIn(admin(teams));
 
-    const response = await request(test.app)
+    const response = await request(test.server())
       .patch(`/api/v1/teams/${TEAM_ID}`)
       .set('Authorization', `Bearer ${token}`)
       .send({ name: 'Backend', slug: 'growth' })
@@ -470,7 +470,7 @@ describe('PATCH /api/v1/teams/{teamId}', () => {
       teams,
     });
 
-    const response = await request(test.app)
+    const response = await request(test.server())
       .patch(`/api/v1/teams/${TEAM_ID}`)
       .set('Authorization', `Bearer ${token}`)
       .send({ name: 'Platform', slug: 'platform' })
@@ -487,7 +487,7 @@ describe('PATCH /api/v1/teams/{teamId}', () => {
       teams: seeded(),
     });
 
-    const response = await request(test.app)
+    const response = await request(test.server())
       .patch(`/api/v1/teams/${TEAM_ID}`)
       .set('Authorization', `Bearer ${token}`)
       .send({ name: 'Platform', slug: 'platform' })
@@ -507,7 +507,7 @@ describe('DELETE /api/v1/teams/{teamId}', () => {
 
     const { test, token } = await signedIn(admin(teams));
 
-    await request(test.app)
+    await request(test.server())
       .delete(`/api/v1/teams/${TEAM_ID}`)
       .set('Authorization', `Bearer ${token}`)
       .expect(204);
@@ -542,7 +542,7 @@ describe('DELETE /api/v1/teams/{teamId}', () => {
     const teams = seeded();
     const { test, token } = await signedIn(admin(teams));
 
-    await request(test.app)
+    await request(test.server())
       .delete(`/api/v1/teams/${TEAM_ID}`)
       .set('Authorization', `Bearer ${token}`)
       .expect(204);
@@ -559,12 +559,12 @@ describe('DELETE /api/v1/teams/{teamId}', () => {
     const teams = seeded();
     const { test, token } = await signedIn(admin(teams));
 
-    await request(test.app)
+    await request(test.server())
       .delete(`/api/v1/teams/${TEAM_ID}`)
       .set('Authorization', `Bearer ${token}`)
       .expect(204);
 
-    await request(test.app)
+    await request(test.server())
       .delete(`/api/v1/teams/${TEAM_ID}`)
       .set('Authorization', `Bearer ${token}`)
       .expect(404);
@@ -576,7 +576,7 @@ describe('DELETE /api/v1/teams/{teamId}', () => {
   it('answers 404 for a team this organization cannot see', async () => {
     const { test, token } = await signedIn(admin());
 
-    const response = await request(test.app)
+    const response = await request(test.server())
       .delete(`/api/v1/teams/${TEAM_ID}`)
       .set('Authorization', `Bearer ${token}`)
       .expect(404);
@@ -599,7 +599,7 @@ describe('DELETE /api/v1/teams/{teamId}', () => {
       teams,
     });
 
-    const response = await request(test.app)
+    const response = await request(test.server())
       .delete(`/api/v1/teams/${TEAM_ID}`)
       .set('Authorization', `Bearer ${token}`)
       .expect(404);
@@ -615,7 +615,7 @@ describe('DELETE /api/v1/teams/{teamId}', () => {
       teams: seeded(),
     });
 
-    const response = await request(test.app)
+    const response = await request(test.server())
       .delete(`/api/v1/teams/${TEAM_ID}`)
       .set('Authorization', `Bearer ${token}`)
       .expect(403);
@@ -630,7 +630,7 @@ describe('POST /api/v1/teams/{teamId}/members', () => {
     const teams = seeded();
     const { test, token } = await signedIn(admin(teams));
 
-    await request(test.app)
+    await request(test.server())
       .post(`/api/v1/teams/${TEAM_ID}/members`)
       .set('Authorization', `Bearer ${token}`)
       .set('Idempotency-Key', IDEMPOTENCY_KEY)
@@ -659,7 +659,7 @@ describe('POST /api/v1/teams/{teamId}/members', () => {
     const teams = seeded();
     const { test, token } = await signedIn(admin(teams));
 
-    await request(test.app)
+    await request(test.server())
       .post(`/api/v1/teams/${TEAM_ID}/members`)
       .set('Authorization', `Bearer ${token}`)
       .set('Idempotency-Key', IDEMPOTENCY_KEY)
@@ -686,7 +686,7 @@ describe('POST /api/v1/teams/{teamId}/members', () => {
 
     const { test, token } = await signedIn(admin(teams));
 
-    await request(test.app)
+    await request(test.server())
       .post(`/api/v1/teams/${TEAM_ID}/members`)
       .set('Authorization', `Bearer ${token}`)
       .set('Idempotency-Key', IDEMPOTENCY_KEY)
@@ -710,7 +710,7 @@ describe('POST /api/v1/teams/{teamId}/members', () => {
   it('refuses a team role the CHECK constraint would refuse', async () => {
     const { test, token } = await signedIn(admin(seeded()));
 
-    const response = await request(test.app)
+    const response = await request(test.server())
       .post(`/api/v1/teams/${TEAM_ID}/members`)
       .set('Authorization', `Bearer ${token}`)
       .set('Idempotency-Key', IDEMPOTENCY_KEY)
@@ -730,7 +730,7 @@ describe('POST /api/v1/teams/{teamId}/members', () => {
     const { test, token } = await signedIn(admin(teams));
 
     for (const key of ['a'.repeat(32), 'b'.repeat(32)]) {
-      await request(test.app)
+      await request(test.server())
         .post(`/api/v1/teams/${TEAM_ID}/members`)
         .set('Authorization', `Bearer ${token}`)
         .set('Idempotency-Key', key)
@@ -765,7 +765,7 @@ describe('POST /api/v1/teams/{teamId}/members', () => {
         teams,
       });
 
-      const response = await request(test.app)
+      const response = await request(test.server())
         .post(`/api/v1/teams/${TEAM_ID}/members`)
         .set('Authorization', `Bearer ${token}`)
         .set('Idempotency-Key', IDEMPOTENCY_KEY)
@@ -795,7 +795,7 @@ describe('POST /api/v1/teams/{teamId}/members', () => {
 
       const { test, token } = await signedIn(admin(teams));
 
-      const response = await request(test.app)
+      const response = await request(test.server())
         .post(`/api/v1/teams/${TEAM_ID}/members`)
         .set('Authorization', `Bearer ${token}`)
         .set('Idempotency-Key', IDEMPOTENCY_KEY)
@@ -816,7 +816,7 @@ describe('POST /api/v1/teams/{teamId}/members', () => {
 
     const { test, token } = await signedIn(admin(teams));
 
-    const response = await request(test.app)
+    const response = await request(test.server())
       .post(`/api/v1/teams/${TEAM_ID}/members`)
       .set('Authorization', `Bearer ${token}`)
       .set('Idempotency-Key', IDEMPOTENCY_KEY)
@@ -830,7 +830,7 @@ describe('POST /api/v1/teams/{teamId}/members', () => {
   it('answers 404 for a team this organization cannot see', async () => {
     const { test, token } = await signedIn(admin());
 
-    const response = await request(test.app)
+    const response = await request(test.server())
       .post(`/api/v1/teams/${TEAM_ID}/members`)
       .set('Authorization', `Bearer ${token}`)
       .set('Idempotency-Key', IDEMPOTENCY_KEY)
@@ -847,7 +847,7 @@ describe('POST /api/v1/teams/{teamId}/members', () => {
       teams: seeded(),
     });
 
-    const response = await request(test.app)
+    const response = await request(test.server())
       .post(`/api/v1/teams/${TEAM_ID}/members`)
       .set('Authorization', `Bearer ${token}`)
       .set('Idempotency-Key', IDEMPOTENCY_KEY)
@@ -868,7 +868,7 @@ describe('DELETE /api/v1/teams/{teamId}/members/{userId}', () => {
 
     const { test, token } = await signedIn(admin(teams));
 
-    await request(test.app)
+    await request(test.server())
       .delete(`/api/v1/teams/${TEAM_ID}/members/${IVAN}`)
       .set('Authorization', `Bearer ${token}`)
       .expect(204);
@@ -894,7 +894,7 @@ describe('DELETE /api/v1/teams/{teamId}/members/{userId}', () => {
     const teams = seeded();
     const { test, token } = await signedIn(admin(teams));
 
-    const response = await request(test.app)
+    const response = await request(test.server())
       .delete(`/api/v1/teams/${TEAM_ID}/members/${IVAN}`)
       .set('Authorization', `Bearer ${token}`)
       .expect(404);
@@ -908,7 +908,7 @@ describe('DELETE /api/v1/teams/{teamId}/members/{userId}', () => {
   it('answers 404 for a team this organization cannot see', async () => {
     const { test, token } = await signedIn(admin());
 
-    const response = await request(test.app)
+    const response = await request(test.server())
       .delete(`/api/v1/teams/${TEAM_ID}/members/${IVAN}`)
       .set('Authorization', `Bearer ${token}`)
       .expect(404);
@@ -920,7 +920,7 @@ describe('DELETE /api/v1/teams/{teamId}/members/{userId}', () => {
   it('needs the capability', async () => {
     const { test, token } = await signedIn({ teams: seeded() });
 
-    const response = await request(test.app)
+    const response = await request(test.server())
       .delete(`/api/v1/teams/${TEAM_ID}/members/${IVAN}`)
       .set('Authorization', `Bearer ${token}`)
       .expect(403);
