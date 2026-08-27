@@ -15,7 +15,6 @@ export interface InvitationConfirmDialogProps {
   /** The link a successful re-issue produced — the only copy that will ever exist. */
   readonly minted?: IamApi.MintedInvitation;
   readonly onConfirm: () => void;
-  readonly onCopy: (url: string) => void;
   readonly onClose: () => void;
 }
 
@@ -49,7 +48,6 @@ export function InvitationConfirmDialog({
   failureKey,
   minted,
   onConfirm,
-  onCopy,
   onClose,
 }: InvitationConfirmDialogProps) {
   const { t } = useTranslation();
@@ -99,11 +97,7 @@ export function InvitationConfirmDialog({
         </Stack>
       ) : (
         <Stack gap="md">
-          <IamUi.InvitationLink
-            invitation={minted}
-            onCopy={onCopy}
-            titleKey="members.invitations.reissued"
-          />
+          <IamUi.InvitationLink invitation={minted} titleKey="members.invitations.reissued" />
           <Group>
             <Button onClick={onClose} variant="default">
               {t('members.invitations.close')}

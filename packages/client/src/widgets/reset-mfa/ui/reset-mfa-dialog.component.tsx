@@ -2,8 +2,6 @@ import { Alert, Button, Group, List, Modal, Stack, Text, TextInput } from '@mant
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { SharedApi } from '@shared';
-
 import { EmployeeService } from '@units/employee';
 
 import { ResetMfaReport } from './reset-mfa-report.component.js';
@@ -50,13 +48,20 @@ export interface ResetMfaDialogProps {
  * aside, which keeps this action to one signal (`rules/errors-and-toasts.mdc` §2–§3,
  * `rules/tanstack-query.mdc` §10). Nothing typed is cleared by a refusal.
  *
+ * **The refusal arrives already as a sentence key**, from `useResetMfa`, which is also where the
+ * request is started from. This dialog used to call the mutation itself and translate the error
+ * itself — a skipped link in the call chain (`rules/frontend-fsd.mdc` rule 4) and the second copy of
+ * `error → messageKey` in the client. Both are now in the unit, where the two dialogs beside this
+ * one keep theirs.
+ *
+
  * After a successful run the dialog stays open and shows the report, for the reason the offboarding
  * dialog does: closing on success would hide the one thing worth reading — including «this account
  * had no second factor», which is what a mis-aimed reset looks like.
  */
 export function ResetMfaDialog({ opened, userId, email, onClose }: ResetMfaDialogProps) {
   const { t } = useTranslation();
-  const reset = EmployeeService.EmployeeMutations.useResetUserMfa();
+  const reset = EmployeeService.EmployeeHooks.useResetMfa(userId);
   const [typed, setTyped] = useState('');
 
   /**
@@ -75,11 +80,9 @@ export function ResetMfaDialog({ opened, userId, email, onClose }: ResetMfaDialo
   const expected = email.trim().toLowerCase();
   const confirmed = expected !== '' && typed.trim().toLowerCase() === expected;
 
-  const failureKey = reset.error === null ? undefined : SharedApi.errorMessageKey(reset.error);
-
   const dismiss = (): void => {
     setTyped('');
-    reset.reset();
+    reset.dismiss();
     onClose();
   };
 
@@ -92,7 +95,7 @@ export function ResetMfaDialog({ opened, userId, email, onClose }: ResetMfaDialo
       opened={opened}
       title={t('security.reset.dialog.title')}
     >
-      {reset.data === undefined ? (
+      {reset.result === undefined ? (
         <Stack gap="md">
           <Text>{t('security.reset.dialog.description', { email })}</Text>
 
@@ -113,7 +116,7 @@ export function ResetMfaDialog({ opened, userId, email, onClose }: ResetMfaDialo
             value={typed}
           />
 
-          {failureKey !== undefined && (
+          {reset.failureKey !== undefined && (
             // `role="alert"`, so it is announced rather than merely drawn: the operator's attention
             // is on the button they just pressed (`rules/a11y.mdc` §13). The text comes from the
             // `code`, never from `detail` — the technical half went to the log.
@@ -123,7 +126,7 @@ export function ResetMfaDialog({ opened, userId, email, onClose }: ResetMfaDialo
               title={t('security.reset.failed.title')}
               variant="light"
             >
-              <Text size="sm">{t(failureKey)}</Text>
+              <Text size="sm">{t(reset.failureKey)}</Text>
             </Alert>
           )}
 
@@ -137,9 +140,7 @@ export function ResetMfaDialog({ opened, userId, email, onClose }: ResetMfaDialo
               color="danger"
               disabled={!confirmed}
               loading={reset.isPending}
-              onClick={() => {
-                reset.mutate(userId);
-              }}
+              onClick={reset.resetMfa}
             >
               {t('security.reset.submit')}
             </Button>
@@ -147,7 +148,7 @@ export function ResetMfaDialog({ opened, userId, email, onClose }: ResetMfaDialo
         </Stack>
       ) : (
         <Stack gap="md">
-          <ResetMfaReport result={reset.data} />
+          <ResetMfaReport result={reset.result} />
           <Group justify="flex-end">
             <Button onClick={dismiss} variant="default">
               {t('security.reset.close')}

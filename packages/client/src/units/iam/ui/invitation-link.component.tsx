@@ -3,11 +3,11 @@ import { useTranslation } from 'react-i18next';
 
 import { SharedLib } from '@shared';
 
+import { useCopyInvitationLink } from '@units/iam/service/hooks';
 import { type IamApi } from '@units/iam';
 
 export interface InvitationLinkProps {
   readonly invitation: IamApi.MintedInvitation;
-  readonly onCopy: (url: string) => void;
   /**
    * The opening sentence, which is the one thing the two callers say differently: the invite screen
    * has just created an invitation, the list has just replaced the link of one that existed.
@@ -30,13 +30,18 @@ export interface InvitationLinkProps {
  *
  * `role="status"` rather than an alert: nothing went wrong, and a screen reader should hear that
  * the invitation exists without being interrupted mid-sentence.
+ *
+ * **The copy control answers for itself.** It used to hand the url up through an `onCopy` prop, and
+ * both callers then wrote the same handler: the same write, the same notification id, the same two
+ * keys. The panel owns the button, so it owns what pressing it does; the callers no longer know
+ * there is a clipboard involved.
  */
 export function InvitationLink({
   invitation,
-  onCopy,
   titleKey = 'members.invite.created',
 }: InvitationLinkProps) {
   const { t, i18n } = useTranslation();
+  const copy = useCopyInvitationLink();
 
   return (
     <Stack gap="sm" role="status">
@@ -55,7 +60,7 @@ export function InvitationLink({
         <Code aria-label={t('members.invite.linkLabel')}>{invitation.inviteUrl}</Code>
         <Button
           onClick={() => {
-            onCopy(invitation.inviteUrl);
+            copy(invitation.inviteUrl);
           }}
           variant="light"
         >

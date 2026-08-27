@@ -3,13 +3,21 @@ import { useCallback } from 'react';
 
 import { type ReactivationResult } from '@units/employee/api';
 import { useReactivateUser } from '@units/employee/service/mutations';
+import { errorMessageKey } from '@shared/api';
 import { QueryKeys } from '@shared/lib';
 
 export interface ReactivationController {
   /** What the server answered, or `undefined` while nothing has been run yet. */
   readonly result: ReactivationResult | undefined;
-  /** The last refusal, rendered where the button was pressed rather than toasted. */
-  readonly error: Error | null;
+  /**
+   * The last refusal as a sentence key, rendered where the button was pressed rather than toasted.
+   *
+   * A key rather than the `Error`: choosing the sentence from the `code` and never from `detail`
+   * (`rules/errors-and-toasts.mdc` §10) is a rule about failures, and it is applied on one layer of
+   * this client — `service/hooks` — for every confirmation dialog. Handing the dialog an `Error`
+   * would let it apply the rule a second time, differently, with nothing turning red.
+   */
+  readonly failureKey: string | undefined;
   readonly isPending: boolean;
   readonly reactivate: () => void;
   /**
@@ -23,7 +31,12 @@ export interface ReactivationController {
  * Bringing one account back, as the object a dialog can render — the unit's public API for `ui`
  * (`rules/frontend-fsd.mdc` rule 6).
  *
- * **Its reason for existing is `dismiss`.** The mutation deliberately invalidates nothing (see
+ * **The reason it was written is `dismiss`; the reason it is shaped like its two neighbours is
+ * `failureKey`.** All three confirmations in this product — this one, the 2FA reset and the
+ * invitation pair — now hand `ui` a ready sentence key, so the rule about reading a failure by its
+ * `code` is applied on one layer instead of three.
+ *
+ * **About `dismiss`.** The mutation deliberately invalidates nothing (see
  * `reactivate-user.mutation.ts`): the card refreshes when the report has been read, not when the
  * request succeeded, because the section the dialog lives in is drawn only while the account is off
  * and a refresh takes the whole dialog off the screen with it. Somebody has to hold that ordering,
@@ -61,7 +74,7 @@ export const useReactivation = (userId: string): ReactivationController => {
 
   return {
     result: data,
-    error,
+    failureKey: error === null ? undefined : errorMessageKey(error),
     isPending,
     reactivate,
     dismiss,

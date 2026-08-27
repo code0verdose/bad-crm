@@ -97,9 +97,10 @@ export function EmployeeProfilePage() {
    * whose notice period was entered in advance (decision D4 of STORY-012-09). The date rides along
    * as decoration and is `null` when this caller was not shown the employment half of the document.
    *
-   * **Absence of `status` draws nothing.** The key reaches a holder of `user:read` and the person
-   * themselves; for anybody else it is not sent at all, and «you may not see this» is not «the
-   * account is fine» (`docs/api/openapi.yaml`, `EmployeeProfile.status`).
+   * **Absence of `status` draws nothing.** The field reaches a holder of `employee:read` and the
+   * person themselves; for anybody else it is not sent at all, and «you may not see this» is not
+   * «the account is fine» (`docs/api/openapi.yaml`, `EmployeeProfile.status`; the level and both
+   * rejected alternatives are `docs/security/permission-model.md` §4.1.1).
    */
   const suspendedSince =
     query.data !== undefined && query.data.status === 'SUSPENDED'

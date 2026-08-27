@@ -1,7 +1,6 @@
 import { Stack } from '@mantine/core';
 import { useTranslation } from 'react-i18next';
 
-import { notify } from '@shared/ui';
 import { IamModel, IamService, IamUi } from '@units/iam';
 
 /**
@@ -42,35 +41,7 @@ export function InviteMember() {
         roles={options}
       />
 
-      {create.data === undefined ? null : (
-        <IamUi.InvitationLink
-          invitation={create.data}
-          onCopy={(url) => {
-            void navigator.clipboard.writeText(url).then(
-              () => {
-                // One signal, with a stable id: copying twice updates the same notification rather
-                // than stacking two (`rules/errors-and-toasts.mdc` §2).
-                notify.success({
-                  id: 'invitation-link-copied',
-                  messageKey: 'members.invite.copied',
-                });
-              },
-              () => {
-                // The clipboard is refused often enough to matter — permission denied, an insecure
-                // origin, a browser that wants a fresher gesture. Silence here is the worst possible
-                // answer on this screen: the link is shown **once**, so a person who believes they
-                // copied it and did not has lost it. `void … .then(onlySuccess)` satisfied the
-                // linter and dropped the rejection into the global handler, where the user never
-                // sees it.
-                notify.error({
-                  id: 'invitation-link-copied',
-                  messageKey: 'members.invite.copyFailed',
-                });
-              },
-            );
-          }}
-        />
-      )}
+      {create.data === undefined ? null : <IamUi.InvitationLink invitation={create.data} />}
     </Stack>
   );
 }

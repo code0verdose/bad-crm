@@ -24,7 +24,9 @@ export const useEmployeeListQuery = (
   /**
    * Whether to ask at all — required rather than defaulted, so every caller states it.
    *
-   * The directory is behind `user:read`, which the screen that owns it always holds and a screen
+   * The directory is behind `employee:read` — it always was; this line said `user:read` until
+   * 2026-08-14, which was wrong on the day it was written rather than made wrong by a later change.
+   * The right is one the screen that owns the directory always holds and a screen
    * that merely *joins* against it may not: the team roster carries account ids and no names, and it
    * asks for names only when the reader may be told them. A request certain to be refused is not a
    * graceful fallback, it is a 403 per page view — and a default would let the next caller acquire

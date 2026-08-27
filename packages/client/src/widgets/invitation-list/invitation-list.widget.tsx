@@ -5,7 +5,6 @@ import { useTranslation } from 'react-i18next';
 
 import { SharedUi } from '@shared';
 
-import { notify } from '@shared/ui';
 import {
   invitationRows,
   type InvitationActionKind,
@@ -161,25 +160,6 @@ export function InvitationList() {
           // The re-issue keeps the dialog open — the link it produced is the only copy there will
           // ever be. The revoke closes it, because the row it was about is gone.
           action.run(ask.id, ask.action === 'revoke' ? close : undefined);
-        }}
-        onCopy={(url) => {
-          void navigator.clipboard.writeText(url).then(
-            () => {
-              // One signal, with a stable id: copying twice updates the same notification rather
-              // than stacking two (`rules/errors-and-toasts.mdc` §2).
-              notify.success({ id: 'invitation-link-copied', messageKey: 'members.invite.copied' });
-            },
-            () => {
-              // The clipboard is refused often enough to matter — permission denied, an insecure
-              // origin, a browser wanting a fresher gesture. Silence is the worst answer here: the
-              // link is shown once, so somebody who believes they copied it and did not has lost
-              // the only copy.
-              notify.error({
-                id: 'invitation-link-copied',
-                messageKey: 'members.invite.copyFailed',
-              });
-            },
-          );
         }}
         opened={ask !== null}
         {...(action.failureKey === undefined ? {} : { failureKey: action.failureKey })}

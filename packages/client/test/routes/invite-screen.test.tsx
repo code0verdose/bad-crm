@@ -2,6 +2,10 @@ import { screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { type i18n as I18n } from 'i18next';
+
+import { SharedI18n } from '@shared';
+
 /**
  * `/admin/members/invite` end to end, against a stubbed server.
  *
@@ -83,14 +87,24 @@ const stubServer = (
 
 const startAt = async (
   granted: readonly string[],
-  options: { readonly noMail?: boolean } = {},
+  options: {
+    readonly noMail?: boolean;
+    /** A real catalogue instead of the suite's `cimode` one — see «in a real language» below. */
+    readonly i18n?: I18n;
+    readonly language?: string;
+  } = {},
 ): Promise<void> => {
   vi.resetModules();
   stubServer(granted, options);
 
   const { renderApp } = await import('../support/render-app.util.js');
 
-  renderApp({ path: '/admin/members/invite', status: 'authenticated' });
+  renderApp({
+    path: '/admin/members/invite',
+    status: 'authenticated',
+    ...(options.i18n === undefined ? {} : { i18n: options.i18n }),
+    ...(options.language === undefined ? {} : { language: options.language }),
+  });
 };
 
 const INVITER = ['invitation:create', 'role:read'];
@@ -220,3 +234,52 @@ describe('/admin/members/invite', () => {
     expect(sent.some((call) => call.url.endsWith('/roles'))).toBe(false);
   });
 });
+
+/**
+ * The property `cimode` cannot state, about the one signal that matters most on this screen.
+ *
+ * Every assertion above matches a **key**, and under `cimode` `t(key)` returns the key — so a
+ * notification whose text never went through `t()` at all is indistinguishable from one that did,
+ * and `invite.copyFailed` matches either way. That is tolerable for a heading. It is not tolerable
+ * here: this sentence is what tells somebody that the link they think they copied is **not** in
+ * their clipboard, and the link is shown once. A key on screen instead of a sentence would be, to
+ * the person reading it, the same silence the handler exists to prevent.
+ *
+ * So the catalogue is rendered for real, in both languages, and two things are asserted: the
+ * sentence a person has to be able to read, and that no raw key reached the screen beside it.
+ * The second is what makes the first discriminating — a missing `t()` renders the key, and the key
+ * is exactly what the second assertion forbids.
+ */
+describe.each(['en', 'ru'] as const)(
+  'a refused clipboard on the invite screen in %s',
+  (language) => {
+    it('says in words that the link was not copied', async () => {
+      const user = userEvent.setup();
+      const i18n = SharedI18n.createI18n(language);
+      const writeText = vi.fn(() => Promise.reject(new Error('denied')));
+
+      vi.stubGlobal('navigator', { ...navigator, clipboard: { writeText } });
+
+      await startAt(INVITER, { i18n, language });
+
+      // By role rather than by label: Mantine appends a required marker to the label text, and the
+      // address field is called «E-mail» in both catalogues anyway — it proves nothing about language.
+      // The two controls that do are named through the catalogue below.
+      await user.type(await screen.findByRole('textbox'), 'ivan@example.test');
+      await user.click(screen.getByRole('button', { name: i18n.t('members.invite.submit') }));
+
+      await waitFor(() => {
+        expect(screen.getByText(INVITE_URL)).toBeInTheDocument();
+      });
+
+      await user.click(screen.getByRole('button', { name: i18n.t('members.invite.copy') }));
+
+      expect(await screen.findByText(i18n.t('members.invite.copyFailed'))).toBeInTheDocument();
+      // No raw key anywhere on the screen: `t()` returns the key itself when the sentence never went
+      // through it, which is the one failure a `cimode` suite can never see.
+      expect(screen.queryByText(/members\.invite\./)).toBeNull();
+      // And the link is still there to be selected by hand — the point of saying so at all.
+      expect(screen.getByText(INVITE_URL)).toBeInTheDocument();
+    });
+  },
+);
