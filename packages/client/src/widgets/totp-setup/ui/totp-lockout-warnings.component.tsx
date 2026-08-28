@@ -11,11 +11,22 @@ import { useTranslation } from 'react-i18next';
  *    `/settings/security`) and it asks for the current password *and* a second-factor code — a live
  *    one or an unused recovery code. This used to read «there is no way to turn it off», which was
  *    true of the build that shipped enrolment and stopped being true the day the way out landed. It
- *    is still a warning rather than a reassurance: somebody with no password and no code has no exit
- *    from this screen, and an administrator reset has no interface yet.
- * 2. **The recovery codes are the only way back.** The database holds argon2id hashes and nothing
- *    else; a lost phone with unsaved codes is an account nobody — including the person who runs the
- *    server — can hand back.
+ *    is still a warning rather than a reassurance: somebody with no password and no code cannot
+ *    leave this screen on their own. What they are left with is somebody else — an administrator
+ *    holding `user:reset_mfa` can strip the second factor from the employee's profile
+ *    (`widgets/reset-mfa`, mounted on `pages/employee-profile`), which is a request to make, not a
+ *    control on this page. The one account with nobody above it is the organization owner: the
+ *    policy refuses a reset of the owner by anyone but the owner, and refuses a self-reset
+ *    (`domain/identity/access/mfa-policy.policy.ts`), so for them the two proofs really are the
+ *    only exit.
+ * 2. **The recovery codes are the only way back that belongs to this person.** The database holds
+ *    argon2id hashes and nothing else, so a lost code is not a code anyone can look up — not
+ *    support, not whoever runs the server, which is what the string says and all it says. What
+ *    remains after a lost phone and unsaved codes is the administrative reset in point 1: somebody
+ *    else's decision, on somebody else's schedule, and unavailable to the owner at all. Stated as
+ *    «the only way back» rather than «the only self-service way back» on purpose — the person
+ *    reading it before pressing Enable is deciding what to do with a sheet of codes, and «an admin
+ *    can fix it» is exactly the thought that gets the sheet closed unsaved.
  * 3. **A lost confirmation answer is a lost set of codes.** The codes travel in the response to
  *    `POST /auth/2fa/confirm` and exist in no other form; a dropped connection at that instant
  *    leaves 2FA on and the codes unseen. The way out is reissuing them, which needs the password

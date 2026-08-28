@@ -62,8 +62,9 @@ export function TotpSetup({ enrolment, isEnrolled }: TotpSetupProps) {
         <Stack gap="md">
           <Text>{t('security.totp.status.on')}</Text>
           {/*
-            The same three warnings, still true and still worth reading once 2FA is on: there is no
-            way to switch it off on this build, and the recovery codes below are the only way back.
+            The same three warnings, still true and still worth reading once 2FA is on: switching it
+            off costs the same two proofs as signing in (`DisableTotp`, rendered by the page below
+            this section), and the recovery codes are the only way back this person controls.
             Hiding them after enrolment would leave the person who most needs them — the one who now
             depends on an authenticator app — with no statement of what they depend on.
           */}

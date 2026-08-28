@@ -13,10 +13,13 @@ export interface RecoveryCodesLowBannerProps {
  * - **Some left.** A count, and an instruction to replace the set while replacing it is still
  *   something this person can do on their own — it needs a live code from the authenticator, so it
  *   has to happen before the phone is the problem.
- * - **None left.** No longer a warning but a statement of position: recovery-code sign-in is over,
- *   the authenticator is the only way in, and there is no administrator reset on this build to fall
- *   back on. Softening that into «you have 0 codes» would leave somebody believing there is still a
- *   list to find.
+ * - **None left.** No longer a warning but a statement of position: recovery-code sign-in is over
+ *   and the authenticator is the only way in that this person controls. The string names the one
+ *   remaining exit rather than pretending there is none — an administrator holding `user:reset_mfa`
+ *   can strip the second factor (`widgets/reset-mfa` on the employee profile) — and it names it
+ *   last, after «issue a new set below while it still works», because the reset costs somebody
+ *   else's time and the self-service path is still open at this moment. Softening the position into
+ *   «you have 0 codes» would leave somebody believing there is still a list to find.
  *
  * It is a permanent banner rather than a toast: it describes a condition, not an event, and it is
  * still true on the next page load (`rules/errors-and-toasts.mdc` §5).
