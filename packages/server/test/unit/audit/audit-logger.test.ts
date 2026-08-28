@@ -92,6 +92,7 @@ describe('the action catalogue', () => {
       'organization.registered',
       'session.signed_in',
       'session.revoked',
+      'session.refresh_reuse_detected',
       'password.changed',
       'password.reset',
       'user.mfa_enabled',

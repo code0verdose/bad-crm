@@ -111,6 +111,41 @@ describe('an event that can be a row', () => {
   });
 });
 
+/**
+ * The guard in front of the trail, at the one place both channels pass through.
+ *
+ * It lives here rather than in each use-case for the reason the port's own comment gives: a rule
+ * every caller has to remember is a rule that holds until one of them does not. The unscoped branch
+ * matters as much as the row: an event of an organization that is not yet known goes to the log, and
+ * a log line is read by everyone with access to the logs.
+ */
+describe('a payload carrying something it should not', () => {
+  it('cuts it out of the row and records that it was cut', async () => {
+    const create = vi.fn().mockResolvedValue({});
+    const logger = loggerFor(() => Promise.resolve());
+
+    await withTenant(fakeClient(create), { organizationId: ORG, userId: null }, async () => {
+      await logger.record(event({ after: { roleId: 'role-1', apiKey: 'sk-live-1' } }));
+    });
+
+    expect(create.mock.calls[0]?.[0]).toMatchObject({
+      data: { after: { roleId: 'role-1', apiKey: '[redacted]', _redacted: ['apiKey'] } },
+    });
+  });
+
+  it('cuts it out of the event that goes to the log instead', async () => {
+    const unscoped = vi.fn<RecordFn>().mockResolvedValue(undefined);
+    const logger = loggerFor(unscoped);
+
+    await logger.record(event({ before: { password: 'hunter2' } }));
+
+    expect(unscoped.mock.calls[0]?.[0].before).toStrictEqual({
+      password: '[redacted]',
+      _redacted: ['password'],
+    });
+  });
+});
+
 describe('an event that cannot be a row', () => {
   it('goes to the log when there is no tenant scope at all', async () => {
     const create = vi.fn();

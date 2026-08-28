@@ -1,6 +1,7 @@
 import { SharedAudit } from '@bad-crm/shared';
 import { Prisma } from '@prisma/client';
 
+import { redactAuditPayload } from '@/application/platform/audit/audit-redaction.util.js';
 import {
   type AuditEvent,
   type AuditLoggerPort,
@@ -39,6 +40,12 @@ export interface PrismaAuditLoggerDependencies {
  * site: the same event filed at two levels by two use-cases makes «show me the critical ones»
  * silently incomplete.
  *
+ * **The payload is filtered before anything is written**, on the way in rather than on each of the
+ * two ways out: an event that cannot be a row still goes to the log, and a log line is read by
+ * everyone who can read the logs. Doing it once here is also what makes the guarantee checkable —
+ * one place to point at, instead of thirty call sites to trust
+ * (`application/platform/audit/audit-redaction.util.ts`).
+ *
  * **The address is hashed, never stored.** `AuditEvent` carries the address because that is what an
  * HTTP layer has; what reaches the column is a keyed digest, the same one sessions store, so «the
  * same address again» stays answerable without the address being recoverable from a dump.
@@ -47,8 +54,17 @@ export class PrismaAuditLogger implements AuditLoggerPort {
   constructor(private readonly dependencies: PrismaAuditLoggerDependencies) {}
 
   async record(event: AuditEvent): Promise<void> {
+    // Spread rather than assignment: under `exactOptionalPropertyTypes` an absent payload and one
+    // present as `undefined` are different types, and «nothing to record» must stay absent.
+    const before = redactAuditPayload(event.before);
+    const after = redactAuditPayload(event.after);
+    const safe: AuditEvent = {
+      ...event,
+      ...(before === undefined ? {} : { before }),
+      ...(after === undefined ? {} : { after }),
+    };
     const store = currentTenant();
-    const organizationId = event.actor.organizationId;
+    const organizationId = safe.actor.organizationId;
 
     // No scope, no organization, or an event about a different one than the scope: none of the three
     // can be a row in a tenant table, and forcing one would either fail the caller's transaction or
@@ -58,7 +74,7 @@ export class PrismaAuditLogger implements AuditLoggerPort {
       organizationId === undefined ||
       store.ctx.organizationId !== organizationId
     ) {
-      await this.dependencies.unscoped.record(event);
+      await this.dependencies.unscoped.record(safe);
 
       return;
     }
@@ -66,25 +82,25 @@ export class PrismaAuditLogger implements AuditLoggerPort {
     await store.tx.auditLog.create({
       data: {
         organizationId,
-        actorId: event.actor.userId ?? null,
+        actorId: safe.actor.userId ?? null,
         // A privileged action with an acting person is `USER`; one without is the system acting on
         // its own — a job, a migration path, a scheduled revocation.
-        actorType: event.actor.userId === undefined ? 'SYSTEM' : 'USER',
-        action: event.action,
-        resourceType: event.target.type,
-        resourceId: event.target.id ?? null,
-        before: toJson(event.before),
-        after: toJson(event.after),
+        actorType: safe.actor.userId === undefined ? 'SYSTEM' : 'USER',
+        action: safe.action,
+        resourceType: safe.target.type,
+        resourceId: safe.target.id ?? null,
+        before: toJson(safe.before),
+        after: toJson(safe.after),
         ipHash:
-          event.actor.ipAddress === undefined
+          safe.actor.ipAddress === undefined
             ? null
-            : this.dependencies.addressHasher.hash(event.actor.ipAddress),
+            : this.dependencies.addressHasher.hash(safe.actor.ipAddress),
         userAgent: null,
         // The thread that ties an HTTP request to its entry. Taken from the ambient context when the
         // caller did not pass one, because a use-case should not have to carry a transport detail
         // through four constructor arguments to record it.
-        requestId: event.requestId ?? this.dependencies.requestContext.current()?.requestId ?? '',
-        severity: SharedAudit.severityOf(event.action),
+        requestId: safe.requestId ?? this.dependencies.requestContext.current()?.requestId ?? '',
+        severity: SharedAudit.severityOf(safe.action),
       },
     });
   }
