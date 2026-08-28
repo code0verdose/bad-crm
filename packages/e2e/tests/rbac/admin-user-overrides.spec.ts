@@ -183,10 +183,21 @@ test.describe('an owner writes and lifts a personal exception', () => {
    * the invitation screen this file is not about — or fetching from inside `ownerPage`, which would
    * make the assertions about the colleague's access indistinguishable from a same-origin fetch the
    * shell itself might be making.
+   *
+   * **Why it is marked slow.** Measured, not guessed: against the built client this scenario takes
+   * about 42 s, and the suite's per-test budget is 30 s — so it could never have passed, on any
+   * machine, from the day it was written. Most of that is the two `audit()` calls, and neither is
+   * optional: the row and the dialog are separate accessibility surfaces, and the dialog is a focus
+   * trap Mantine assembles fresh on every open. Splitting the scenario would cost more than it
+   * saves, because the assertion *is* the round trip — «takes it away» and «gives it back» stop
+   * meaning anything once they are two tests that can pass independently. So the budget is tripled
+   * for this one test rather than raised for the suite, which would hide the next slow screen.
    */
   test('denying a role-granted permission takes it away for real, and lifting the exception gives it back', async ({
     ownerPage,
   }) => {
+    test.slow();
+
     const owner = await signInApi(SEED_ORGANIZATION_A.owner.email, SEED_PASSWORD);
     const roleId = await developerRoleId(owner);
     const { userId, email } = await provisionDeveloperColleague(owner, roleId);
