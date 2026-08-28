@@ -59,7 +59,9 @@
       "keyv@>=6.0.0": "<6.0.0",
       "cacheable@>=2.5.1": "<2.5.1",
       "flat-cache@>=6.1.24": "<6.1.24",
-      "file-entry-cache@>=11.1.6": "<11.1.6"
+      "file-entry-cache@>=11.1.6": "<11.1.6",
+      "nanoid@<3.3.18": ">=3.3.18 <4",
+      "deepmerge-ts@<8.0.0": ">=8.0.0"
     }
   },
   "devDependencies": {
