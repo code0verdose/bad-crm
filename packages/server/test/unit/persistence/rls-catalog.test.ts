@@ -65,6 +65,7 @@ const healthyFacts = (): RlsCatalogFacts => ({
     { table: 'teams', rlsEnabled: true, rlsForced: true },
   ],
   tenantColumnTables: ['teams'],
+  partitions: [],
   policies: [
     tenantPolicy('organizations', { using: CANONICAL_BY_KEY, check: CANONICAL_BY_KEY }),
     tenantPolicy('teams'),
@@ -90,6 +91,59 @@ const problems = (facts: RlsCatalogFacts): string[] =>
 describe('a database that matches the specification', () => {
   it('reports nothing at all', () => {
     expect(audit(healthyFacts())).toEqual([]);
+  });
+});
+
+/**
+ * Partitions, which inherit none of this — measured, not assumed.
+ *
+ * On PostgreSQL 16 a partition created under a parent that already has `ENABLE`, `FORCE` and a
+ * policy comes up with row security **off**, **unforced**, and with no policy of its own (measured
+ * 2026-08-28; the probe, with the catalog columns spelled out, is in `docs/runbooks/audit-log.md`). The cost was
+ * measured in the same session: reading through the parent returned one organization's rows,
+ * reading the leaf directly returned both.
+ *
+ * Until now this audit could not say so: its table query excludes `relispartition` on purpose —
+ * a leaf is not a table the registry knows, and listing them beside the tables would report one
+ * missing registry entry per month. The exclusion is right; the silence was not.
+ */
+describe('a partition of a tenant table', () => {
+  const withPartition = (
+    overrides: Partial<RlsCatalogFacts['partitions'][number]>,
+  ): RlsCatalogFacts => ({
+    ...healthyFacts(),
+    partitions: [
+      {
+        table: 'teams_2099_01',
+        parent: 'teams',
+        rlsEnabled: true,
+        rlsForced: true,
+        policyCount: 1,
+        ...overrides,
+      },
+    ],
+  });
+
+  it('CONTROL: a protected one is not a finding', () => {
+    expect(audit(withPartition({}))).toEqual([]);
+  });
+
+  it('is a finding when row security is off on the leaf', () => {
+    expect(problems(withPartition({ rlsEnabled: false }))).toEqual([
+      expect.stringContaining('teams_2099_01'),
+    ]);
+  });
+
+  it('is a finding when the leaf is not forced', () => {
+    expect(problems(withPartition({ rlsForced: false }))).toEqual([
+      expect.stringContaining('teams_2099_01'),
+    ]);
+  });
+
+  it('is a finding when the leaf carries no policy of its own', () => {
+    expect(problems(withPartition({ policyCount: 0 }))).toEqual([
+      expect.stringContaining('teams_2099_01'),
+    ]);
   });
 });
 

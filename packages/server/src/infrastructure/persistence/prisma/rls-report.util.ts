@@ -19,6 +19,8 @@ export interface RlsReportScope {
   readonly tables: number;
   /** Policies read out of `public`. */
   readonly policies: number;
+  /** Partitions of tenant tables examined — zero is a legitimate answer, and a visible one. */
+  readonly partitions: number;
 }
 
 const CHECK_LIST = [
@@ -26,6 +28,10 @@ const CHECK_LIST = [
   'a policy addressed to app_user, with both USING and WITH CHECK, on every tenant table',
   'no policy addressed to PUBLIC, and no PERMISSIVE policy on a tenant table that widens any role',
   'the catalog, the Prisma schema and the tenant registry list the same tables',
+  // Named separately because a partition inherits none of it: a leaf that protects itself is a
+  // different fact from its parent doing so, and «OK» that never mentions leaves reads the same
+  // whether they were checked or skipped.
+  'every partition of a tenant table protects itself: enabled, forced, and holding its own policy',
 ];
 
 const CHECK_ORDER: readonly RlsCheck[] = ['row-security', 'policy', 'registry'];
@@ -55,7 +61,8 @@ const header = (scope: RlsReportScope): string[] => [
   'RLS catalog check',
   `  target : ${scope.target}`,
   `  role   : ${scope.role}`,
-  `  scope  : ${scope.tables} tenant tables, ${scope.policies} policies in schema "public"`,
+  `  scope  : ${scope.tables} tenant tables, ${scope.policies} policies, ` +
+    `${scope.partitions} partitions in schema "public"`,
   '',
   'Compared against docs/security/rls-design.md:',
   ...CHECK_LIST.map((line) => `  - ${line}`),

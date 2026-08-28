@@ -92,6 +92,30 @@ export const PARTITION_ROW_SECURITY_SQL = `
    ORDER BY c.relname`;
 
 /**
+ * Every partition of every partitioned table of `public`, with what row security says about the leaf.
+ *
+ * Unparameterised, unlike `PARTITION_ROW_SECURITY_SQL` next to it: that one answers about one family
+ * for a suite that knows which family it is testing, this one is what an audit of a whole
+ * installation needs — it cannot know the parents in advance, and a family added by a future
+ * migration must not be invisible to it merely because nobody listed it here.
+ *
+ * `policy_count` rather than the policies themselves: the question at the leaf is «does it protect
+ * itself at all», and the shape of the predicate is judged on the parent, where it is written once.
+ */
+export const ALL_PARTITIONS_ROW_SECURITY_SQL = `
+  SELECT c.relname             AS table_name,
+         p.relname             AS parent_name,
+         c.relrowsecurity      AS rls_enabled,
+         c.relforcerowsecurity AS rls_forced,
+         (SELECT count(*) FROM pg_policy pol WHERE pol.polrelid = c.oid)::int AS policy_count
+    FROM pg_inherits i
+    JOIN pg_class c ON c.oid = i.inhrelid
+    JOIN pg_class p ON p.oid = i.inhparent
+    JOIN pg_namespace n ON n.oid = p.relnamespace
+   WHERE n.nspname = 'public'
+   ORDER BY p.relname, c.relname`;
+
+/**
  * Tables that carry a tenant column, straight from the catalog rather than from the schema.
  *
  * This is the half of the cross-check the code cannot answer: a table created by hand on the

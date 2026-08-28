@@ -68,6 +68,9 @@ try {
       role: rows[0]?.role ?? 'unknown',
       tables: tenantTables.size,
       policies: facts.policies.length,
+      partitions: facts.partitions.filter((partition) =>
+        Object.hasOwn(TENANT_TABLES, partition.parent),
+      ).length,
     })}\n`,
   );
 

@@ -18,6 +18,7 @@ const SCOPE = {
   role: 'app_migrator',
   tables: 2,
   policies: 4,
+  partitions: 0,
 };
 
 const FINDING: RlsFinding = {

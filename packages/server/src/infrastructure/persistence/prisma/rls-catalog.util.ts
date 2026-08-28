@@ -1,4 +1,5 @@
 import {
+  ALL_PARTITIONS_ROW_SECURITY_SQL,
   CANONICAL_MAINTENANCE_PREDICATE,
   CANONICAL_TENANT_PREDICATE,
   POLICIES_SQL,
@@ -71,6 +72,24 @@ export interface RlsCatalogFacts {
   /** Those of them that carry an `organization_id` column. */
   tenantColumnTables: string[];
   policies: RlsPolicyFacts[];
+  /**
+   * Every leaf of every partitioned tenant table, with what row security says about **the leaf**.
+   *
+   * A separate list because a leaf is not a table the registry knows: it has no model, no entry in
+   * `TENANT_TABLES`, and one arrives every month. It still has to be audited, because nothing about
+   * row security is inherited — see `partitionFindings`.
+   */
+  partitions: RlsPartitionFacts[];
+}
+
+/** One partition, and whether it protects itself. */
+export interface RlsPartitionFacts {
+  readonly table: string;
+  readonly parent: string;
+  readonly rlsEnabled: boolean;
+  readonly rlsForced: boolean;
+  /** Policies **of the leaf**. Zero means the leaf answers with nothing when addressed directly. */
+  readonly policyCount: number;
 }
 
 export type RlsCheck = 'row-security' | 'policy' | 'registry';
@@ -114,12 +133,53 @@ const commandName = (command: string): string => COMMAND_NAMES[command] ?? comma
  * lost one policy has usually lost the migration that carried several, and an operator who repairs
  * them one run at a time learns about the second table after redeploying the fix for the first.
  */
+
+/**
+ * Leaves of partitioned tenant tables that do not protect themselves.
+ *
+ * **Nothing is inherited — measured, not assumed.** A partition created under a parent that already
+ * carries `ENABLE`, `FORCE` and a policy comes up with row security **off**, **unforced**, and with
+ * no policy of its own (PostgreSQL 16, measured 2026-08-28; the probe, with the catalog columns
+ * spelled out, is in `docs/runbooks/audit-log.md`). The cost was measured beside it: through the parent one
+ * organization's rows came back, addressing the leaf directly returned every organization's.
+ *
+ * The parent is required to be a tenant table before a leaf is judged: a partitioned table outside
+ * the registry is somebody else's problem, reported by the registry checks rather than twice here.
+ *
+ * `create_audit_partition(date)` does all three explicitly, which is why it is longer than it looks
+ * like it needs to be. This check is what makes a leaf created any other way visible — including on
+ * an installation, where `pnpm check:rls` is the only thing that ever looks.
+ */
+const partitionFindings = (
+  facts: RlsCatalogFacts,
+  registry: Record<string, TenantTableSpec>,
+): RlsFinding[] =>
+  facts.partitions
+    .filter((partition) => registry[partition.parent] !== undefined)
+    .filter(
+      (partition) => !partition.rlsEnabled || !partition.rlsForced || partition.policyCount === 0,
+    )
+    .map((partition) => ({
+      check: 'row-security' as const,
+      subject: partition.table,
+      problem:
+        `the partition of ${partition.parent} does not protect itself (` +
+        `enabled=${String(partition.rlsEnabled)}, forced=${String(partition.rlsForced)}, ` +
+        `policies=${String(partition.policyCount)}) — nothing about row security is inherited, ` +
+        'so addressing this leaf directly bypasses tenant isolation',
+      remedy:
+        `create partitions through create_audit_partition(date), which grants the leaf ENABLE, ` +
+        `FORCE and both policies; to repair this one, apply them to ${partition.table} directly`,
+    }));
+
 export const rlsCatalogViolations = (
   facts: RlsCatalogFacts,
   registry: Record<string, TenantTableSpec> = TENANT_TABLES,
   schemaTables: readonly SchemaTenantTable[] = tenantTablesFromSchema(),
 ): RlsFinding[] => {
   const findings: RlsFinding[] = [];
+
+  findings.push(...partitionFindings(facts, registry));
 
   const registryTables = Object.keys(registry);
   const existingTables = new Set(facts.tables.map((table) => table.table));
@@ -332,6 +392,14 @@ interface TenantColumnRow {
   readonly table_name: string;
 }
 
+interface PartitionRow {
+  readonly table_name: string;
+  readonly parent_name: string;
+  readonly rls_enabled: boolean;
+  readonly rls_forced: boolean;
+  readonly policy_count: number;
+}
+
 interface PolicyRow {
   readonly table_name: string;
   readonly policy_name: string;
@@ -371,10 +439,11 @@ const asRoleList = (roles: unknown, policy: string): string[] => {
  * check as `app_user` rather than taking that on trust.
  */
 export const readRlsCatalog = async (read: CatalogReader): Promise<RlsCatalogFacts> => {
-  const [tables, tenantColumns, policies] = await Promise.all([
+  const [tables, tenantColumns, policies, partitions] = await Promise.all([
     read<TableRow>(ROW_SECURITY_SQL),
     read<TenantColumnRow>(TENANT_COLUMN_TABLES_SQL),
     read<PolicyRow>(POLICIES_SQL),
+    read<PartitionRow>(ALL_PARTITIONS_ROW_SECURITY_SQL),
   ]);
 
   return {
@@ -384,6 +453,13 @@ export const readRlsCatalog = async (read: CatalogReader): Promise<RlsCatalogFac
       rlsForced: row.rls_forced,
     })),
     tenantColumnTables: tenantColumns.map((row) => row.table_name),
+    partitions: partitions.map((row) => ({
+      table: row.table_name,
+      parent: row.parent_name,
+      rlsEnabled: row.rls_enabled,
+      rlsForced: row.rls_forced,
+      policyCount: row.policy_count,
+    })),
     policies: policies.map((row) => ({
       table: row.table_name,
       policy: row.policy_name,
