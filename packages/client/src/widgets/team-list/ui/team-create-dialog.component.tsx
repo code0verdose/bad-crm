@@ -1,9 +1,7 @@
 import { Alert, Modal, Stack, Text } from '@mantine/core';
 import { useTranslation } from 'react-i18next';
 
-import { SharedApi } from '@shared';
-
-import { TeamLib, TeamService, TeamUi } from '@units/team';
+import { TeamService, TeamUi } from '@units/team';
 
 export interface TeamCreateDialogProps {
   readonly opened: boolean;
@@ -23,7 +21,10 @@ const BLANK = { name: '', slug: '', description: '' } as const;
  * `aria-modal="true"`, so while it is open nothing outside it is in the accessibility tree a screen
  * reader is confined to: a toast in the corner would be, for that reader, no signal at all. The
  * mutation therefore declares its own `onError` and the toast stands aside, which keeps one action
- * to one signal (`rules/errors-and-toasts.mdc` §2–§3, `rules/tanstack-query.mdc` §10).
+ * to one signal (`rules/errors-and-toasts.mdc` §2–§3, `rules/tanstack-query.mdc` §10). It arrives
+ * already as a sentence key, from `useTeamCreation` — which is also where the request is started
+ * from and where the form becomes the request body. This dialog used to do all three itself, which
+ * skipped the middle link of the call chain (`rules/frontend-fsd.mdc` rule 4).
  *
  * `409 team_already_exists` is the refusal this really produces, and it is shown as a whole sentence
  * rather than pinned to the slug field: the constraint is on the pair the server checks, and a
@@ -34,12 +35,10 @@ const BLANK = { name: '', slug: '', description: '' } as const;
  */
 export function TeamCreateDialog({ opened, onClose }: TeamCreateDialogProps) {
   const { t } = useTranslation();
-  const create = TeamService.TeamMutations.useCreateTeam();
-
-  const failureKey = create.error === null ? undefined : SharedApi.errorMessageKey(create.error);
+  const creation = TeamService.TeamHooks.useTeamCreation();
 
   const close = (): void => {
-    create.reset();
+    creation.dismiss();
     onClose();
   };
 
@@ -55,21 +54,21 @@ export function TeamCreateDialog({ opened, onClose }: TeamCreateDialogProps) {
       <Stack gap="md">
         <Text size="sm">{t('teams.create.description')}</Text>
 
-        {failureKey !== undefined && (
+        {creation.failureKey !== undefined && (
           // `role="alert"`, so it is announced rather than merely drawn: the operator's attention is
           // on the button they just pressed (`rules/a11y.mdc` §13). The text comes from the `code`,
           // never from `detail` — the technical half went to the log.
           <Alert color="danger" role="alert" title={t('teams.create.failed')} variant="light">
-            <Text size="sm">{t(failureKey)}</Text>
+            <Text size="sm">{t(creation.failureKey)}</Text>
           </Alert>
         )}
 
         <TeamUi.TeamForm
           initialValues={{ ...BLANK }}
-          isPending={create.isPending}
+          isPending={creation.isPending}
           key={String(opened)}
           onSubmit={(values) => {
-            create.mutate(TeamLib.toTeamDraft(values), { onSuccess: close });
+            creation.create(values, close);
           }}
           submitLabelKey="teams.create.submit"
         />

@@ -12,8 +12,6 @@ import {
 import { schemaResolver, useForm } from '@mantine/form';
 import { useTranslation } from 'react-i18next';
 
-import { SharedApi } from '@shared';
-
 import { AuthLib, AuthModel, AuthService } from '@units/auth';
 
 /**
@@ -54,7 +52,10 @@ export interface DisableTotpDialogProps {
  * outside it is in the accessibility tree a screen reader is confined to; and `403
  * reauthentication_required` answers a wrong password, a wrong code and an already-spent recovery
  * code alike — attaching it to a field would claim knowledge the server deliberately refused to
- * give (`rules/errors-and-toasts.mdc` §2–§4).
+ * give (`rules/errors-and-toasts.mdc` §2–§4). It arrives already as a sentence key, from
+ * `useTotpDisposal`, which is also where the request is started from: this dialog used to call the
+ * mutation through the unit's flat barrel and translate the error itself, which skipped the middle
+ * link of the call chain (`rules/frontend-fsd.mdc` rule 4).
  *
  * **Nothing is cleared on a refusal.** The form keeps what was typed, because the retry after an
  * expired TOTP code should cost one field and not the whole password again.
@@ -65,9 +66,7 @@ export interface DisableTotpDialogProps {
  */
 export function DisableTotpDialog({ onCancel, onDisabled }: DisableTotpDialogProps) {
   const { t } = useTranslation();
-  const disable = AuthService.useDisableTotp();
-
-  const failureKey = disable.error === null ? undefined : SharedApi.errorMessageKey(disable.error);
+  const disposal = AuthService.useTotpDisposal();
 
   const form = useForm<AuthModel.DisableTotpFormValues>({
     mode: 'uncontrolled',
@@ -90,10 +89,7 @@ export function DisableTotpDialog({ onCancel, onDisabled }: DisableTotpDialogPro
         onSubmit={form.onSubmit(
           (values) => {
             // The form values **are** the request body — same two names, no mapping between them.
-            disable.mutate(
-              { password: values.password, code: values.code },
-              { onSuccess: onDisabled },
-            );
+            disposal.disable({ password: values.password, code: values.code }, onDisabled);
           },
           (errors) => {
             form.getInputNode(AuthLib.firstInvalidField(errors))?.focus();
@@ -109,7 +105,7 @@ export function DisableTotpDialog({ onCancel, onDisabled }: DisableTotpDialogPro
             <List.Item>{t('security.disable.consequence.again')}</List.Item>
           </List>
 
-          {failureKey !== undefined && (
+          {disposal.failureKey !== undefined && (
             // `role="alert"`, so it is announced rather than merely drawn: attention is on the
             // button that was just pressed (`rules/a11y.mdc` §13).
             <Alert
@@ -118,7 +114,7 @@ export function DisableTotpDialog({ onCancel, onDisabled }: DisableTotpDialogPro
               title={t('security.disable.failed.title')}
               variant="light"
             >
-              <Text size="sm">{t(failureKey)}</Text>
+              <Text size="sm">{t(disposal.failureKey)}</Text>
             </Alert>
           )}
 
@@ -151,7 +147,7 @@ export function DisableTotpDialog({ onCancel, onDisabled }: DisableTotpDialogPro
             <Button onClick={onCancel} variant="default">
               {t('security.disable.cancel')}
             </Button>
-            <Button color="danger" loading={disable.isPending} type="submit">
+            <Button color="danger" loading={disposal.isPending} type="submit">
               {t('security.disable.submit')}
             </Button>
           </Group>

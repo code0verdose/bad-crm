@@ -6,7 +6,7 @@ import { SharedUi } from '@shared';
 
 import { EmployeeService, type EmployeeApi } from '@units/employee';
 import { IamService } from '@units/iam';
-import { TeamLib, TeamService, TeamUi } from '@units/team';
+import { TeamService, TeamUi } from '@units/team';
 
 import { rosterRows } from './lib/roster-rows.util.js';
 import { teamCandidates } from './lib/team-candidates.util.js';
@@ -67,9 +67,7 @@ export function TeamDetail({ teamId, onDeleted }: TeamDetailProps) {
   const team = TeamService.TeamQueries.useTeamDetailQuery(teamId);
   const mayReadPeople = can('user:read');
   const people = EmployeeService.EmployeeQueries.useEmployeeListQuery(DIRECTORY, mayReadPeople);
-  const save = TeamService.TeamMutations.useUpdateTeam();
-  const addMember = TeamService.TeamMutations.useAddTeamMember();
-  const removeMember = TeamService.TeamMutations.useRemoveTeamMember();
+  const roster = TeamService.TeamHooks.useTeamRoster(teamId);
   const [disbandOpened, disbandControls] = useDisclosure(false);
 
   const directory = people.data?.items ?? [];
@@ -104,28 +102,22 @@ export function TeamDetail({ teamId, onDeleted }: TeamDetailProps) {
             {mayManageMembers && (
               <AddTeamMemberForm
                 candidates={teamCandidates(directory, members)}
-                isPending={addMember.isPending}
-                onAdd={(userId, teamRole) => {
-                  addMember.mutate({ teamId, userId, teamRole });
-                }}
+                isPending={roster.isAdding}
+                onAdd={roster.add}
               />
             )}
             {/*
               Two spreads rather than one object with `undefined` in it: under
               `exactOptionalPropertyTypes` an explicit `undefined` is not the same as «no property».
-              The wait belongs to the row whose control was pressed, which is what the mutation's own
-              `variables` say and a shared boolean cannot.
+              The wait belongs to the row whose control was pressed — `useTeamRoster` names that row,
+              from the mutation's own `variables`, which a shared boolean could not.
             */}
             <TeamMemberTable
               rows={rosterRows(members, directory)}
-              {...(mayManageMembers
-                ? {
-                    onRemove: (userId: string) => {
-                      removeMember.mutate({ teamId, userId });
-                    },
-                  }
-                : {})}
-              {...(removeMember.isPending ? { removingUserId: removeMember.variables.userId } : {})}
+              {...(mayManageMembers ? { onRemove: roster.remove } : {})}
+              {...(roster.removingUserId === undefined
+                ? {}
+                : { removingUserId: roster.removingUserId })}
             />
           </SharedUi.Section>
 
@@ -137,10 +129,8 @@ export function TeamDetail({ teamId, onDeleted }: TeamDetailProps) {
                   slug: team.data.slug,
                   description: team.data.description ?? '',
                 }}
-                isPending={save.isPending}
-                onSubmit={(values) => {
-                  save.mutate({ teamId, draft: TeamLib.toTeamDraft(values) });
-                }}
+                isPending={roster.isRenaming}
+                onSubmit={roster.rename}
                 submitLabelKey="teams.edit.submit"
               />
             </SharedUi.Section>

@@ -29,7 +29,7 @@ export function EmployeeProfilePage() {
   const search = route.useSearch();
   const navigate = route.useNavigate();
   const query = EmployeeService.EmployeeQueries.useEmployeeProfileQuery(userId);
-  const save = EmployeeService.EmployeeMutations.useUpdateEmployeeProfile();
+  const editor = EmployeeService.EmployeeHooks.useEmployeeProfileEditor(userId);
   const { can } = IamService.IamHooks.useCan();
   const [dialogOpened, dialogControls] = useDisclosure(false);
 
@@ -205,10 +205,8 @@ export function EmployeeProfilePage() {
                 // outside the personal audience for this person.
                 carriesEmergencyContact={'emergencyContact' in query.data}
                 initialValues={initialValuesOf(query.data)}
-                isPending={save.isPending}
-                onSubmit={(values) => {
-                  save.mutate({ userId, patch: values });
-                }}
+                isPending={editor.isSaving}
+                onSubmit={editor.save}
               />
             )}
           </SharedUi.DataState>

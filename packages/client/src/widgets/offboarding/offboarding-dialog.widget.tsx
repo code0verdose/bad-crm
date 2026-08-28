@@ -2,8 +2,6 @@ import { Alert, Button, List, Modal, Stack, Text, TextInput } from '@mantine/cor
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { SharedApi } from '@shared';
-
 import { EmployeeService } from '@units/employee';
 
 import { OffboardingReport } from './ui/offboarding-report.component.js';
@@ -36,7 +34,7 @@ export interface OffboardingDialogProps {
  */
 export function OffboardingDialog({ opened, userId, email, onClose }: OffboardingDialogProps) {
   const { t } = useTranslation();
-  const deactivate = EmployeeService.EmployeeMutations.useDeactivateUser();
+  const offboarding = EmployeeService.EmployeeHooks.useOffboarding(userId);
   const [typed, setTyped] = useState('');
   const [reason, setReason] = useState('');
 
@@ -60,17 +58,13 @@ export function OffboardingDialog({ opened, userId, email, onClose }: Offboardin
   const expected = email.trim().toLowerCase();
   const confirmed = expected !== '' && typed.trim().toLowerCase() === expected;
 
-  /**
-   * The refusal, as the sentence its `code` maps to — rendered inside the dialog rather than left
-   * to the global toast.
-   *
-   * The dialog is `aria-modal="true"`, so while it is open nothing outside it is in the
-   * accessibility tree: a toast in the corner is, for a screen-reader user, no signal at all. The
-   * mutation therefore declares its own `onError` and the toast stands aside, which keeps this one
-   * action to one signal (`rules/errors-and-toasts.mdc` §2–§3, `rules/tanstack-query.mdc` §10).
-   */
-  const failureKey =
-    deactivate.error === null ? undefined : SharedApi.errorMessageKey(deactivate.error);
+  /** Closes with both fields and the last answer forgotten, so the next open starts from nothing. */
+  const dismiss = (): void => {
+    setTyped('');
+    setReason('');
+    offboarding.dismiss();
+    onClose();
+  };
 
   return (
     <Modal
@@ -78,16 +72,11 @@ export function OffboardingDialog({ opened, userId, email, onClose }: Offboardin
       // a screen reader as «button» — axe reports it as `button-name`, and it was reporting it about
       // this dialog until the label was added. The same defect the pagination controls had.
       closeButtonProps={{ 'aria-label': t('offboarding.close') }}
-      onClose={() => {
-        setTyped('');
-        setReason('');
-        deactivate.reset();
-        onClose();
-      }}
+      onClose={dismiss}
       opened={opened}
       title={t('offboarding.title')}
     >
-      {deactivate.data === undefined ? (
+      {offboarding.report === undefined ? (
         <Stack gap="md">
           <Text>{t('offboarding.description')}</Text>
           <List size="sm">
@@ -115,26 +104,30 @@ export function OffboardingDialog({ opened, userId, email, onClose }: Offboardin
             value={typed}
           />
 
-          {failureKey !== undefined && (
+          {offboarding.failureKey !== undefined && (
             // `role="alert"`, so it is announced rather than merely drawn: the operator's attention
-            // is on the button they just pressed (`rules/a11y.mdc` §13). The text comes from the
-            // `code`, never from `detail` — the technical half went to the log.
+            // is on the button they just pressed (`rules/a11y.mdc` §13). The refusal is rendered
+            // here rather than toasted because this dialog is `aria-modal="true"` — a toast in the
+            // corner is, for a screen-reader user, no signal at all — and it arrives from
+            // `useOffboarding` already as a key, chosen from the `code` and never from `detail`.
+            // Reading the `Error` here, which is what this dialog used to do, would apply that rule
+            // on a second layer (`rules/frontend-fsd.mdc` rule 4, `rules/errors-and-toasts.mdc` §10).
             <Alert
               color="danger"
               role="alert"
               title={t('offboarding.failed.title')}
               variant="light"
             >
-              <Text size="sm">{t(failureKey)}</Text>
+              <Text size="sm">{t(offboarding.failureKey)}</Text>
             </Alert>
           )}
 
           <Button
             color="danger"
             disabled={!confirmed || reason.trim() === ''}
-            loading={deactivate.isPending}
+            loading={offboarding.isPending}
             onClick={() => {
-              deactivate.mutate({ userId, reason: reason.trim() });
+              offboarding.deactivate(reason);
             }}
           >
             {t('offboarding.submit')}
@@ -142,16 +135,8 @@ export function OffboardingDialog({ opened, userId, email, onClose }: Offboardin
         </Stack>
       ) : (
         <Stack gap="md">
-          <OffboardingReport report={deactivate.data} />
-          <Button
-            onClick={() => {
-              setTyped('');
-              setReason('');
-              deactivate.reset();
-              onClose();
-            }}
-            variant="default"
-          >
+          <OffboardingReport report={offboarding.report} />
+          <Button onClick={dismiss} variant="default">
             {t('offboarding.close')}
           </Button>
         </Stack>

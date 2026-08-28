@@ -2,7 +2,7 @@ import { getRouteApi, useNavigate } from '@tanstack/react-router';
 import { useTranslation } from 'react-i18next';
 import { Text } from '@mantine/core';
 
-import { SharedLib, SharedUi } from '@shared';
+import { SharedUi } from '@shared';
 
 import { PublicScreen } from '@widgets/public-screen';
 import { AuthService } from '@units/auth';
@@ -34,7 +34,7 @@ export function AcceptInvitePage() {
 
   const { token } = route.useParams();
   const navigate = useNavigate();
-  const accept = AuthService.useAcceptInvitation();
+  const acceptance = AuthService.useInvitationAcceptance(token);
 
   return (
     <PublicScreen>
@@ -43,27 +43,14 @@ export function AcceptInvitePage() {
 
       <IamUi.AcceptInvitationForm
         defaultLocale={IamModel.invitationLocaleOf(i18n.language)}
-        isPending={accept.isPending}
+        isPending={acceptance.isPending}
         onSubmit={(values) => {
-          accept.mutate(
-            {
-              token,
-              password: values.password,
-              locale: values.locale,
-              timezone: SharedLib.resolveTimeZone(),
-            },
-            {
-              // Only on an answer that actually was a session. `adoptSession` returns `null` for a
-              // document it cannot parse — a mismatched deployment — and navigating then would send
-              // somebody into the application without a token, where the first guard bounces them
-              // back out with no idea why.
-              onSuccess: (outcome) => {
-                if (outcome.identity === null) return;
-
-                void navigate({ to: '/', replace: true });
-              },
-            },
-          );
+          // The hook runs this only on an answer that really was a session — see
+          // `use-invitation-acceptance.hook.ts` for why navigating on the other answer is worse
+          // than staying put.
+          acceptance.accept(values, () => {
+            void navigate({ to: '/', replace: true });
+          });
         }}
       />
     </PublicScreen>

@@ -6,10 +6,10 @@ import { IamModel, IamService, IamUi } from '@units/iam';
 /**
  * Inviting a colleague: the form, and afterwards the link it produced.
  *
- * The widget is the composition point. It asks the unit for the roles the caller may hand out, calls
- * the unit's mutation, and keeps the one piece of state that has nowhere else to live — **the minted
- * invitation**, which exists in exactly one response and can never be fetched again. That is why it
- * is component state rather than a query: there is nothing to re-read.
+ * The widget is the composition point. It asks the unit for the roles the caller may hand out and
+ * hands the form to the unit's hook; the minted invitation comes back through that hook, because it
+ * exists in exactly one response and can never be fetched again — there is nothing to re-read, and
+ * nothing here decides how a form becomes a request body.
  *
  * The role list is fetched **only if the caller may read roles**. Inviting and reading roles are two
  * capabilities, and a person who holds one without the other can still send an invitation — with no
@@ -20,7 +20,7 @@ export function InviteMember() {
   const { i18n } = useTranslation();
   const { can } = IamService.IamHooks.useCan();
   const roles = IamService.IamQueries.useRolesMatrixQuery({ enabled: can('role:read') });
-  const create = IamService.IamMutations.useCreateInvitation();
+  const draft = IamService.IamHooks.useInvitationDraft();
 
   const options = (roles.data ?? []).map((role) => ({ value: role.id, label: role.name }));
 
@@ -28,20 +28,12 @@ export function InviteMember() {
     <Stack gap="lg">
       <IamUi.InviteForm
         defaultLocale={IamModel.invitationLocaleOf(i18n.language)}
-        isPending={create.isPending}
-        onSubmit={(values) => {
-          create.mutate({
-            email: values.email,
-            // `''` is «no role for now»: the select has no empty state of its own, and the contract
-            // spells that as `null`.
-            roleId: values.roleId === '' ? null : values.roleId,
-            locale: values.locale,
-          });
-        }}
+        isPending={draft.isPending}
+        onSubmit={draft.send}
         roles={options}
       />
 
-      {create.data === undefined ? null : <IamUi.InvitationLink invitation={create.data} />}
+      {draft.minted === undefined ? null : <IamUi.InvitationLink invitation={draft.minted} />}
     </Stack>
   );
 }

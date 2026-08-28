@@ -43,8 +43,7 @@ function RoleMatrixView({ search, collapsed, onlyDifferences, onCollapse }: Role
    */
   const roles = useMemo(() => query.data ?? EMPTY_ROLES, [query.data]);
   const draft = IamService.IamHooks.useRoleMatrixDraft(roles);
-  const preview = IamService.IamQueries.useRoleChangesPreview();
-  const apply = IamService.IamMutations.useApplyRoleChanges();
+  const review = IamService.IamHooks.useRoleChangeReview();
   const [opened, modal] = useDisclosure(false);
 
   /**
@@ -71,31 +70,15 @@ function RoleMatrixView({ search, collapsed, onlyDifferences, onCollapse }: Role
     [roles, search, onlyDifferences, draft.grants],
   );
 
-  const outcomes = preview.data ?? [];
-
-  const review = (): void => {
-    preview.mutate(
-      { changes: draft.changes },
-      {
-        onSuccess: () => {
-          modal.open();
-        },
-      },
-    );
+  const askForReview = (): void => {
+    review.review({ changes: draft.changes }, modal.open);
   };
 
   const confirm = (): void => {
-    const dangerous = outcomes.some((outcome) => outcome.dangerous.length > 0);
-
-    apply.mutate(
-      { changes: { changes: draft.changes }, ...(dangerous ? { confirmDangerous: true } : {}) },
-      {
-        onSuccess: () => {
-          modal.close();
-          draft.reset();
-        },
-      },
-    );
+    review.apply({ changes: draft.changes }, () => {
+      modal.close();
+      draft.reset();
+    });
   };
 
   return (
@@ -143,15 +126,15 @@ function RoleMatrixView({ search, collapsed, onlyDifferences, onCollapse }: Role
 
       <RoleMatrixDraftBar
         changeCount={draft.changeCount}
-        isSaving={preview.isPending || apply.isPending}
-        onReview={review}
+        isSaving={review.isReviewing || review.isApplying}
+        onReview={askForReview}
         onDiscard={draft.reset}
       />
 
       <RoleMatrixPreviewModal
         opened={opened}
-        outcomes={outcomes}
-        isSaving={apply.isPending}
+        outcomes={review.outcomes}
+        isSaving={review.isApplying}
         onConfirm={confirm}
         onClose={modal.close}
       />

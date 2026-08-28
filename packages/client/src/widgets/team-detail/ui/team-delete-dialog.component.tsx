@@ -1,8 +1,6 @@
 import { Alert, Button, Group, List, Modal, Stack, Text } from '@mantine/core';
 import { useTranslation } from 'react-i18next';
 
-import { SharedApi } from '@shared';
-
 import { TeamService } from '@units/team';
 
 export interface TeamDeleteDialogProps {
@@ -34,6 +32,11 @@ export interface TeamDeleteDialogProps {
  * `aria-modal="true"`, so while it is open nothing outside it is in the accessibility tree a screen
  * reader is confined to. The mutation declares its own `onError` so the toast stands aside, keeping
  * one action to one signal (`rules/errors-and-toasts.mdc` §2–§3, `rules/tanstack-query.mdc` §10).
+ *
+ * **It arrives already as a sentence key**, from `useTeamDeletion`, which is also where the request
+ * is started from. This dialog used to call the mutation itself and translate the error itself — a
+ * skipped link in the call chain (`rules/frontend-fsd.mdc` rule 4) and another copy of
+ * `error → messageKey` in a widget.
  */
 export function TeamDeleteDialog({
   opened,
@@ -43,12 +46,10 @@ export function TeamDeleteDialog({
   onDeleted,
 }: TeamDeleteDialogProps) {
   const { t } = useTranslation();
-  const disband = TeamService.TeamMutations.useDeleteTeam();
-
-  const failureKey = disband.error === null ? undefined : SharedApi.errorMessageKey(disband.error);
+  const disbanding = TeamService.TeamHooks.useTeamDeletion(teamId);
 
   const close = (): void => {
-    disband.reset();
+    disbanding.dismiss();
     onClose();
   };
 
@@ -70,11 +71,11 @@ export function TeamDeleteDialog({
           <List.Item>{t('teams.delete.consequence.slug')}</List.Item>
         </List>
 
-        {failureKey !== undefined && (
+        {disbanding.failureKey !== undefined && (
           // `role="alert"`, so it is announced rather than merely drawn: the operator's attention is
           // on the button they just pressed (`rules/a11y.mdc` §13).
           <Alert color="danger" role="alert" title={t('teams.delete.failed')} variant="light">
-            <Text size="sm">{t(failureKey)}</Text>
+            <Text size="sm">{t(disbanding.failureKey)}</Text>
           </Alert>
         )}
 
@@ -84,9 +85,9 @@ export function TeamDeleteDialog({
           </Button>
           <Button
             color="danger"
-            loading={disband.isPending}
+            loading={disbanding.isPending}
             onClick={() => {
-              disband.mutate(teamId, { onSuccess: onDeleted });
+              disbanding.disband(onDeleted);
             }}
           >
             {t('teams.delete.submit')}
