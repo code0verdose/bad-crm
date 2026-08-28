@@ -86,13 +86,69 @@ describe('a cell of the matrix', () => {
       ),
     );
 
-    expect(screen.getByRole('checkbox')).toBeDisabled();
+    const cell = screen.getByRole('checkbox');
+
+    // `aria-disabled`, not `disabled` (`rules/a11y.mdc` §23): a hard-disabled control is skipped by
+    // the tab sequence, so the one person who most needs the explanation — somebody driving this
+    // table from the keyboard — never reaches the thing that would give it.
+    expect(cell).toHaveAttribute('aria-disabled', 'true');
+    expect(cell).not.toBeDisabled();
 
     // A control that refuses and explains nothing reads as a bug — the reason is not guessable from
     // a grey box.
-    await user.hover(screen.getByRole('checkbox').parentElement as HTMLElement);
+    await user.hover(cell.parentElement as HTMLElement);
     expect(await screen.findByText('roles.cell.systemLocked')).toBeInTheDocument();
     expect(onToggle).not.toHaveBeenCalled();
+  });
+
+  it('is reachable by keyboard while locked, and refuses the keystroke', async () => {
+    const user = userEvent.setup();
+    const onToggle = vi.fn();
+
+    wrap(
+      inRow(
+        <RoleMatrixCell
+          roleName="Manager"
+          permission="task:read"
+          granted
+          locked
+          onToggle={onToggle}
+        />,
+      ),
+    );
+
+    const cell = screen.getByRole('checkbox');
+
+    await user.tab();
+
+    // The point of `aria-disabled` over `disabled`: focus lands here at all.
+    expect(cell).toHaveFocus();
+
+    await user.keyboard(' ');
+
+    // And announcing «disabled» is not enforcing it — the handler has to refuse on its own.
+    expect(onToggle).not.toHaveBeenCalled();
+    expect(cell).toBeChecked();
+  });
+
+  it('carries the reason in its accessible name, not only in a tooltip', () => {
+    // A tooltip is a hover affordance first; a screen reader announcing «Manager, task:read,
+    // checkbox, disabled» still leaves the person asking why. The sentence has to be in the name.
+    wrap(
+      inRow(
+        <RoleMatrixCell
+          roleName="Manager"
+          permission="task:read"
+          granted
+          locked
+          onToggle={vi.fn()}
+        />,
+      ),
+    );
+
+    expect(screen.getByRole('checkbox').getAttribute('aria-label')).toContain(
+      'roles.cell.systemLocked',
+    );
   });
 });
 
