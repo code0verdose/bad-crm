@@ -17,6 +17,20 @@ export const AUDIT_ACTIONS = [
   'session.signed_in',
   /** A session was ended by its owner, or revoked from the session list. */
   'session.revoked',
+  /**
+   * A refresh token was presented after it had already been spent, outside the rotation race
+   * window — the whole family was revoked because of it (STORY-006-03).
+   *
+   * A distinct entry from `session.revoked` rather than the same action with a different reason:
+   * the two answer different questions an incident review asks — "somebody closed a device" versus
+   * "a token this server issued was replayed by whoever is not supposed to hold it" — and folding
+   * them would make the second question, the one worth an alert, unanswerable by a filter over the
+   * trail. `after` carries the family, the count of sessions the revocation actually closed, and
+   * the address the token came back from; never the token or its digest, on the identical reasoning
+   * `session.signed_in`'s own call site keeps them out of the log line this entry sits beside
+   * (`refresh-session.use-case.ts`, `SECURITY_EVENTS.refreshReuseDetected`).
+   */
+  'session.refresh_reuse_detected',
   /** A password was changed by the person who knew the old one. */
   'password.changed',
   /** A password was set through a recovery link. */

@@ -25,8 +25,16 @@ export const AUDIT_ACTION_SEVERITY: Readonly<Record<AuditAction, AuditSeverity>>
   'organization.registered': 'INFO',
   'session.signed_in': 'INFO',
   // A session ending is routine; the interesting version of it — a family revoked because a token
-  // was replayed — is a different record when that action exists.
+  // was replayed — is the separate `session.refresh_reuse_detected` entry below.
   'session.revoked': 'INFO',
+  // `CRITICAL`, alongside `user.mfa_reset_by_admin`, `role.dangerous_granted`,
+  // `organization.ownership_transferred` and `rls.bypassed`: a refresh token presented after it was
+  // already spent, outside the rotation-race window, is evidence a stolen token is being used right
+  // now — not a report that an account *was* compromised, a signal that it is being compromised at
+  // this moment, while every device on the family is still live. An installation that alerts on the
+  // other four should alert on this one at least as urgently: it is the one entry in this list that
+  // an incident review would rather have caught before the attacker's first request than after it.
+  'session.refresh_reuse_detected': 'CRITICAL',
   // A credential changed: the event an incident review starts from when an account behaves oddly.
   'password.changed': 'WARNING',
   // Same, and reachable by whoever holds a mailbox rather than the old password.

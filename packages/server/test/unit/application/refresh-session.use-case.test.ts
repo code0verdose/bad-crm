@@ -9,6 +9,7 @@ import { SECURITY_EVENTS } from '@/domain/identity/security-event.constant.js';
 import {
   FakeAccessTokens,
   FakeAddressHasher,
+  FakeAuditLogger,
   FakeAuthLookup,
   FakeClock,
   FakeIdGenerator,
@@ -35,6 +36,8 @@ interface Harness {
   readonly clock: FakeClock;
   readonly logger: RecordingLogger;
   readonly rateLimit: FakeRateLimit;
+  readonly audit: FakeAuditLogger;
+  readonly unitOfWork: FakeUnitOfWork;
 }
 
 /**
@@ -42,7 +45,7 @@ interface Harness {
  * the `app_auth` lookup that the cookie resolves through.
  */
 const harness = (
-  options: { status?: string } = {},
+  options: { status?: string; failingAudit?: boolean } = {},
   rateLimitOptions: Omit<FakeRateLimitOptions, 'journal'> = {},
 ): Harness => {
   const rateLimit = new FakeRateLimit(rateLimitOptions);
@@ -50,6 +53,8 @@ const harness = (
   const sessions = new FakeSessions(clock);
   const lookup = new FakeAuthLookup().reading(sessions);
   const logger = new RecordingLogger();
+  const audit = new FakeAuditLogger(options.failingAudit ?? false);
+  const unitOfWork = new FakeUnitOfWork();
   const users = new FakeUsers([
     {
       id: USER_ID,
@@ -79,11 +84,12 @@ const harness = (
       sessions,
       users,
       new FakeOrganizations(),
-      new FakeUnitOfWork(),
+      unitOfWork,
       issue,
       clock,
       logger,
       rateLimit,
+      audit,
     ),
     lookup,
     sessions,
@@ -91,6 +97,8 @@ const harness = (
     clock,
     logger,
     rateLimit,
+    audit,
+    unitOfWork,
   };
 };
 
@@ -202,9 +210,8 @@ describe('rotating a refresh token', () => {
      * `rules/security.mdc` rule 8 requires the detection to be recorded, and a detection nobody can
      * select on is not recorded in any useful sense: an alert keyed on a substring of `msg` breaks
      * the day somebody improves the wording, and a wording is exactly the kind of thing that gets
-     * improved. `AuditLog` and the notification mail that the rule also asks for do not exist yet
-     * (STORY-006-03 «Что осталось»); this is the part that can be honest today, and it is the field
-     * both of them will be dispatched from.
+     * improved. The notification mail the rule also asks for does not exist yet (STORY-006-03
+     * «Что осталось»); the `AuditLog` row below it does, since this fix.
      */
     it('marks the line with a machine-readable event name, not only with prose', async () => {
       const test = harness();
@@ -219,6 +226,88 @@ describe('rotating a refresh token', () => {
       expect(event?.fields['event']).toBe('refresh_reuse_detected');
       // The prose is free to change; nothing may depend on it, including this suite.
       expect(event?.message).not.toBe(SECURITY_EVENTS.refreshReuseDetected);
+    });
+
+    /**
+     * The signal an incident review reads the trail for: theft, not a race — the log line rule 8
+     * asked for from the first day, now also a row nobody has to grep the process's stdout to find.
+     */
+    it('writes an AuditLog entry naming the family, the count revoked and the address', async () => {
+      const test = harness();
+      const token = await signIn(test);
+
+      await test.refresh.execute({ refreshToken: token, client: CLIENT });
+      test.clock.advance(REFRESH_RACE_GRACE_SECONDS + 1);
+      await refusal(() => test.refresh.execute({ refreshToken: token, client: CLIENT }));
+
+      expect(test.audit.events).toHaveLength(1);
+      expect(test.audit.events[0]).toMatchObject({
+        action: 'session.refresh_reuse_detected',
+        actor: {
+          userId: USER_ID,
+          organizationId: ORGANIZATION_ID,
+          ipAddress: CLIENT.ipAddress,
+        },
+        target: { type: 'SESSION_FAMILY', id: FAMILY_ID },
+        after: { sessionsRevoked: 1 },
+      });
+    });
+
+    /** The lost-race branch never revokes, so it must never file the entry either. */
+    it('writes no entry when the loss happened moments ago', async () => {
+      const test = harness();
+      const token = await signIn(test);
+
+      await test.refresh.execute({ refreshToken: token, client: CLIENT });
+      test.clock.advance(REFRESH_RACE_GRACE_SECONDS - 1);
+
+      await refusal(() => test.refresh.execute({ refreshToken: token, client: CLIENT }));
+
+      expect(test.audit.events).toEqual([]);
+    });
+
+    /**
+     * `before`/`after` carry identifiers and counters, never content — the invariant
+     * `AuditEvent`'s own docstring states, and the one CLAUDE.md ranks as never-log for this exact
+     * value: the token and its digest.
+     */
+    it('carries no token and no token digest into the trail', async () => {
+      const test = harness();
+      const token = await signIn(test);
+
+      await test.refresh.execute({ refreshToken: token, client: CLIENT });
+      test.clock.advance(REFRESH_RACE_GRACE_SECONDS + 1);
+      await refusal(() => test.refresh.execute({ refreshToken: token, client: CLIENT }));
+
+      const serialized = JSON.stringify(test.audit.events);
+
+      expect(serialized).not.toContain(token);
+      expect(serialized).not.toContain(`sha256:${token}`);
+    });
+
+    /**
+     * The write happens inside the same `withTenant` scope that revokes the family — the identical
+     * shape `login.use-case.test.ts` proves atomicity with, since the in-memory double cannot roll a
+     * `Map` back: a rejection out of the trail write has to unwind the one scope that was opened, not
+     * leave the revocation committed on its own with nothing recording why.
+     */
+    it('rolls the revocation back when the trail cannot be written', async () => {
+      const test = harness({ failingAudit: true });
+      const token = await signIn(test);
+
+      await test.refresh.execute({ refreshToken: token, client: CLIENT });
+      test.clock.advance(REFRESH_RACE_GRACE_SECONDS + 1);
+
+      await expect(test.refresh.execute({ refreshToken: token, client: CLIENT })).rejects.toThrow(
+        'audit sink unavailable',
+      );
+
+      // Two scopes total: the rotation above, then the reuse-detection transaction that this
+      // assertion is actually about. What proves the rollback is real is *where* the rejection
+      // came from — inside the second scope, which then closed like every other — rather than a
+      // row disappearing from the in-memory double, which cannot roll a `Map` back at all.
+      expect(test.unitOfWork.scopes).toHaveLength(2);
+      expect(test.unitOfWork.current).toBe(undefined);
     });
 
     /**

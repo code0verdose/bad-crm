@@ -15,6 +15,7 @@ import {
   type SessionProfile,
 } from '@/application/identity/use-cases/login.use-case.js';
 import { type OrganizationRepositoryPort } from '@/application/organization/ports/organization-repository.port.js';
+import { type AuditLoggerPort } from '@/application/platform/ports/audit-logger.port.js';
 import { type ClockPort } from '@/application/platform/ports/clock.port.js';
 import { type LoggerPort } from '@/application/platform/ports/logger.port.js';
 import { type RateLimitPort } from '@/application/platform/ports/rate-limit.port.js';
@@ -83,6 +84,7 @@ export class RefreshSessionUseCase {
     private readonly clock: ClockPort,
     private readonly logger: LoggerPort,
     private readonly rateLimit: RateLimitPort,
+    private readonly audit: AuditLoggerPort,
   ) {}
 
   async execute(input: RefreshSessionInput): Promise<RefreshSessionResult | null> {
@@ -106,7 +108,7 @@ export class RefreshSessionUseCase {
     if (record === null) return null;
 
     if (record.revokedAt !== null) {
-      await this.handleSpentToken(record, record.revokedAt, now);
+      await this.handleSpentToken(record, record.revokedAt, now, input.client.ipAddress);
 
       return null;
     }
@@ -120,14 +122,16 @@ export class RefreshSessionUseCase {
   /**
    * A token that was already spent: theft, or a tab that lost a race.
    *
-   * Revocation and the throw are separated on purpose. The family is revoked in its own committed
-   * transaction and the refusal is raised *after* it — raising inside would roll the revocation back
-   * along with everything else, which is the one outcome this branch must not produce.
+   * Revocation and the throw are separated on purpose. The family is revoked — and, since this fix,
+   * the `AuditLog` row that describes it is written — in its own committed transaction, and the
+   * refusal is raised *after* it: raising inside would roll both back along with everything else,
+   * which is the one outcome this branch must not produce.
    */
   private async handleSpentToken(
     record: AuthSessionRecord,
     spentAt: Date,
     now: Date,
+    ipAddress: string | undefined,
   ): Promise<void> {
     const spentAgo = now.getTime() - spentAt.getTime();
     const lostRace =
@@ -137,20 +141,43 @@ export class RefreshSessionUseCase {
 
     await this.unitOfWork.withTenant(
       { organizationId: record.organizationId, userId: record.userId },
-      () => this.sessions.revokeFamily(record.familyId, 'REUSE_DETECTED', now),
+      async () => {
+        const sessionsRevoked = await this.sessions.revokeFamily(
+          record.familyId,
+          'REUSE_DETECTED',
+          now,
+        );
+
+        // The row `rules/security.mdc` rule 8 asks for, written **inside** the transaction that
+        // revoked the family — the identical reasoning every other privileged use-case in this
+        // codebase follows for its own `audit.record` call (`rules/observability.mdc`, rule 15): a
+        // rejection here must unwind the revocation with it, not leave a family closed with nothing
+        // in the trail explaining why, or a row claiming a revocation that never committed.
+        //
+        // Identifiers and a counter only. The token and its digest never reach `before`/`after` on
+        // the same construction that already kept them out of the log line below
+        // (CLAUDE.md, «Что нельзя логировать никогда»); the address travels as `actor.ipAddress`
+        // and is hashed before `PrismaAuditLogger` turns it into a column, never stored or logged
+        // raw.
+        await this.audit.record({
+          action: 'session.refresh_reuse_detected',
+          actor: { userId: record.userId, organizationId: record.organizationId, ipAddress },
+          target: { type: 'SESSION_FAMILY', id: record.familyId },
+          after: { sessionsRevoked },
+          requestId: undefined,
+        });
+      },
     );
 
-    // The record of the detection required by `rules/security.mdc` rule 8. Identifiers only: the
-    // token, its digest and the address are all absent by construction (CLAUDE.md, «Что нельзя
-    // логировать никогда»).
+    // The operational line `rules/security.mdc` rule 8 also asks for — the one an on-call engineer
+    // greps for, beside the `AuditLog` row a reviewer reads later (the identical split
+    // `SECURITY_EVENTS.totpSetupAbandoned`'s own docstring draws). Identifiers only: the token, its
+    // digest and the address are all absent by construction.
     //
     // **The event name is the `event` field, not the sentence.** An alert keyed on a substring of
     // `msg` stops matching the first time somebody improves the wording, and stops matching
-    // silently. The other two things the rule asks for — a row in `AuditLog` and a mail to the
-    // person whose token was replayed — are not here: the table is introduced by the audit epic and
-    // no `MailPort` is assembled in the composition root yet. Both will be dispatched from this
-    // same field rather than from a second detection written somewhere else (STORY-006-03,
-    // «Что осталось»).
+    // silently. The notification mail rule 8 also asks for is not here: no `MailPort` is threaded
+    // into this use-case yet (STORY-006-03, «Что осталось»).
     this.logger.warn(
       {
         event: SECURITY_EVENTS.refreshReuseDetected,
