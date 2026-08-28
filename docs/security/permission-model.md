@@ -2128,13 +2128,27 @@ UPDATE_PERMISSION_MATRIX=1 pnpm --filter @bad-crm/server test permission-matrix
 - Строка со значком `⚠ расширение прав` обязывает описать причину в теле PR.
 
 **Матрица роль × маршрут в машинном виде — это и есть снапшот**, документ её не дублирует: копия
-на 189 ячеек разъехалась бы с файлом на первом же изменении. Что документ обязан держать — это
-привязка «маршрут → право → место проверки объекта», и она ниже.
+разъехалась бы с файлом на первом же изменении, а ячеек в ней (роли × guarded-маршруты) столько,
+сколько печатает
 
-#### Guarded-маршруты сегодня (27)
+```bash
+node -e "const m=require('./packages/server/test/permissions/__snapshots__/permission-matrix.json').matrix; const r=Object.keys(m); console.log(r.length*Object.keys(m[r[0]]).length)"
+```
 
-Сверено с `route-registry.factory.ts` 2026-08-12. Колонка `aclCheckedIn` — имя use-case, который
-принимает авторитетное решение; для маршрута с `:id`-параметром оно обязательно (§9в).
+Что документ обязан держать — это привязка «маршрут → право → место проверки объекта», и она ниже.
+
+#### Guarded-маршруты сегодня
+
+Число здесь не записано намеренно — оно растёт с каждой историей и уже успело отстать; сколько их
+сейчас, печатает
+
+```bash
+node -e "const m=require('./packages/server/test/permissions/__snapshots__/permission-matrix.json').matrix; console.log(Object.keys(m[Object.keys(m)[0]]).length)"
+```
+
+Таблица ниже сверена с `route-registry.factory.ts` 2026-08-27; расхождение её длины с этой командой
+означает, что сверку не повторили. Колонка `aclCheckedIn` — имя use-case, который принимает
+авторитетное решение; для маршрута с `:id`-параметром оно обязательно (§9в).
 
 | Маршрут | Право | `aclCheckedIn` |
 |---|---|---|
@@ -2162,6 +2176,7 @@ UPDATE_PERMISSION_MATRIX=1 pnpm --filter @bad-crm/server test permission-matrix
 | `POST /api/v1/organization/transfer-ownership` | `organization:transfer_ownership` | `TransferOwnershipUseCase` |
 | `POST /api/v1/users/:userId/deactivate` | `user:suspend` | `DeactivateUserUseCase` |
 | `POST /api/v1/users/:userId/reactivate` | `user:reactivate` | `ReactivateUserUseCase` |
+| `POST /api/v1/users/:userId/reset-mfa` | `user:reset_mfa` | `ResetUserMfaUseCase` |
 | `GET /api/v1/users/:userId/permissions` | `permission:override_read` | `GetUserPermissionsQuery` |
 | `PUT /api/v1/users/:userId/permission-overrides/:permission` | `permission:override` | `WritePermissionOverrideUseCase` |
 | `DELETE /api/v1/users/:userId/permission-overrides/:permission` | `permission:override` | `RemovePermissionOverrideUseCase` |

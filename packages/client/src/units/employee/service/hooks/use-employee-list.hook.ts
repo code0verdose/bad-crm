@@ -42,7 +42,18 @@ export const useEmployeeDirectory = (
   showChart: boolean,
 ): EmployeeDirectory => {
   const filters = useEmployeeFilters(search, navigate);
-  // Always: this screen *is* the directory, and it is behind `user:read` at the route.
+  /*
+    Always: this screen *is* the directory, so a suppressed request would leave it with nothing to
+    show and no reason on screen for why.
+
+    Not because the route guard licenses it — the guard is `user:read`
+    (`routes/_authenticated/admin/members/index.tsx`) and the endpoint asks `employee:read`
+    (`route-registry.factory.ts`), and no system role holds one without the other, but a custom role
+    could. Such a reader passes the guard and gets 403 here — which is the honest answer this screen
+    has to render anyway, and the reason `useEmployeeListQuery` demands `enabled` explicitly rather
+    than defaulting it: a *joining* screen must not ask (see its docstring), a screen that is the
+    list itself must.
+  */
   const list = useEmployeeListQuery(filters.params, true);
   const chart = useOrgChartQuery(showChart);
 

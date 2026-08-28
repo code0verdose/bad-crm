@@ -260,13 +260,16 @@ export interface paths {
          *     Refused with `409 mfa_already_enabled` once the account already has 2FA on; the existing
          *     secret is never re-read to produce that answer.
          *
-         *     **Known gap, tracked in EPIC-013.** Enrolment is authorised by the session alone — neither
-         *     this operation nor `POST /auth/2fa/confirm` asks for the current password or any second proof,
-         *     while the neighbouring `POST /auth/2fa/recovery-codes/regenerate` asks for both. A holder of a
-         *     stolen access token can therefore bind their own authenticator to somebody else's account, and
-         *     enrolment cannot be undone: disable and administrator reset are STORY-013-04. Reauthentication
-         *     lands with that story, and no client should treat this endpoint as safe to expose behind a
-         *     session-only guard until it does.
+         *     **This operation stays session-only on purpose — `POST /auth/2fa/confirm` does not.**
+         *     Drafting a secret changes nothing an attacker could not already discard by calling this
+         *     endpoint again: `totpEnabledAt` never moves here, so a session alone is enough to request a
+         *     draft because a draft, by itself, protects nobody and locks nobody out. Enrolment itself is
+         *     gated harder — `POST /auth/2fa/confirm` requires `currentPassword` and checks it
+         *     unconditionally, because a bearer token alone must not be enough to attach a second factor;
+         *     see that operation's own description for why. Both ways out of a completed enrolment are
+         *     shipped as well: `POST /auth/2fa/disable` requires the password and a second proof, and
+         *     `POST /users/{userId}/reset-mfa` lets an administrator force a reset — STORY-013-04 closed
+         *     both, so nothing here is left irreversible.
          */
         post: operations["setupTotp"];
         delete?: never;

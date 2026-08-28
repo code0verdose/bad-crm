@@ -258,16 +258,16 @@ Postgres через `pnpm test:integration:local`).
   `mfa_required_by_policy`, который никто не бросает, в каталог **не добавлен** — этот эпик уже
   дважды получал такую находку на гейте (см. историю STORY-013-01/02), и третий раз заводить её
   осознанно не стоило.
-- **Из клиента критерия 10 остался административный сброс.** На момент серверной дельты клиента не
-  было вовсе — она трогала только `packages/server/**` и смежную документацию. С тех пор экран
-  `/settings/security` появился и несёт **самостоятельное** отключение
+- **Критерий 10 закрыт целиком — отложенного клиента здесь больше нет.** На момент серверной дельты
+  клиента не было вовсе: она трогала только `packages/server/**` и смежную документацию. Обе
+  половины отгружены следом — **самостоятельное** отключение на `/settings/security`
   (`widgets/disable-totp/`, `units/auth/service/mutations/disable-totp.mutation.ts`, i18n
-  `shared/i18n/locales/{en,ru}/security.json`). Не сделан второй, административный путь: кнопки
-  сброса чужой 2FA под `<Can permission="user:reset_mfa">` в карточке сотрудника нет, `ResetMfaResult`
-  со счётчиками, который `docs/api/openapi.yaml` объявляет, читать некому — `reset-mfa` вызывается
-  только напрямую по API. Пока экрана нет, худший сценарий (потеряны и телефон, и коды)
-  восстанавливается оператором по [`docs/runbooks/incident.md`](../../../docs/runbooks/incident.md),
-  а не администратором из интерфейса.
+  `shared/i18n/locales/{en,ru}/security.json`) и **административный** сброс на карточке сотрудника
+  (`a5bf8b3`: `widgets/reset-mfa/` под `can('user:reset_mfa')`,
+  `units/employee/service/hooks/use-reset-mfa.hook.ts`, чтение `ResetMfaResult` со счётчиками в
+  отчёте диалога). Операторский путь по
+  [`docs/runbooks/incident.md`](../../../docs/runbooks/incident.md) остаётся запасным, а не
+  единственным.
 - **`test:integration:local` для recovery-кода в `disable` отдельным гонка-тестом не написан.**
   Атомарность списания уже доказана на реальном Postgres для той же операции
   (`RecoveryCodeRepositoryPort.markUsed`) в `test/integration/db/mfa-recovery-code-race.test.ts`
@@ -289,10 +289,8 @@ Postgres через `pnpm test:integration:local`).
 следом: экран `/settings/security` с самостоятельным отключением отгружен, значит человек с
 аутентификатором на руках выходит из 2FA кнопкой, а не вызовом API, — и `blocked: true` с
 [story-013-03-login-second-factor.md](story-013-03-login-second-factor.md) снят, а сама история взята
-в работу и её серверная половина отгружена. Остаток критерия 10 (экран административного сброса)
-блокировку не держит: этот путь задокументирован в
-[`docs/runbooks/incident.md`](../../../docs/runbooks/incident.md) и доступен оператору, — но и
-закрытым пунктом не становится, см. «Что отложено».
+в работу и её серверная половина отгружена. Последний остаток критерия 10 — экран
+административного сброса — закрыт 2026-08-14 (`a5bf8b3`), см. «Что отложено».
 
 ## Ссылки
 
@@ -307,12 +305,20 @@ Postgres через `pnpm test:integration:local`).
       зелёных без Docker, интеграционный набор с реальным Postgres зелёный (кроме одного
       воспроизводимо не связанного с этой дельтой Docker-флейка в `rate-limit/shared-counter.test.ts`,
       подтверждённого зелёным при изолированном перезапуске)
-- [ ] Commit-гейт зелёный — гейт-агенты (`test-coverage`, `security-auditor`, `db-reviewer`,
-      `production-readiness`, `commit-hygiene`) этой дельтой не прогонялись; typecheck/lint/build/test
-      и `pnpm coverage:baseline` — зелёные
+- [ ] Commit-гейт прогнан 2026-08-27 по всей ветке (53 коммита, восемь агентов) и **не зелёный
+      целиком**. PASS: `test-coverage`, `security-auditor`, `commit-hygiene`,
+      `openapi-contract-guardian`. FAIL: `fsd-architecture-linter` (четыре диалога вне этой дельты),
+      `production-readiness` (CHANGELOG отстал), `i18n-coverage-checker` (нет гейта
+      `plural.test.ts`), `stale-claims-auditor` (устаревшие утверждения — правятся этой волной).
+      Находки чинятся параллельно; статус истории меняет оркестратор после повторного прогона
+      затронутых проверок. typecheck/lint/build/test и `pnpm coverage:baseline` — зелёные
 - [x] Документация обновлена (`openapi.yaml`, `docs/runbooks/incident.md` — оговорка о ручном сбросе
       снята — + эта запись истории; запись в `docs/brain/` не сделана этой дельтой)
-- [ ] a11y и i18n — не применимо к этой дельте (клиент вне зоны, см. «Что отложено»)
+- [x] a11y и i18n — клиент в зоне с тех пор, как отгружены оба экрана: ключи
+      `security.disable.*` и `security.reset.*` есть в EN и RU
+      (`shared/i18n/locales/{en,ru}/security.json`), axe прогоняется по обеим граням диалогов
+      (`packages/client/test/widgets/disable-totp.test.tsx`, `.../reset-mfa.test.tsx`), ловушка
+      фокуса обеих модалок — в реестре `test/architecture/modal-focus-coverage.test.ts`
 - [x] **Isolation-тест RLS** — новых таблиц нет; изменение схемы (новое значение перечисления) не
       таблица и не требует отдельного isolation-теста
 - [x] **Permission объявлена** — `user:reset_mfa` уже существовала в каталоге

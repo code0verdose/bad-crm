@@ -153,11 +153,15 @@ STORY-012-04 (справочник перечисляет **учётные за�
       STORY-012-03/04 — barrel и `sideEffects`).
 
 
-> **Все пункты выше отгружены 2026-08-14 (`a5bf8b3`, `2f40142`).** Статус истории — `in-progress`, а
-> не `review`, потому что коммит-гейт по этой дельте прогнан **не полностью**: были `typecheck`,
-> `lint`, `build`, `test` и `coverage:baseline` (все зелёные), но не агенты `test-coverage`,
-> `security-auditor`, `production-readiness` и `commit-hygiene`. Поставить `review` без них значило бы
-> отметить галочку, которую нечем подтвердить.
+> **Все пункты выше отгружены 2026-08-14 (`a5bf8b3`, `2f40142`).** Коммит-гейт прогнан 2026-08-27
+> по всей ветке целиком (53 коммита, восемь агентов), и он **не зелёный**: PASS у `test-coverage`,
+> `security-auditor`, `commit-hygiene` и `openapi-contract-guardian`; FAIL у
+> `fsd-architecture-linter` (четыре диалога вне этой дельты), `production-readiness` (CHANGELOG
+> отстал от четырёх поставок), `i18n-coverage-checker` (отсутствует гейт `plural.test.ts`) и
+> `stale-claims-auditor` (устаревшие утверждения, включая этот абзац). Находки чинятся
+> параллельными агентами; статус остаётся `in-progress` — перевод в `review` делает оркестратор
+> после повторного прогона затронутых проверок. Конвейер `typecheck lint build test` и
+> `coverage:baseline` — зелёные.
 
 ## Ссылки
 

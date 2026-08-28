@@ -479,6 +479,7 @@ EPIC-006), а клиентский экран остаётся невыполн�
 | `/admin/members` | `routes/_authenticated/admin/members/index.tsx` | `requirePermission('user:read')` | `memberListSearchSchema`: `q`, `role[]`, `status[]`, `team[]`, `sort`, `page`, `view=table\|chart` | `MemberList` |
 | `/admin/members/$userId` | `routes/_authenticated/admin/members/$userId.tsx` | — (**см. ниже**) | `userPermissionsSearchSchema`: `tab=profile\|roles`, `q`, `exceptions` | `pages/employee-profile` + `EmployeeUi.EmployeeProfileForm`, `UserPermissions` |
 | `/admin/members/invite` | `routes/_authenticated/admin/members/invite.tsx` | `requirePermission('invitation:create')` | — | `InviteMember` |
+| `/admin/members/invitations` | `routes/_authenticated/admin/members/invitations.tsx` | `requirePermission('invitation:read')` | — (`GET /invitations` не принимает ни фильтра, ни страницы, ни порядка — состояния для URL нет) | `InvitationList` |
 | `/admin/roles` | `routes/_authenticated/admin/roles.tsx` | `requirePermission('role:read')` | `rolesSearchSchema`: `q`, `collapsed` (свёрнутые домены), `diff` (только различия) | `RoleMatrix` |
 | `/admin/roles/$roleId` | `routes/_authenticated/admin/roles/$roleId.tsx` | `requirePermission('role:read')` | `tab=permissions\|members` | `RoleDetailWidget` |
 | `/admin/teams` | `routes/_authenticated/admin/teams/index.tsx` | `requirePermission('team:read')` | `teamListSearchSchema`: `q`, `sort`, `page` — **применяются к ответу, а не к запросу**: `GET /teams` параметров не принимает. Верно для 5–50 человек и является потолком | `TeamList` |
@@ -493,8 +494,8 @@ EPIC-006), а клиентский экран остаётся невыполн�
 | `/admin/onboarding-tracks/$trackId` | `routes/_authenticated/admin/onboarding-tracks/$trackId.tsx` | `requirePermission('onboarding:manage')` | `step?` | `OnboardingTrackEditorWidget` |
 
 **Из этой таблицы построены** (EPIC-011 и EPIC-012): `/admin/members`,
-`/admin/members/$userId`, `/admin/members/invite`, `/admin/roles`, `/admin/teams` и
-`/admin/teams/$teamId`. Layout-маршрута `/admin` (`admin/route.tsx`) и редиректа `/admin/` в коде
+`/admin/members/$userId`, `/admin/members/invite`, `/admin/members/invitations`, `/admin/roles`,
+`/admin/teams` и `/admin/teams/$teamId`. Layout-маршрута `/admin` (`admin/route.tsx`) и редиректа `/admin/` в коде
 нет — гард стоит на каждом листе, см. «Гарды в `beforeLoad`». Остальные строки — проектируемые.
 
 **Про `view` в `memberListSearchSchema`.** Справочник показывает одних и тех же людей двумя способами
@@ -852,8 +853,10 @@ email — `nameOf()` в `member-table.component.tsx`), должность, от�
 
 **Возврат приостановленного сотрудника — с карточки (отгружено 2026-08-14).** `EmployeeProfile`
 несёт `status`, поэтому карточка знает состояние учётной записи и по прямой ссылке, а не только
-через кеш справочника; поле отдаётся держателю `user:read` **или** владельцу записи
-(`domain/iam/access/employee-access.policy.ts`). Приостановленный аккаунт помечен плашкой
+через кеш справочника; поле отдаётся держателю `employee:read` **или** владельцу записи
+(`seesAccountStatus` в `domain/iam/access/employee-access.policy.ts`; уровень сужен до
+`employee:read` 2026-08-27 — D4-бис STORY-012-09, обоснование там же в докстринге и в
+[`permission-model.md`](../security/permission-model.md) §4.1.1). Приостановленный аккаунт помечен плашкой
 «Учётная запись отключена» с датой из `terminatedAt`, а секция возврата стоит внизу карточки за
 `can('user:reactivate')`, рядом с офбордингом и сбросом второго фактора.
 
@@ -889,17 +892,14 @@ email — `nameOf()` в `member-table.component.tsx`), должность, от�
 сроком действия. Список ролей запрашивается **только если** у пригласившего есть `role:read` — без
 этого права селект просто пуст, приглашать всё равно можно (в этом случае — без роли).
 
-**Отгружено не полностью: ссылку нельзя переслать повторно, и нет списка приглашений.**
-`GET /invitations`, `POST /invitations/{id}/resend`, `DELETE /invitations/{id}` существуют на сервере и
-закрыты тестами, но у клиента нет ни одной вызывающей их функции — экран истории/управления
-приглашениями сознательно не заведён:
-[STORY-012-01](../../epics/epic-012-employee-management/stories/story-012-01-invite-employee.md),
-раздел «Осталось за пределами этой истории», прямо называет это «осознанной дырой, а не забытой
-строчкой» — справочник (`/admin/members`) сознательно не взял эту роль на себя, потому что непринятое
-приглашение не учётная запись (см. `data-model.md`, «Про `User.status = INVITED`»), а отдельный экран
-нужно заводить своей историей. До тех пор ссылка показывается ровно один раз, в ответе на создание;
-если пригласивший закрыл вкладку не скопировав её — переотправить из интерфейса нельзя, только создать
-новое приглашение.
+**Управление выданными приглашениями живёт на отдельном экране** —
+`/admin/members/invitations`, отгружен 2026-08-14
+([STORY-012-08](../../epics/epic-012-employee-management/stories/story-012-08-manage-invitations.md)).
+Справочник (`/admin/members`) эту роль сознательно не взял: непринятое приглашение не учётная запись
+(см. `data-model.md`, «Про `User.status = INVITED`»), и `/admin/members/invite` остаётся экраном
+**создания** — ссылка в его ответе по-прежнему показывается один раз, но потерявший её переоткрывает
+приглашение повторной выдачей на соседнем экране, а не созданием нового. На оба экрана ведут кнопки
+друг с друга (`members.invitations.link`).
 
 **Права.** Маршрут закрыт `invitation:create` — не `user:invite`, хотя системные роли выдают их вместе:
 гард экрана называет то же право, что проверяет `POST /invitations`, иначе кастомная роль, разделившая
@@ -911,9 +911,39 @@ email — `nameOf()` в `member-table.component.tsx`), должность, от�
 мапится в общий тост (единственный сигнал, без локального `onError` поверх глобального).
 
 **В URL.** Ничего — состояние формы и минтованное приглашение живут в компоненте (ссылка существует
-ровно в одном ответе, повторно её взять неоткуда, поэтому URL не имеет смысла).
+ровно в одном ответе этой операции, и вторую копию выдаёт не URL, а повторная выдача на
+`/admin/members/invitations`).
 
 **Оптимистично.** Ничего. **Пессимистично.** Отправка приглашения.
+
+### Выданные приглашения (`/admin/members/invitations`)
+
+**Назначение.** Всё, что выдано и ещё не принято, и два действия над строкой: выдать ссылку заново и
+отозвать приглашение.
+
+**Ключевые элементы.** `InvitationList` — таблица (`InvitationTable`) поверх `GET /invitations` и
+`InvitationConfirmDialog` на оба действия. Просроченные строки со списка не убираются: это ровно та
+строка, ради которой сюда пришли. `Invitation` несёт `roleId`, `teamIds` и `invitedById` и не несёт
+имён, поэтому экран доспрашивает их отдельно и **только когда имеет право**: роли и людей — через
+`enabled` на запросе своего юнита, команды — не монтируя ячейку вовсе (`InvitationTeams`). Читатель
+с одним лишь `invitation:read` делает один запрос и видит прочерк там, где было бы имя, — не сырой
+идентификатор.
+
+**Права.** Маршрут закрыт `invitation:read` — тем же правом, что проверяет `GET /invitations`.
+Повторная выдача и отзыв — ещё две capability (`invitation:resend`, `invitation:revoke`); без них
+кнопки не рисуются, но авторитет всё равно на сервере.
+
+**Состояния.** Loading — скелет на 6 строк (высота не прыгает при ответе). Error — inline
+`DataState` с retry. Empty — `EmptyState` (`members.invitations.empty.*`): непринятых приглашений
+нет.
+
+**В URL.** Ничего: операция не принимает ни фильтра, ни страницы, ни порядка, поэтому
+`rules/lists-and-filters.mdc` тут нечему применяться (STORY-012-08, D3).
+
+**Оптимистично.** Ничего. **Пессимистично.** Повторная выдача и отзыв — обе с подтверждением до
+действия и ровно одним сигналом после: у повторной выдачи это панель с новой ссылкой прямо в диалоге
+(тоста нет — ссылка и есть ответ), у отзыва — тост. Ошибка обеих рендерится внутри диалога, а не
+тостом за пределами `aria-modal`.
 
 ### Команды (`/admin/teams`, `/admin/teams/$teamId`)
 
