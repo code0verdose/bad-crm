@@ -8,13 +8,32 @@ import { describe, expect, it } from 'vitest';
 // string nothing imports any more (`rules/testing.mdc`, «Тест, который не видели красным»).
 import { PRISMA_MODULE_SPECIFIERS } from '../../../../../eslint.config.js';
 
-import { importsOf, sourceFiles } from './source-tree.util.js';
+import { importsOf, readSource, sourceFiles } from './source-tree.util.js';
 
 const filesIn = (layer: string): string[] =>
   sourceFiles().filter((file) => file.startsWith(`${layer}/`));
 
 const importsIn = (layer: string): { file: string; specifier: string }[] =>
   filesIn(layer).flatMap((file) => importsOf(file).map((specifier) => ({ file, specifier })));
+
+/**
+ * Reading the clock, in the two shapes TypeScript offers: `Date.now()` and `new Date(...)`.
+ *
+ * `new Date` is banned with its argument as well, not only the argless form: `new Date(value)` in a
+ * policy means the policy is parsing time itself, and the value it parses came from somewhere the
+ * domain does not control. The sanctioned way in is `ClockPort`, whose `now()` this pattern does not
+ * match because it is a method call on an injected object.
+ */
+const CLOCK = /\bDate\.now\s*\(|\bnew\s+Date\s*\(/;
+
+/** Source with block comments, line comments and string literals removed. */
+const stripComments = (source: string): string =>
+  source
+    .replaceAll(/\/\*[\s\S]*?\*\//g, '')
+    .replaceAll(/\/\/.*$/gm, '')
+    .replaceAll(/'(?:[^'\\\n]|\\.)*'/g, "''")
+    .replaceAll(/"(?:[^"\\\n]|\\.)*"/g, '""')
+    .replaceAll(/`(?:[^`\\]|\\.)*`/g, '``');
 
 const offenders = (layer: string, forbidden: (specifier: string) => boolean): string[] =>
   importsIn(layer)
@@ -103,6 +122,42 @@ describe('dependencies point inwards', () => {
           )(specifier),
       ),
     ).toEqual([]);
+  });
+
+  /**
+   * The other half of «pure»: the domain does not read the clock either.
+   *
+   * `rules/hexagonal-backend.mdc` puts `Date.now()` beside I/O in the same sentence, and policies
+   * say so in their own docstrings — `domain/identity/access/mfa-policy.policy.ts` promises «no
+   * I/O, no `Date.now()`». Until 2026-08-28 nothing checked the second half: no ESLint rule names
+   * `Date`, and the import-based checks above cannot see it, because reading the clock takes no
+   * import at all. A rule that lives only in prose is kept until the first person in a hurry.
+   *
+   * Why it matters more than tidiness: a policy that reads the clock is a policy whose verdict
+   * depends on when it ran, which is exactly what makes an authorisation decision untestable and
+   * unauditable. Time enters through `ClockPort`, so the decision is a function of its inputs and a
+   * test can put the boundary case anywhere it likes.
+   *
+   * Comments and strings are stripped first — the docstrings that *describe* the ban say the words.
+   */
+  it('keeps domain free of the clock: time arrives through ClockPort, never from `Date`', () => {
+    const readsClock = filesIn('domain')
+      .filter((file) => CLOCK.test(stripComments(readSource(file))))
+      .sort();
+
+    expect(
+      readsClock,
+      'take the instant as an argument (`ClockPort`) — a decision that depends on when it ran cannot be tested at its boundary',
+    ).toEqual([]);
+  });
+
+  it('CONTROL: the clock detector fires on the shapes it is meant to catch', () => {
+    expect(CLOCK.test('const now = Date.now();')).toBe(true);
+    expect(CLOCK.test('const now = new Date();')).toBe(true);
+    expect(CLOCK.test('const at = new Date(input.expiresAt);')).toBe(true);
+    // Not the ban: a type annotation names no instant, and `clock.now()` is the sanctioned way in.
+    expect(CLOCK.test('readonly expiresAt: Date;')).toBe(false);
+    expect(CLOCK.test('const now = this.clock.now();')).toBe(false);
   });
 
   it('keeps application away from adapters — concrete implementations are wired in main.ts', () => {

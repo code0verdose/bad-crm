@@ -17,7 +17,7 @@ const KNOWN: ReadonlySet<string> = new Set<string>(ERROR_RESOURCES);
  *   capability check: it asks whether the caller may do this *anywhere in this organization*, with
  *   no object involved. A refusal at that layer is a refusal by the organization.
  *
- * `permission-guard.test.ts` walks the whole catalogue, so a key whose resource stops resolving is a
+ * `test/unit/domain/access/refusal-resource.test.ts` walks the whole catalogue, so a key whose resource stops resolving is a
  * failing test rather than a runtime surprise.
  */
 export const refusalResourceOf = (permission: SharedPermissions.PermissionKey): ErrorResource => {
