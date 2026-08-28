@@ -216,6 +216,48 @@ describe('POST /api/v1/invitations/{id}/resend', () => {
     expect(test.invitations.digests.get(id)).not.toEqual(before);
   });
 
+  /**
+   * The escalation the subset rule on resend exists to stop, asserted through the wire.
+   *
+   * The policy is covered by its own unit test; this one is about the **wiring**, which is where the
+   * hole actually was. Reproduced against a running stack on 2026-08-28: a caller holding
+   * `invitation:resend` but not `role:assign` is refused `403` on `POST /invitations` carrying the
+   * `admin` role — and answered `200` **with the plaintext link** on resending somebody else's. The
+   * use-case simply never read the composition, so the policy could not judge it.
+   *
+   * The refusal has to carry no link at all, not merely a different status: the body is the whole
+   * payload here, and «403 with an `inviteUrl`» would be the same escalation with a red label on it.
+   */
+  it('refuses to resend an invitation carrying more than the resender holds', async () => {
+    const invitations = new FakeInvitationRepository({ rolePermissions: ['role:assign'] });
+    const { test, token } = await signedIn({ invitations });
+
+    // Seeded rather than created over HTTP, because creating it is exactly what this caller cannot
+    // do: `canInvite` already refuses. The scenario is somebody else's invitation — one an owner
+    // opened — and the question is whether reopening it is bounded by the same rule.
+    const id = '018f4a3b-2c1d-7a41-9f00-2b7c1d0e5a99';
+
+    invitations.rows.set(id, {
+      id,
+      email: 'escalation@example.test',
+      roleId: ROLE_ID,
+      teamIds: [],
+      locale: 'en',
+      invitedById: '018f4a3b-2c1d-7a41-9f00-2b7c1d0e5a01',
+      expiresAt: new Date('2099-01-01T00:00:00.000Z'),
+      acceptedAt: null,
+      createdAt: new Date('2026-08-07T10:00:00.000Z'),
+    });
+
+    const response = await request(test.server())
+      .post(`/api/v1/invitations/${id}/resend`)
+      .set('Authorization', `Bearer ${token}`)
+      .expect(403);
+
+    expect((response.body as { code: string }).code).toBe('invitation_forbidden');
+    expect(response.body).not.toHaveProperty('inviteUrl');
+  });
+
   it('answers 409 for an invitation that has been accepted', async () => {
     const { test, token } = await signedIn();
 
@@ -260,6 +302,10 @@ describe('DELETE /api/v1/invitations/{id}', () => {
 
     expect(test.invitations.rows.has(id)).toBe(false);
     expect(test.invitations.digests.has(id)).toBe(false);
+    // `invitation.revoked` takes access away before it was ever exercised — the caller's address
+    // still has to travel with the entry, the same reasoning `role.revoked` establishes.
+    expect(test.audit.events.at(-1)).toMatchObject({ action: 'invitation.revoked' });
+    expect(test.audit.events.at(-1)?.actor.ipAddress).toBeDefined();
   });
 
   it('answers 404 the second time, exactly like an id that never existed', async () => {

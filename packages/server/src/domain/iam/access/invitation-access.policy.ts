@@ -11,10 +11,28 @@ export interface InvitationDraft {
   readonly rolePermissions: readonly SharedPermissions.PermissionKey[];
 }
 
-/** The state of an invitation that already exists. */
+/**
+ * The state of an invitation that already exists — as much as *closing* it needs to know.
+ *
+ * Revoking is bounded by the capability and by the invitation still being open, and by nothing else:
+ * shutting a door nobody walked through hands out no rights, so what the invitation carried does not
+ * enter the decision.
+ */
 export interface PendingInvitation {
   /** `null` while it is still an invitation; a date once it became a person. */
   readonly acceptedAt: Date | null;
+}
+
+/**
+ * The same, plus what *reopening* it needs: the composition it would hand out.
+ *
+ * A separate type rather than an optional field, so the difference is visible in the signature —
+ * a resend is bounded by the subset rule and a revoke is not, and that is the whole reason the two
+ * capabilities are separate keys.
+ */
+export interface ResendableInvitation extends PendingInvitation {
+  /** What the role attached to it would hand out — the composition `canInvite` is bounded by. */
+  readonly rolePermissions: readonly SharedPermissions.PermissionKey[];
 }
 
 /**
@@ -46,13 +64,34 @@ export const canInvite = (actor: Actor, draft: InvitationDraft): Decision => {
  * Reopening a door that was closing.
  *
  * Its own capability, because it is its own risk: a resend mints a **new** token and extends the
- * expiry, which is «invite again» for somebody who may no longer be meant to arrive. The subset rule
- * is not re-applied — the composition was judged when the invitation was created, and re-judging it
- * would refuse a resend to a colleague who has since lost a right the invitation carries, leaving an
- * invitation nobody can either finish or reopen.
+ * expiry, which is «invite again» for somebody who may no longer be meant to arrive.
+ *
+ * **And the subset rule holds here too, since 2026-08-28.** It used to be skipped, on the reasoning
+ * that «the composition was judged when the invitation was created, and re-judging it would refuse a
+ * resend to a colleague who has since lost a right the invitation carries». That is true about the
+ * composition and beside the point about the actor: the person reopening the door is not the person
+ * who opened it. Reproduced against a running stack — `manager` holds `invitation:resend` and not
+ * `role:assign`, so `POST /invitations` with the `admin` role is refused `403`, while
+ * `POST /invitations/{id}/resend` on somebody else's `admin` invitation answered `200` **with the
+ * plaintext `inviteUrl` in the body**; accepting that link created an `admin` account on a password
+ * the manager had just chosen. A capability named `resend` cannot be a way around the one named
+ * `create`.
+ *
+ * The case the old reasoning worried about — an invitation nobody can finish or reopen — is real and
+ * cheaper: it is closed by revoking it (`invitation:revoke`) and inviting again by somebody whose
+ * rights cover the role. That path leaves an audit trail on both halves; the old one left an
+ * escalation.
  */
-export const canResendInvitation = (actor: Actor, invitation: PendingInvitation): Decision =>
-  actOnOpen(actor, invitation, 'invitation:resend');
+export const canResendInvitation = (actor: Actor, invitation: ResendableInvitation): Decision => {
+  const open = actOnOpen(actor, invitation, 'invitation:resend');
+
+  if (!open.allowed) return open;
+  if (actor.isOwner) return allow();
+
+  return invitation.rolePermissions.every((permission) => holdsEffectively(actor, permission))
+    ? allow()
+    : deny('permission_not_granted');
+};
 
 /** Closing it early. Its own capability for the same reason: a different risk from creating one. */
 export const canRevokeInvitation = (actor: Actor, invitation: PendingInvitation): Decision =>

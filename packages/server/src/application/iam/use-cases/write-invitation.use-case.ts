@@ -172,6 +172,12 @@ export class CreateInvitationUseCase {
 export interface InvitationActionInput {
   readonly actor: Actor;
   readonly invitationId: string;
+  /**
+   * The caller's address. Read only by `RevokeInvitationUseCase`'s `invitation.revoked` entry —
+   * `ResendInvitationUseCase` shares this input shape but does not use the field, the same split
+   * `RoleChangesInput` draws between its preview and write paths. Optional for that reason.
+   */
+  readonly ipAddress?: string | undefined;
 }
 
 /**
@@ -211,7 +217,21 @@ export class ResendInvitationUseCase {
 
         if (invitation === null) throw denyAccess('invitation', 'other_organization');
 
-        assertAllowed(canResendInvitation(input.actor, invitation), 'invitation');
+        // The composition the invitation would hand out, read for the same reason `create` reads it:
+        // a resend is bounded by what the *resender* holds, not by what the original inviter held
+        // (`canResendInvitation` carries the escalation this closes). `null` here means the role has
+        // gone since — answered as «not in this organization», like every other unresolvable id.
+        const rolePermissions =
+          invitation.roleId === null
+            ? []
+            : await this.invitations.rolePermissions(invitation.roleId);
+
+        if (rolePermissions === null) throw denyAccess('role', 'other_organization');
+
+        assertAllowed(
+          canResendInvitation(input.actor, { ...invitation, rolePermissions }),
+          'invitation',
+        );
 
         if (!(await this.invitations.reissue(invitation.id, minted.hash, expiresAt))) {
           throw denyAccess('invitation', 'other_organization');
@@ -295,7 +315,7 @@ export class RevokeInvitationUseCase {
           actor: {
             userId: input.actor.userId,
             organizationId: input.actor.organizationId,
-            ipAddress: undefined,
+            ipAddress: input.ipAddress,
           },
           target: { type: 'INVITATION', id: invitation.id },
           before: { email: invitation.email, roleId: invitation.roleId },

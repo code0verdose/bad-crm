@@ -7,7 +7,7 @@ import {
   canResendInvitation,
   canRevokeInvitation,
   type InvitationDraft,
-  type PendingInvitation,
+  type ResendableInvitation,
 } from '@/domain/iam/access/invitation-access.policy.js';
 
 /**
@@ -46,8 +46,9 @@ const draft = (overrides: Partial<InvitationDraft> = {}): InvitationDraft => ({
   ...overrides,
 });
 
-const pending = (overrides: Partial<PendingInvitation> = {}): PendingInvitation => ({
+const pending = (overrides: Partial<ResendableInvitation> = {}): ResendableInvitation => ({
   acceptedAt: null,
+  rolePermissions: [],
   ...overrides,
 });
 
@@ -109,6 +110,51 @@ describe('inviting somebody', () => {
 });
 
 describe('reopening and closing an invitation', () => {
+  /**
+   * The escalation this bound exists to stop, reproduced against a running stack on 2026-08-28.
+   *
+   * `manager` holds `invitation:resend` and `invitation:create` but not `role:assign`. Creating an
+   * invitation carrying the `admin` role is refused by `canInvite` — the subset rule — and answered
+   * `403 invitation_forbidden`. **Resending somebody else's `admin` invitation was not**: it
+   * answered `200` with the plaintext `inviteUrl` in the body, and accepting that link created an
+   * `admin` account on a password the manager had just chosen.
+   *
+   * The subset rule therefore has to hold on the resend as well. What was written here before —
+   * «the composition was judged when the invitation was created» — is true of the composition and
+   * irrelevant to the actor: the person reopening the door is not the person who opened it, and a
+   * capability named `resend` cannot be a way around the one named `create`.
+   */
+  it('refuses a resend of an invitation carrying more than the resender holds', () => {
+    const manager = actorWith({
+      permissions: new Set(['invitation:create', 'invitation:resend']),
+    });
+
+    expect(canResendInvitation(manager, pending({ rolePermissions: ['role:assign'] }))).toEqual({
+      allowed: false,
+      reason: 'permission_not_granted',
+    });
+  });
+
+  it('allows a resend of an invitation within what the resender holds', () => {
+    const manager = actorWith({
+      permissions: new Set(['invitation:create', 'invitation:resend', 'team:read']),
+    });
+
+    expect(canResendInvitation(manager, pending({ rolePermissions: ['team:read'] }))).toEqual({
+      allowed: true,
+      reason: null,
+    });
+  });
+
+  it('lets the owner resend anything, as everywhere else', () => {
+    const owner = actorWith({ isOwner: true, permissions: new Set(['invitation:resend']) });
+
+    expect(canResendInvitation(owner, pending({ rolePermissions: ['role:assign'] }))).toEqual({
+      allowed: true,
+      reason: null,
+    });
+  });
+
   it('needs its own capability to resend', () => {
     const cannot = actorWith({ permissions: new Set(['invitation:create']) });
 
