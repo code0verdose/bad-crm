@@ -175,6 +175,10 @@ describe('POST /api/v1/users/{userId}/deactivate', () => {
         teamsLeft: 2,
       },
     });
+    // `WARNING`-severity, and the entry an incident review looks for first — the caller's address
+    // has to travel with it (the same reasoning `user.mfa_reset_by_admin` established for
+    // `CRITICAL`).
+    expect(test.audit.events.at(-1)?.actor.ipAddress).toBeDefined();
   });
 
   it('records which teams the person was in, and in what role, because the rows do not survive', async () => {
@@ -390,6 +394,9 @@ describe('POST /api/v1/users/{userId}/reactivate', () => {
       before: { status: 'SUSPENDED' },
       after: { status: 'ACTIVE', membershipsRestored: false },
     });
+    // Same reasoning as the offboarding entry above: an account coming back is the step an intruder
+    // needs after an offboarding, and a reviewer must be able to correlate who did it, from where.
+    expect(test.audit.events.at(-1)?.actor.ipAddress).toBeDefined();
   });
 
   it('is idempotent on an account that was never off', async () => {

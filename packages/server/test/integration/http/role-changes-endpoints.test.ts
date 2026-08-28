@@ -220,6 +220,11 @@ describe('POST /api/v1/roles/apply-changes', () => {
     expect(test.customRoles.roles.get(AUDITORS)?.permissions).toEqual([]);
     // Everybody holding a role that moved, once per role.
     expect(test.customRoles.versionBumps).toEqual(['ivan', 'petr', 'petr']);
+    // Every `role.updated` this batch files carries the caller's address.
+    const updates = test.audit.events.filter((event) => event.action === 'role.updated');
+
+    expect(updates.length).toBeGreaterThan(0);
+    for (const entry of updates) expect(entry.actor.ipAddress).toBeDefined();
   });
 
   it('applies nothing when one change is refused', async () => {

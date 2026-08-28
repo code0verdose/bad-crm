@@ -114,6 +114,10 @@ describe('POST /api/v1/organization/transfer-ownership', () => {
     // asserted here rather than trusted, because the same catalogue would let this action drift to a
     // lower severity without a single test noticing.
     expect(SharedAudit.severityOf(entry?.action as SharedAudit.AuditAction)).toBe('CRITICAL');
+    // The caller's address travels with it: a `CRITICAL` row with no address to correlate against
+    // defeats the purpose of the field existing (the same reasoning `user.mfa_reset_by_admin`
+    // established).
+    expect(entry?.actor.ipAddress).toBeDefined();
   });
 
   it('keeps the role the outgoing owner chose', async () => {

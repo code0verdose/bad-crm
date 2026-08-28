@@ -103,7 +103,7 @@ describe('deleting a role the actor holds', () => {
     const roles = heldByActor(['role:update', 'role:delete']);
     const useCase = new DeleteCustomRoleUseCase(unitOfWork, roles, auditSpy().port);
 
-    await useCase.execute({ actor: actorWith(), roleId: ROLE_ID });
+    await useCase.execute({ actor: actorWith(), roleId: ROLE_ID, ipAddress: undefined });
 
     expect(roles.roles.size).toBe(0);
     // Everybody who held it, the actor included: the permissions are gone at this instant, so the
@@ -119,14 +119,17 @@ describe('deleting a role the actor holds', () => {
     await new DeleteCustomRoleUseCase(unitOfWork, roles, audit.port).execute({
       actor: actorWith(),
       roleId: ROLE_ID,
+      ipAddress: '203.0.113.9',
     });
 
     // «Role 7f3a… deleted» is unreadable a year later, and the role it names is exactly the thing
     // that no longer exists to be looked up — so the trail carries the composition, not the id.
+    // The caller's address travels too: a `WARNING`-severity role change has to be correlatable,
+    // the same reasoning `user.mfa_reset_by_admin` established for `CRITICAL`.
     expect(audit.events).toEqual([
       {
         action: 'role.deleted',
-        actor: { userId: 'admin', organizationId: ORG, ipAddress: undefined },
+        actor: { userId: 'admin', organizationId: ORG, ipAddress: '203.0.113.9' },
         target: { type: 'ROLE', id: ROLE_ID },
         before: {
           key: 'tech_writer',
@@ -143,9 +146,9 @@ describe('deleting a role the actor holds', () => {
     const roles = heldByActor();
     const useCase = new DeleteCustomRoleUseCase(unitOfWork, roles, auditSpy().port);
 
-    await expect(useCase.execute({ actor: actorWith(), roleId: ROLE_ID })).rejects.toBeInstanceOf(
-      AccessRefusedError,
-    );
+    await expect(
+      useCase.execute({ actor: actorWith(), roleId: ROLE_ID, ipAddress: undefined }),
+    ).rejects.toBeInstanceOf(AccessRefusedError);
     expect(roles.roles.size).toBe(1);
   });
 });
@@ -174,15 +177,16 @@ describe('editing a role', () => {
       description: null,
       permissions: ['task:read'],
       confirmedDangerous: false,
+      ipAddress: '203.0.113.9',
     });
 
     expect(unitOfWork.scopes).toEqual(scopeOfActor);
     // Both sets in full: «what did this role grant» has to be answerable from one entry, and a delta
-    // forces a reader to replay the history to find out.
+    // forces a reader to replay the history to find out. The caller's address travels too.
     expect(audit.events).toEqual([
       {
         action: 'role.updated',
-        actor: { userId: 'admin', organizationId: ORG, ipAddress: undefined },
+        actor: { userId: 'admin', organizationId: ORG, ipAddress: '203.0.113.9' },
         target: { type: 'ROLE', id: ROLE_ID },
         before: {
           key: 'tech_writer',
@@ -209,6 +213,7 @@ describe('editing a role', () => {
       // The composition already contained a dangerous key; storing it again asks for the same
       // confirmation, because the request is judged by what it stores, not by what it changes.
       confirmedDangerous: true,
+      ipAddress: undefined,
     });
 
     // A bump answers 401 to every holder at once and sends them all into refresh together — a load
@@ -228,6 +233,7 @@ describe('editing a role', () => {
       description: null,
       permissions: ['task:read'],
       confirmedDangerous: false,
+      ipAddress: undefined,
     });
 
     expect(roles.versionBumps).toEqual(['admin', 'ivan']);
@@ -247,6 +253,7 @@ describe('editing a role', () => {
         description: null,
         permissions: ['task:read'],
         confirmedDangerous: false,
+        ipAddress: undefined,
       }),
     ).rejects.toBeInstanceOf(NotFoundError);
     expect(audit.events).toEqual([]);
@@ -263,6 +270,7 @@ describe('editing a role', () => {
       description: null,
       permissions: ['user:impersonate'] as SharedPermissions.PermissionKey[],
       confirmedDangerous: false,
+      ipAddress: undefined,
     };
 
     await expect(useCase.execute(input)).rejects.toBeInstanceOf(ConfirmationRequiredError);

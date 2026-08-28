@@ -83,6 +83,8 @@ describe('POST /api/v1/users/{userId}/roles', () => {
     expect([...test.userRoles.assignments]).toEqual([`${IVAN}:${ROLE}`]);
     // Without this the change would take effect only after the person signs in again.
     expect(test.userRoles.versionBumps).toEqual([IVAN]);
+    expect(test.audit.events.at(-1)).toMatchObject({ action: 'role.assigned' });
+    expect(test.audit.events.at(-1)?.actor.ipAddress).toBeDefined();
   });
 
   it('answers the same 204 when the person already holds the role', async () => {
@@ -196,6 +198,8 @@ describe('DELETE /api/v1/users/{userId}/roles/{roleId}', () => {
 
     expect(test.userRoles.assignments.size).toBe(0);
     expect(test.userRoles.versionBumps).toEqual([IVAN]);
+    expect(test.audit.events.at(-1)).toMatchObject({ action: 'role.revoked' });
+    expect(test.audit.events.at(-1)?.actor.ipAddress).toBeDefined();
   });
 
   /**

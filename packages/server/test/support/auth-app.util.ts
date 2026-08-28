@@ -387,6 +387,7 @@ export const createAuthApp = (options: AuthAppOptions = {}): AuthApp => {
       clock,
       logger,
       rateLimit,
+      audit,
     ),
     requestPasswordReset: new RequestPasswordResetUseCase(
       lookup,

@@ -147,6 +147,9 @@ describe('POST /api/v1/roles', () => {
       action: 'role.created',
       after: { key: 'tech_writer', name: 'Technical writer', permissions: ['task:read'] },
     });
+    // A role composition is a `WARNING`-severity change of what everybody holding it may do — the
+    // caller's address has to travel with it so the entry is correlatable.
+    expect(test.audit.events.at(-1)?.actor.ipAddress).toBeDefined();
   });
 
   it('answers 409 when the key is taken, without a read-then-write race', async () => {
@@ -227,6 +230,9 @@ describe('POST /api/v1/roles', () => {
     // The dangerous ones, not the composition: «who ever stored a dangerous key» is the question
     // this entry answers, and a full set makes the reader find them again in every row.
     expect(test.audit.events.at(-2)?.after).toEqual({ permissions: ['user:impersonate'] });
+    // `role.dangerous_granted` is `CRITICAL`: the address must not be missing from the one entry an
+    // installation is expected to alert on.
+    expect(test.audit.events.at(-2)?.actor.ipAddress).toBeDefined();
   });
 
   it('refuses the key of a system role, which an upgrade would overwrite', async () => {

@@ -76,6 +76,10 @@ describe('PUT /api/v1/users/{userId}/permission-overrides/{permission}', () => {
       reason: REASON,
     });
     expect(test.userRoles.versionBumps).toEqual([IVAN]);
+    // `permission.override.created` is `WARNING`: the caller's address has to travel with it, the
+    // same reasoning `user.mfa_reset_by_admin` established for `CRITICAL`.
+    expect(test.audit.events.at(-1)).toMatchObject({ action: 'permission.override.created' });
+    expect(test.audit.events.at(-1)?.actor.ipAddress).toBeDefined();
   });
 
   it('accepts an expiry, and accepts an explicit «until removed»', async () => {
@@ -300,6 +304,8 @@ describe('DELETE /api/v1/users/{userId}/permission-overrides/{permission}', () =
 
     expect(test.overrides.rows.size).toBe(0);
     expect(test.userRoles.versionBumps).toEqual([IVAN]);
+    expect(test.audit.events.at(-1)).toMatchObject({ action: 'permission.override.deleted' });
+    expect(test.audit.events.at(-1)?.actor.ipAddress).toBeDefined();
   });
 
   it('answers 204 and writes nothing when there was no exception', async () => {

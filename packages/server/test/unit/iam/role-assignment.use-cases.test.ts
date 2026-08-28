@@ -54,9 +54,11 @@ interface RepositoryState {
 }
 
 const repositoryWith = (state: RepositoryState = {}) => {
-  const assign = vi.fn<(draft: AssignmentDraft) => Promise<{ created: boolean }>>().mockResolvedValue({
-    created: state.assignCreated ?? true,
-  });
+  const assign = vi
+    .fn<(draft: AssignmentDraft) => Promise<{ created: boolean }>>()
+    .mockResolvedValue({
+      created: state.assignCreated ?? true,
+    });
   const revoke = vi.fn<() => Promise<boolean>>().mockResolvedValue(state.revokeRemoved ?? true);
   const bumpPermissionsVersion = vi.fn<() => Promise<void>>().mockResolvedValue(undefined);
 
@@ -108,6 +110,7 @@ describe('assigning a role', () => {
       userId: 'ivan',
       roleId: 'role-1',
       expiresAt: null,
+      ipAddress: '203.0.113.9',
     });
 
     expect(result).toEqual({ created: true });
@@ -125,6 +128,9 @@ describe('assigning a role', () => {
       // gone by then.
       after: { roleKey: 'manager', roleId: 'role-1' },
     });
+    // The caller's address travels with a `WARNING`-severity entry, the same way it does for
+    // `user.mfa_reset_by_admin` — a role escalation review has to be able to correlate it.
+    expect(audit.events[0]?.actor.ipAddress).toBe('203.0.113.9');
   });
 
   /**
@@ -142,6 +148,7 @@ describe('assigning a role', () => {
       userId: 'ivan',
       roleId: 'role-1',
       expiresAt: null,
+      ipAddress: '203.0.113.9',
     });
 
     expect(result).toEqual({ created: false });
@@ -161,6 +168,7 @@ describe('assigning a role', () => {
       userId: 'ivan',
       roleId: 'role-1',
       expiresAt: null,
+      ipAddress: undefined,
     });
 
     // Not 403: that answer would confirm the id exists in an organization the caller cannot see.
@@ -178,6 +186,7 @@ describe('assigning a role', () => {
       userId: 'ivan',
       roleId: 'role-1',
       expiresAt: null,
+      ipAddress: undefined,
     });
 
     await expect(failing).rejects.toBeInstanceOf(AccessRefusedError);
@@ -196,6 +205,7 @@ describe('revoking a role', () => {
       actor: actorWith(),
       userId: 'ivan',
       roleId: 'role-1',
+      ipAddress: '203.0.113.9',
     });
 
     expect(result).toEqual({ removed: true });
@@ -206,6 +216,8 @@ describe('revoking a role', () => {
       // `before`, because what the trail must preserve is the state that is gone.
       before: { roleKey: 'manager', roleId: 'role-1' },
     });
+    // Same reasoning as the assignment above: a `WARNING`-severity revocation must be correlatable.
+    expect(audit.events[0]?.actor.ipAddress).toBe('203.0.113.9');
   });
 
   it('is not an error when the person did not hold it', async () => {
@@ -213,7 +225,14 @@ describe('revoking a role', () => {
     const audit = auditSpy();
     const useCase = new RevokeRoleUseCase(unitOfWork, repository, audit.port);
 
-    expect(await useCase.execute({ actor: actorWith(), userId: 'ivan', roleId: 'role-1' })).toEqual({
+    expect(
+      await useCase.execute({
+        actor: actorWith(),
+        userId: 'ivan',
+        roleId: 'role-1',
+        ipAddress: undefined,
+      }),
+    ).toEqual({
       removed: false,
     });
     expect(bumpPermissionsVersion).not.toHaveBeenCalled();
@@ -227,7 +246,12 @@ describe('revoking a role', () => {
     const { repository, revoke } = repositoryWith(state);
     const useCase = new RevokeRoleUseCase(unitOfWork, repository, auditSpy().port);
 
-    const failing = useCase.execute({ actor: actorWith(), userId: 'ivan', roleId: 'role-1' });
+    const failing = useCase.execute({
+      actor: actorWith(),
+      userId: 'ivan',
+      roleId: 'role-1',
+      ipAddress: undefined,
+    });
 
     await expect(failing).rejects.toMatchObject({ status: 404 });
     expect(revoke).not.toHaveBeenCalled();
@@ -239,7 +263,12 @@ describe('revoking a role', () => {
     const { repository, revoke } = repositoryWith({ held: ['role-1'] });
     const useCase = new RevokeRoleUseCase(unitOfWork, repository, auditSpy().port);
 
-    const failing = useCase.execute({ actor: actorWith(), userId: 'admin', roleId: 'role-1' });
+    const failing = useCase.execute({
+      actor: actorWith(),
+      userId: 'admin',
+      roleId: 'role-1',
+      ipAddress: undefined,
+    });
 
     await expect(failing).rejects.toMatchObject({ code: 'self_lockout', status: 409 });
     expect(revoke).not.toHaveBeenCalled();
@@ -249,7 +278,12 @@ describe('revoking a role', () => {
     const { repository, revoke } = repositoryWith({ roleKey: 'owner', ownersAfter: 0 });
     const useCase = new RevokeRoleUseCase(unitOfWork, repository, auditSpy().port);
 
-    const failing = useCase.execute({ actor: actorWith(), userId: 'ivan', roleId: 'role-1' });
+    const failing = useCase.execute({
+      actor: actorWith(),
+      userId: 'ivan',
+      roleId: 'role-1',
+      ipAddress: undefined,
+    });
 
     await expect(failing).rejects.toMatchObject({ code: 'last_owner_required', status: 409 });
     expect(revoke).not.toHaveBeenCalled();
@@ -269,7 +303,12 @@ describe('revoking a role', () => {
       auditSpy().port,
     );
 
-    await useCase.execute({ actor: actorWith(), userId: 'ivan', roleId: 'role-1' });
+    await useCase.execute({
+      actor: actorWith(),
+      userId: 'ivan',
+      roleId: 'role-1',
+      ipAddress: undefined,
+    });
 
     expect(countHoldersOfKey).toHaveBeenCalledWith('owner', 'ivan');
   });

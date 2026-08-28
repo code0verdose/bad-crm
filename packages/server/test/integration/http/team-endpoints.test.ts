@@ -535,6 +535,9 @@ describe('DELETE /api/v1/teams/{teamId}', () => {
     // regression to `INFO` (the level `team.created`/`team.updated` read at) is caught by this
     // suite rather than only by the generic «every action has a known severity» sweep.
     expect(SharedAudit.severityOf('team.deleted')).toBe('WARNING');
+    // `WARNING` and irreversible: the caller's address has to travel with the one team action
+    // nothing can undo (the same reasoning `role.deleted` establishes).
+    expect(test.audit.events.at(-1)?.actor.ipAddress).toBeDefined();
   });
 
   /** Fail-closed on the empty case: disbanding a team nobody is on bumps nobody and still records. */
