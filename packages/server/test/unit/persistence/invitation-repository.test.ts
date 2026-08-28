@@ -193,7 +193,27 @@ describe('reading invitations', () => {
       organizationId: ORG,
       acceptedAt: null,
     });
-    expect(argsOf(recorder, 'findMany')['orderBy']).toEqual({ createdAt: 'desc' });
+    expect(argsOf(recorder, 'findMany')['orderBy']).toEqual([
+      { createdAt: 'desc' },
+      { id: 'desc' },
+    ]);
+  });
+
+  /**
+   * The bound, spelled as a number rather than as the constant under test.
+   *
+   * `GET /invitations` takes no parameters and nothing ever removes an expired invitation, so
+   * without a `take` the answer is «every open invitation this organization ever created» — an
+   * unbounded response body, which `rules/api-contract.mdc` §8–§9 forbid for exactly this reason. A
+   * literal here is deliberate: it is the same number `docs/api/openapi.yaml` promises, so moving
+   * one without the other turns this test red instead of turning the spec into a lie.
+   */
+  it('never asks for more than the two hundred rows the spec promises', async () => {
+    const recorder = recordingClient({ rows: [storedRow] });
+
+    await inScope(recorder, (repository) => repository.listOpen());
+
+    expect(argsOf(recorder, 'findMany')['take']).toBe(200);
   });
 });
 

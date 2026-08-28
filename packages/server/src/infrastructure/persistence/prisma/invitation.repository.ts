@@ -43,6 +43,23 @@ export class PrismaInvitationRepository
     createdAt: true,
   } as const;
 
+  /**
+   * The ceiling on `listOpen`, and the reason there is one.
+   *
+   * `GET /invitations` takes no parameters, and nothing ever deletes an expired invitation — the
+   * list keeps them on purpose, because an expired row is exactly what somebody wants to resend or
+   * revoke. Both facts together make the answer grow without limit, which is what
+   * `rules/api-contract.mdc` §8–§9 forbid: an organization that has sent a thousand invitations
+   * would receive all thousand in one body.
+   *
+   * Two hundred rather than the §9 default of fifty, because there is no page control to reach the
+   * two hundred and first: the number has to sit above any plausible number of *pending* invitations
+   * for the 5–50-person teams this product is for, not at a page size. It stays in step with
+   * `docs/api/openapi.yaml`, which states it, and with the unit test that spells it out as a
+   * literal.
+   */
+  private static readonly LIST_LIMIT = 200;
+
   create(draft: InvitationDraftRow): Promise<string> {
     return this.run('create', async (tx) => {
       const invitation = await tx.invitation.create({
@@ -112,7 +129,11 @@ export class PrismaInvitationRepository
     return this.run('listOpen', async (tx) => {
       const invitations = await tx.invitation.findMany({
         where: { organizationId: this.organizationId('listOpen'), acceptedAt: null },
-        orderBy: { createdAt: 'desc' },
+        // `id` after `createdAt` because two invitations created in the same millisecond are
+        // otherwise ordered by nothing, and «the newest 200» would then be a different 200 per call.
+        // The ids are UUIDv7, so the tie-breaker agrees with the primary key rather than fighting it.
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+        take: PrismaInvitationRepository.LIST_LIMIT,
         select: PrismaInvitationRepository.VISIBLE,
       });
 

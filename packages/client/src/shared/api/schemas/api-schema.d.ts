@@ -994,6 +994,16 @@ export interface paths {
          *     Expired ones **are** here: an expired invitation is exactly the row somebody wants to resend
          *     or revoke, and hiding it would leave it addressable by id and invisible on the screen that
          *     addresses it.
+         *
+         *     **At most 200 rows, the newest first.** This operation takes no parameters and nothing ever
+         *     removes an expired invitation, so an organization that has invited a thousand people would
+         *     otherwise receive a thousand rows in one body. Two hundred rather than a page size, because
+         *     there is no page control to reach the two hundred and first — it is a ceiling above any
+         *     plausible number of *pending* invitations, not a page. Rows past it stay addressable by id:
+         *     resend and revoke work on an invitation this list does not show, and each revocation lets an
+         *     older one surface. Should the ceiling ever be reached in practice, the fix is `page` and
+         *     `perPage` on this operation (`rules/api-contract.mdc` §8, offset for a table) together with
+         *     the control on the screen — added as optional parameters, so no client breaks.
          */
         get: operations["listInvitations"];
         put?: never;
@@ -4621,7 +4631,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description The open invitations of the caller's organization. */
+            /** @description The open invitations of the caller's organization, at most 200, newest first. */
             200: {
                 headers: {
                     [name: string]: unknown;
