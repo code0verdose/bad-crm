@@ -9,6 +9,12 @@ import { denyAccess } from '@/domain/shared/errors/access-denial.util.js';
 export interface DeleteTeamInput {
   readonly actor: Actor;
   readonly teamId: string;
+  /**
+   * The caller's address, for the `WARNING`-severity trail entry this action writes — the one team
+   * action that is irreversible (see the class docstring). The same shape
+   * `ResetUserMfaInput.ipAddress` carries for the identical reason (`rules/observability.mdc`).
+   */
+  readonly ipAddress: string | undefined;
 }
 
 /**
@@ -89,7 +95,7 @@ export class DeleteTeamUseCase {
           actor: {
             userId: input.actor.userId,
             organizationId: input.actor.organizationId,
-            ipAddress: undefined,
+            ipAddress: input.ipAddress,
           },
           target: { type: 'TEAM', id: input.teamId },
           // The name and the full roster, each with the role they held: `team_members` has no

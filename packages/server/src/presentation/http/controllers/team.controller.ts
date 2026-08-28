@@ -13,6 +13,7 @@ import {
 } from '@/application/iam/use-cases/write-team.use-case.js';
 import { readActor } from '@/presentation/http/middleware/require-permission.middleware.js';
 import { type RequestValidator } from '@/presentation/http/middleware/validate.middleware.js';
+import { clientOf } from '@/presentation/http/session-client.util.js';
 import {
   serializeCreatedTeam,
   serializeTeam,
@@ -109,12 +110,13 @@ export const createTeamController = (
     response.status(204).send();
   },
 
-  remove: async (_request, response) => {
+  remove: async (request, response) => {
     const { params } = dependencies.teamIdValidator.read(response);
 
     await dependencies.deleteTeam.execute({
       actor: readActor(response),
       teamId: params.teamId,
+      ipAddress: clientOf(request).ipAddress,
     });
 
     response.status(204).send();

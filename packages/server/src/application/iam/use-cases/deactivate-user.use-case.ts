@@ -52,6 +52,12 @@ export interface DeactivateUserInput {
   readonly subjectUserId: string;
   /** Free text for the trail. Never shown to the person being deactivated. */
   readonly reason: string;
+  /**
+   * The caller's address, for the `WARNING`-severity trail entry this action always writes on a
+   * real offboarding. `undefined` when nothing reached the controller — the same shape
+   * `ResetUserMfaInput.ipAddress` carries for the identical reason (`rules/observability.mdc`).
+   */
+  readonly ipAddress: string | undefined;
 }
 
 /**
@@ -135,7 +141,7 @@ export class DeactivateUserUseCase {
           actor: {
             userId: input.actor.userId,
             organizationId: input.actor.organizationId,
-            ipAddress: undefined,
+            ipAddress: input.ipAddress,
           },
           target: { type: 'USER', id: subject.userId },
           before: { status: subject.status },

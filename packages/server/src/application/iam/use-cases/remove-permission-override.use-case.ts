@@ -14,6 +14,12 @@ export interface RemovePermissionOverrideInput {
   readonly actor: Actor;
   readonly userId: string;
   readonly permissionKey: SharedPermissions.PermissionKey;
+  /**
+   * The caller's address, for the `WARNING`-severity trail entry this action writes when an
+   * exception actually existed to remove. The same shape `ResetUserMfaInput.ipAddress` carries for
+   * the identical reason (`rules/observability.mdc`).
+   */
+  readonly ipAddress: string | undefined;
 }
 
 /**
@@ -61,7 +67,7 @@ export class RemovePermissionOverrideUseCase {
           actor: {
             userId: input.actor.userId,
             organizationId: input.actor.organizationId,
-            ipAddress: undefined,
+            ipAddress: input.ipAddress,
           },
           target: { type: 'USER_PERMISSION_OVERRIDE', id: input.userId },
           // `before` only: what the trail has to preserve is the exception that stopped existing,

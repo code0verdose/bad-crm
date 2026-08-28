@@ -120,12 +120,13 @@ export const createInvitationController = (
     );
   },
 
-  revoke: async (_request, response) => {
+  revoke: async (request, response) => {
     const { params } = dependencies.invitationIdValidator.read(response);
 
     await dependencies.revokeInvitation.execute({
       actor: readActor(response),
       invitationId: params.invitationId,
+      ipAddress: clientOf(request).ipAddress,
     });
 
     response.status(204).send();

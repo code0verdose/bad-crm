@@ -21,6 +21,12 @@ export interface CreateCustomRoleInput {
   readonly permissions: readonly SharedPermissions.PermissionKey[];
   /** The caller has seen the dangerous keys and repeated the request. */
   readonly confirmedDangerous: boolean;
+  /**
+   * The caller's address, for the `WARNING`-severity `role.created`/`role.updated` entry (and the
+   * `CRITICAL` `role.dangerous_granted` one, when it fires) this action writes. The same shape
+   * `ResetUserMfaInput.ipAddress` carries for the identical reason (`rules/observability.mdc`).
+   */
+  readonly ipAddress: string | undefined;
 }
 
 export interface UpdateCustomRoleInput extends Omit<CreateCustomRoleInput, 'key'> {
@@ -76,14 +82,14 @@ export class CreateCustomRoleUseCase {
           permissions: input.permissions,
         });
 
-        await recordDangerous(this.audit, input.actor, roleId, input.permissions);
+        await recordDangerous(this.audit, input.actor, roleId, input.permissions, input.ipAddress);
 
         await this.audit.record({
           action: 'role.created',
           actor: {
             userId: input.actor.userId,
             organizationId: input.actor.organizationId,
-            ipAddress: undefined,
+            ipAddress: input.ipAddress,
           },
           target: { type: 'ROLE', id: roleId },
           // The whole set, not the additions: «what does this role grant» has to be answerable from
@@ -156,7 +162,13 @@ export class UpdateCustomRoleUseCase {
         // «dangerous key granted» entry would put an escalation in the trail that did not happen.
         if (!sameComposition(before.permissions, input.permissions)) {
           await this.roles.bumpHoldersOf(input.roleId);
-          await recordDangerous(this.audit, input.actor, input.roleId, input.permissions);
+          await recordDangerous(
+            this.audit,
+            input.actor,
+            input.roleId,
+            input.permissions,
+            input.ipAddress,
+          );
         }
 
         await this.audit.record({
@@ -164,7 +176,7 @@ export class UpdateCustomRoleUseCase {
           actor: {
             userId: input.actor.userId,
             organizationId: input.actor.organizationId,
-            ipAddress: undefined,
+            ipAddress: input.ipAddress,
           },
           target: { type: 'ROLE', id: input.roleId },
           // Both sides carry the name: a rename recorded only as «became X» leaves «from what?»
@@ -205,6 +217,7 @@ const recordDangerous = async (
   actor: Actor,
   roleId: string,
   permissions: readonly SharedPermissions.PermissionKey[],
+  ipAddress: string | undefined,
 ): Promise<void> => {
   const dangerous = dangerousAmong(permissions);
 
@@ -212,7 +225,7 @@ const recordDangerous = async (
 
   await audit.record({
     action: 'role.dangerous_granted',
-    actor: { userId: actor.userId, organizationId: actor.organizationId, ipAddress: undefined },
+    actor: { userId: actor.userId, organizationId: actor.organizationId, ipAddress },
     target: { type: 'ROLE', id: roleId },
     after: { permissions: [...dangerous] },
     requestId: undefined,

@@ -5,6 +5,7 @@ import { type RemovePermissionOverrideUseCase } from '@/application/iam/use-case
 import { type WritePermissionOverrideUseCase } from '@/application/iam/use-cases/write-permission-override.use-case.js';
 import { readActor } from '@/presentation/http/middleware/require-permission.middleware.js';
 import { type RequestValidator } from '@/presentation/http/middleware/validate.middleware.js';
+import { clientOf } from '@/presentation/http/session-client.util.js';
 import {
   type overrideParamsSchema,
   type writeOverrideBodySchema,
@@ -36,7 +37,7 @@ export const createPermissionOverrideController = (
   readonly write: RequestHandler;
   readonly remove: RequestHandler;
 } => ({
-  write: async (_request, response) => {
+  write: async (request, response) => {
     const { params, body } = dependencies.writeValidator.read(response);
 
     await dependencies.writeOverride.execute({
@@ -47,18 +48,20 @@ export const createPermissionOverrideController = (
       reason: body.reason,
       expiresAt:
         body.expiresAt === undefined || body.expiresAt === null ? null : new Date(body.expiresAt),
+      ipAddress: clientOf(request).ipAddress,
     });
 
     response.status(204).send();
   },
 
-  remove: async (_request, response) => {
+  remove: async (request, response) => {
     const { params } = dependencies.removeValidator.read(response);
 
     await dependencies.removeOverride.execute({
       actor: readActor(response),
       userId: params.userId,
       permissionKey: params.permission as SharedPermissions.PermissionKey,
+      ipAddress: clientOf(request).ipAddress,
     });
 
     response.status(204).send();

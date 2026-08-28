@@ -4,6 +4,7 @@ import { type AssignRoleUseCase } from '@/application/iam/use-cases/assign-role.
 import { type RevokeRoleUseCase } from '@/application/iam/use-cases/revoke-role.use-case.js';
 import { readActor } from '@/presentation/http/middleware/require-permission.middleware.js';
 import { type RequestValidator } from '@/presentation/http/middleware/validate.middleware.js';
+import { clientOf } from '@/presentation/http/session-client.util.js';
 import {
   type assignRoleBodySchema,
   type userIdParamsSchema,
@@ -39,7 +40,7 @@ export const createUserRoleController = (
   readonly assign: RequestHandler;
   readonly revoke: RequestHandler;
 } => ({
-  assign: async (_request, response) => {
+  assign: async (request, response) => {
     const { params, body } = dependencies.assignValidator.read(response);
     const actor = readActor(response);
 
@@ -49,7 +50,9 @@ export const createUserRoleController = (
       roleId: body.roleId,
       // `null` and «absent» mean the same thing — until revoked — and the schema allows both because
       // a client that clears the field sends `null` while one that never set it omits the key.
-      expiresAt: body.expiresAt === undefined || body.expiresAt === null ? null : new Date(body.expiresAt),
+      expiresAt:
+        body.expiresAt === undefined || body.expiresAt === null ? null : new Date(body.expiresAt),
+      ipAddress: clientOf(request).ipAddress,
     });
 
     // 204 whether the row was created now or existed already: the caller asked for a state, and the
@@ -58,7 +61,7 @@ export const createUserRoleController = (
     response.status(204).send();
   },
 
-  revoke: async (_request, response) => {
+  revoke: async (request, response) => {
     const { params } = dependencies.revokeValidator.read(response);
     const actor = readActor(response);
 
@@ -66,6 +69,7 @@ export const createUserRoleController = (
       actor,
       userId: params.userId,
       roleId: params.roleId,
+      ipAddress: clientOf(request).ipAddress,
     });
 
     response.status(204).send();

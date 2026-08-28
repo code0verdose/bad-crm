@@ -18,6 +18,7 @@ import {
   serializeRoleChangeOutcome,
 } from '@/presentation/http/serializers/role.serializer.js';
 import { type RequestValidator } from '@/presentation/http/middleware/validate.middleware.js';
+import { clientOf } from '@/presentation/http/session-client.util.js';
 import {
   type createRoleBodySchema,
   type roleChangesBodySchema,
@@ -91,6 +92,7 @@ export const createCustomRoleController = (
       actor: readActor(response),
       changes: body.changes as { roleId: string; permissions: SharedPermissions.PermissionKey[] }[],
       confirmedDangerous: request.headers[CONFIRM_DANGEROUS] === '1',
+      ipAddress: clientOf(request).ipAddress,
     });
 
     response.status(204).send();
@@ -106,6 +108,7 @@ export const createCustomRoleController = (
       description: body.description ?? null,
       permissions: body.permissions as SharedPermissions.PermissionKey[],
       confirmedDangerous: request.headers[CONFIRM_DANGEROUS] === '1',
+      ipAddress: clientOf(request).ipAddress,
     });
 
     response.status(201).json(serializeCreatedRole(role));
@@ -121,17 +124,19 @@ export const createCustomRoleController = (
       description: body.description ?? null,
       permissions: body.permissions as SharedPermissions.PermissionKey[],
       confirmedDangerous: request.headers[CONFIRM_DANGEROUS] === '1',
+      ipAddress: clientOf(request).ipAddress,
     });
 
     response.status(204).send();
   },
 
-  remove: async (_request, response) => {
+  remove: async (request, response) => {
     const { params } = dependencies.deleteValidator.read(response);
 
     await dependencies.deleteRole.execute({
       actor: readActor(response),
       roleId: params.roleId,
+      ipAddress: clientOf(request).ipAddress,
     });
 
     response.status(204).send();

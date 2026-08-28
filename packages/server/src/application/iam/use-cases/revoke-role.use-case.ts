@@ -10,6 +10,12 @@ export interface RevokeRoleInput {
   readonly actor: Actor;
   readonly userId: string;
   readonly roleId: string;
+  /**
+   * The caller's address, for the `WARNING`-severity trail entry a real revocation writes. The
+   * same shape `ResetUserMfaInput.ipAddress` carries for the identical reason
+   * (`rules/observability.mdc`).
+   */
+  readonly ipAddress: string | undefined;
 }
 
 export interface RevokeRoleResult {
@@ -70,7 +76,7 @@ export class RevokeRoleUseCase {
           actor: {
             userId: input.actor.userId,
             organizationId: input.actor.organizationId,
-            ipAddress: undefined,
+            ipAddress: input.ipAddress,
           },
           target: { type: 'USER_ROLE', id: input.userId },
           // `before`, not `after`: what the trail has to preserve is the state that stopped existing.

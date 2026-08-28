@@ -11,6 +11,12 @@ import { denyAccess } from '@/domain/shared/errors/access-denial.util.js';
 export interface DeleteCustomRoleInput {
   readonly actor: Actor;
   readonly roleId: string;
+  /**
+   * The caller's address, for the `WARNING`-severity trail entry this action writes. The same
+   * shape `ResetUserMfaInput.ipAddress` carries for the identical reason
+   * (`rules/observability.mdc`).
+   */
+  readonly ipAddress: string | undefined;
 }
 
 /**
@@ -71,7 +77,7 @@ export class DeleteCustomRoleUseCase {
           actor: {
             userId: input.actor.userId,
             organizationId: input.actor.organizationId,
-            ipAddress: undefined,
+            ipAddress: input.ipAddress,
           },
           target: { type: 'ROLE', id: input.roleId },
           before: {

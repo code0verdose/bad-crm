@@ -4,6 +4,7 @@ import { type DeactivateUserUseCase } from '@/application/iam/use-cases/deactiva
 import { type ReactivateUserUseCase } from '@/application/iam/use-cases/reactivate-user.use-case.js';
 import { readActor } from '@/presentation/http/middleware/require-permission.middleware.js';
 import { type RequestValidator } from '@/presentation/http/middleware/validate.middleware.js';
+import { clientOf } from '@/presentation/http/session-client.util.js';
 import {
   type deactivateUserBodySchema,
   type userLifecycleParamsSchema,
@@ -36,24 +37,26 @@ export const createUserLifecycleController = (
   readonly deactivate: RequestHandler;
   readonly reactivate: RequestHandler;
 } => ({
-  deactivate: async (_request, response) => {
+  deactivate: async (request, response) => {
     const { params, body } = dependencies.deactivateValidator.read(response);
 
     const report = await dependencies.deactivateUser.execute({
       actor: readActor(response),
       subjectUserId: params.userId,
       reason: body.reason,
+      ipAddress: clientOf(request).ipAddress,
     });
 
     response.status(200).json(report);
   },
 
-  reactivate: async (_request, response) => {
+  reactivate: async (request, response) => {
     const { params } = dependencies.reactivateValidator.read(response);
 
     const result = await dependencies.reactivateUser.execute({
       actor: readActor(response),
       subjectUserId: params.userId,
+      ipAddress: clientOf(request).ipAddress,
     });
 
     response.status(200).json(result);

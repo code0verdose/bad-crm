@@ -11,6 +11,12 @@ export interface AssignRoleInput {
   readonly userId: string;
   readonly roleId: string;
   readonly expiresAt: Date | null;
+  /**
+   * The caller's address, for the `WARNING`-severity trail entry a real assignment writes. The
+   * same shape `ResetUserMfaInput.ipAddress` carries for the identical reason
+   * (`rules/observability.mdc`).
+   */
+  readonly ipAddress: string | undefined;
 }
 
 export interface AssignRoleResult {
@@ -81,7 +87,7 @@ export class AssignRoleUseCase {
           actor: {
             userId: input.actor.userId,
             organizationId: input.actor.organizationId,
-            ipAddress: undefined,
+            ipAddress: input.ipAddress,
           },
           target: { type: 'USER_ROLE', id: input.userId },
           // The key, not only the id: a trail entry that says «role 7f3a…» is unreadable a year

@@ -20,6 +20,12 @@ export interface WritePermissionOverrideInput {
   readonly effect: OverrideEffect;
   readonly reason: string;
   readonly expiresAt: Date | null;
+  /**
+   * The caller's address, for the `WARNING`-severity trail entry this action always writes. The
+   * same shape `ResetUserMfaInput.ipAddress` carries for the identical reason
+   * (`rules/observability.mdc`).
+   */
+  readonly ipAddress: string | undefined;
 }
 
 /**
@@ -83,14 +89,12 @@ export class WritePermissionOverrideUseCase {
           actor: {
             userId: input.actor.userId,
             organizationId: input.actor.organizationId,
-            ipAddress: undefined,
+            ipAddress: input.ipAddress,
           },
           target: { type: 'USER_PERMISSION_OVERRIDE', id: input.userId },
           // The reason travels into the trail on purpose: «why did this person have that» is the
           // question the trail exists to answer, and the reason is the only field that answers it.
-          ...(before === null
-            ? {}
-            : { before: { effect: before.effect, reason: before.reason } }),
+          ...(before === null ? {} : { before: { effect: before.effect, reason: before.reason } }),
           after: {
             permissionKey: input.permissionKey,
             effect: input.effect,

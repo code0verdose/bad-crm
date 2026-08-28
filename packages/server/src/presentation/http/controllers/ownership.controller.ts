@@ -3,6 +3,7 @@ import { type RequestHandler } from 'express';
 import { type TransferOwnershipUseCase } from '@/application/iam/use-cases/transfer-ownership.use-case.js';
 import { readActor } from '@/presentation/http/middleware/require-permission.middleware.js';
 import { type RequestValidator } from '@/presentation/http/middleware/validate.middleware.js';
+import { clientOf } from '@/presentation/http/session-client.util.js';
 import { type transferOwnershipBodySchema } from '@/presentation/http/validators/ownership.validator.js';
 
 export interface OwnershipControllerDependencies {
@@ -20,13 +21,14 @@ export interface OwnershipControllerDependencies {
 export const createOwnershipController = (
   dependencies: OwnershipControllerDependencies,
 ): { readonly transfer: RequestHandler } => ({
-  transfer: async (_request, response) => {
+  transfer: async (request, response) => {
     const { body } = dependencies.transferValidator.read(response);
 
     const result = await dependencies.transferOwnership.execute({
       actor: readActor(response),
       toUserId: body.toUserId,
       previousOwnerRoleKey: body.previousOwnerRoleKey,
+      ipAddress: clientOf(request).ipAddress,
     });
 
     response.status(200).json(result);

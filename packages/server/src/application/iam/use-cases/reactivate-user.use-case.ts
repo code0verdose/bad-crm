@@ -9,6 +9,12 @@ import { denyAccess } from '@/domain/shared/errors/access-denial.util.js';
 export interface ReactivateUserInput {
   readonly actor: Actor;
   readonly subjectUserId: string;
+  /**
+   * The caller's address, for the `WARNING`-severity trail entry this action always writes on a
+   * real reactivation. `undefined` when nothing reached the controller — the same shape
+   * `ResetUserMfaInput.ipAddress` carries for the identical reason (`rules/observability.mdc`).
+   */
+  readonly ipAddress: string | undefined;
 }
 
 export interface ReactivationResult {
@@ -98,7 +104,7 @@ export class ReactivateUserUseCase {
           actor: {
             userId: input.actor.userId,
             organizationId: input.actor.organizationId,
-            ipAddress: undefined,
+            ipAddress: input.ipAddress,
           },
           target: { type: 'USER', id: subject.userId },
           before: { status: 'SUSPENDED' },

@@ -10,6 +10,13 @@ export interface TransferOwnershipInput {
   readonly toUserId: string;
   /** What the outgoing owner keeps. The screen defaults it to `admin` and shows the choice. */
   readonly previousOwnerRoleKey: string;
+  /**
+   * The caller's address, for the `CRITICAL`-severity trail entry this action always writes: after
+   * it a different person can do everything, and a `CRITICAL` row with no address to correlate
+   * against defeats the purpose of the field existing — the same reasoning `ResetUserMfaInput`
+   * carries it for `user.mfa_reset_by_admin` (`rules/observability.mdc`).
+   */
+  readonly ipAddress: string | undefined;
 }
 
 export interface OwnershipTransferResult {
@@ -91,7 +98,7 @@ export class TransferOwnershipUseCase {
           actor: {
             userId: input.actor.userId,
             organizationId: input.actor.organizationId,
-            ipAddress: undefined,
+            ipAddress: input.ipAddress,
           },
           target: { type: 'ORGANIZATION', id: input.actor.organizationId },
           before: { ownerId: fromUserId },

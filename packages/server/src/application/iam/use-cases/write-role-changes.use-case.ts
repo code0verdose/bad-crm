@@ -27,6 +27,12 @@ export interface RoleChangesInput {
   readonly changes: readonly DraftedRole[];
   /** The caller has seen the dangerous keys and repeated the request. Ignored by the preview. */
   readonly confirmedDangerous?: boolean;
+  /**
+   * The caller's address, for the `role.updated`/`role.dangerous_granted` entries `ApplyRoleChangesUseCase`
+   * writes. Ignored by the preview, which writes nothing — optional for that reason, unlike the
+   * single-role `UpdateCustomRoleInput.ipAddress` this type's write path mirrors.
+   */
+  readonly ipAddress?: string | undefined;
 }
 
 /** What the preview tells the screen about one drafted role. */
@@ -136,7 +142,7 @@ export class ApplyRoleChangesUseCase {
         for (const verdict of moved) {
           const entry = drafted.find((candidate) => candidate.change.roleId === verdict.roleId);
 
-          await this.applyOne(input.actor, verdict, entry as Drafted);
+          await this.applyOne(input.actor, verdict, entry as Drafted, input.ipAddress);
         }
 
         // One statement for the whole draft rather than one per role: sixty-four round trips inside
@@ -151,6 +157,7 @@ export class ApplyRoleChangesUseCase {
     actor: Actor,
     verdict: RoleChangeVerdict,
     drafted: Drafted,
+    ipAddress: string | undefined,
   ): Promise<void> {
     const { before, change } = drafted;
 
@@ -170,7 +177,7 @@ export class ApplyRoleChangesUseCase {
     if (verdict.dangerous.length > 0) {
       await this.audit.record({
         action: 'role.dangerous_granted',
-        actor: { userId: actor.userId, organizationId: actor.organizationId, ipAddress: undefined },
+        actor: { userId: actor.userId, organizationId: actor.organizationId, ipAddress },
         target: { type: 'ROLE', id: verdict.roleId },
         after: { permissions: [...verdict.dangerous] },
         requestId: undefined,
@@ -179,7 +186,7 @@ export class ApplyRoleChangesUseCase {
 
     await this.audit.record({
       action: 'role.updated',
-      actor: { userId: actor.userId, organizationId: actor.organizationId, ipAddress: undefined },
+      actor: { userId: actor.userId, organizationId: actor.organizationId, ipAddress },
       target: { type: 'ROLE', id: verdict.roleId },
       before: { key: before.key, name: before.name, permissions: [...before.permissions] },
       after: { key: before.key, name: before.name, permissions: [...change.after] },
