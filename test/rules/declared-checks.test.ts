@@ -165,11 +165,6 @@ const PENDING: Readonly<Record<string, string>> = {
     '`eslint-plugin-boundaries` is not a dependency. The layer directions it would express are ' +
     'enforced today by `no-restricted-imports` groups per `files` block plus `test/architecture/layers.test.ts`, ' +
     'which walks the real import graph — the plugin would replace that pair, not add to it.',
-  'i18n.mdc · file · test/i18n/plural.test.ts':
-    'Pluralisation lands with the first countable string. EPIC-008 has the catalogues and the ' +
-    'instance (STORY-008-01) and no plural yet — 26 keys, none of them counted — so the suite would ' +
-    'assert `one/few/many` about nothing.',
-
   // ── commands that belong to the i18n epic ────────────────────────────────────────────────────
   'i18n.mdc · command · i18n:unused':
     'Same as `i18n:check`: the script is specified against a message catalogue that EPIC-008 introduces.',
