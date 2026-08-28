@@ -11,6 +11,8 @@ import { type MetricsPort } from '@/application/platform/ports/metrics.port.js';
 export const noopMetrics: MetricsPort = {
   observeHttpRequest: () => undefined,
   incrementAuthRateLimited: () => undefined,
+  incrementPermissionDenied: () => undefined,
+  incrementAuditWriteFailed: () => undefined,
   render: () => Promise.resolve(''),
   contentType: 'text/plain; charset=utf-8',
 };

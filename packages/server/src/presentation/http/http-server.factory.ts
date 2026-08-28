@@ -149,6 +149,10 @@ export const createHttpServer = (dependencies: HttpServerDependencies): Express 
     createErrorHandler({
       logger: dependencies.logger,
       requestContext: dependencies.requestContext,
+      // The same port the collector publishes to, so a refusal counted here lands in the exposition
+      // text the endpoint above renders. `undefined` when metrics are off, which is what makes the
+      // increment cost nothing on an installation that asked for none.
+      metrics: dependencies.metrics?.port,
     }),
   );
 

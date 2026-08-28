@@ -2,6 +2,7 @@ import { type ErrorRequestHandler } from 'express';
 import { ZodError } from 'zod';
 
 import { type LoggerPort } from '@/application/platform/ports/logger.port.js';
+import { type MetricsPort } from '@/application/platform/ports/metrics.port.js';
 import { type RequestContextPort } from '@/application/platform/ports/request-context.port.js';
 import { AccessRefusedError } from '@/domain/access/access.errors.js';
 import {
@@ -19,6 +20,12 @@ import { toValidationIssues } from '@/presentation/http/validators/zod-issues.ut
 export interface ErrorHandlerDependencies {
   readonly logger: LoggerPort;
   readonly requestContext: RequestContextPort;
+  /**
+   * Where a refusal is counted. Absent when this installation switched metrics off — the same shape
+   * `HttpServerDependencies.metrics` has, so «off» stays one decision made in the container rather
+   * than a `noop` handed to a handler that would then pretend to publish.
+   */
+  readonly metrics?: MetricsPort | undefined;
 }
 
 /** Errors the body parser raises before any of our code runs. */
@@ -101,6 +108,26 @@ export const createErrorHandler = (dependencies: ErrorHandlerDependencies): Erro
       );
     } else {
       dependencies.logger.error({ requestId, code, status, err: error }, 'unhandled error');
+    }
+
+    // A refusal by the permission layer, counted here — the one place every refusal passes through.
+    //
+    // Not at the throw site, and the reason is the layer rule rather than convenience: the refusal
+    // is built in `domain/access/access.errors.ts`, and `domain` may not do I/O at all
+    // (`rules/hexagonal-backend.mdc` §2). Handing it a metrics port to increment would be the same
+    // mistake as handing it a clock, and it would put a second thing to remember at every future
+    // `assertAllowed`. Here it is structural: a refusal that reached a client passed through this
+    // function by construction.
+    //
+    // **What this does not count, deliberately.** `denyAccess` — the other refusal family, used for
+    // «the row is not there, or not yours» — produces a plain `ForbiddenError`/`NotFoundError` and
+    // carries no `DenyReason` at all. Guessing one from the status would put an invented value into
+    // a label an operator alerts on, and «404 means resource_not_found» is exactly the inference
+    // invariant 2 exists to make impossible. Folding that family into the reason-carrying one is
+    // STORY-016-02's own work; until then this series counts the refusals that state their reason,
+    // and no others.
+    if (appError instanceof AccessRefusedError) {
+      dependencies.metrics?.incrementPermissionDenied(appError.reason);
     }
 
     if (appError instanceof RateLimitedError) {

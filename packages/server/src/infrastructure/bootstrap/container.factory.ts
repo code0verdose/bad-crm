@@ -34,6 +34,7 @@ import { DescribeApiUseCase } from '@/application/platform/use-cases/describe-ap
 import { APP_INFO } from '@/app-info.constant.js';
 import { AsyncRequestContextAdapter } from '@/infrastructure/logging/async-request-context.adapter.js';
 import { createHttpMetrics } from '@/infrastructure/metrics/http-metrics.middleware.js';
+import { countedAuditLogger } from '@/infrastructure/metrics/counted-audit-logger.adapter.js';
 import { noopMetrics } from '@/infrastructure/metrics/noop-metrics.adapter.js';
 import { RecordClientErrorUseCase } from '@/application/platform/use-cases/record-client-error.use-case.js';
 import { pinoAuditLogger } from '@/infrastructure/logging/pino-audit.adapter.js';
@@ -251,6 +252,17 @@ export const buildContainer = (input: ContainerInput): AppContainer => {
   const mailDispatcher = new ImmediateMailDispatcher(mailer, logger);
 
   /**
+   * A registry with default collectors, or nothing at all.
+   *
+   * `noopMetrics` rather than a flag at each call site: `collectDefaultMetrics` starts timers that
+   * sample the event loop and the heap, and an installation that switched metrics off asked for
+   * none of that. «The counter exists but nobody scrapes it» is not the same as off.
+   *
+   * Built before the audit trail because the trail is wrapped in it, not the other way round.
+   */
+  const metrics = input.env.METRICS_ENABLED ? createPromMetrics() : noopMetrics;
+
+  /**
    * The audit trail: a row in `audit_logs`, written inside the transaction that caused it.
    *
    * The log line did not go away — it is where the events that cannot be rows are recorded, and
@@ -258,12 +270,21 @@ export const buildContainer = (input: ContainerInput): AppContainer => {
    * is known has nowhere to be filed; and an action taken outside a tenant scope has no transaction
    * to join. Both are still part of the trail, and both are visibly *not* rows rather than quietly
    * missing.
+   *
+   * Wrapped in `countedAuditLogger` — outermost, so it also sees a failure of the unscoped sink
+   * underneath — so that a failed write is visible as a series rather than only as the request it
+   * took down with it. The decorator counts and **rethrows**: the fail-closed contract of
+   * `audit-logger.port.ts` is unchanged, and it has to stay that way. A hole in the trail that costs
+   * nothing but a counter is a worse outcome than the failed request it would replace.
    */
-  const audit = new PrismaAuditLogger({
-    addressHasher: new HmacAddressHasher(input.env.APP_ENCRYPTION_KEY),
-    requestContext,
-    unscoped: pinoAuditLogger(logger, clock),
-  });
+  const audit = countedAuditLogger(
+    new PrismaAuditLogger({
+      addressHasher: new HmacAddressHasher(input.env.APP_ENCRYPTION_KEY),
+      requestContext,
+      unscoped: pinoAuditLogger(logger, clock),
+    }),
+    metrics,
+  );
 
   const identity = buildIdentity({
     env: input.env,
@@ -289,15 +310,6 @@ export const buildContainer = (input: ContainerInput): AppContainer => {
     authClient === undefined
       ? []
       : [{ name: 'auth-database-role', run: () => assertAuthDatabaseRole(authClient) }];
-
-  /**
-   * A registry with default collectors, or nothing at all.
-   *
-   * `noopMetrics` rather than a flag at each call site: `collectDefaultMetrics` starts timers that
-   * sample the event loop and the heap, and an installation that switched metrics off asked for
-   * none of that. «The counter exists but nobody scrapes it» is not the same as off.
-   */
-  const metrics = input.env.METRICS_ENABLED ? createPromMetrics() : noopMetrics;
 
   const recordClientError = new RecordClientErrorUseCase(rateLimit, logger);
 
@@ -727,6 +739,7 @@ const buildIdentity = (input: {
       input.clock,
       input.logger,
       input.rateLimit,
+      input.audit,
     ),
     changePassword: new ChangePasswordUseCase(
       users,

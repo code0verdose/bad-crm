@@ -110,6 +110,8 @@ describe('metrics switched off', () => {
       durationSeconds: 1,
     });
     noopMetrics.incrementAuthRateLimited('/api/v1/auth/login');
+    noopMetrics.incrementPermissionDenied('permission_not_granted');
+    noopMetrics.incrementAuditWriteFailed();
 
     await expect(noopMetrics.render()).resolves.toBe('');
   });

@@ -1,3 +1,4 @@
+import { type SharedPermissions } from '@bad-crm/shared';
 import { Counter, Histogram, Registry, collectDefaultMetrics } from 'prom-client';
 
 import {
@@ -54,6 +55,19 @@ export const createPromMetrics = (): MetricsPort => {
     registers: [registry],
   });
 
+  const permissionDenied = new Counter({
+    name: 'permission_denied_total',
+    help: 'Refusals by the permission layer, by the reason they were refused for.',
+    labelNames: ['reason'] as const,
+    registers: [registry],
+  });
+
+  const auditWriteFailed = new Counter({
+    name: 'audit_write_failed_total',
+    help: 'Privileged actions that could not be written to the audit trail.',
+    registers: [registry],
+  });
+
   return {
     observeHttpRequest: ({
       method,
@@ -66,6 +80,12 @@ export const createPromMetrics = (): MetricsPort => {
     },
     incrementAuthRateLimited: (endpoint: string): void => {
       authRateLimited.inc({ endpoint });
+    },
+    incrementPermissionDenied: (reason: SharedPermissions.DenyReason): void => {
+      permissionDenied.inc({ reason });
+    },
+    incrementAuditWriteFailed: (): void => {
+      auditWriteFailed.inc();
     },
     render: () => registry.metrics(),
     contentType: registry.contentType,
