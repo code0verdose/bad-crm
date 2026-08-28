@@ -3,6 +3,7 @@ import { type RequestHandler } from 'express';
 import { type ResetUserMfaUseCase } from '@/application/iam/use-cases/reset-user-mfa.use-case.js';
 import { readActor } from '@/presentation/http/middleware/require-permission.middleware.js';
 import { type RequestValidator } from '@/presentation/http/middleware/validate.middleware.js';
+import { clientOf } from '@/presentation/http/session-client.util.js';
 import { type resetUserMfaParamsSchema } from '@/presentation/http/validators/user-security.validator.js';
 
 export interface UserSecurityControllerDependencies {
@@ -24,12 +25,19 @@ export const createUserSecurityController = (
 ): {
   readonly resetMfa: RequestHandler;
 } => ({
-  resetMfa: async (_request, response) => {
+  resetMfa: async (request, response) => {
     const { params } = dependencies.resetUserMfaValidator.read(response);
 
     const result = await dependencies.resetUserMfa.execute({
       actor: readActor(response),
       subjectUserId: params.userId,
+      // Same source every session-opening flow already reads through (`clientOf`,
+      // `mfa.controller.ts`'s `confirm`/`regenerateRecoveryCodes`/`disable`) — the one hop the
+      // reverse proxy wrote, never a client-supplied header. LOW-1: this is the CRITICAL-severity
+      // action whose trail entry correlates by address; the other 28 `ipAddress: undefined` call
+      // sites in `application/iam/**` are lower severity and out of scope for this fix (see
+      // docs/brain audit note).
+      ipAddress: clientOf(request).ipAddress,
     });
 
     response.status(200).json(result);

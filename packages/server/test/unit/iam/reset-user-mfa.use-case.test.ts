@@ -158,6 +158,7 @@ describe('resetting a colleague’s 2FA — acceptance 5', () => {
     const result = await harness.useCase.execute({
       actor: actorWith(),
       subjectUserId: SUBJECT_ID,
+      ipAddress: undefined,
     });
 
     expect(result).toEqual({
@@ -180,7 +181,11 @@ describe('resetting a colleague’s 2FA — acceptance 5', () => {
     await harness.enableTotp();
     harness.openSession(SUBJECT_ID, 'family-1');
 
-    await harness.useCase.execute({ actor: actorWith(), subjectUserId: SUBJECT_ID });
+    await harness.useCase.execute({
+      actor: actorWith(),
+      subjectUserId: SUBJECT_ID,
+      ipAddress: undefined,
+    });
 
     expect(harness.audit.events).toContainEqual(
       expect.objectContaining({
@@ -189,6 +194,25 @@ describe('resetting a colleague’s 2FA — acceptance 5', () => {
         actor: expect.objectContaining({ userId: ADMIN_ID, organizationId: ORGANIZATION_ID }),
         before: { totpEnabled: true },
         after: { totpEnabled: false, recoveryCodesDeleted: 0, sessionsRevoked: 1 },
+      }),
+    );
+  });
+
+  it('LOW-1: carries the caller’s address on the CRITICAL-severity entry', async () => {
+    const harness = buildHarness();
+
+    await harness.enableTotp();
+
+    await harness.useCase.execute({
+      actor: actorWith(),
+      subjectUserId: SUBJECT_ID,
+      ipAddress: '203.0.113.7',
+    });
+
+    expect(harness.audit.events).toContainEqual(
+      expect.objectContaining({
+        action: 'user.mfa_reset_by_admin',
+        actor: expect.objectContaining({ ipAddress: '203.0.113.7' }),
       }),
     );
   });
@@ -202,7 +226,11 @@ describe('resetting a colleague’s 2FA — acceptance 5', () => {
       expect(harness.dispatcher.dispatched).toEqual([]);
     };
 
-    await harness.useCase.execute({ actor: actorWith(), subjectUserId: SUBJECT_ID });
+    await harness.useCase.execute({
+      actor: actorWith(),
+      subjectUserId: SUBJECT_ID,
+      ipAddress: undefined,
+    });
 
     expect(harness.dispatcher.dispatched).toHaveLength(1);
     expect(harness.dispatcher.dispatched[0]?.mail.to).toBe('colleague@example.com');
@@ -210,12 +238,13 @@ describe('resetting a colleague’s 2FA — acceptance 5', () => {
 });
 
 describe('repeating a reset on an account with no 2FA — MEDIUM-2, a true no-op', () => {
-  it('answers wasEnabled: false without touching sessions, the permission version, mail or the trail', async () => {
+  it('answers wasEnabled: false without touching sessions, the permission version or mail', async () => {
     const harness = buildHarness();
 
     const result = await harness.useCase.execute({
       actor: actorWith(),
       subjectUserId: SUBJECT_ID,
+      ipAddress: undefined,
     });
 
     expect(result).toEqual({
@@ -226,7 +255,32 @@ describe('repeating a reset on an account with no 2FA — MEDIUM-2, a true no-op
     });
     expect(harness.userRoles.versionBumps).toEqual([]);
     expect(harness.dispatcher.dispatched).toEqual([]);
-    expect(harness.audit.events).toEqual([]);
+  });
+
+  it('LOW-2: still writes the trail entry — a no-op reset is not a free oracle on 2FA enrolment', async () => {
+    const harness = buildHarness();
+
+    await harness.useCase.execute({
+      actor: actorWith(),
+      subjectUserId: SUBJECT_ID,
+      ipAddress: '203.0.113.7',
+    });
+
+    // The attempt is on record even though nothing else moved: an actor may not learn "this
+    // colleague's 2FA is off" by getting silence back with no row anywhere that they asked.
+    expect(harness.audit.events).toContainEqual(
+      expect.objectContaining({
+        action: 'user.mfa_reset_by_admin',
+        target: { type: 'USER', id: SUBJECT_ID },
+        actor: expect.objectContaining({
+          userId: ADMIN_ID,
+          organizationId: ORGANIZATION_ID,
+          ipAddress: '203.0.113.7',
+        }),
+        before: { totpEnabled: false },
+        after: { totpEnabled: false, recoveryCodesDeleted: 0, sessionsRevoked: 0 },
+      }),
+    );
   });
 
   it('does not revoke a live session that belongs to an account with no 2FA', async () => {
@@ -234,7 +288,11 @@ describe('repeating a reset on an account with no 2FA — MEDIUM-2, a true no-op
 
     harness.openSession(SUBJECT_ID, 'family-1');
 
-    await harness.useCase.execute({ actor: actorWith(), subjectUserId: SUBJECT_ID });
+    await harness.useCase.execute({
+      actor: actorWith(),
+      subjectUserId: SUBJECT_ID,
+      ipAddress: undefined,
+    });
 
     const row = [...harness.sessions.rows.values()].find(
       (session) => session.userId === SUBJECT_ID,
@@ -250,7 +308,11 @@ describe('repeating a reset on an account with no 2FA — MEDIUM-2, a true no-op
     harness.openSession(SUBJECT_ID, 'family-1');
 
     // First call really disables 2FA and closes the one session that existed.
-    const first = await harness.useCase.execute({ actor: actorWith(), subjectUserId: SUBJECT_ID });
+    const first = await harness.useCase.execute({
+      actor: actorWith(),
+      subjectUserId: SUBJECT_ID,
+      ipAddress: undefined,
+    });
 
     expect(first.wasEnabled).toBe(true);
     expect(harness.dispatcher.dispatched).toHaveLength(1);
@@ -260,7 +322,11 @@ describe('repeating a reset on an account with no 2FA — MEDIUM-2, a true no-op
 
     // A held permission looped against an account whose 2FA is already off must not touch that new
     // session or send a second mail — the entire point of the fix.
-    const second = await harness.useCase.execute({ actor: actorWith(), subjectUserId: SUBJECT_ID });
+    const second = await harness.useCase.execute({
+      actor: actorWith(),
+      subjectUserId: SUBJECT_ID,
+      ipAddress: undefined,
+    });
 
     expect(second.wasEnabled).toBe(false);
     expect(second.sessionsRevoked).toBe(0);
@@ -278,7 +344,11 @@ describe('rate limiting an administrative reset — MEDIUM-2', () => {
   it('spends the mfa_admin_reset_attempt budget, keyed on the actor, before the transaction opens', async () => {
     const harness = buildHarness();
 
-    await harness.useCase.execute({ actor: actorWith(), subjectUserId: SUBJECT_ID });
+    await harness.useCase.execute({
+      actor: actorWith(),
+      subjectUserId: SUBJECT_ID,
+      ipAddress: undefined,
+    });
 
     expect(harness.rateLimit.consumed).toContainEqual({
       policy: 'mfa_admin_reset_attempt',
@@ -290,11 +360,19 @@ describe('rate limiting an administrative reset — MEDIUM-2', () => {
     const harness = buildHarness({ rateLimitLimits: { mfa_admin_reset_attempt: 5 } });
 
     for (let index = 0; index < 5; index += 1) {
-      await harness.useCase.execute({ actor: actorWith(), subjectUserId: SUBJECT_ID });
+      await harness.useCase.execute({
+        actor: actorWith(),
+        subjectUserId: SUBJECT_ID,
+        ipAddress: undefined,
+      });
     }
 
     await expect(
-      harness.useCase.execute({ actor: actorWith(), subjectUserId: SUBJECT_ID }),
+      harness.useCase.execute({
+        actor: actorWith(),
+        subjectUserId: SUBJECT_ID,
+        ipAddress: undefined,
+      }),
     ).rejects.toBeInstanceOf(RateLimitedError);
   });
 });
@@ -319,7 +397,11 @@ describe('HIGH-1: an administrator may not reach further than their own standing
     let caught: unknown;
 
     try {
-      await harness.useCase.execute({ actor: actorWith(), subjectUserId: OWNER_ID });
+      await harness.useCase.execute({
+        actor: actorWith(),
+        subjectUserId: OWNER_ID,
+        ipAddress: undefined,
+      });
     } catch (error) {
       caught = error;
     }
@@ -356,7 +438,11 @@ describe('HIGH-1: an administrator may not reach further than their own standing
     let caught: unknown;
 
     try {
-      await harness.useCase.execute({ actor: actorWith(), subjectUserId: SUBJECT_ID });
+      await harness.useCase.execute({
+        actor: actorWith(),
+        subjectUserId: SUBJECT_ID,
+        ipAddress: undefined,
+      });
     } catch (error) {
       caught = error;
     }
@@ -382,6 +468,7 @@ describe('HIGH-1: an administrator may not reach further than their own standing
     const result = await harness.useCase.execute({
       actor: actorWith({ permissions: new Set(['user:reset_mfa', 'role:update']) }),
       subjectUserId: SUBJECT_ID,
+      ipAddress: undefined,
     });
 
     expect(result.userId).toBe(SUBJECT_ID);
@@ -391,7 +478,11 @@ describe('HIGH-1: an administrator may not reach further than their own standing
     const harness = buildHarness({ capabilitiesByUser: { [SUBJECT_ID]: null } });
 
     await expect(
-      harness.useCase.execute({ actor: actorWith(), subjectUserId: SUBJECT_ID }),
+      harness.useCase.execute({
+        actor: actorWith(),
+        subjectUserId: SUBJECT_ID,
+        ipAddress: undefined,
+      }),
     ).rejects.toBeInstanceOf(NotFoundError);
   });
 
@@ -403,6 +494,7 @@ describe('HIGH-1: an administrator may not reach further than their own standing
     const result = await harness.useCase.execute({
       actor: actorWith({ userId: OWNER_ID, isOwner: true, permissions: new Set() }),
       subjectUserId: SUBJECT_ID,
+      ipAddress: undefined,
     });
 
     expect(result.wasEnabled).toBe(true);
@@ -417,6 +509,7 @@ describe('refusing a reset targeting the actor’s own account — acceptance 7'
       harness.useCase.execute({
         actor: actorWith({ userId: SUBJECT_ID }),
         subjectUserId: SUBJECT_ID,
+        ipAddress: undefined,
       }),
     ).rejects.toBeInstanceOf(ConflictError);
 
@@ -429,7 +522,11 @@ describe('refusing a subject of another organization — acceptance 9', () => {
     const harness = buildHarness();
 
     await expect(
-      harness.useCase.execute({ actor: actorWith(), subjectUserId: 'not-in-this-org' }),
+      harness.useCase.execute({
+        actor: actorWith(),
+        subjectUserId: 'not-in-this-org',
+        ipAddress: undefined,
+      }),
     ).rejects.toBeInstanceOf(NotFoundError);
 
     expect(harness.audit.events).toEqual([]);

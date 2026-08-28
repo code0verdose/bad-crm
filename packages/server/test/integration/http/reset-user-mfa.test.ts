@@ -131,9 +131,19 @@ describe('POST /api/v1/users/{userId}/reset-mfa', () => {
     expect(body.sessionsRevoked).toBe(0);
     expect(body.recoveryCodesDeleted).toBe(0);
     expect(test.dispatcher.dispatched).toEqual([]);
-    // Sign-in itself writes `session.signed_in`, so the trail is not empty — what a true no-op must
-    // not add is a `user.mfa_reset_by_admin` entry for an operation that changed nothing.
-    expect(test.audit.events.map((event) => event.action)).not.toContain('user.mfa_reset_by_admin');
+
+    // LOW-2: a true no-op still writes the trail entry — the whole point being that an attempt
+    // against an account with no 2FA is not free to make and leave no row behind. What a true no-op
+    // must not do is touch anything else (asserted below and by the positive control that follows).
+    const entry = test.audit.events.find((event) => event.action === 'user.mfa_reset_by_admin');
+
+    expect(entry).toMatchObject({
+      before: { totpEnabled: false },
+      after: { totpEnabled: false, recoveryCodesDeleted: 0, sessionsRevoked: 0 },
+    });
+    // LOW-1: the CRITICAL-severity entry carries the caller's address, the same source
+    // `clientOf(request)` reads for every session-opening flow — never left `undefined`.
+    expect(entry?.actor.ipAddress).toBeDefined();
 
     // The positive control: the colleague's session, opened during sign-in, is still live — a repeat
     // that changed nothing must not have touched it.

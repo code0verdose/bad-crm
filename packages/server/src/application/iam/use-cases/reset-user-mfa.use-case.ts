@@ -22,6 +22,13 @@ import { RateLimitedError } from '@/domain/shared/errors/app.errors.js';
 export interface ResetUserMfaInput {
   readonly actor: Actor;
   readonly subjectUserId: string;
+  /**
+   * The caller's address, for the trail entry this action always writes (LOW-1). `undefined` when
+   * nothing reached the controller — a proxy that stripped the hop, a test harness with no request
+   * object — the identical shape `IssueSessionUseCase.SessionClient` already carries for the same
+   * reason.
+   */
+  readonly ipAddress: string | undefined;
 }
 
 /** What the reset actually did, as counts rather than as reassurance — the same reasoning
@@ -76,7 +83,7 @@ export interface ResetUserMfaResult {
  * (`role-assignment.policy.ts`, `permission-override.policy.ts`, `role-composition.policy.ts`,
  * `invitation-access.policy.ts`, `user-lifecycle.policy.ts`), and this was the one path without it.
  *
- * ## Idempotent in effect, and a repeat that changes nothing writes nothing
+ * ## Idempotent in effect, and a repeat that changes nothing writes nothing — except the trail
  *
  * `enrollment.disable` answers whether the account actually had 2FA enabled a moment ago
  * (`TotpEnrollmentRepositoryPort.disable`'s own contract, which names the mistake this class used to
@@ -84,10 +91,36 @@ export interface ResetUserMfaResult {
  * account whose 2FA was already off"). `wasEnabled: false` short-circuits `reset` before any further
  * write — no recovery codes to delete (a disabled account has none, the identical invariant
  * `DisableTotpUseCase` establishes for the self-service path), no session to revoke, no permission
- * version to bump, no trail entry, no mail. That last part is not a detail: a permission holder who
- * loops this call against one victim must not be able to deny them a session or fill their inbox once
- * the account's 2FA is already off, and idempotent-with-side-effects was exactly that loop. Mirrors
- * `DeactivateUserUseCase`'s `alreadyDeactivated` branch, which is silent for the same reason.
+ * version to bump, no mail. That last part is not a detail: a permission holder who loops this call
+ * against one victim must not be able to deny them a session or fill their inbox once the account's
+ * 2FA is already off, and idempotent-with-side-effects was exactly that loop.
+ *
+ * **The trail entry is not part of that list (LOW-2).** `DeactivateUserUseCase`'s `alreadyDeactivated`
+ * branch stays silent on a repeat because the fact it would record — the account's `status` — is
+ * already readable by anyone who can call it, through the employee directory; a second entry would
+ * tell nobody anything the first request could not already see by reading the profile. 2FA enrolment
+ * has no such surface: no serializer in this codebase exposes another user's `totpEnabled`, and this
+ * `dangerous` action's own response *is* that fact for whoever holds `user:reset_mfa` — `wasEnabled`
+ * in a `200` if the account has it, `wasEnabled: false` if not. A silent no-op branch turned that
+ * response into a free oracle: a holder could poll every colleague through this one route and learn
+ * who has 2FA on, leaving no row anywhere that they asked. Writing the entry unconditionally — with
+ * `before.totpEnabled` recording what `wasEnabled` answered, true or false — closes the oracle without
+ * reopening the mail-and-session loop above: `execute` still gates the mail on `result.wasEnabled`,
+ * and `reset` still gates every other write on it too. Only the trail stopped being conditional.
+ *
+ * The correlating address travels with the entry now as well (LOW-1): `user.mfa_reset_by_admin` is
+ * this codebase's one `CRITICAL`-severity audit action, and a `CRITICAL` row with no address to
+ * correlate against defeats the purpose of the field existing. `ipAddress` arrives as an explicit
+ * input — the same shape `IssueSessionUseCase.SessionClient` and `mfa.controller.ts`'s
+ * `confirm`/`regenerateRecoveryCodes`/`disable` already carry it in — rather than pulled from ambient
+ * request context: this bounded context (`application/iam`) has no ambient notion of an address today,
+ * and giving it one would mean widening `RequestContext`, which every log line in the process mixes
+ * in verbatim (`infrastructure/logging/pino-logger.adapter.ts`'s `mixin`) — the exact channel
+ * `session-client.util.ts` documents this same value as required to *never* reach ("appears in no log
+ * and in no response"). Threading it explicitly, the way three sibling use-cases already do, fixes the
+ * one `CRITICAL` action without opening that channel for the other twenty-eight lower-severity
+ * `ipAddress: undefined` call sites across `application/iam/**`, which stay a deliberately deferred,
+ * lower-cost cleanup rather than part of this fix.
  *
  * ## Rate-limited before the transaction opens, for the repeats that are *not* a no-op
  *
@@ -186,45 +219,39 @@ export class ResetUserMfaUseCase {
     const now = this.clock.now();
     const wasEnabled = await this.enrollment.disable(subject.id);
 
-    if (!wasEnabled) {
-      // A true no-op (MEDIUM-2): nothing to delete, nothing to revoke, nothing to bump, nothing to
-      // tell anyone — mirrors `DeactivateUserUseCase`'s silent `alreadyDeactivated` branch.
-      return {
-        result: {
-          userId: subject.id,
-          wasEnabled: false,
-          recoveryCodesDeleted: 0,
-          sessionsRevoked: 0,
-        },
-        email: subject.email,
-        locale: subject.locale,
-      };
-    }
+    // A true no-op (MEDIUM-2) still writes and reads nothing beyond `enrollment.disable` itself:
+    // nothing to delete, nothing to revoke, nothing to bump — mirrors `DeactivateUserUseCase`'s
+    // silent `alreadyDeactivated` branch for those three writes. The audit entry below is
+    // deliberately **not** on this list (LOW-2): see the docstring's "Idempotent in effect" section.
+    const recoveryCodesDeleted = wasEnabled
+      ? await this.recoveryCodes.deleteAllForUser(subject.id)
+      : 0;
+    const sessionsRevoked = wasEnabled
+      ? await this.sessions.revokeAllFamilies(subject.id, 'MFA_RESET_BY_ADMIN', now)
+      : 0;
 
-    const recoveryCodesDeleted = await this.recoveryCodes.deleteAllForUser(subject.id);
-    const sessionsRevoked = await this.sessions.revokeAllFamilies(
-      subject.id,
-      'MFA_RESET_BY_ADMIN',
-      now,
-    );
+    if (wasEnabled) await this.userRoles.bumpPermissionsVersion(subject.id);
 
-    await this.userRoles.bumpPermissionsVersion(subject.id);
-
+    // Written on every call that reaches this point, no-op or not (LOW-2) — the docstring's
+    // "Idempotent in effect" section explains why a silent repeat here is an oracle that a silent
+    // repeat in `DeactivateUserUseCase` is not. `before.totpEnabled` records what `wasEnabled`
+    // answered, so the entry is honest about which of the two happened rather than always claiming
+    // the account had 2FA a moment ago.
     await this.audit.record({
       action: 'user.mfa_reset_by_admin',
       actor: {
         userId: input.actor.userId,
         organizationId: input.actor.organizationId,
-        ipAddress: undefined,
+        ipAddress: input.ipAddress,
       },
       target: { type: 'USER', id: subject.id },
-      before: { totpEnabled: true },
+      before: { totpEnabled: wasEnabled },
       after: { totpEnabled: false, recoveryCodesDeleted, sessionsRevoked },
       requestId: undefined,
     });
 
     return {
-      result: { userId: subject.id, wasEnabled: true, recoveryCodesDeleted, sessionsRevoked },
+      result: { userId: subject.id, wasEnabled, recoveryCodesDeleted, sessionsRevoked },
       email: subject.email,
       locale: subject.locale,
     };
