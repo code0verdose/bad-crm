@@ -435,7 +435,15 @@ jobs:
         run: pnpm --filter @bad-crm/e2e exec playwright install --with-deps chromium
 
       # Started here rather than through Playwright's `webServer` because the suite drives two
-      # processes, not one, and the readiness of the pair is what `global-setup.ts` already proves.
+      # processes, not one.
+      #
+      # What `global-setup.ts` proves is the readiness of **one** of them: it probes `${apiURL}/ready`
+      # and nothing else. The comment here used to say «the pair», which is a property this job does
+      # not have — `vite preview` is started with `nohup` and waited for by nobody, so a client that
+      # is slow to bind produces a wall of «expected the sign-in form to be visible», exactly the
+      # class of lying failure `global-setup.ts` exists to prevent. It has not bitten yet because
+      # `preview` serves a built bundle and binds in well under the time the server spends migrating.
+      # If it ever does, the fix is a second probe here, not a longer timeout in the suite.
       #
       # The server reads the configuration from the file the way a container would from its
       # environment: `--env-file-if-exists` rather than sourcing `.env` in the shell, because the
