@@ -52,8 +52,11 @@ export interface ReactivationController {
  * **A dismissal that ran nothing refetches nothing.** Cancelling is not an event about the account,
  * and a refetch on every close would spend a request to redraw what is already on screen.
  *
- * Half of the pair the story asks for: the offboarding half still lives in `widgets/offboarding`, and
- * moving it here is a change to a shipped screen and its suite rather than a detail of this one.
+ * Half of the pair the story asks for. The offboarding half is now its neighbour —
+ * `use-offboarding.hook.ts`, moved here by `2c5540e` — so the reason this hook once gave for the
+ * two living apart no longer holds. Merging them into one `use-employee-lifecycle.hook.ts` is still
+ * open, and it is a question of whether one object serving two opposite actions reads better than
+ * two, not of who owns which screen.
  */
 export const useReactivation = (userId: string): ReactivationController => {
   const queryClient = useQueryClient();

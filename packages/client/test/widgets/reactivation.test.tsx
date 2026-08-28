@@ -25,7 +25,7 @@ import {
  *     enters a leaving date in advance would otherwise be shown a working account as disabled, and
  *     offered a button to «bring back» somebody who never left;
  *   * **absence of `status` is «you may not see this», not «the account is fine»** — the key is sent
- *     only to a holder of `user:read` and to the person themselves, so a card without it says
+ *     only to a holder of `employee:read` and to the person themselves, so a card without it says
  *     nothing and offers nothing;
  *   * **the control is a hint, never a gate** (`rules/permissions.mdc` §11): no `user:reactivate`,
  *     no button — and the endpoint refuses on its own authority regardless;
@@ -284,10 +284,17 @@ describe('the personnel card of an account that is switched off', () => {
   });
 
   /**
-   * Fail-closed. The key is sent only to a holder of `user:read` and to the person themselves; its
-   * absence means «you may not see this», never «the account is fine» (`docs/api/openapi.yaml`,
-   * `EmployeeProfile.status`). Inventing «active» from silence would be the client deciding a
-   * question the server declined to answer.
+   * Fail-closed. The key is sent only to a holder of `employee:read` and to the person themselves
+   * (`seesAccountStatus` in `domain/iam/access/employee-access.policy.ts`, level recorded in
+   * `docs/security/permission-model.md` §4.1.1); its absence means «you may not see this», never
+   * «the account is fine». Inventing «active» from silence would be the client deciding a question
+   * the server declined to answer.
+   *
+   * **What this case does and does not prove.** The fixture grants `employee:read`, so the barrier
+   * itself is not what is exercised here — the field is withheld directly (`status: 'absent'`).
+   * That is deliberate: the barrier is the server's and is asserted where it lives
+   * (`packages/server/test/unit/iam/employee-access.policy.test.ts`), while what has to hold *here*
+   * is that the card renders fail-closed whatever the reason the key did not arrive.
    */
   it('says nothing about a state the server did not send', async () => {
     await startAt({ status: 'absent', granted: ['employee:read', 'user:reactivate'] });
@@ -301,10 +308,10 @@ describe('the personnel card of an account that is switched off', () => {
 
 describe('the reactivation control', () => {
   it('is not offered at all to somebody without the permission', async () => {
-    // `user:read` is granted so that the state the plate reads is present: without it the control
-    // would be absent for the wrong reason, and the case would assert nothing about the permission
-    // it is named after.
-    await startAt({ granted: ['employee:read', 'user:read'] });
+    // `employee:read` is what carries `status`, so the state the plate reads is present: without it
+    // the control would be absent for the wrong reason, and the case would assert nothing about the
+    // permission it is named after.
+    await startAt({ granted: ['employee:read'] });
 
     // Both preconditions of the absence: the plate proves the state arrived and the card knows the
     // account is off, so what is missing is the permission and nothing else.
