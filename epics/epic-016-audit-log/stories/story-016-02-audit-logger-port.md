@@ -1,7 +1,7 @@
 ---
 id: STORY-016-02
 epic: EPIC-016
-status: in-progress
+status: backlog
 blocked: false
 priority: must
 estimate: L
@@ -113,29 +113,101 @@ estimate: L
       по списку событий), `audit-redaction-corpus.spec.ts` (п. 5), `request-id-propagation.spec.ts`
       (п. 4), `denied-access-audit.service.spec.ts` (п. 7).
 
-## Что уже сделано (2026-08-05)
+## Что уже сделано — и **не этой историей**
 
-- [x] Хранилище порта: `infrastructure/persistence/prisma/audit-log.adapter.ts` пишет строку **в ту
-      же транзакцию**, что и изменение (транзакция берётся из `withTenant` через
-      AsyncLocalStorage — так же, как её берут репозитории). Откат изменения откатывает и запись;
-      доказано тестом `test/integration/db/audit-trail-writes.test.ts` с положительным контролем
-      (та же запись при успешной транзакции остаётся).
-- [x] `severity` определяется **действием**, а не местом вызова: `AUDIT_ACTION_SEVERITY` в
+Раздел переписан после сверки с кодом. Прежняя редакция создавала впечатление, что история наполовину
+отгружена; это не так. Всё перечисленное ниже приехало с **другими** историями попутно, потому что
+привилегированное действие дешевле записать в тот же коммит, что и само действие, чем искать его
+потом в выросшей кодовой базе. Собственный вклад 016-02 — whitelist полей, аудит отказов, метрики,
+сквозной `requestId` через outbox, замер накладных расходов — не сделан ни в какой части.
+
+Кто что отгрузил:
+
+- [x] **Порт и pino-адаптер — STORY-009-06.** `application/platform/ports/audit-logger.port.ts` и
+      `infrastructure/logging/pino-audit.adapter.ts` появились коммитом `0b32d0a`
+      («feat(audit): open the trail with sign-in inside it») вместе с первым вызовом. Проверяется
+      `git log --oneline -- packages/server/src/application/platform/ports/audit-logger.port.ts`.
+- [x] **Таблица, партиции и append-only — STORY-016-01** (`status: review`): миграция
+      `prisma/migrations/20260805110000_audit_logs`, тесты
+      `test/unit/audit/audit-partitions.test.ts` и `test/integration/db/audit-log-append-only.test.ts`.
+- [x] **Запись в той же транзакции — STORY-016-01** (коммит `7070c25`):
+      `infrastructure/persistence/prisma/audit-log.adapter.ts` берёт транзакцию из `withTenant` через
+      AsyncLocalStorage, как её берут репозитории. Откат изменения откатывает и запись; доказано
+      `test/integration/db/audit-trail-writes.test.ts` с положительным контролем.
+- [x] **`severity` от действия, а не от места вызова:** `AUDIT_ACTION_SEVERITY` в
       `packages/shared/src/audit` (`Record<AuditAction, …>` — действие без уровня не компилируется).
-      Иначе одно и то же событие попадает в журнал под двумя уровнями и фильтр «покажи critical»
-      молча неполон.
-- [x] Адрес не хранится: в `ip_hash` идёт ключевой хеш (тот же, что у сессий), `request_id`
-      берётся из окружения запроса, когда use-case его не передал.
-- [x] События, которые **не могут** быть строкой, по-прежнему идут в лог: `organization_id` —
-      `NOT NULL`, а часть привилегированных действий происходит до того, как организация известна
-      (отклонённый вход, обслуживание из скрипта). Отдельно отвергается запись, чей
-      `organizationId` не совпадает со скоупом: положить её под скоуп значило бы записать событие
-      организации B в журнал организации A.
+- [x] **Адрес не хранится:** в `ip_hash` идёт ключевой хеш (`infrastructure/crypto/address-hasher.adapter.ts`,
+      тот же, что у сессий); `request_id` адаптер берёт из `RequestContextPort`, когда use-case его
+      не передал.
+- [x] **События, которые не могут быть строкой, идут в лог:** `organization_id` — `NOT NULL`, а часть
+      привилегированных действий происходит до того, как организация известна. Отдельно отвергается
+      запись, чей `organizationId` не совпадает со скоупом: положить её под скоуп значило бы записать
+      событие организации B в журнал организации A.
+- [x] **Вызовы `audit.record` в use-cases** принесли доменные эпики (011, 012, 013) — каждый со своим
+      действием, а не эта история. Список файлов печатает
+      `grep -rl 'audit\.record(' packages/server/src/application`.
+- [x] **Гейт покрытия `audit-coverage` существует и работает** —
+      `packages/server/test/unit/audit/audit-coverage.test.ts`. Он читает исходники, проверяет обе
+      стороны (действие каталога без вызывающего **и** имя, выдуманное на месте вызова) и имеет
+      CONTROL-кейс на непустоту скана. Утверждение прежней редакции, что такой гейт «имеет смысл,
+      когда список перестанет расти», устарело.
 
-Остальное из acceptance 2 — список обязательных событий — по построению не может быть закрыто
-сейчас: `role.*`, `permission.override.*`, `acl.*`, `file.*`, `user.mfa_*` называют домены, которых
-ещё нет. Каждый из них добавляет своё действие в `AUDIT_ACTIONS` вместе с собой, а `audit-coverage`
-как отдельный гейт имеет смысл, когда список перестанет расти каждую историю (фаза 2 эпика).
+Про acceptance 2 прежняя редакция была неверна фактически: из названных там семейств `role.*`,
+`permission.override.*` и `user.mfa_*` **отгружены** и имеют вызывающего — все три в
+`packages/shared/src/audit/audit-action.enums.ts`. Открыты только `acl.*` (домена ресурсного ACL нет,
+STORY-011-06 заблокирована до EPIC-014) и `file.*` (EPIC-015).
+
+## Что реально открыто
+
+1. **Whitelist полей (acceptance 5) не построен.** Файла
+   `application/platform/audit/audit-field-whitelist.ts` не существует, корпус-теста
+   `audit-redaction-corpus.spec.ts` нет. Сегодня отсутствие секретов в `before`/`after` держится
+   дисциплиной вызывающего и комментарием в `audit-logger.port.ts` — то есть свойством, которое
+   ничто не проверяет. `test/unit/logging/redaction.test.ts` покрывает **логи**, а не аудит:
+   `REDACTED_PATHS` к колонкам `before`/`after` не применяется.
+2. **Аудита отказов в доступе (acceptance 7) нет ни в какой части.** Действия отказа в каталоге нет,
+   `application/access/services/denied-access-audit.service.ts` не существует, агрегата серий нет
+   (планировщика и очереди в продукте тоже нет), метрики `permission_denied_total{reason}` нет —
+   `MetricsPort` объявляет три метрики. Это признано в двух местах и не должно открываться заново:
+   `docs/security/permission-model.md`, раздел «Чего нет», и комментарий к `permission.inspected` в
+   `packages/shared/src/audit/audit-action.enums.ts`.
+3. **Разделение по severity при сбое записи (acceptance 9) не сделано.** Сегодня падение вставки
+   роняет транзакцию для любого события, включая `INFO`; деградации с метрикой
+   `audit_write_failed_total` нет — самой метрики в коде нет
+   (`grep -rn audit_write_failed_total packages/server/src` печатает пусто).
+4. **Накладные расходы (acceptance 10) не измерены.** Нагрузочного сценария нет; утверждение «одна
+   вставка без дополнительных чтений» — про конструкцию адаптера, а не про замер.
+5. **`session.refresh_reuse_detected` отсутствует при существующем домене.** Обнаружение повторного
+   использования refresh-токена реализовано —
+   `application/identity/use-cases/refresh-session.use-case.ts` отзывает семью и пишет
+   `logger.warn` с `event: SECURITY_EVENTS.refreshReuseDetected`, — но строки в `AuditLog` нет.
+   Это **единственный** пункт списка acceptance 2, чей домен уже отгружен, а действия в каталоге нет;
+   всё остальное недостающее ждёт своего домена. Лог ротируется и не защищён
+   `REVOKE UPDATE, DELETE` — событие безопасности в нём не заменяет журнал.
+6. **Адрес доходит до записи в меньшинстве вызовов.** Остальные передают `ipAddress: undefined`, то
+   есть пишут `ip_hash = NULL`, и «тот же адрес снова» по журналу не отвечается. Числа здесь
+   намеренно не записаны — печатают команды:
+
+   ```bash
+   grep -rc 'audit\.record(' packages/server/src/application --include='*.ts' | awk -F: '{s+=$2} END {print s}'
+   grep -rhA8 'audit\.record(' packages/server/src/application | grep -c 'ipAddress: input\.'
+   grep -rhA8 'audit\.record(' packages/server/src/application | grep -c 'ipAddress: undefined'
+   ```
+
+   Причина отложена осознанно и описана в `application/iam/use-cases/reset-user-mfa.use-case.ts`
+   (комментарий про `ipAddress: undefined` в `application/iam/**`) — эта история её закрывает.
+7. **Сквозной `requestId` через outbox (acceptance 4) непроверяем в принципе:** outbox в коде нет
+   (`find packages/server/src -iname '*outbox*'` печатает пусто). Проверить можно только участок
+   HTTP → `RequestContextPort` → аудит; часть про job проверяется, когда появится очередь.
+
+**Расхождение имён в acceptance 2, требующее решения до реализации гейта.** Список критерия называет
+`user.login`/`user.logout`, `user.invited`/`user.accepted`; каталог отгрузил их под другими именами —
+`session.signed_in`/`session.revoked`, `invitation.created`/`invitation.accepted`. Табличный гейт,
+написанный буквально по списку критерия, падал бы на несуществующих именах. Списка также нет:
+`permission.override.expired`, `permissions.recomputed`, `organization.security_policy_updated`,
+`organization.settings_updated`, `user.impersonation_started/ended`, `audit.exported`,
+`organization.data_exported`, `report.exported` — часть из них про домены, которых нет. Сверять
+критерий с каталогом — первая задача истории, а не правка по ходу написания теста.
 
 ## Ссылки
 

@@ -19,7 +19,7 @@
 | EPIC-013 | Двухфакторная аутентификация (TOTP) | 🟡 in-progress | M2 | 0/6 |
 | EPIC-014 | Проект как центральная модель | ⚫ backlog | M2 | 0/7 |
 | EPIC-015 | Файловое хранилище | ⚫ backlog | M2 | 0/8 |
-| EPIC-016 | Журнал действий (audit log) | ⚫ backlog | M2 | 0/5 |
+| EPIC-016 | Журнал действий (audit log) | 🟡 in-progress | M2 | 0/5 |
 | EPIC-017 | Self-host alpha | ⚫ backlog | M2 | 0/6 |
 | EPIC-018 | Доски и колонки | ⚫ backlog | M3 | 0/0 |
 | EPIC-019 | Задачи — ядро | ⚫ backlog | M3 | 0/0 |
