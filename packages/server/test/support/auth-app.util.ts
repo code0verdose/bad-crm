@@ -191,11 +191,18 @@ export interface AuthApp {
   readonly server: () => Server;
 }
 
-/** Every listener `AuthApp#server()` has opened for the test that is currently running. */
-const openServers = new Set<Server>();
+/**
+ * How to retire every listener `AuthApp#server()` opened for the test that is currently running.
+ *
+ * Closers rather than servers, because closing one is only half the job: the `AuthApp` that opened
+ * it still holds it memoized, and an `AuthApp` can outlive the test that first asked (`beforeAll`).
+ * Clearing the memo is what the owner alone can do, so the owner registers how — otherwise the
+ * second test is handed a closed listener and the next call fails on a port nothing is bound to.
+ */
+const openServers = new Set<() => void>();
 
 afterEach(() => {
-  for (const server of openServers) server.close();
+  for (const retire of openServers) retire();
   openServers.clear();
 });
 
@@ -651,9 +658,24 @@ export const createAuthApp = (options: AuthAppOptions = {}): AuthApp => {
   let listening: Server | undefined;
   const server = (): Server => {
     if (listening === undefined) {
-      listening = createServer(app);
-      listening.listen(0);
-      openServers.add(listening);
+      const opened = createServer(app);
+      opened.listen(0);
+      listening = opened;
+      // Closing and forgetting are one act, registered together: an `AuthApp` built in `beforeAll`
+      // is asked again by the next test, and a memo that survived the close would hand it the dead
+      // listener. Re-entering here opens a fresh one instead.
+      openServers.add(() => {
+        listening = undefined;
+        // Connections first, listener second. `close()` stops new sockets and lets existing ones
+        // finish, so a socket pooled by a client outlives the server it belongs to — and the
+        // operating system is free to hand the same port to the next listener, at which point that
+        // pooled socket points at a stranger. That is the mechanism `test/setup/http-agent.setup.ts`
+        // documents behind «Parse Error: Expected HTTP/…»; keep-alive is off there, which removes
+        // the pool, and this removes the sockets themselves. Belt and braces on purpose: the class
+        // has been observed once since keep-alive was disabled, and neither half is expensive.
+        opened.closeAllConnections();
+        opened.close();
+      });
     }
     return listening;
   };

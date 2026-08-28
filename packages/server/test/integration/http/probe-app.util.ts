@@ -34,11 +34,18 @@ export interface ProbeApp {
   readonly server: () => Server;
 }
 
-/** Every listener `ProbeApp#server()` has opened for the test that is currently running. */
-const openProbeServers = new Set<Server>();
+/**
+ * How to retire every listener `ProbeApp#server()` opened for the test that is currently running.
+ *
+ * Closers rather than servers, for the reason spelled out on the same set in
+ * `test/support/auth-app.util.ts`: closing a listener is half the job, because the `ProbeApp` that
+ * opened it still holds it memoized and can outlive the test that first asked (`beforeAll`). Only
+ * the owner can clear that memo, so the owner registers how.
+ */
+const openProbeServers = new Set<() => void>();
 
 afterEach(() => {
-  for (const server of openProbeServers) server.close();
+  for (const retire of openProbeServers) retire();
   openProbeServers.clear();
 });
 
@@ -80,9 +87,23 @@ export const createProbeApp = (mount: (router: Router) => void): ProbeApp => {
   let listening: Server | undefined;
   const server = (): Server => {
     if (listening === undefined) {
-      listening = createServer(app);
-      listening.listen(0);
-      openProbeServers.add(listening);
+      const opened = createServer(app);
+      opened.listen(0);
+      listening = opened;
+      // Closing and forgetting are one act, registered together — otherwise the next test is handed
+      // a listener that is already closed. Re-entering here opens a fresh one instead.
+      openProbeServers.add(() => {
+        listening = undefined;
+        // Connections first, listener second. `close()` stops new sockets and lets existing ones
+        // finish, so a socket pooled by a client outlives the server it belongs to — and the
+        // operating system is free to hand the same port to the next listener, at which point that
+        // pooled socket points at a stranger. That is the mechanism `test/setup/http-agent.setup.ts`
+        // documents behind «Parse Error: Expected HTTP/…»; keep-alive is off there, which removes
+        // the pool, and this removes the sockets themselves. Belt and braces on purpose: the class
+        // has been observed once since keep-alive was disabled, and neither half is expensive.
+        opened.closeAllConnections();
+        opened.close();
+      });
     }
 
     return listening;
