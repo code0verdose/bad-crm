@@ -16,19 +16,55 @@ import { SharedApi } from '@shared';
  * rather than from anything the user typed, which is what makes that claim structural rather than a
  * promise to be careful.
  *
+ * **The route is a template, and that sentence used to be false.** Until 2026-08-28 this sent
+ * `globalThis.location.pathname` — the address, not the template — while the paragraph above
+ * claimed otherwise. Two routes of this product carry a credential in the path
+ * (`/reset-password/$token`, `/invite/$token`), and this function is wired into
+ * `QueryCache.onError`, so a reset that failed on an expired token reported that token to a server
+ * which writes `route` into the application log. `rules/observability.mdc` forbids precisely that:
+ * the URL of a link that *is* a credential must not be logged at any level.
+ *
+ * The template comes from the router, the only thing that knows it. When nothing is matched — before
+ * the router mounts, or in a test rendering one component — the answer is `unmatched`, never the
+ * pathname: a fallback that reaches for the address would reopen the hole on exactly the paths where
+ * the router has not settled yet.
+ *
  * **A failure to report is not a failure to handle.** The request is deliberately not awaited and
  * its rejection is swallowed: an unreachable server, a 429 from the limiter or an offline tab must
  * not turn one broken component into a second error, and re-reporting a failed report is how a loop
  * starts.
  */
-export const reportClientError = (error: unknown, reference?: string): void => {
+/** Where the route template comes from. Injected so this module knows nothing about the router. */
+export interface ClientErrorContext {
+  /** The template of the deepest matched route, or `undefined` when nothing is matched yet. */
+  readonly routeTemplate: () => string | undefined;
+}
+
+/**
+ * The template source used when none is supplied.
+ *
+ * Set once by `app/router.tsx` at composition time. A module-level slot rather than a parameter on
+ * every call site, because the callers are `QueryCache.onError`, a global `error` listener and an
+ * error boundary — none of which is in a position to hold the router.
+ */
+let context: ClientErrorContext = { routeTemplate: () => undefined };
+
+export const setClientErrorContext = (next: ClientErrorContext): void => {
+  context = next;
+};
+
+export const reportClientError = (
+  error: unknown,
+  reference?: string,
+  override?: ClientErrorContext,
+): void => {
   console.error('[bad-crm]', error);
 
   void SharedApi.sendClientErrorReport({
     message: error instanceof Error ? error.message : String(error),
     ...(error instanceof Error && error.stack !== undefined ? { stack: error.stack } : {}),
     appVersion: APP_VERSION,
-    route: globalThis.location.pathname,
+    route: (override ?? context).routeTemplate() ?? 'unmatched',
     reference: reference ?? 'unreferenced',
   }).catch(() => undefined);
 };

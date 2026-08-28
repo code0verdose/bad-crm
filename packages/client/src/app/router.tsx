@@ -1,6 +1,7 @@
 import { createRouter, type RouterHistory } from '@tanstack/react-router';
 
 import { appQueryClient } from './app-query-client.constant.js';
+import { setClientErrorContext } from './report-client-error.util.js';
 import { routeTree } from './route-tree.gen.js';
 import { routerAuth } from './router-auth.util.js';
 import { type AppRouterContext } from './router-context.types.js';
@@ -62,6 +63,22 @@ export type AppRouter = ReturnType<typeof createAppRouter>;
 export const router = createAppRouter({
   queryClient: appQueryClient,
   auth: routerAuth,
+});
+
+/**
+ * The router is what tells the error reporter which route it was on — as a **template**.
+ *
+ * Wired here, at composition time, because the reporter is called from places that hold no router:
+ * `QueryCache.onError`, the global `error` listener, the error boundary. Reading the deepest match
+ * gives `/reset-password/$token` rather than `/reset-password/<the token>`, which is the difference
+ * between a route name and a credential in the application log
+ * (`report-client-error.util.ts` explains what used to happen).
+ *
+ * `matches.at(-1)` — the deepest one — because that is the route the failure was on; the parents are
+ * layouts, and `/_authenticated` names nothing a reader could act on.
+ */
+setClientErrorContext({
+  routeTemplate: () => router.state.matches.at(-1)?.routeId,
 });
 
 /**
