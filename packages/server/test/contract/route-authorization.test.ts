@@ -56,16 +56,24 @@ const declared = (operation: OperationObject): string[] =>
 /**
  * Operations whose `x-permission` is not a key of the shared catalog, as a function of a list.
  *
- * Extracted from the assertion it serves because that assertion has never once executed its own
- * body against a real value: no operation in `docs/api/openapi.yaml` declares `x-permission` yet —
- * every one of them is public or self-service — so the filter yields an empty list, `toEqual([])`
- * passes, and the check would pass just as happily if `known` were built from the wrong array or
- * the comparison were inverted. A rule nobody has ever seen fail is a rule nobody knows works.
+ * Extracted from the assertion it serves, back when that assertion had never once executed its own
+ * body against a real value: at the time no operation in `docs/api/openapi.yaml` declared
+ * `x-permission`, so the filter yielded an empty list and `toEqual([])` would have passed just as
+ * happily with `known` built from the wrong array. A rule nobody has ever seen fail is a rule
+ * nobody knows works.
  *
- * The literal control used for anonymous operations ("at least one exists") cannot be written here:
- * it would be red until the first capability-gated endpoint lands, and a suite that is red on
- * purpose is a suite people learn to ignore. So the control is applied to the predicate instead —
- * fed a known-good key and a known-bad one below.
+ * **That is no longer the state of the document, and the paragraph that stood here said it was.**
+ * EPIC-011 landed the guarded routes, and operations now declare `x-permission` in numbers — the
+ * count is printed by `grep -c x-permission docs/api/openapi.yaml`, not written down here. The old
+ * text told a reader that this check is vacuous, which is an invitation to weaken or delete a gate
+ * that guards invariant 2; it was corrected on 2026-08-28.
+ *
+ * Two controls now stand behind it, and they answer different questions. The predicate control
+ * below feeds a known-good key and a plausible typo, proving the comparison can still tell them
+ * apart. The corpus control — «the document declares at least one» — could not be written while the
+ * count was zero, because a suite that is red on purpose is a suite people learn to ignore; it can
+ * be written now, and it is the one that would catch a document that silently stopped declaring
+ * permissions at all.
  */
 const unknownPermissions = (entries: readonly SpecOperation[]): string[] => {
   const known: ReadonlySet<string> = new Set<string>(PERMISSIONS);
@@ -113,6 +121,26 @@ describe('every operation says who may call it', () => {
       unknownPermissions(operations()),
       'x-permission must be a key of packages/shared/src/permissions/permissions.catalog.ts — a literal invented at the call site is exactly what invariant 2 forbids',
     ).toEqual([]);
+  });
+
+  /**
+   * The corpus control for the assertion above: it has something to judge.
+   *
+   * Until EPIC-011 this could not be asserted — the count was zero and the case would have been
+   * red on purpose. Now an empty result from `unknownPermissions` means «every declared permission
+   * is a catalog key», and this case is what separates that from «nothing declares a permission»,
+   * which reads identically to `toEqual([])` and would mean the guarded surface had quietly
+   * vanished from the contract.
+   */
+  it('CONTROL: the document declares permissions at all, so the check above judges something', () => {
+    const declaring = operations().filter(
+      (entry) => entry.operation[PERMISSION] !== undefined,
+    ).length;
+
+    expect(
+      declaring,
+      'no operation declares x-permission — either the contract lost its guarded routes, or this suite is reading the wrong document',
+    ).toBeGreaterThan(0);
   });
 
   /**

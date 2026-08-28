@@ -117,8 +117,8 @@ export async function canUpdateTask(actor: Actor, taskId: string) {
 | Механизм | Что ловит |
 |---|---|
 | Тип `PermissionKey` + `satisfies readonly RouteDeclaration[]` | опечатку в ключе, маршрут без permission — ошибка компиляции |
-| `test/permissions/route-registry.test.ts` | маршрут в Express, отсутствующий в реестре, и наоборот |
-| `test/permissions/acl-coverage.test.ts` | маршрут с `:id` без `aclCheckedIn`; use-case без `assertAllowed` |
+| `packages/server/test/unit/http/route-registry.test.ts` и `packages/server/test/contract/openapi.test.ts` | маршрут в Express, отсутствующий в реестре, и наоборот: первый держит форму реестра и порядок middleware, второй сверяет обе стороны со спекой |
+| `packages/server/test/contract/acl-coverage.test.ts` | маршрут с `:id` без `aclCheckedIn`; имя, которое ни во что не резолвится; и — с 2026-08-28 — названный класс, в исходнике которого нет ни одного вызова авторизации. Последнее проверяется **только** на маршрутах с `:id`: у списочного класса вызова нет и не должно быть, там фильтрует SQL под `withTenant` |
 | `test/permissions/permission-matrix.test.ts` + снапшот `permission-matrix.json` | любое изменение матрицы (роль × endpoint) с указанием `DenyReason`; подмену 404→403 |
 | `domain/**/access/*.policy.test.ts` (табличные тесты) | все ветки policy; порог покрытия **100 % строк и ветвей** |
 | Тест `list-matches-can.test.ts` на каждый списочный endpoint | расхождение «список ≠ построчный `can()`» |
