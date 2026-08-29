@@ -74,9 +74,37 @@ export interface DeactivateUserInput {
  * audit trail keep pointing at a person who really did that work (NFR-12). What is removed is
  * membership — teams the person is no longer in — because that is access, not history.
  *
- * **Repeating it is not an error and not a second trail entry.** An offboarding is often run twice,
- * by two people, and the second run must not read in the log as a second event.
+ * **Repeating it is not an error, and not a second *offboarding*.** An offboarding is often run
+ * twice, by two people, and the second run must not revoke a fresh session the first run had nothing
+ * to do with, bump the permission version twice, or report teams left that were already gone. It
+ * still writes a trail entry (see below) — «not a second offboarding» and «not a second trail entry»
+ * used to be the same sentence here, and they are not the same claim.
  *
+ * **The idempotent branch writes the trail anyway, symmetrically with `ResetUserMfaUseCase`
+ * (`37e7385`).** That fix's docstring argued this class's silence was safe because the fact a repeat
+ * would record — `status` — is already readable by anyone who can call this endpoint, through the
+ * employee directory (`employee-access.policy.ts`'s `seesAccountStatus`). That argument holds only
+ * for a caller who also holds `employee:read`. `user:suspend` does not carry it: the two are
+ * independent keys in the catalogue, a custom role may hold one without the other by the ordinary
+ * subset rule, and `seesAccountStatus` refuses exactly that caller — `employee:read`, or the record
+ * being their own. A holder of `user:suspend` alone gets the same `alreadyDeactivated: true` back
+ * either way (the response cannot avoid saying so — the report *is* the point of a 200 instead of a
+ * 204), and until this fix that repeat left no row anywhere that they asked, the identical oracle
+ * `37e7385` closed on 2FA. `before.status` records what was actually found (`SUSPENDED` here, where
+ * a real offboarding's entry reads `ACTIVE`) so the trail stays honest about which of the two
+ * happened, and `after` reports the same zero counters the response does — nothing was revoked or
+ * left a second time, and the entry says so rather than repeating the first run's numbers.
+ *
+ * **Collapsing the response instead — the way `assertMemberJoinable` collapses `member_not_active`
+ * into a 404 for a caller without `user:read` — was considered and rejected.** `team-access.policy.ts`
+ * can afford that because the 409 is optional information layered onto a refusal the caller was going
+ * to get anyway. Here the report *is* the operation's contract (`OffboardingReport`, the 200-not-204
+ * decision above): a caller who legitimately holds only `user:suspend` still has to learn whether
+ * their own offboarding call actually offboarded anyone, and answering `alreadyDeactivated` with a
+ * generic conflict for that caller would break the honest-report guarantee for the very audience it
+ * exists for, to close a gap that recording the trail closes without touching the response at all.
+ *
+
  * **What the subject may do is read here, in the same transaction, and for one purpose**: the subset
  * rule of `assertDeactivable`. It is read through the same port every other subset rule reads
  * (`EffectivePermissionsReaderPort`) rather than folded a second time in the lifecycle repository —
@@ -119,6 +147,24 @@ export class DeactivateUserUseCase {
         });
 
         if (subject.status === 'SUSPENDED') {
+          // A true no-op for every write below this point — nothing to revoke, nothing to leave, no
+          // version to bump — but not for the trail. See the docstring's account of `37e7385`: a
+          // caller who holds `user:suspend` without `employee:read` learns the account's status from
+          // this very response either way, and a silent repeat here is the same oracle that fix
+          // closed on 2FA, left open one route over.
+          await this.audit.record({
+            action: 'user.suspended',
+            actor: {
+              userId: input.actor.userId,
+              organizationId: input.actor.organizationId,
+              ipAddress: input.ipAddress,
+            },
+            target: { type: 'USER', id: subject.userId },
+            before: { status: subject.status },
+            after: { status: 'SUSPENDED', reason: input.reason, sessionsRevoked: 0, teamsLeft: 0 },
+            requestId: undefined,
+          });
+
           return {
             userId: subject.userId,
             alreadyDeactivated: true,

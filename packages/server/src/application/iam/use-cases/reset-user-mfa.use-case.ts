@@ -95,15 +95,22 @@ export interface ResetUserMfaResult {
  * against one victim must not be able to deny them a session or fill their inbox once the account's
  * 2FA is already off, and idempotent-with-side-effects was exactly that loop.
  *
- * **The trail entry is not part of that list (LOW-2).** `DeactivateUserUseCase`'s `alreadyDeactivated`
- * branch stays silent on a repeat because the fact it would record — the account's `status` — is
- * already readable by anyone who can call it, through the employee directory; a second entry would
- * tell nobody anything the first request could not already see by reading the profile. 2FA enrolment
- * has no such surface: no serializer in this codebase exposes another user's `totpEnabled`, and this
+ * **The trail entry is not part of that list (LOW-2).** 2FA enrolment has no surface a caller could
+ * read it from: no serializer in this codebase exposes another user's `totpEnabled`, and this
  * `dangerous` action's own response *is* that fact for whoever holds `user:reset_mfa` — `wasEnabled`
  * in a `200` if the account has it, `wasEnabled: false` if not. A silent no-op branch turned that
  * response into a free oracle: a holder could poll every colleague through this one route and learn
- * who has 2FA on, leaving no row anywhere that they asked. Writing the entry unconditionally — with
+ * who has 2FA on, leaving no row anywhere that they asked.
+ *
+ * > **Поправка 2026-08-16.** Здесь стояло, что у `DeactivateUserUseCase` молчание на повторе
+ * > оправдано, «потому что статус и так виден любому, кто может её вызвать, через справочник». Довод
+ * > неверен: `user:suspend` и `employee:read` — независимые ключи каталога, и кастомная роль может
+ * > держать первый без второго, а `seesAccountStatus` закрывает единственный другой путь к статусу
+ * > именно на `employee:read`. То есть у деактивации был **тот же** оракул, и он закрыт симметрично
+ * > (`deactivate-user.use-case.ts`, `reactivate-user.use-case.ts`). Оставлено как поправка, а не
+ * > стёрто: ошибка была в рассуждении о соседнем классе, и это стоит прочесть прежде, чем повторить.
+ *
+ * Writing the entry unconditionally — with
  * `before.totpEnabled` recording what `wasEnabled` answered, true or false — closes the oracle without
  * reopening the mail-and-session loop above: `execute` still gates the mail on `result.wasEnabled`,
  * and `reset` still gates every other write on it too. Only the trail stopped being conditional.
@@ -220,7 +227,7 @@ export class ResetUserMfaUseCase {
     const wasEnabled = await this.enrollment.disable(subject.id);
 
     // A true no-op (MEDIUM-2) still writes and reads nothing beyond `enrollment.disable` itself:
-    // nothing to delete, nothing to revoke, nothing to bump — mirrors `DeactivateUserUseCase`'s
+    // nothing to delete, nothing to revoke, nothing to bump — the same shape `DeactivateUserUseCase`'s
     // silent `alreadyDeactivated` branch for those three writes. The audit entry below is
     // deliberately **not** on this list (LOW-2): see the docstring's "Idempotent in effect" section.
     const recoveryCodesDeleted = wasEnabled

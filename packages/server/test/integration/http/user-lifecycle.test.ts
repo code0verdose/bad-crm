@@ -198,9 +198,12 @@ describe('POST /api/v1/users/{userId}/deactivate', () => {
     ]);
   });
 
-  it('is idempotent: the second run writes nothing and says so', async () => {
-    // Offboarding is often run twice, by two people. The second run must not read in the trail as a
-    // second event, and must not claim to have revoked anything again.
+  it('is idempotent: the second run revokes and leaves nothing a second time, but still files the trail', async () => {
+    // Offboarding is often run twice, by two people. The second run must not claim to have revoked
+    // or left anything again — but it does write its own trail entry (`before.status: SUSPENDED`,
+    // distinct from the first run's `ACTIVE`): a caller who holds only `user:suspend` has no route to
+    // this account's status but this endpoint, and silence on the repeat would be the same oracle
+    // `37e7385` closed on 2FA reset.
     const { test, token, userId } = await signedIn({
       capabilities: capabilities(['user:suspend']),
     });
@@ -214,6 +217,15 @@ describe('POST /api/v1/users/{userId}/deactivate', () => {
 
     expect(second).toMatchObject({ alreadyDeactivated: true, teamsLeft: 0, sessionsRevoked: 0 });
     expect(test.userLifecycle.suspended).toHaveLength(1);
+
+    const events = test.audit.events.filter((event) => event.action === 'user.suspended');
+
+    expect(events).toHaveLength(2);
+    expect(events[1]).toMatchObject({
+      before: { status: 'SUSPENDED' },
+      after: { status: 'SUSPENDED', sessionsRevoked: 0, teamsLeft: 0 },
+    });
+    expect(events[1]?.actor.ipAddress).toBeDefined();
   });
 
   it('refuses to deactivate the caller’s own account', async () => {
@@ -399,7 +411,10 @@ describe('POST /api/v1/users/{userId}/reactivate', () => {
     expect(test.audit.events.at(-1)?.actor.ipAddress).toBeDefined();
   });
 
-  it('is idempotent on an account that was never off', async () => {
+  it('is idempotent on an account that was never off, but still files the trail', async () => {
+    // Symmetric with the deactivate idempotent test above: a caller who holds only
+    // `user:reactivate` has no route to this account's status but this endpoint, so the repeat still
+    // gets a row — `before.status: ACTIVE`, distinct from a real reactivation's `SUSPENDED`.
     const { test, token, userId } = await signedIn({
       capabilities: capabilities(['user:reactivate']),
     });
@@ -412,6 +427,15 @@ describe('POST /api/v1/users/{userId}/reactivate', () => {
 
     expect(body.alreadyActive).toBe(true);
     expect(test.userLifecycle.reactivated).toEqual([]);
+
+    const events = test.audit.events.filter((event) => event.action === 'user.reactivated');
+
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({
+      before: { status: 'ACTIVE' },
+      after: { status: 'ACTIVE', membershipsRestored: false },
+    });
+    expect(events[0]?.actor.ipAddress).toBeDefined();
   });
 
   it('needs its own capability, which user:suspend does not include', async () => {

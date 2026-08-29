@@ -60,6 +60,15 @@ export interface ReactivationResult {
  * The check runs before the idempotency branch below, not after: an actor whose own rights were
  * narrowed between two reactivation attempts must be refused on the second one too, exactly as
  * `DeactivateUserUseCase` refuses a second offboarding call under the same circumstance.
+ *
+ * **The idempotent branch writes the trail anyway, symmetrically with `DeactivateUserUseCase`'s
+ * `alreadyDeactivated` branch and with `ResetUserMfaUseCase` (`37e7385`).** A holder of
+ * `user:reactivate` without `employee:read` (independent keys in the catalogue; a custom role may
+ * hold one without the other) has no route to an account's status but this one, and the response
+ * already answers it on every call — `alreadyActive` is the report, not an optional courtesy. Leaving
+ * the repeat unaudited would be the identical oracle `37e7385` closed, one route over. `before.status`
+ * records what was actually found rather than assuming `ACTIVE`; nothing else about the account moved,
+ * so `after` mirrors the response's `membershipsRestored: false`.
  */
 export class ReactivateUserUseCase {
   constructor(
@@ -94,6 +103,22 @@ export class ReactivateUserUseCase {
         });
 
         if (subject.status !== 'SUSPENDED') {
+          // Not a write to the row, but the trail records the attempt regardless — see the
+          // docstring's account of `37e7385`: silence here is the same oracle on account status that
+          // fix closed for 2FA, for a caller who holds `user:reactivate` without `employee:read`.
+          await this.audit.record({
+            action: 'user.reactivated',
+            actor: {
+              userId: input.actor.userId,
+              organizationId: input.actor.organizationId,
+              ipAddress: input.ipAddress,
+            },
+            target: { type: 'USER', id: subject.userId },
+            before: { status: subject.status },
+            after: { status: subject.status, membershipsRestored: false },
+            requestId: undefined,
+          });
+
           return { userId: subject.userId, alreadyActive: true, membershipsRestored: false };
         }
 
