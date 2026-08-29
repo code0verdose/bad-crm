@@ -784,7 +784,7 @@ salt (`saltB`), а сервер хранит `argon2id(authVerifier, serverSalt)
 
 | Сущность | Метка | Ключевые поля | Связи |
 |---|---|---|---|
-| `Permission` | **[G]** | `key @unique` (`task:delete`, формат `<resource>:<action>`), `resource` (`task`), `action` (`delete`), `description`, `isDangerous Bool`, `category`, `deprecatedAt?` | справочник, сидируется |
+| `Permission` | **[G]** | `key @id` (`task:delete`, формат `<resource>:<action>`), `resource` (`task`), `action` (`delete`), `category`, `isDangerous Bool`, `deprecatedAt?` | справочник, сидируется |
 | `Role` | [T] | `organizationId`, `key`, `name`, `description`, `isSystem Bool`, `isDefault Bool`, `priority Int` | 1:N `RolePermission`, `UserRole` |
 | `RolePermission` | [T] | `roleId`, `permissionKey` → `Permission.key` | только **ALLOW**, DENY не существует |
 | `UserRole` | [T] | `userId`, `roleId`, `grantedById`, `grantedAt`, `expiresAt?` | join |
@@ -881,10 +881,10 @@ erDiagram
     Organization ||--o{ ResourceAcl : "содержит"
 
     Permission {
-        uuid id PK
-        string key UK
+        string key PK
         string resource
         string action
+        string category
         boolean isDangerous
         datetime deprecatedAt
     }
