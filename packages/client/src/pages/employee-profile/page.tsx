@@ -3,14 +3,14 @@ import { useDisclosure } from '@mantine/hooks';
 import { getRouteApi } from '@tanstack/react-router';
 import { useTranslation } from 'react-i18next';
 
-import { SharedLib, SharedUi } from '@shared';
+import { SharedUi } from '@shared';
 
 import { Breadcrumbs } from '@widgets/breadcrumbs';
 import { OffboardingDialog } from '@widgets/offboarding';
 import { Reactivation } from '@widgets/reactivation';
 import { ResetMfa } from '@widgets/reset-mfa';
 import { UserPermissions } from '@widgets/user-permissions';
-import { EmployeeService, EmployeeUi, type EmployeeApi } from '@units/employee';
+import { EmployeeService, EmployeeUi } from '@units/employee';
 import { IamService } from '@units/iam';
 
 const route = getRouteApi('/_authenticated/admin/members/$userId');
@@ -28,8 +28,7 @@ export function EmployeeProfilePage() {
   const { userId } = route.useParams();
   const search = route.useSearch();
   const navigate = route.useNavigate();
-  const query = EmployeeService.EmployeeQueries.useEmployeeProfileQuery(userId);
-  const editor = EmployeeService.EmployeeHooks.useEmployeeProfileEditor(userId);
+  const card = EmployeeService.EmployeeHooks.useEmployeeProfile(userId);
   const { can } = IamService.IamHooks.useCan();
   const [dialogOpened, dialogControls] = useDisclosure(false);
 
@@ -71,7 +70,7 @@ export function EmployeeProfilePage() {
    * signal for one condition (`rules/errors-and-toasts.mdc` §2) — and a red button that explains
    * itself is still a red button offering an action that cannot be taken.
    */
-  const subject = query.data !== undefined && can('user:suspend') ? query.data : undefined;
+  const subject = card.profile !== undefined && can('user:suspend') ? card.profile : undefined;
 
   /**
    * Who the 2FA reset would be about — `undefined` whenever there is nobody to offer it for.
@@ -86,7 +85,7 @@ export function EmployeeProfilePage() {
    * document in the contract carries enrolment state, so the client cannot know. The server answers
    * a reset on an account with none as a genuine no-op, and the dialog reports it as one.
    */
-  const mfaSubject = query.data !== undefined && can('user:reset_mfa') ? query.data : undefined;
+  const mfaSubject = card.profile !== undefined && can('user:reset_mfa') ? card.profile : undefined;
 
   /**
    * The leaving date to show beside «this account is switched off» — and `undefined` whenever there
@@ -103,8 +102,8 @@ export function EmployeeProfilePage() {
    * rejected alternatives are `docs/security/permission-model.md` §4.1.1).
    */
   const suspendedSince =
-    query.data !== undefined && query.data.status === 'SUSPENDED'
-      ? (query.data.terminatedAt ?? null)
+    card.profile !== undefined && card.profile.status === 'SUSPENDED'
+      ? (card.profile.terminatedAt ?? null)
       : undefined;
 
   /**
@@ -118,8 +117,8 @@ export function EmployeeProfilePage() {
    * drawn, which is why the dialog inside it aims the focus at the page heading on its way out.
    */
   const returnable =
-    query.data !== undefined && query.data.status === 'SUSPENDED' && can('user:reactivate')
-      ? query.data
+    card.profile !== undefined && card.profile.status === 'SUSPENDED' && can('user:reactivate')
+      ? card.profile
       : undefined;
 
   return (
@@ -189,24 +188,19 @@ export function EmployeeProfilePage() {
             // A key, not the error object: choosing the sentence from the `code` belongs to whoever
             // knows what the operation was (`rules/errors-and-toasts.mdc` §10).
             errorMessageKey="employee.loadFailed"
-            onRetry={() => {
-              void query.refetch();
-            }}
+            onRetry={card.refetch}
             // The form is a column of text fields; the text skeleton is what it looks like while it
             // loads, and a bespoke one would be a second thing to keep in step with the form.
             skeleton={<SharedUi.TextSkeleton lines={8} />}
-            status={query.status}
+            status={card.status}
           >
-            {query.data === undefined ? null : (
+            {card.initialValues === undefined ? null : (
               <EmployeeUi.EmployeeProfileForm
                 canEditEmployment={can('employee:update')}
-                // «Did the document carry it», not «may this caller edit it»: the contact is
-                // self-service, and the key is absent exactly when the server placed this caller
-                // outside the personal audience for this person.
-                carriesEmergencyContact={'emergencyContact' in query.data}
-                initialValues={initialValuesOf(query.data)}
-                isPending={editor.isSaving}
-                onSubmit={editor.save}
+                carriesEmergencyContact={card.carriesEmergencyContact}
+                initialValues={card.initialValues}
+                isPending={card.isSaving}
+                onSubmit={card.save}
               />
             )}
           </SharedUi.DataState>
@@ -249,25 +243,3 @@ export function EmployeeProfilePage() {
     </Stack>
   );
 }
-
-/**
- * The document as the form's fields.
- *
- * The employment keys are optional in the contract — a caller who may not see them receives none —
- * so every fallback here is «this caller was not shown it», not «the person has not filled it in».
- *
- * That is why the fields they back are **disabled when the key is absent** rather than merely when
- * the caller lacks `employee:update`: an enabled field showing a fallback over a value the server
- * withheld is one save away from erasing it.
- */
-const initialValuesOf = (profile: EmployeeApi.EmployeeProfile) => ({
-  firstName: profile.firstName,
-  lastName: profile.lastName,
-  jobTitle: profile.jobTitle ?? '',
-  department: profile.department ?? '',
-  employmentType: profile.employmentType ?? 'FULL_TIME',
-  weeklyCapacityHours: String(profile.weeklyCapacityHours ?? 40),
-  timezone: profile.timezone || SharedLib.resolveTimeZone(),
-  skills: profile.skills.join(', '),
-  emergencyContact: profile.emergencyContact ?? '',
-});

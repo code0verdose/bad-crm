@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next';
 
 import { SharedUi } from '@shared';
 
-import { EmployeeService, type EmployeeApi } from '@units/employee';
+import { EmployeeService } from '@units/employee';
 import { IamService } from '@units/iam';
 import { TeamService, TeamUi } from '@units/team';
 
@@ -19,25 +19,6 @@ export interface TeamDetailProps {
   /** Where to go once the team is disbanded — this screen is about something that stopped existing. */
   readonly onDeleted: () => void;
 }
-
-/**
- * The directory page this screen joins against, spelled once.
- *
- * Unpaged in effect: a hundred rows is the contract's maximum and the product's own size is five to
- * fifty people, so the first page is the organization. It is the largest page rather than a search,
- * because the answer serves two purposes at once — labelling the roster and offering the people who
- * are not on it — and a picker that could only find somebody by typing their name first would be a
- * picker for people you already know are there.
- */
-const DIRECTORY: EmployeeApi.EmployeeListParams = {
-  q: '',
-  status: [],
-  role: [],
-  team: [],
-  sort: 'name',
-  page: 1,
-  perPage: 100,
-};
 
 /** Rows of the skeleton, so the page does not jump when the roster arrives. */
 const SKELETON_ROWS = 6;
@@ -57,41 +38,40 @@ const SKELETON_ROWS = 6;
  * ever if it never comes.
  *
  * **The names come from a different permission than the roster.** `GET /teams/{teamId}` answers with
- * user ids and no names on purpose, so this screen asks the directory itself — and only when it may.
- * Without `user:read` there is no second request at all, and the roster shows ids: a request certain
- * to be refused is not a fallback, it is a 403 per page view.
+ * user ids and no names on purpose, so this screen asks the directory itself — through the employee
+ * unit's own hook, and only when it may. Without `user:read` there is no second request at all, and
+ * the roster shows ids: a request certain to be refused is not a fallback, it is a 403 per page view.
+ *
+ * The join of the two answers stays here rather than in either unit: neither the team nor the
+ * directory owns the other, and combining two units' answers is what a widget is for.
  */
 export function TeamDetail({ teamId, onDeleted }: TeamDetailProps) {
   const { t } = useTranslation();
   const { can } = IamService.IamHooks.useCan();
-  const team = TeamService.TeamQueries.useTeamDetailQuery(teamId);
-  const mayReadPeople = can('user:read');
-  const people = EmployeeService.EmployeeQueries.useEmployeeListQuery(DIRECTORY, mayReadPeople);
+  const team = TeamService.TeamHooks.useTeamDetail(teamId);
+  const directory = EmployeeService.EmployeeHooks.useDirectory(can('user:read'));
   const roster = TeamService.TeamHooks.useTeamRoster(teamId);
   const [disbandOpened, disbandControls] = useDisclosure(false);
 
-  const directory = people.data?.items ?? [];
-  const members = team.data?.members ?? [];
-  const mayManageMembers = can('team:manage_members') && people.data !== undefined;
+  const members = team.team?.members ?? [];
+  const mayManageMembers = can('team:manage_members') && directory.isLoaded;
   const mayRename = can('team:update');
   const mayDisband = can('team:delete');
 
   return (
     <SharedUi.DataState
       errorMessageKey="teams.detail.failed"
-      onRetry={() => {
-        void team.refetch();
-      }}
+      onRetry={team.refetch}
       skeleton={<SharedUi.TextSkeleton lines={SKELETON_ROWS} />}
-      status={statusOf(team)}
+      status={team.status}
     >
-      {team.data === undefined ? null : (
+      {team.team === undefined ? null : (
         <Stack gap="md">
           <Group align="center" gap="sm" wrap="wrap">
-            <Title order={2}>{team.data.name}</Title>
-            <Badge variant="light">{team.data.slug}</Badge>
+            <Title order={2}>{team.team.name}</Title>
+            <Badge variant="light">{team.team.slug}</Badge>
           </Group>
-          {team.data.description !== null && <Text>{team.data.description}</Text>}
+          {team.team.description !== null && <Text>{team.team.description}</Text>}
 
           <TeamUi.TeamAccessNotice />
 
@@ -101,7 +81,7 @@ export function TeamDetail({ teamId, onDeleted }: TeamDetailProps) {
           >
             {mayManageMembers && (
               <AddTeamMemberForm
-                candidates={teamCandidates(directory, members)}
+                candidates={teamCandidates(directory.people, members)}
                 isPending={roster.isAdding}
                 onAdd={roster.add}
               />
@@ -113,7 +93,7 @@ export function TeamDetail({ teamId, onDeleted }: TeamDetailProps) {
               from the mutation's own `variables`, which a shared boolean could not.
             */}
             <TeamMemberTable
-              rows={rosterRows(members, directory)}
+              rows={rosterRows(members, directory.people)}
               {...(mayManageMembers ? { onRemove: roster.remove } : {})}
               {...(roster.removingUserId === undefined
                 ? {}
@@ -125,9 +105,9 @@ export function TeamDetail({ teamId, onDeleted }: TeamDetailProps) {
             <SharedUi.Section descriptionKey="teams.edit.description" titleKey="teams.edit.title">
               <TeamUi.TeamForm
                 initialValues={{
-                  name: team.data.name,
-                  slug: team.data.slug,
-                  description: team.data.description ?? '',
+                  name: team.team.name,
+                  slug: team.team.slug,
+                  description: team.team.description ?? '',
                 }}
                 isPending={roster.isRenaming}
                 onSubmit={roster.rename}
@@ -151,7 +131,7 @@ export function TeamDetail({ teamId, onDeleted }: TeamDetailProps) {
                 onDeleted={onDeleted}
                 opened={disbandOpened}
                 teamId={teamId}
-                teamName={team.data.name}
+                teamName={team.team.name}
               />
             </SharedUi.Section>
           )}
@@ -160,19 +140,3 @@ export function TeamDetail({ teamId, onDeleted }: TeamDetailProps) {
     </SharedUi.DataState>
   );
 }
-
-/**
- * The three states `DataState` knows, from the two booleans a query reports.
- *
- * `isPending` rather than `isFetching`: a background refetch — the one a membership change triggers
- * — keeps the roster on screen, and a skeleton over rows that are already there is a flash after
- * every single click.
- */
-const statusOf = (query: {
-  readonly isPending: boolean;
-  readonly isError: boolean;
-}): 'pending' | 'error' | 'success' => {
-  if (query.isError) return 'error';
-
-  return query.isPending ? 'pending' : 'success';
-};

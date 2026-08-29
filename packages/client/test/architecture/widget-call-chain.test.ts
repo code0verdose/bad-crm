@@ -24,9 +24,9 @@
  * gate found them, not the linter. Two of the nine were found only when the walk was widened from
  * `widgets/` to `pages/`, which is why it covers both.
  *
- * Both rules read the tree rather than a fixture: the file list and the set of mutation hooks are
- * derived from `src/`, and each is asserted non-empty first, so a walk that finds nothing cannot
- * pass as a walk that finds nothing wrong.
+ * Both rules read the tree rather than a fixture: the file list and the set of unit data-segment
+ * hooks are derived from `src/`, and each is asserted non-empty first, so a walk that finds nothing
+ * cannot pass as a walk that finds nothing wrong.
  */
 import { readdirSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -80,7 +80,8 @@ const composingFiles = (): string[] => [
 const ERROR_KEY_CALL = /\berrorMessageKey\s*\(/;
 
 /**
- * Every mutation hook the units export, read off the tree.
+ * The hooks of a unit's **data segments** — `service/queries` and `service/mutations` — read off the
+ * tree.
  *
  * By name rather than by import path, because the barrels differ: `units/team` re-exports its
  * segments as namespaces (`TeamService.TeamMutations.useDeleteTeam`) while `units/auth` re-exports
@@ -88,10 +89,24 @@ const ERROR_KEY_CALL = /\berrorMessageKey\s*\(/;
  * `@units/*\/service/mutations` or against `Mutations.` would have caught three of the four dialogs
  * and let the flat one through — which is the shape of every gate that checks the spelling of an
  * offence instead of the offence.
+ *
+ * **Both suffixes, because the chain in `rules/frontend-fsd.mdc` rule 4 names both.** This file
+ * first shipped reading `*.mutation.ts` alone, and the half it did not read was violated the whole
+ * time: nine calls in seven files went straight from `ui` to `service/queries`. A read skipping the
+ * middle link is the same defect as a write skipping it — the widget ends up holding the query
+ * object (`status`, `refetch`, `data ?? []`) and deriving from it, which is what rule 6 puts in the
+ * hook. It is *quieter* than the write, not milder: nothing about a read makes the screen fail
+ * loudly, so it survives review.
+ *
+ * **The segment is the needle, not the word «query».** `useCan()` and `useTeamRoster()` are hooks
+ * that wrap queries and mutations, and calling them from a widget is exactly what the rule asks
+ * for. They live in `service/hooks`, which this walk does not read, so the distinction costs no
+ * exception list: what is forbidden is reaching **past** `service/hooks`, and only the two data
+ * segments are past it.
  */
-const mutationHooks = (): string[] =>
+const unitHooks = (): string[] =>
   sourceFiles(`${SRC}/units`)
-    .filter((path) => path.endsWith('.mutation.ts'))
+    .filter((path) => path.endsWith('.mutation.ts') || path.endsWith('.query.ts'))
     .flatMap((path) => [...codeOf(path).matchAll(/export const (use\w+)/g)].map(([, name]) => name))
     .filter((name): name is string => name !== undefined);
 
@@ -124,14 +139,17 @@ describe('the widget call-chain detectors', () => {
   it.each([
     ['a namespaced mutation hook', 'const d = TeamService.TeamMutations.useDeleteTeam();'],
     ['a flat mutation hook', 'const d = AuthService.useDisableTotp();'],
+    ['a namespaced query hook', 'const q = TeamService.TeamQueries.useTeamListQuery();'],
   ])('rejects %s', (_case, source) => {
-    expect(callsAny(source, ['useDeleteTeam', 'useDisableTotp'])).toBe(true);
+    expect(callsAny(source, ['useDeleteTeam', 'useDisableTotp', 'useTeamListQuery'])).toBe(true);
   });
 
-  it('accepts a unit hook that wraps one', () => {
-    const source = 'const d = TeamService.TeamHooks.useTeamDeletion(teamId);';
-
-    expect(callsAny(source, ['useDeleteTeam', 'useDisableTotp'])).toBe(false);
+  it.each([
+    ['one wrapping a mutation', 'const d = TeamService.TeamHooks.useTeamDeletion(teamId);'],
+    ['one wrapping a query', 'const n = TeamService.TeamHooks.useTeamNames(teamIds);'],
+    ['`useCan`, which is a hook and not a read', 'const { can } = IamService.IamHooks.useCan();'],
+  ])('accepts a `service/hooks` hook: %s', (_case, source) => {
+    expect(callsAny(source, ['useDeleteTeam', 'useDisableTotp', 'useTeamListQuery'])).toBe(false);
   });
 });
 
@@ -143,9 +161,15 @@ describe('the widget and page tree', () => {
     expect(files.filter((path) => path.startsWith('pages/')).length).toBeGreaterThan(0);
   });
 
-  it('has mutation hooks to look for, so the second rule cannot pass on an empty needle', () => {
-    expect(mutationHooks()).toContain('useDeleteTeam');
-    expect(mutationHooks().length).toBeGreaterThan(1);
+  it('has hooks of both data segments to look for, so the second rule cannot pass on an empty needle', () => {
+    expect(unitHooks()).toContain('useDeleteTeam');
+    expect(unitHooks()).toContain('useTeamListQuery');
+    expect(unitHooks().length).toBeGreaterThan(1);
+  });
+
+  it('does not look for `service/hooks` hooks, which `ui` is meant to call', () => {
+    expect(unitHooks()).not.toContain('useCan');
+    expect(unitHooks()).not.toContain('useTeamRoster');
   });
 
   it('reads no failure itself — the sentence key arrives from the unit hook', () => {
@@ -159,8 +183,8 @@ describe('the widget and page tree', () => {
     ).toEqual([]);
   });
 
-  it('starts no mutation itself', () => {
-    const hooks = mutationHooks();
+  it('reaches past `service/hooks` for neither a read nor a write', () => {
+    const hooks = unitHooks();
     const offenders = composingFiles()
       .filter((path) => callsAny(codeOf(path), hooks))
       .map(relative)
@@ -168,7 +192,7 @@ describe('the widget and page tree', () => {
 
     expect(
       offenders,
-      'go through `service/hooks`, not `service/mutations` — rules/frontend-fsd.mdc rule 4',
+      'go through `service/hooks`, not `service/{queries,mutations}` — rules/frontend-fsd.mdc rule 4',
     ).toEqual([]);
   });
 });

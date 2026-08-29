@@ -15,9 +15,6 @@ import { RoleMatrixPreviewModal } from './ui/role-matrix-preview-modal.component
 import { groupPermissions } from './lib/group-permissions.util.js';
 import classes from './role-matrix.module.css';
 
-/** One frozen array, so «no data yet» is the same reference every time. */
-const EMPTY_ROLES: readonly IamApi.RoleListEntry[] = [];
-
 export interface RoleMatrixProps {
   readonly search: string;
   readonly collapsed: readonly SharedPermissions.PermissionDomain[];
@@ -28,22 +25,20 @@ export interface RoleMatrixProps {
 /**
  * Every role against every permission, with the unsaved draft and the summary that precedes a save.
  *
- * The widget is the composition point: it asks the unit for the roles, holds the draft through the
- * unit's hook, and hands both to presentational components. What it does not do is decide anything
- * about permissions — which cells are editable, which changes are refused and how many people they
- * reach all come from the same place the server decides, which is the point of the preview.
+ * The widget is the composition point: it asks the unit for the matrix through one hook and hands
+ * the parts to presentational components. What it does not do is decide anything about permissions —
+ * which cells are editable, which changes are refused and how many people they reach all come from
+ * the same place the server decides, which is the point of the preview.
+ *
+ * What it does own is the **grouping**, and deliberately: which rows to show is a function of the
+ * search box and the «only differences» switch, both of which are this screen's state and reach the
+ * unit nowhere else.
  */
 function RoleMatrixView({ search, collapsed, onlyDifferences, onCollapse }: RoleMatrixProps) {
   const { t } = useTranslation();
-  const query = IamService.IamQueries.useRolesMatrixQuery();
-  /**
-   * Memoised for a reason the linter names precisely: `query.data ?? []` builds a new array on every
-   * render while the query is pending, and that array is a dependency of the grouping below — the
-   * whole catalogue would be walked again on every keystroke to produce the same answer.
-   */
-  const roles = useMemo(() => query.data ?? EMPTY_ROLES, [query.data]);
-  const draft = IamService.IamHooks.useRoleMatrixDraft(roles);
-  const review = IamService.IamHooks.useRoleChangeReview();
+  // The read, the draft bound to it and the review of that draft arrive as one object: three views
+  // of one thing, composed by the unit rather than assembled here (`rules/frontend-fsd.mdc` rule 6).
+  const { status, roles, refetch, draft, review } = IamService.IamHooks.useRoleMatrix();
   const [opened, modal] = useDisclosure(false);
 
   /**
@@ -84,9 +79,9 @@ function RoleMatrixView({ search, collapsed, onlyDifferences, onCollapse }: Role
   return (
     <Stack gap="md">
       <SharedUi.DataState
-        status={query.status}
+        status={status}
         errorMessageKey="roles.loadFailed"
-        onRetry={() => void query.refetch()}
+        onRetry={refetch}
         skeleton={<SharedUi.TextSkeleton lines={8} />}
         isEmpty={roles.length === 0}
         empty={<SharedUi.EmptyState titleKey="roles.empty" />}

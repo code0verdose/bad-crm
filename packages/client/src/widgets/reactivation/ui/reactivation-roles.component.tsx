@@ -32,25 +32,20 @@ export interface ReactivationRolesProps {
  */
 export function ReactivationRoles({ userId }: ReactivationRolesProps) {
   const { t, i18n } = useTranslation();
-  const query = IamService.IamQueries.useUserPermissionsQuery(userId);
+  const { status, names } = IamService.IamHooks.useHeldRoleNames(userId);
 
-  if (query.status === 'pending')
-    return <Text size="sm">{t('members.reactivate.roles.pending')}</Text>;
-  if (query.status === 'error') {
+  if (status === 'pending') return <Text size="sm">{t('members.reactivate.roles.pending')}</Text>;
+  if (status === 'error') {
     return <Text size="sm">{t('members.reactivate.roles.unavailable')}</Text>;
   }
-  if (query.data.roles.length === 0)
-    return <Text size="sm">{t('members.reactivate.roles.none')}</Text>;
+  if (names.length === 0) return <Text size="sm">{t('members.reactivate.roles.none')}</Text>;
 
   return (
     <Text size="sm">
       {t('members.reactivate.roles.named', {
         // `Intl.ListFormat` through the shared wrapper, never `join(', ')`: English wants «and»
         // before the last item and Russian wants «и» without the comma (`rules/i18n.mdc` §7).
-        roles: SharedLib.formatList(
-          query.data.roles.map((role) => role.name),
-          i18n.language,
-        ),
+        roles: SharedLib.formatList(names, i18n.language),
       })}
     </Text>
   );

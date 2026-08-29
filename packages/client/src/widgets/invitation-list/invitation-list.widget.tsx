@@ -10,29 +10,12 @@ import {
   type InvitationActionKind,
   type InvitationRow,
 } from '@widgets/invitation-list/lib';
-import { EmployeeService, type EmployeeApi } from '@units/employee';
+import { EmployeeService } from '@units/employee';
 import { IamService } from '@units/iam';
 
 import { InvitationConfirmDialog } from './ui/invitation-confirm-dialog.component.js';
 import { InvitationTable } from './ui/invitation-table.component.js';
 import classes from './invitation-list.module.css';
-
-/**
- * The directory page this screen joins against, spelled once.
- *
- * Unpaged in effect: a hundred rows is the contract's maximum and the product's own size is five to
- * fifty people, so the first page is the organization. It exists only to turn `invitedById` into a
- * name — the same join `widgets/team-detail` makes, for the same reason.
- */
-const DIRECTORY: EmployeeApi.EmployeeListParams = {
-  q: '',
-  status: [],
-  role: [],
-  team: [],
-  sort: 'name',
-  page: 1,
-  perPage: 100,
-};
 
 /** Rows of the skeleton, so the page does not jump when the answer arrives. */
 const SKELETON_ROWS = 6;
@@ -54,10 +37,10 @@ interface InvitationAsk {
  *
  * **The names are three permissions away from the list itself.** `Invitation` carries `roleId`,
  * `teamIds` and `invitedById` and no names, so the screen asks for them separately and **only when
- * it may**: roles and people through `enabled` on their unit query, teams by not mounting the cell
- * at all (see `InvitationTeams`). A reader holding nothing but `invitation:read` makes exactly one
- * request and sees a dash where a name would be — never a raw identifier, which is noise rather than
- * information (STORY-012-08, D1).
+ * it may**: roles and people through the unit hook that owns each read, teams by not mounting the
+ * cell at all (see `InvitationTeams`). A reader holding nothing but `invitation:read` makes exactly
+ * one request and sees a dash where a name would be — never a raw identifier, which is noise rather
+ * than information (STORY-012-08, D1).
  *
  * **Both action controls are hints.** The endpoints refuse on their own authority; hiding a button
  * that would answer 403 is a kindness, not the check.
@@ -66,18 +49,17 @@ export function InvitationList() {
   const { t } = useTranslation();
   const { can } = IamService.IamHooks.useCan();
   const list = IamService.IamHooks.useInvitationList();
-  const roles = IamService.IamQueries.useRolesMatrixQuery({ enabled: can('role:read') });
-  const people = EmployeeService.EmployeeQueries.useEmployeeListQuery(
-    DIRECTORY,
-    can('employee:read'),
-  );
+  const roles = IamService.IamHooks.useAssignableRoles();
+  const directory = EmployeeService.EmployeeHooks.useDirectory(can('employee:read'));
   const [ask, setAsk] = useState<InvitationAsk | null>(null);
   const mayCreate = can('invitation:create');
   const mayResend = can('invitation:resend');
   const mayRevoke = can('invitation:revoke');
   const mayReadTeams = can('team:read');
 
-  const rows = invitationRows(list.items, roles.data ?? [], people.data?.items ?? []);
+  // The join stays here, and not in either unit: neither the invitations nor the directory owns the
+  // other, and a screen combining two units' answers is what a widget is for.
+  const rows = invitationRows(list.items, roles.entries, directory.people);
   // Before the first question, `revoke` stands in: the dialog renders nothing while it is shut, and
   // the handlers below then need no null check of their own.
   const action = ask === null ? list.revoke : list[ask.action];
