@@ -106,7 +106,7 @@ status: done          # ← гейт не прогонялся, тесты кр�
 | `./scripts/sync-board.sh --check` в CI | расхождение `epics/README.md` с frontmatter историй |
 | CI-шаг `check:story-frontmatter` | отсутствующие `id`/`status`/`milestone`; неизвестный статус; два эпика в `in-progress` |
 | CI-шаг `check:rules-links` (все `rules/*.mdc` из историй существуют) | битые ссылки на правила |
-| CI-шаг `check:commit-refs` (сообщение коммита содержит `Refs: STORY-…`) | коммит без привязки к истории |
+| Шаг «Check the pull request references a story» в `.github/workflows/pr-conventions.yml` (описание PR несёт `STORY-NNN-NN` либо `no-story: <причина>`; HTML-комментарии шаблона вырезаются, чтобы пример из инструкции не засчитывался) | PR без привязки к истории. **Сообщения коммитов не проверяются** — привязка требуется от описания PR, а не от каждого коммита |
 | Скилл `/gate` перед переводом в `review`/`done` | статус, выставленный на красном гейте |
 | Скилл `/pm` | генерацию и синхронизацию структуры `docs/` и `epics/` |
 | Ревью описания PR | изменение скоупа без правки PRD/roadmap и решение без ADR |

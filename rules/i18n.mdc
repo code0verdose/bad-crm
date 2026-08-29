@@ -123,7 +123,7 @@ export const TASK_STATUS_LABEL = { todo: 'К выполнению', done: 'Го�
 | `test/i18n/error-codes-parity.test.ts` | код ошибки (или код проблемы поля) без ключа в `errors.json` любого из языков |
 | ESLint `no-restricted-syntax` на `Intl.*` и `toLocale*` вне `shared/lib/format` | форматирование мимо обёрток: зашитая локаль и новый форматтер на каждую ячейку таблицы |
 | e2e Playwright с `locale: 'ru-RU'` по ключевым экранам + скриншот-диффы | переполнение и обрезку при длинном русском тексте |
-| `vitest-axe` | непереведённые `aria-label` (пустая метка) |
+| `axe-core` через `packages/client/test/support/axe-scan.util.ts` | непереведённые `aria-label` (пустая метка) |
 
 ## Исключения
 

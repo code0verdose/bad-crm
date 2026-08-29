@@ -87,7 +87,7 @@ it.only('создаёт задачу', …);                                    
 | `~/.claude/git-hooks/pre-commit` | то же на уровне git для любого клиента |
 | ESLint `no-console` (error, allow: `warn`/`error` в `infrastructure/logging`), `no-debugger` | отладочные вызовы |
 | ESLint `vitest/no-focused-tests` | `it.only`/`describe.only` |
-| ESLint `no-restricted-syntax` на строковые литералы `localhost`/`127.0.0.1`/`ngrok` вне тестов и `.env.example` | хардкод-эндпоинты |
+| `pnpm scan:cruft` (`scripts/ci/cruft-scan.util.ts`, правило «localhost or test endpoint») по диффу — в CI шагом «Scan for cruft». Правила ESLint на эти литералы **нет**: YAML и SQL не линтуются вовсе, а именно туда вставленный адрес и попадает | хардкод-эндпоинты — но **tier WARN**: находка печатается и сборку не роняет, решение остаётся за ревью |
 | Агент `commit-hygiene` | семантику, которую не ловит регулярка: fallback-и, mock-реализации, лишние скрипты и доки |
 | CI-шаг `git diff --stat` против описания PR | дифф, не соответствующий заявленному изменению |
 

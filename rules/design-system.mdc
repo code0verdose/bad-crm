@@ -131,7 +131,7 @@ export function TaskCard({ task, isDragging }: Props) {
 | Кастомное правило `bad-crm/classnames-via-clsx` | конкатенацию и тернарники в `className` |
 | ESLint `no-restricted-imports` на UI-библиотеки, кроме `@mantine/*`, `@tabler/icons-react`, `@tanstack/react-table` | второй UI-kit |
 | Автотест контраста токенов по палитре (обе темы) | новый токен, не проходящий WCAG AA |
-| `vitest-axe` в компонентных тестах `shared/ui` (обе темы) | недоступный компонент |
+| `axe-core` через `packages/client/test/support/axe-scan.util.ts` в компонентных тестах `shared/ui` (обе темы) | недоступный компонент |
 | `size-limit` на CSS-бандл | разрастание глобальных стилей |
 | Агент `ui-visual-validator` на скриншотах ключевых экранов | визуальные регрессии |
 

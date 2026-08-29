@@ -1,4 +1,4 @@
-import { PACKAGE_DIRS, repoEntryNames } from '../repo/repo-fixture.util.js';
+import { PACKAGE_DIRS, listRepoFiles, repoEntryNames } from '../repo/repo-fixture.util.js';
 
 /**
  * The kinds of promise this extractor is willing to read out of a rule.
@@ -10,7 +10,14 @@ import { PACKAGE_DIRS, repoEntryNames } from '../repo/repo-fixture.util.js';
  * that wall would delete the test rather than the wall. See `KIND_NOTES` for what each namespace is
  * and why it is closed.
  */
-export type ClaimKind = 'eslint-rule' | 'eslint-subject' | 'command' | 'file';
+export type ClaimKind =
+  | 'eslint-rule'
+  | 'eslint-subject'
+  | 'command'
+  | 'file'
+  | 'ci-step'
+  | 'test-file'
+  | 'tool';
 
 /** Why each kind is safe to resolve today — quoted into the report, and asserted non-empty. */
 export const KIND_NOTES: Readonly<Record<ClaimKind, string>> = {
@@ -27,6 +34,22 @@ export const KIND_NOTES: Readonly<Record<ClaimKind, string>> = {
   file:
     'A path is resolved only when the directory around it already exists — see `fileClaimState`. ' +
     'A path whose whole subtree is absent belongs to an unbuilt subsystem and is abstained on.',
+  'ci-step':
+    'The name a row gives a CI step, job or grep, resolved against two closed surfaces: the `scripts` ' +
+    'of the workspace and the text of `.github/workflows/ci.yml`, the workflow that runs on every ' +
+    'pull request. A step living in one of the other four workflow files is named here by its file ' +
+    'path instead, which the `file` claim resolves — those files are not hashed into this task, and ' +
+    'a suite that reads what its cache key does not cover reports a PASS over the previous version.',
+  'test-file':
+    'A test file named without its directory, resolved as a basename over every directory a Vitest ' +
+    'or Playwright suite may live in: `test/`, `scripts/` and each package’s `src/`, `test/` and ' +
+    '`tests/`. The namespace is complete because the runner configs accept no other location, so a ' +
+    'basename found nowhere is found nowhere — there is no third state to abstain into.',
+  tool:
+    'An npm package named as the mechanism itself, resolved against every dependency the workspace ' +
+    'installs. Read only where the cell *opens* with it, or where an enumeration continues one that ' +
+    'did: a package named further into a sentence is being described, not promised, and the tables ' +
+    'are full of kebab-shaped words that are not packages at all.',
 };
 
 export interface DeclaredCheck {
@@ -190,6 +213,7 @@ const lintClaimsOf = (
 export const NON_SCRIPT_COMMANDS: Readonly<Record<string, string>> = {
   install: 'a pnpm built-in verb, not a script of any manifest',
   audit: 'a pnpm built-in verb, not a script of any manifest',
+  licenses: 'a pnpm built-in verb, not a script of any manifest',
   turbo: 'the turbo binary from the workspace `devDependencies`, invoked directly',
 };
 
@@ -219,6 +243,91 @@ const fileClaimsOf = (rule: string, cell: string): DeclaredCheck[] =>
     .filter((token) => REPO_PATH.test(token))
     .map((identifier) => ({ rule, kind: 'file' as const, identifier, row: cell }));
 
+/**
+ * The three forms a row names a CI gate by: «CI-шаг `x`», «CI-джоб `x`», «grep-чек CI: `x`».
+ *
+ * All three put the identifier in the same place — the first backticked token of the cell — and
+ * that adjacency is the whole discipline. A row that merely mentions CI somewhere in its prose is
+ * not naming a step.
+ */
+const CI_LEAD = /^\s*(?:CI-шаг|CI-джоб|grep-чек\s+CI)/u;
+const CI_GREP_LEAD = /^\s*grep-чек\s+CI/u;
+
+/**
+ * A bare step or job name: `check:env-parity`, `compose-up-minimal`.
+ *
+ * Deliberately excludes a command line. «CI-шаг `pnpm install --frozen-lockfile`» quotes a command
+ * the `command` claim already resolves; reading it here as well would file the same promise twice
+ * under two names, and the second one would be resolved against the wrong namespace. A grep row is
+ * exempt because its identifier is a pattern, not a name, and is matched literally.
+ */
+const CI_NAME = /^[a-z][a-z0-9-]*(?::[a-z0-9-]+)*$/;
+
+const ciStepClaimsOf = (rule: string, cell: string): DeclaredCheck[] => {
+  if (!CI_LEAD.test(cell)) return [];
+
+  const identifier = segmentsOf(cell)[1];
+
+  if (identifier === undefined) return [];
+  if (!CI_GREP_LEAD.test(cell) && !CI_NAME.test(identifier)) return [];
+
+  return [{ rule, kind: 'ci-step', identifier, row: cell }];
+};
+
+/**
+ * A test file named without its directory: «Тест `list-matches-can.test.ts`».
+ *
+ * `REPO_PATH` requires a separator, so every one of these went out unread. The glob metacharacter
+ * is excluded by the character class, which is what keeps `*.test.tsx` and `use-*.hook.test.ts` —
+ * naming conventions, not files — out of the claims.
+ */
+const TEST_BASENAME = /^[\w.@-]+\.(?:test|spec)\.tsx?$/;
+
+const testFileClaimsOf = (rule: string, cell: string): DeclaredCheck[] =>
+  [...cell.matchAll(/`([^`]+)`/g)]
+    .map((match) => match[1] as string)
+    .filter((token) => TEST_BASENAME.test(token))
+    .map((identifier) => ({ rule, kind: 'test-file' as const, identifier, row: cell }));
+
+/** `@scope/name`, the only shape a scoped package takes — one segment after the scope. */
+const SCOPED_PACKAGE = /^@[a-z0-9][a-z0-9._-]*\/[a-z0-9][a-z0-9._-]*$/;
+/** A bare package: kebab-case with at least one hyphen, no dot and no separator. */
+const BARE_PACKAGE = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)+$/;
+
+/**
+ * Whether a token can be an installed package rather than something that merely looks like one.
+ *
+ * The `NAMESPACED_RULE` exclusion is the boundary that matters: `import/no-cycle` opens its cell
+ * exactly the way `license-checker` opens its own, and only its shape says it is a lint rule id.
+ */
+const isPackageName = (token: string): boolean =>
+  (SCOPED_PACKAGE.test(token) || BARE_PACKAGE.test(token)) && !NAMESPACED_RULE.test(token);
+
+/**
+ * A package named as the mechanism itself — `vitest-axe`, `osv-scanner`, `@storybook/addon-a11y`.
+ *
+ * Position is the entire discipline, for the same reason it is in `lintClaimsOf`: the tables are
+ * full of kebab-shaped words that are not packages (`aria-label`, `serious`, `prefers-reduced-motion`),
+ * and every one of them sits *inside* a sentence. A package promised as the mechanism opens the
+ * cell, or continues an enumeration that did — «`pnpm audit` + `osv-scanner` в CI».
+ */
+const toolClaimsOf = (rule: string, cell: string): DeclaredCheck[] => {
+  const segments = segmentsOf(cell);
+  const claims: DeclaredCheck[] = [];
+
+  for (let index = 1; index < segments.length; index += 2) {
+    const preceding = segments[index - 1] ?? '';
+    const opens = index === 1 ? preceding.trim() === '' : ENUMERATION.test(preceding);
+
+    if (!opens) break;
+
+    const token = segments[index] ?? '';
+    if (isPackageName(token)) claims.push({ rule, kind: 'tool', identifier: token, row: cell });
+  }
+
+  return claims;
+};
+
 /** Every mechanical claim of one rule file. */
 export const declaredChecks = (
   rule: string,
@@ -229,6 +338,9 @@ export const declaredChecks = (
     ...lintClaimsOf(rule, cell, isDependency),
     ...commandClaimsOf(rule, cell),
     ...fileClaimsOf(rule, cell),
+    ...ciStepClaimsOf(rule, cell),
+    ...testFileClaimsOf(rule, cell),
+    ...toolClaimsOf(rule, cell),
   ]);
 
 /**
@@ -283,3 +395,43 @@ export const fileClaimState = (identifier: string): ClaimState => {
     ? 'missing'
     : 'abstained';
 };
+
+/**
+ * Every directory a suite of this repository may live in.
+ *
+ * Not the whole tree: walking a package root descends into its `node_modules`, and the answer would
+ * then depend on what happens to be installed. `rules/testing.mdc` §1 closes the list — server and
+ * `shared` suites live in `test/**` of their package, the client also co-locates under `src/**`,
+ * Playwright scenarios live in `packages/e2e/tests/**`, and the repository harness in `test/**` and
+ * `scripts/**`. A runner config accepts nothing else, so a basename absent here is absent.
+ */
+const TEST_FILE_ROOTS: readonly string[] = [
+  'test',
+  'scripts',
+  ...Object.values(PACKAGE_DIRS).flatMap((dir) => [`${dir}/src`, `${dir}/test`, `${dir}/tests`]),
+];
+
+let basenames: Set<string> | null = null;
+
+/** Basenames of every suite file in the tree, walked once. */
+const testFileBasenames = (): Set<string> => {
+  basenames ??= new Set(
+    TEST_FILE_ROOTS.filter((root) => directoryExists(root))
+      .flatMap((root) => listRepoFiles(root))
+      .map((path) => path.slice(path.lastIndexOf('/') + 1)),
+  );
+
+  return basenames;
+};
+
+/**
+ * Two states, not three, and that is the honest reading here.
+ *
+ * A path claim abstains when the directory around it does not exist, because the row is then a
+ * specification for a subsystem nobody has built. A *basename* carries no directory to abstain on:
+ * the rule has named a file and said nothing about where it would live, so the only question the
+ * repository can answer is whether a file by that name exists anywhere a runner would look. It does
+ * or it does not; a promise that outruns its epic goes in `PENDING` with its reason, in writing.
+ */
+export const testFileClaimState = (identifier: string): 'satisfied' | 'missing' =>
+  testFileBasenames().has(identifier) ? 'satisfied' : 'missing';

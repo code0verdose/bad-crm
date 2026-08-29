@@ -8,6 +8,7 @@ import {
   claimKey,
   declaredChecks,
   fileClaimState,
+  testFileClaimState,
   verificationRows,
   type ClaimKind,
   type DeclaredCheck,
@@ -41,6 +42,18 @@ const dependencyNames = (): Set<string> =>
       ...Object.keys(manifest.devDependencies ?? {}),
     ]),
   );
+
+/**
+ * The workflow a CI step is resolved against, as text.
+ *
+ * One file, not the five in `.github/workflows`: `ci.yml` is the one hashed into the inputs of
+ * `//#test:repo`, and a suite that reads what its cache key does not cover reports a PASS over the
+ * previous version of the file it never re-read — the exact defect this file exists to catch. A
+ * step that lives in `codeql.yml`, `license-check.yml`, `dependency-review.yml` or
+ * `pr-conventions.yml` is therefore named in a rule by its **file path**, which the `file` claim
+ * resolves, rather than by a step name only this reader could check.
+ */
+const pullRequestWorkflow = (): string => readRepoFile('.github/workflows/ci.yml');
 
 /**
  * The lint configuration as ESLint assembles it, not as the file reads.
@@ -112,6 +125,12 @@ const isSatisfied = (check: DeclaredCheck): boolean => {
       return scriptNames().has(check.identifier);
     case 'file':
       return fileClaimState(check.identifier) !== 'missing';
+    case 'ci-step':
+      return scriptNames().has(check.identifier) || pullRequestWorkflow().includes(check.identifier);
+    case 'test-file':
+      return testFileClaimState(check.identifier) === 'satisfied';
+    case 'tool':
+      return dependencyNames().has(check.identifier);
   }
 };
 
@@ -168,6 +187,61 @@ const PENDING: Readonly<Record<string, string>> = {
   // ── commands that belong to the i18n epic ────────────────────────────────────────────────────
   'i18n.mdc · command · i18n:unused':
     'Same as `i18n:check`: the script is specified against a message catalogue that EPIC-008 introduces.',
+
+  // ── CI steps and jobs the workflows do not have ──────────────────────────────────────────────
+  'dependencies.mdc · ci-step · check:forbidden-packages':
+    'No step checks the ban list of §11 against the tree. `test/deps/quarantined-versions.test.ts` ' +
+    'is a different gate — it refuses *versions* poisoned by the 2026-08-04 worm, not packages ' +
+    'forbidden for licensing. The premium and Elasticsearch bans rest on review today.',
+  'editor-content.mdc · ci-step · check:blocknote-xl':
+    'No `@blocknote/*` package is installed: the editor is EPIC-030 and ADR-0012 is a decision ' +
+    'taken ahead of it. The step belongs with the first BlockNote dependency, not before it.',
+  'epic-driven-development.mdc · ci-step · check:story-frontmatter':
+    'Nothing parses the frontmatter of `epics/**/stories/*.md`. Two epics in `in-progress` at once, ' +
+    'an unknown status or a missing `milestone` are caught by the person reading the board today.',
+  'epic-driven-development.mdc · ci-step · check:rules-links':
+    'Nothing resolves the `rules/*.mdc` links a story cites. A renamed rule leaves dead links in ' +
+    'every story that named it, and only a reader following one finds out.',
+  'self-host-packaging.mdc · ci-step · compose-up-full':
+    'CI brings the stack up on the `minimal` profile only, inside the `end-to-end` job. The `full` ' +
+    'profile — Meilisearch and the AI services — is started by hand when it is touched.',
+  'self-host-packaging.mdc · ci-step · upgrade-path':
+    'There is no released image to upgrade *from*: the product is pre-alpha and EPIC-017 is what ' +
+    'first publishes one. `test/infra/upgrade-runbook.test.ts` holds the written procedure ' +
+    'meanwhile — the order of role bootstrap and migrations — but nothing executes it.',
+  'self-host-packaging.mdc · ci-step · check:published-ports':
+    'There is no `docker-compose.prod.yml` in the tree to parse. `test/infra/compose.test.ts` ' +
+    'asserts the same property for the dev file — every published port bound to `127.0.0.1` — and ' +
+    'the production compose arrives with the packaging epic that will need this step with it.',
+  'e2ee-crypto.mdc · ci-step · units/vault/**':
+    'There is no `units/vault` in the tree to grep — the vault is M4 (EPIC-048). The identifier is ' +
+    'the scope of the promised grep rather than a step name, because the row names no step: the ' +
+    'epic that writes the vault writes this check, and gives it a name then.',
+
+  // ── suites named without a directory, for domains that do not exist yet ──────────────────────
+  'api-contract.mdc · test-file · pagination-contract.test.ts':
+    'No endpoint paginates yet, so there is no cursor and no `limit` for a contract test to hold. ' +
+    'The pagination primitives exist (`packages/shared/src/validation/pagination.schema.ts`); the ' +
+    'suite belongs with the first list endpoint that uses them.',
+  'file-uploads.mdc · test-file · orphan-files.test.ts':
+    'There is no file domain and no reaper job — files are EPIC-015. The suite is specified ' +
+    'against the job that will delete unreferenced objects, and there is nothing to run it on.',
+  'permissions.mdc · test-file · list-matches-can.test.ts':
+    'The property is «a list endpoint returns exactly what a per-row `can()` would», and no domain ' +
+    'has a resource ACL to disagree about yet — STORY-011-06 is blocked on EPIC-014 for the same ' +
+    'reason. The employee directory filters in SQL under `withTenant` and is covered by ' +
+    '`packages/server/test/integration/db/employee-directory-isolation.test.ts`.',
+
+  // ── packages named as mechanisms that the workspace does not install ─────────────────────────
+  'a11y.mdc · tool · @storybook/addon-a11y':
+    'There is no component workshop: STORY-008-06 is open precisely because the tool has not been ' +
+    'chosen and needs an ADR. Nothing in this row is enforced today, and the component-level axe ' +
+    'row above it is what actually covers `shared/ui`.',
+  'hexagonal-backend.mdc · tool · eslint-plugin-boundaries':
+    'Not a dependency, for the same reason as in `rules/frontend-fsd.mdc`: the server layer ' +
+    'directions are enforced by `no-restricted-imports` groups per `files` block plus ' +
+    '`packages/server/test/unit/architecture/layers.test.ts`, which walks the real import graph. ' +
+    'The plugin would replace that pair rather than add to it.',
 
   // ── suites specified for subsystems that are not built ───────────────────────────────────────
   'naming-and-structure.mdc · file · test/architecture/unit-names.test.ts':
@@ -274,6 +348,96 @@ describe('the extractor reads the verification tables and nothing else', () => {
       'bad-crm/no-such-rule',
       'no-such-script',
     ]);
+  });
+});
+
+/**
+ * The three shapes a promise used to leave through, each with its own fixture row and its own
+ * control on the detector.
+ *
+ * All three were found the same way and hid for the same reason: the extractor read four kinds of
+ * token, and a rule that phrased its mechanism as anything else went out unread. An unread promise
+ * is indistinguishable from a kept one in the report, which is worse than no report — twelve
+ * promises of checks nobody wrote passed through, and the suite stayed green over every one.
+ */
+describe('the extractor reads the three shapes that used to pass through', () => {
+  const FIXTURE = [
+    '## Как проверяется',
+    '',
+    '| Механизм | Что ловит |',
+    '|---|---|',
+    '| CI-шаг `check:env-parity` (`.env.example` ↔ zod-схема) | переменную мимо схемы |',
+    '| CI-джоб `compose-up-minimal`: `--profile minimal` + e2e | функцию без деградации |',
+    '| CI-шаг `pnpm install --frozen-lockfile` | разъехавшийся lockfile |',
+    '| grep-чек CI: `SET\\s+app\\.organization_id` | `SET` без `LOCAL` |',
+    '| Тест `pagination-contract.test.ts` | курсор без tie-breaker |',
+    '| Тест `declared-checks.test.ts` | обещание несуществующей проверки |',
+    '| Компонентный тест (Vitest, `*.test.tsx`) на каждую модалку | модалку без ловушки |',
+    '| `vitest-axe` в компонентных тестах `shared/ui` | недоступный компонент |',
+    '| `@axe-core/playwright` в e2e — падение сборки на `serious`/`critical` | регрессии |',
+    '| `pnpm audit` + `osv-scanner` в CI | известные CVE |',
+    '| `import/no-cycle` | циклические зависимости |',
+    '| ESLint `no-restricted-imports` на `@prisma/client` вне слоя | утечку Prisma |',
+  ].join('\n');
+
+  const fixtureChecks = (): DeclaredCheck[] =>
+    declaredChecks('fixture.mdc', FIXTURE, (name) => name === '@prisma/client');
+
+  const identifiers = (kind: ClaimKind): string[] =>
+    fixtureChecks()
+      .filter((check) => check.kind === kind)
+      .map((check) => check.identifier);
+
+  /**
+   * A CI step is named, not quoted: `pnpm install --frozen-lockfile` is a command line the
+   * `command` claim already resolves, and reading it here a second time would report the same
+   * promise twice under two names.
+   */
+  it('reads the name of a CI step, a CI job and a CI grep', () => {
+    expect(identifiers('ci-step')).toEqual([
+      'check:env-parity',
+      'compose-up-minimal',
+      String.raw`SET\s+app\.organization_id`,
+    ]);
+  });
+
+  it('reads a test file named without its directory, and not a naming convention', () => {
+    expect(identifiers('test-file')).toEqual([
+      'pagination-contract.test.ts',
+      'declared-checks.test.ts',
+    ]);
+  });
+
+  /**
+   * The false positive that would end this half: `import/no-cycle` opens its cell exactly the way
+   * a package does, and `serious`/`critical` are kebab-shaped words sitting in the same sentence as
+   * a real package name. Only the rule-id shape and the adjacency of the enumeration tell them
+   * apart from `osv-scanner`, which is a package and is named as the mechanism.
+   */
+  it('reads a package named as the mechanism, and neither a rule id nor a word beside one', () => {
+    expect(identifiers('tool')).toEqual(['vitest-axe', '@axe-core/playwright', 'osv-scanner']);
+  });
+
+  it('leaves the restricted subject of a lint row to the lint claim', () => {
+    expect(identifiers('tool')).not.toContain('@prisma/client');
+    expect(identifiers('eslint-subject')).toEqual(['@prisma/client']);
+  });
+
+  /**
+   * The control on each detector: an invented identifier of every new kind has to come out
+   * unsatisfied, and a real one of the same kind has to come out satisfied. Without the second
+   * half a detector that resolves nothing would look like a detector that found everything.
+   */
+  it.each([
+    ['ci-step', 'check:no-such-step', false],
+    ['ci-step', 'test:repo', true],
+    ['ci-step', 'pnpm turbo run typecheck lint build test', true],
+    ['test-file', 'no-such-suite.test.ts', false],
+    ['test-file', 'declared-checks.test.ts', true],
+    ['tool', 'no-such-package-anywhere', false],
+    ['tool', 'size-limit', true],
+  ] as const)('resolves the %s claim `%s` to %s', (kind, identifier, expected) => {
+    expect(isSatisfied({ rule: 'fixture.mdc', kind, identifier, row: '' })).toBe(expected);
   });
 });
 

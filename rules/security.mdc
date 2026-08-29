@@ -134,7 +134,7 @@ const key = process.env.APP_ENCRYPTION_KEY!;
 | Тест `test/security/log-redaction.test.ts` | новый секретный ключ, не попавший в `REDACTED_PATHS` |
 | `test/integration/auth/refresh-reuse.test.ts` | отсутствие reuse detection |
 | `test/integration/auth/rate-limit.test.ts` | endpoint без лимита |
-| Тест `env-schema.test.ts` | переменную, добавленную в код мимо схемы и `.env.example` |
+| `test/env/env-example-sync.test.ts` (обе zod-схемы окружения против `.env.example`) | переменную, добавленную в код мимо схемы и `.env.example` |
 | ESLint `no-restricted-globals` на `localStorage` в `units/auth/**` | токены в persistent storage |
 
 ## Исключения

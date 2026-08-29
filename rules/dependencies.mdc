@@ -115,10 +115,10 @@ custom Mantine modal on top of the grid.
 
 | Механизм | Что ловит |
 |---|---|
-| `license-checker` с allow-list в CI | лицензию вне списка — блокирует сборку |
+| Шаг «Check licences against the allow-list» в `.github/workflows/license-check.yml`: `pnpm licenses list --json` через инлайн-гейт с allow-list лицензий. Пакета `license-checker` в дереве нет и не было | лицензию вне списка, а также неизвестную и отсутствующую — блокирует сборку |
 | CI-шаг `check:forbidden-packages` (список из п. 11) | `@schedule-x/*` premium, FullCalendar Premium, Elasticsearch-клиенты |
-| `pnpm audit` + `osv-scanner` в CI | известные CVE |
-| CI-шаг `check:build-scripts` (сверка `onlyBuiltDependencies` с фактическими `postinstall`) | новый install-скрипт без allow-list |
+| Шаг «Audit dependencies» в `.github/workflows/license-check.yml`: `pnpm audit --json` через инлайн-гейт (high и critical блокируют; исключения датированы и сами истекают). `osv-scanner` в проект не заводили | известные CVE |
+| Шаг «Check the build-script allow-list» в `.github/workflows/license-check.yml` | пустой `pnpm.onlyBuiltDependencies` и `"*"` в нём — то есть allow-list, снова разрешающий каждый `postinstall`. **Сверки списка с фактическими `postinstall` дерева он не делает**: новый install-скрипт ловится только тем, что pnpm откажется его запускать |
 | `pnpm install --frozen-lockfile` | разъехавшийся lockfile |
 | `size-limit` (отдельная строка для крипто-чанка) | рост бандла от новой зависимости |
 | Скилл `/deps` | периодический проход: outdated, аудит, supply-chain, план апгрейда patch→minor→major |
