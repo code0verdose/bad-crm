@@ -25,7 +25,15 @@
   --bcl-border-strong: #333a50;
   --bcl-text: #e9ecf5;
   --bcl-text-muted: #99a1ba;
-  --bcl-text-faint: #656d85;
+  /* Raised from #656d85 on 2026-08-16: that value measured 3.89:1 on --bcl-bg and 3.69:1 on
+     --bcl-surface, under the 4.5:1 WCAG 2.1 AA asks for text below 24px. It is used in fifty-odd
+     declarations and always at --bcl-text-xs (13px), so the 3:1 large-text exemption applied
+     nowhere — including the inactive half of the language switch and the disclaimer saying this is
+     a prototype. The value is set by the *lightest* surface it can land on, --bcl-surface-raised,
+     where it measures 4.73:1; on the page background it has 5.45:1. Held by
+     test/theme/tokens.test.ts, which reads this file and checks every text colour against every
+     surface rather than against one. */
+  --bcl-text-faint: #7c85a0;
 
   /* The accent triad. `accent` carries interactive surfaces, the other two exist to make gradients
      and glows read as one family rather than as three unrelated hues. */
