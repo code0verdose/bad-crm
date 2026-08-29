@@ -208,6 +208,7 @@ describe('POST /api/v1/invitations/{id}/resend', () => {
     const resent = await request(test.server())
       .post(`/api/v1/invitations/${id}/resend`)
       .set('Authorization', `Bearer ${token}`)
+      .set('Idempotency-Key', IDEMPOTENCY_KEY)
       .expect(200);
 
     expect((resent.body as { inviteUrl: string }).inviteUrl).not.toBe(inviteUrl);
@@ -252,6 +253,7 @@ describe('POST /api/v1/invitations/{id}/resend', () => {
     const response = await request(test.server())
       .post(`/api/v1/invitations/${id}/resend`)
       .set('Authorization', `Bearer ${token}`)
+      .set('Idempotency-Key', IDEMPOTENCY_KEY)
       .expect(403);
 
     expect((response.body as { code: string }).code).toBe('invitation_forbidden');
@@ -269,6 +271,7 @@ describe('POST /api/v1/invitations/{id}/resend', () => {
     const response = await request(test.server())
       .post(`/api/v1/invitations/${id}/resend`)
       .set('Authorization', `Bearer ${token}`)
+      .set('Idempotency-Key', IDEMPOTENCY_KEY)
       .expect(409);
 
     // A state conflict, not a refusal of the caller: nobody holds a capability that would make
@@ -282,6 +285,7 @@ describe('POST /api/v1/invitations/{id}/resend', () => {
     const response = await request(test.server())
       .post(`/api/v1/invitations/${ROLE_ID}/resend`)
       .set('Authorization', `Bearer ${token}`)
+      .set('Idempotency-Key', IDEMPOTENCY_KEY)
       .expect(404);
 
     expect((response.body as { code: string }).code).toBe('invitation_not_found');

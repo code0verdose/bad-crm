@@ -1106,6 +1106,16 @@ export interface paths {
          *
          *     Shares the creation budget of 20 per 10 minutes: it mints a token and sends a letter, so a
          *     separate counter would be a way around the first one.
+         *
+         *     **`Idempotency-Key` is required, for the same reason as on creation (added 2026-08-16).**
+         *     A retry after a dropped connection would mint a second token — invalidating the link the
+         *     first response already handed over — and deliver a second letter to somebody who is not
+         *     expecting one. The header was missing here while the creation it repeats has always had it;
+         *     `packages/server/test/contract/idempotency-parity.test.ts` now holds the two in step.
+         *
+         *     Refused **403 `invitation_forbidden`** when the invitation carries a role the caller could
+         *     not hand out themselves: a resend is bounded by the same subset rule as a creation, since
+         *     the person reopening the door is not the person who opened it.
          */
         post: operations["resendInvitation"];
         delete?: never;
@@ -4791,7 +4801,40 @@ export interface operations {
     resendInvitation: {
         parameters: {
             query?: never;
-            header?: never;
+            header: {
+                /**
+                 * @description Client-generated key, mandatory on every unsafe operation that creates an entity, sends
+                 *     mail or spends money or tokens.
+                 *
+                 *     **Today the server only requires the key; it does not yet store or replay a response.** The
+                 *     table keyed by `(key, request hash)` is a cross-cutting mechanism that has not been built —
+                 *     the open half is recorded in STORY-006-01. What the requirement buys now is that a client
+                 *     which never learned to send the header cannot be made idempotent later without a breaking
+                 *     change; what it does not buy is the convenience of getting the original `201` back instead
+                 *     of a `409` on retry. Where a lost response is genuinely ambiguous rather than merely
+                 *     inconvenient, the operation says so in its own description.
+                 *
+                 *     When the store lands: a replay carrying the same request hash will return the stored
+                 *     response, and the same key with a different hash will be refused with 409
+                 *     `idempotency_key_reuse`.
+                 *
+                 *     Declaring the parameter is not a claim that the operation will replay: the client attaches a
+                 *     key to every unsafe request, and nearly every unsafe operation therefore requires one. What
+                 *     the store will change differs per operation, and each says so in its own description:
+                 *
+                 *     * operations that create something, send mail or spend tokens are the ones a replay is *for*
+                 *       — today a lost response leaves the caller unable to tell «it did not happen» from «it
+                 *       happened and the answer was lost»;
+                 *     * operations idempotent by construction (`assignRole`, `deactivateUser`, `reactivateUser`)
+                 *       require the key but gain nothing from a stored response — asking twice for a state that is
+                 *       already there answers the same way. The key is required anyway, so a client written today
+                 *       keeps working when the store lands;
+                 *     * `POST /auth/login` and `POST /auth/refresh` will **never** replay: a stored response *is* a
+                 *       credential. Replaying it would hand back tokens that have since been rotated or revoked,
+                 *       and would let one key slip a repeat past the failed-attempt counter the lockout depends on.
+                 */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
             path: {
                 /**
                  * @description Identifier of an invitation of the caller's organization. Another organization's id is 404,

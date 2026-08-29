@@ -190,12 +190,15 @@ export const fetchInvitations = async (signal: AbortSignal): Promise<readonly In
  *
  * No `signal`: it is issued by confirming a dialog, not by a changing query key.
  */
-export const resendInvitation = async (invitationId: string): Promise<MintedInvitation> =>
-  unwrapApiResult(
+export const resendInvitation = async (invitationId: string): Promise<MintedInvitation> => {
+  const { params } = idempotencyParams();
+
+  return unwrapApiResult(
     await apiClient.POST('/invitations/{invitationId}/resend', {
-      params: { path: { invitationId } },
+      params: { ...params, path: { invitationId } },
     }),
   );
+};
 
 /**
  * Closes an invitation early. The row goes, so the link stops working rather than being filtered

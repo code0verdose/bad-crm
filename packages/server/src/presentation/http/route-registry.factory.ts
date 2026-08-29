@@ -672,7 +672,11 @@ export const createRouteRegistry = (
     {
       method: 'post',
       path: `${API_PREFIX}/invitations/:invitationId/resend`,
-      handlers: [invitationIdValidator.handler, invitations.resend],
+      // Idempotent by key like the creation it repeats: a resend mints a fresh token, kills the
+      // previous one in the same statement and sends a letter. A retry after a dropped connection
+      // would invalidate the link the first response already handed over, and deliver a second
+      // letter to somebody who is not expecting one (`rules/api-contract.mdc` §10).
+      handlers: [requireIdempotencyKey(), invitationIdValidator.handler, invitations.resend],
       permission: 'invitation:resend',
       // Its own capability, not a share of `invitation:create`: re-issuing decides nothing about who
       // gets what, and an accepted invitation is refused inside the use-case, which is the only
