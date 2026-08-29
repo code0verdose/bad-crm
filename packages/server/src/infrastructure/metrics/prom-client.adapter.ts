@@ -68,6 +68,12 @@ export const createPromMetrics = (): MetricsPort => {
     registers: [registry],
   });
 
+  const auditUnscoped = new Counter({
+    name: 'audit_unscoped_total',
+    help: 'Privileged actions recorded as a log line because they have no organization to be filed under.',
+    registers: [registry],
+  });
+
   return {
     observeHttpRequest: ({
       method,
@@ -86,6 +92,9 @@ export const createPromMetrics = (): MetricsPort => {
     },
     incrementAuditWriteFailed: (): void => {
       auditWriteFailed.inc();
+    },
+    incrementAuditUnscoped: (): void => {
+      auditUnscoped.inc();
     },
     render: () => registry.metrics(),
     contentType: registry.contentType,

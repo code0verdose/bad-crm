@@ -137,7 +137,15 @@ describe('a payload carrying something it should not', () => {
     const unscoped = vi.fn<RecordFn>().mockResolvedValue(undefined);
     const logger = loggerFor(unscoped);
 
-    await logger.record(event({ before: { password: 'hunter2' } }));
+    // One of the actions that may be recorded without an organization, because those are the only
+    // ones the log sink still receives (`unscoped-audit-actions.constant.ts`).
+    await logger.record(
+      event({
+        action: 'rls.bypassed',
+        actor: { userId: undefined, organizationId: undefined, ipAddress: undefined },
+        before: { password: 'hunter2' },
+      }),
+    );
 
     expect(unscoped.mock.calls[0]?.[0].before).toStrictEqual({
       password: '[redacted]',
@@ -146,56 +154,8 @@ describe('a payload carrying something it should not', () => {
   });
 });
 
-describe('an event that cannot be a row', () => {
-  it('goes to the log when there is no tenant scope at all', async () => {
-    const create = vi.fn();
-    const unscoped = vi.fn<RecordFn>().mockResolvedValue(undefined);
-    const logger = loggerFor(unscoped);
-
-    await logger.record(event());
-
-    expect(create).not.toHaveBeenCalled();
-    expect(unscoped).toHaveBeenCalledTimes(1);
-  });
-
-  it('goes to the log when the event belongs to no organization', async () => {
-    const create = vi.fn();
-    const unscoped = vi.fn<RecordFn>().mockResolvedValue(undefined);
-    const logger = loggerFor(unscoped);
-
-    await withTenant(fakeClient(create), { organizationId: ORG, userId: null }, async () => {
-      await logger.record(
-        event({ actor: { userId: undefined, organizationId: undefined, ipAddress: undefined } }),
-      );
-    });
-
-    expect(create).not.toHaveBeenCalled();
-    expect(unscoped).toHaveBeenCalledTimes(1);
-  });
-
-  /**
-   * The branch that matters most, and the one a reasonable implementation gets wrong: filing the row
-   * under the open scope. An event of organization B in organization A's trail is worse than a
-   * missing one — a reader of A cannot tell it does not belong to them.
-   */
-  it('refuses an event whose organization disagrees with the open scope', async () => {
-    const create = vi.fn();
-    const unscoped = vi.fn<RecordFn>().mockResolvedValue(undefined);
-    const logger = loggerFor(unscoped);
-
-    await withTenant(fakeClient(create), { organizationId: ORG, userId: null }, async () => {
-      await logger.record(
-        event({
-          actor: {
-            userId: undefined,
-            organizationId: '00000000-0000-4000-8000-000000000c02',
-            ipAddress: undefined,
-          },
-        }),
-      );
-    });
-
-    expect(create).not.toHaveBeenCalled();
-    expect(unscoped).toHaveBeenCalledTimes(1);
-  });
-});
+/**
+ * Which events may leave the table at all — and which are refused instead of quietly logged — lives
+ * in `audit-unscoped-guard.test.ts`, beside the list that decides it. It is one behaviour, so it has
+ * one home; splitting it across two files is how the second copy drifts.
+ */

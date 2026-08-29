@@ -58,6 +58,24 @@ export interface MetricsPort {
    * and looked like every other failed request.
    */
   incrementAuditWriteFailed(): void;
+  /**
+   * One privileged action recorded as a log line instead of a row in the trail.
+   *
+   * `audit_logs.organization_id` is `NOT NULL`, so an action that has no organization by nature — a
+   * path that steps around row level security — cannot be a row and goes to the log, which is
+   * rotated, unindexed and outside the append-only guarantees of the table. That path is deliberate
+   * and short (`application/platform/audit/unscoped-audit-actions.constant.ts`); every other event
+   * that cannot be a row is refused instead, and refusals are the other counter's business.
+   *
+   * Deliberate is not the same as invisible, which is the whole reason this exists: an installation
+   * whose trail moved into the log had no number saying so, and «no number» is how a hole in an
+   * audit trail stays unnoticed until somebody goes looking for an entry that was never a row.
+   *
+   * Unlabelled, for the reason `incrementAuditWriteFailed` is: the tempting label is the action, the
+   * catalogue grows with every epic, and the question here — «is anything bypassing the table» —
+   * needs none of them. Which event it was is in the log line itself.
+   */
+  incrementAuditUnscoped(): void;
   /** The exposition format, rendered on demand. */
   render(): Promise<string>;
   readonly contentType: string;

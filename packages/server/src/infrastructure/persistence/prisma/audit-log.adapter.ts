@@ -2,6 +2,8 @@ import { SharedAudit } from '@bad-crm/shared';
 import { Prisma } from '@prisma/client';
 
 import { redactAuditPayload } from '@/application/platform/audit/audit-redaction.util.js';
+import { AuditTrailUnscopedError } from '@/application/platform/audit/audit-trail.errors.js';
+import { AUDIT_ACTIONS_WITHOUT_ORGANIZATION } from '@/application/platform/audit/unscoped-audit-actions.constant.js';
 import {
   type AuditEvent,
   type AuditLoggerPort,
@@ -14,12 +16,13 @@ export interface PrismaAuditLoggerDependencies {
   readonly addressHasher: AddressHasherPort;
   readonly requestContext: RequestContextPort;
   /**
-   * Where an event goes when it cannot be a row.
+   * Where an event goes when it has no organization to be filed under.
    *
-   * Not a fallback for failures — a failure here must not be swallowed — but the sink for the events
-   * the table cannot hold: `organization_id` is `NOT NULL`, and some privileged actions happen
-   * before any organization is known (a refused sign-in, a maintenance bypass run from a script).
-   * They are still part of the trail, and the log line is where an installation reads them.
+   * Not a fallback for failures — a failure here must not be swallowed — and not a fallback for
+   * callers either: only the actions on `AUDIT_ACTIONS_WITHOUT_ORGANIZATION` reach it, and
+   * everything else that cannot be a row is refused instead. `organization_id` is `NOT NULL`, so a
+   * maintenance path that steps around row level security has nowhere to be filed; it is still part
+   * of the trail, and the log line is where an installation reads it.
    */
   readonly unscoped: AuditLoggerPort;
 }
@@ -66,17 +69,37 @@ export class PrismaAuditLogger implements AuditLoggerPort {
     const store = currentTenant();
     const organizationId = safe.actor.organizationId;
 
-    // No scope, no organization, or an event about a different one than the scope: none of the three
-    // can be a row in a tenant table, and forcing one would either fail the caller's transaction or
-    // file the entry under the wrong organization.
-    if (
-      store === undefined ||
-      organizationId === undefined ||
-      store.ctx.organizationId !== organizationId
-    ) {
+    // No organization at all. Only the listed actions have none by nature; for every other action
+    // this is a caller that lost its scope, and the log line it used to get was a hole in the trail
+    // nobody was told about (`unscoped-audit-actions.constant.ts`).
+    if (organizationId === undefined) {
+      if (!AUDIT_ACTIONS_WITHOUT_ORGANIZATION.has(safe.action)) {
+        throw new AuditTrailUnscopedError(safe.action, 'it names no organization');
+      }
+
       await this.dependencies.unscoped.record(safe);
 
       return;
+    }
+
+    // The event knows its organization and there is no transaction to join. Writing it as a log line
+    // would let the caller succeed while its privileged action went unrecorded, which is precisely
+    // what the port promises does not happen.
+    if (store === undefined) {
+      throw new AuditTrailUnscopedError(
+        safe.action,
+        `it names organization ${organizationId} but no tenant scope is open`,
+      );
+    }
+
+    // A disagreement is a bug in the caller for every action, the listed ones included: the scope is
+    // the authority on the tenant. Filing under the open scope would put one organization's event
+    // into another's trail, and a reader of the second cannot tell.
+    if (store.ctx.organizationId !== organizationId) {
+      throw new AuditTrailUnscopedError(
+        safe.action,
+        `it names organization ${organizationId} while the open scope is ${store.ctx.organizationId}`,
+      );
     }
 
     await store.tx.auditLog.create({

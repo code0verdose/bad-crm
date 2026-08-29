@@ -137,6 +137,7 @@ await this.audit.record({ ... });   // вне withTransaction
 | `auth_rate_limited_total` | counter | `endpoint` | EPIC-009 — есть |
 | `permission_denied_total` | counter | `reason` | STORY-016-02 — есть счётчик; аудит отказов и агрегация серий не сделаны |
 | `audit_write_failed_total` | counter | — | STORY-016-02 — есть счётчик; деградация `info`-событий не сделана, сбой по-прежнему роняет транзакцию |
+| `audit_unscoped_total` | counter | — | есть — привилегированное действие, записанное строкой лога вместо строки таблицы. Путь закрыт списком `application/platform/audit/unscoped-audit-actions.constant.ts`; всё, чего в списке нет, отвергается и считается счётчиком выше |
 | `db_pool_active` / `db_pool_idle` | gauge | — | требует preview-фичу `metrics` в `prisma/schema.prisma`; правка схемы со своим гейтом (`db-reviewer`) |
 | `bullmq_jobs_total` | counter | `queue`, `status` | эпик очередей |
 | `bullmq_job_duration_seconds` | histogram | `queue` | эпик очередей |

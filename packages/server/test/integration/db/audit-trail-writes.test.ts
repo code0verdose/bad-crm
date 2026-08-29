@@ -157,38 +157,58 @@ describe('an audit entry and the change that caused it', () => {
     expect(entries.map((entry) => entry['request_id'])).toEqual(['surviving-request']);
   });
 
-  it('sends an event with no organization to the log instead of failing the caller', async () => {
-    // A refused sign-in has no tenant yet, and `organization_id` is NOT NULL. Answering with an
-    // error would make the trail able to fail the operation it is describing.
+  it('sends an event of an action that has no organization to the log', async () => {
+    // `rls.bypassed` is a path that steps around row level security, so it has no tenant by
+    // definition, and `organization_id` is NOT NULL. It is one of the few actions allowed to be a
+    // log line instead of a row (`unscoped-audit-actions.constant.ts`).
     await audit.record({
-      action: 'session.signed_in',
+      action: 'rls.bypassed',
       actor: { userId: undefined, organizationId: undefined, ipAddress: undefined },
-      target: { type: 'USER', id: undefined },
+      target: { type: 'ORGANIZATION', id: undefined },
       requestId: 'no-tenant',
     });
 
-    expect(unscopedEvents).toContain('session.signed_in');
+    expect(unscopedEvents).toContain('rls.bypassed');
+    expect(await entriesOf('rls.bypassed')).toEqual([]);
+  });
+
+  it('refuses a tenant-bound action that arrives without an organization', async () => {
+    // A sign-in always resolved an account, so it always has an organization; arriving here without
+    // one means the caller lost its scope. That used to become a log line and a success — the trail
+    // silently turning into best effort at the moment it mattered.
+    await expect(
+      audit.record({
+        action: 'session.signed_in',
+        actor: { userId: undefined, organizationId: undefined, ipAddress: undefined },
+        target: { type: 'USER', id: undefined },
+        requestId: 'no-tenant',
+      }),
+    ).rejects.toThrow(/session\.signed_in/);
+
+    expect(unscopedEvents).not.toContain('session.signed_in');
     expect(await entriesOf('session.signed_in')).toEqual([]);
   });
 
   it('does not write an entry of one organization into the scope of another', async () => {
     // The scope is the authority on the tenant, and a mismatch is a bug in the caller. Filing the
     // row under the scope would put an event of organization B into organization A's trail — worse
-    // than not recording it, because a reader of A cannot tell.
+    // than not recording it, because a reader of A cannot tell. It is refused rather than logged:
+    // the caller has to learn that its privileged action was not recorded.
     await withTenant(prisma, { organizationId: ORG, userId: null }, async () => {
-      await audit.record({
-        action: 'rls.bypassed',
-        actor: {
-          userId: undefined,
-          organizationId: '00000000-0000-4000-8000-0000000000b2',
-          ipAddress: undefined,
-        },
-        target: { type: 'ORGANIZATION', id: undefined },
-        requestId: 'mismatched',
-      });
+      await expect(
+        audit.record({
+          action: 'rls.bypassed',
+          actor: {
+            userId: undefined,
+            organizationId: '00000000-0000-4000-8000-0000000000b2',
+            ipAddress: undefined,
+          },
+          target: { type: 'ORGANIZATION', id: undefined },
+          requestId: 'mismatched',
+        }),
+      ).rejects.toThrow(/rls\.bypassed/);
     });
 
-    expect(unscopedEvents).toContain('rls.bypassed');
     expect(await entriesOf('rls.bypassed')).toEqual([]);
   });
 });

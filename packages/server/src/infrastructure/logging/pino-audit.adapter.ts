@@ -27,7 +27,19 @@ export const pinoAuditLogger = (logger: LoggerPort, clock: ClockPort): AuditLogg
         action: event.action,
         actorUserId: event.actor.userId,
         actorOrganizationId: event.actor.organizationId,
-        actorIpAddress: event.actor.ipAddress,
+        /*
+          No address, in any form.
+
+          The table hashes it (`ipHash`, HMAC under `APP_ENCRYPTION_KEY`) exactly so an incident can
+          be correlated without recording where somebody was; this channel used to write it raw,
+          which made the same fact recoverable from a rotating log file and not from the column it
+          was hashed for. `session-client.util.ts` states the invariant plainly: the address
+          «appears in no log and in no response».
+
+          Dropped rather than hashed: this sink is reached only by actions that have no organization
+          by definition (`unscoped-audit-actions.constant.ts`), the hasher is a port this adapter
+          does not hold, and an address here correlates nothing that the row correlates better.
+        */
         targetType: event.target.type,
         targetId: event.target.id,
         occurredAt: clock.now().toISOString(),

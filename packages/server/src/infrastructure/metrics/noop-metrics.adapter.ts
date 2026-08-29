@@ -13,6 +13,7 @@ export const noopMetrics: MetricsPort = {
   incrementAuthRateLimited: () => undefined,
   incrementPermissionDenied: () => undefined,
   incrementAuditWriteFailed: () => undefined,
+  incrementAuditUnscoped: () => undefined,
   render: () => Promise.resolve(''),
   contentType: 'text/plain; charset=utf-8',
 };

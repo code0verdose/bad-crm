@@ -52,6 +52,14 @@ export interface AuditEvent {
  * **`record` may reject, and the caller decides what that means.** For a privileged action the
  * decision is fail-closed — an action nobody could write down did not happen — and that belongs to
  * the use-case that knows whether it is inside a transaction, not to the adapter.
+ *
+ * **Recording outside the tenant scope of the change is one of the ways it rejects.** The row lives
+ * in a tenant table, so an event that names no organization, or one the open scope disagrees with,
+ * cannot be filed — and answering that with a log line would hand the caller a success while its
+ * privileged action went unrecorded. Only the actions on `AUDIT_ACTIONS_WITHOUT_ORGANIZATION`
+ * (`application/platform/audit/unscoped-audit-actions.constant.ts`) have no organization by nature
+ * and take that path; for everything else, record inside the `withTenant` block of the change being
+ * described, which is where `rules/observability.mdc` §15 asks for it anyway.
  */
 export interface AuditLoggerPort {
   record(event: AuditEvent): Promise<void>;

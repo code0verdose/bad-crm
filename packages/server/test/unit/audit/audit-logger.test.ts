@@ -49,6 +49,34 @@ describe('the audit trail as log lines', () => {
   });
 
   /**
+   * The caller's address does not reach the log, in any form.
+   *
+   * The table hashes it — `ipHash`, HMAC under `APP_ENCRYPTION_KEY` — precisely so the trail can
+   * correlate an incident without storing where somebody was. This channel wrote
+   * `actorIpAddress: event.actor.ipAddress` **raw**, so the same fact was recoverable from the log
+   * and not from the table it was hashed for. `session-client.util.ts` states the invariant in as
+   * many words: the address «appears in no log and in no response».
+   *
+   * Dropped rather than hashed here. This sink is now reached only by actions that have no
+   * organization by definition (`unscoped-audit-actions.constant.ts`), the hasher is a port this
+   * adapter does not hold, and an address in a rotating log file correlates nothing that the row in
+   * `audit_logs` does not correlate better.
+   */
+  it('never writes the address, in any form', async () => {
+    const { logger, lines } = recordingLogger();
+
+    await pinoAuditLogger(logger, fixedClock).record({
+      action: 'session.signed_in',
+      actor: { userId: 'user-1', organizationId: 'org-1', ipAddress: '203.0.113.4' },
+      target: { type: 'SESSION', id: 'session-9' },
+      requestId: 'req-3',
+    });
+
+    expect(lines[0]?.fields).not.toHaveProperty('actorIpAddress');
+    expect(JSON.stringify(lines[0])).not.toContain('203.0.113.4');
+  });
+
+  /**
    * The message is a constant so a search groups the trail; the event travels as fields. An event
    * interpolated into the message would also put `before`/`after` into a format string.
    */

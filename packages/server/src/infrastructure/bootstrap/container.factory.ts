@@ -35,6 +35,7 @@ import { APP_INFO } from '@/app-info.constant.js';
 import { AsyncRequestContextAdapter } from '@/infrastructure/logging/async-request-context.adapter.js';
 import { createHttpMetrics } from '@/infrastructure/metrics/http-metrics.middleware.js';
 import { countedAuditLogger } from '@/infrastructure/metrics/counted-audit-logger.adapter.js';
+import { countedUnscopedAuditLogger } from '@/infrastructure/metrics/counted-unscoped-audit-logger.adapter.js';
 import { noopMetrics } from '@/infrastructure/metrics/noop-metrics.adapter.js';
 import { RecordClientErrorUseCase } from '@/application/platform/use-cases/record-client-error.use-case.js';
 import { pinoAuditLogger } from '@/infrastructure/logging/pino-audit.adapter.js';
@@ -265,23 +266,26 @@ export const buildContainer = (input: ContainerInput): AppContainer => {
   /**
    * The audit trail: a row in `audit_logs`, written inside the transaction that caused it.
    *
-   * The log line did not go away — it is where the events that cannot be rows are recorded, and
-   * there are two kinds. `organization_id` is `NOT NULL`, so an action taken before any organization
-   * is known has nowhere to be filed; and an action taken outside a tenant scope has no transaction
-   * to join. Both are still part of the trail, and both are visibly *not* rows rather than quietly
-   * missing.
+   * The log line did not go away, but it is no longer where an event ends up by circumstance.
+   * `organization_id` is `NOT NULL`, so an action that has no organization **by nature** — a path
+   * that steps around row level security — has nowhere to be filed and goes to the log; the list of
+   * which those are is closed (`application/platform/audit/unscoped-audit-actions.constant.ts`), and
+   * everything else that cannot be a row is refused. It used to be the other way round: any caller
+   * that had drifted out of the ambient tenant scope had its privileged action quietly turned into a
+   * rotated log line and was told nothing, which is the failure the trail exists to not have.
    *
-   * Wrapped in `countedAuditLogger` — outermost, so it also sees a failure of the unscoped sink
-   * underneath — so that a failed write is visible as a series rather than only as the request it
-   * took down with it. The decorator counts and **rethrows**: the fail-closed contract of
-   * `audit-logger.port.ts` is unchanged, and it has to stay that way. A hole in the trail that costs
-   * nothing but a counter is a worse outcome than the failed request it would replace.
+   * Two decorators, counting two different things. `countedAuditLogger` is outermost — so it also
+   * sees a failure of the sink underneath — and counts what could **not** be written; it counts and
+   * **rethrows**, so the fail-closed contract of `audit-logger.port.ts` is unchanged and has to stay
+   * that way. `countedUnscopedAuditLogger` wraps the sink and counts what legitimately took the log
+   * path, so that «the trail is partly in the log» is a series an operator can alert on instead of
+   * something nobody can see.
    */
   const audit = countedAuditLogger(
     new PrismaAuditLogger({
       addressHasher: new HmacAddressHasher(input.env.APP_ENCRYPTION_KEY),
       requestContext,
-      unscoped: pinoAuditLogger(logger, clock),
+      unscoped: countedUnscopedAuditLogger(pinoAuditLogger(logger, clock), metrics),
     }),
     metrics,
   );

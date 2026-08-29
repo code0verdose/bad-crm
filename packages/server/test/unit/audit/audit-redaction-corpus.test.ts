@@ -238,7 +238,17 @@ describe('a call site that leaks', () => {
  * sink, so both channels are covered by one call — but only for as long as the pino adapter is
  * reached *through* it. Composed as an `AuditLoggerPort` in its own right, it would be a second door
  * into the trail with no guard on it, and nothing else in the repository would notice.
+ *
+ * Decorators between the slot and the adapter are allowed, and the pattern says so: the sink is
+ * wrapped in `countedUnscopedAuditLogger` to give the log path a number. What the pattern still
+ * refuses is the thing that matters — `pinoAuditLogger(...)` reachable anywhere other than from the
+ * `unscoped:` slot, decorated or not.
  */
+/** A line that reaches the log sink from somewhere other than the guarded `unscoped:` slot. */
+const escapesTheGuard = (line: string): boolean =>
+  line.includes('pinoAuditLogger(') &&
+  !/unscoped:\s*(?:[A-Za-z_$][\w$]*\()*pinoAuditLogger\(/.test(line);
+
 describe('the way into the trail', () => {
   it('composes the log sink only as the unscoped half of the row writer', () => {
     const composed = sourceFiles(SRC)
@@ -247,12 +257,30 @@ describe('the way into the trail', () => {
         readFileSync(file, 'utf8')
           .split('\n')
           .flatMap((line) =>
-            line.includes('pinoAuditLogger(') && !/unscoped:\s*pinoAuditLogger\(/.test(line)
-              ? [`${file.slice(SRC.length + 1)}: ${line.trim()}`]
-              : [],
+            escapesTheGuard(line) ? [`${file.slice(SRC.length + 1)}: ${line.trim()}`] : [],
           ),
       );
 
     expect(composed).toStrictEqual([]);
+  });
+
+  /**
+   * CONTROL for the pattern itself. It was widened to let a decorator sit between the slot and the
+   * adapter; a pattern widened once is a pattern that can be widened into uselessness, and a scan
+   * over a clean tree passes either way. These two lines say what it still refuses.
+   */
+  it.each([
+    'const audit = pinoAuditLogger(logger, clock);',
+    'return { audit: pinoAuditLogger(logger, clock) };',
+    'unscopedish: pinoAuditLogger(logger, clock),',
+  ])('CONTROL: still refuses `%s`', (line) => {
+    expect(escapesTheGuard(line)).toBe(true);
+  });
+
+  it.each([
+    '      unscoped: pinoAuditLogger(logger, clock),',
+    '      unscoped: countedUnscopedAuditLogger(pinoAuditLogger(logger, clock), metrics),',
+  ])('CONTROL: allows `%s`', (line) => {
+    expect(escapesTheGuard(line)).toBe(false);
   });
 });
