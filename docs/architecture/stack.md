@@ -23,7 +23,7 @@ updated: 2026-07-26
 
 | Слой | Технология | Версия | Зачем | ADR |
 |---|---|---|---|---|
-| Монорепо | pnpm workspaces + turborepo | pnpm 9+, turbo 2+ | Общие типы и OpenAPI между client/server без publish; кеш задач в CI | [ADR-0001](./adr/0001-monorepo-pnpm-turborepo.md) |
+| Монорепо | pnpm workspaces + turborepo | pnpm `>=10 <11`, turbo 2+ | Общие типы и OpenAPI между client/server без publish; кеш задач в CI | [ADR-0001](./adr/0001-monorepo-pnpm-turborepo.md) |
 | Язык | TypeScript strict | **5.9.3** (точный пин, одна версия на весь воркспейс) | Один язык на весь стек, доменные инварианты в типах; TS 7 не берём, пока `typescript-eslint` не поддержит его API — иначе type-aware правила молча отключаются | [ADR-0001](./adr/0001-monorepo-pnpm-turborepo.md), [ADR-0022](./adr/0022-typescript-version-policy.md) |
 | Runtime | Node.js LTS | 22.x | LTS до 2027, native fetch/test runner/WebCrypto | — |
 | HTTP-фреймворк | Express | 5.x | Текущая рекомендованная ветка (5.2+): та же предсказуемость и тот же объём готовых middleware, плюс встроенная обработка async-ошибок (отклонённый промис сам доходит до error-handler); вся структура всё равно в use-cases. ADR-0002 охватывает и выбор ветки Express 5.x | [ADR-0002](./adr/0002-hexagonal-backend-express-prisma.md) |
@@ -36,7 +36,7 @@ updated: 2026-07-26
 | Очереди | BullMQ + ioredis | 5.x | Ретраи, DLQ, delayed/repeatable jobs поверх уже нужного Redis | [ADR-0021](./adr/0021-transactional-outbox.md) |
 | Кеш/pub-sub | Redis | **8.x** | Сессии-ревокации, rate-limit, backplane для socket.io, брокер BullMQ. Именно 8.x: 7.4 распространяется только под RSALv2/SSPLv1 (запрещены), AGPLv3 появился в Redis 8.0 — см. [`../legal/licensing.md`](../legal/licensing.md) §4 | [ADR-0010](./adr/0010-realtime-socketio-redis-adapter.md), [ADR-0021](./adr/0021-transactional-outbox.md) |
 | Хеш паролей | `@node-rs/argon2` | 2.x | argon2id — рекомендация OWASP; Rust-биндинг быстрее `node-argon2` и не требует node-gyp | — |
-| Токены | `jsonwebtoken` + `otplib` | 9.x / 12.x | Короткий JWT access + rotating refresh в cookie; TOTP как второй фактор | — |
+| Токены | `jose` + `otplib` | 6.x / 13.x | Короткий JWT access + rotating refresh в cookie; TOTP как второй фактор | — |
 | HTTP-безопасность | helmet, cors, cookie-parser, `rate-limiter-flexible` | latest | CSP/HSTS, строгий CORS, распределённый лимит на Redis | — |
 | Файлы | `@aws-sdk/client-s3` + `s3-request-presigner` | 3.x | S3-совместимость: MinIO локально, любой S3 в проде; presigned upload минует Node | [ADR-0015](./adr/0015-s3-file-storage-presigned-urls.md) |
 | Поиск | Meilisearch | 1.x | Мгновенный typo-tolerant поиск, MIT, лёгкий по RAM; **опционален** (профиль `minimal` → `postgres-fts.adapter.ts`) | [ADR-0011](./adr/0011-meilisearch-permission-aware-search.md) |
@@ -66,7 +66,7 @@ self-host инстансе), Kafka (несоразмерно масштабу; B
 
 | Что | Требование | Как фиксируется |
 |---|---|---|
-| Node.js | 22 LTS для разработки и CI; `engines` — `>=22.22.1` **без верхней границы** | `.nvmrc` (`22.22.1`) — то, на чём работают контрибьютор и CI. Флор задан хуками (`lint-staged@17` требует `node >=22.22.1`, `@commitlint/cli@21` — `>=22.12.0`). Потолка нет намеренно: `<23` был написан руками, не измерен и **выключил обновления зависимостей** — Dependabot запускает npm-апдейтер на Node 24, не смог удовлетворить диапазон и ответил `tool_version_not_supported` по каждому пакету. Набор прогнан на Node 24 целиком и прошёл; падала только сама проверка диапазона. Утверждение проверяется джобой `compat` в `ci.yml` (push в `main` и еженедельно) |
+| Node.js | 22 LTS для разработки и CI; `engines` — `>=22.22.2` **без верхней границы** | `.nvmrc` (`22.22.2`) — то, на чём работают контрибьютор и CI. Флор задан хуками (`lint-staged@17` требует `node >=22.22.2`, `@commitlint/cli@21` — `>=22.12.0`). Потолка нет намеренно: `<23` был написан руками, не измерен и **выключил обновления зависимостей** — Dependabot запускает npm-апдейтер на Node 24, не смог удовлетворить диапазон и ответил `tool_version_not_supported` по каждому пакету. Набор прогнан на Node 24 целиком и прошёл; падала только сама проверка диапазона. Утверждение проверяется джобой `compat` в `ci.yml` (push в `main` и еженедельно) |
 | pnpm | 10+ | `packageManager: "pnpm@10.x.x"` в корневом `package.json` (Corepack) |
 | TypeScript | 5.9.3, одна версия на весь воркспейс | точный пин в корне и в каждом пакете; проверяется `test/repo/toolchain-versions.test.ts` ([ADR-0022](./adr/0022-typescript-version-policy.md)) |
 | Docker | 24+ с Compose v2 | `pnpm docker:up` поднимает Postgres/Redis/MinIO/Meilisearch/Mailpit; голый `docker compose up -d` — только минимальный набор |
@@ -517,9 +517,9 @@ Prisma выдаёт соединение из пула, и `SET` вне тран
 import { AsyncLocalStorage } from 'node:async_hooks';
 
 export interface TenantContext {
-  organizationId: string;
-  userId: string | null;
-  bypassRls?: boolean;           // только для миграций/системных job'ов, логируется
+  readonly organizationId: string;
+  /** `null` для пути без действующего пользователя: регистрация, джоб, миграция. */
+  readonly userId: string | null;
 }
 
 const als = new AsyncLocalStorage<{ ctx: TenantContext; tx: Prisma.TransactionClient }>();
@@ -558,8 +558,23 @@ export function guardedClient(base: PrismaClient): PrismaClient {
 ```
 
 Приложение подключается к БД под ролью **без** `BYPASSRLS` — иначе политики молча не применяются.
-Миграции и seed идут под отдельной ролью-владельцем. Системные job'ы, которым нужен обход
-(например, глобальные rollup'ы), используют явный `bypassRls: true` и пишут запись в audit log.
+Миграции и seed идут под отдельной ролью-владельцем.
+
+> **Поля `bypassRls` не существует, и здесь было написано, что существует (исправлено 2026-08-16).**
+> Прежняя редакция показывала его в интерфейсе и предписывала системным джобам передавать
+> `bypassRls: true`. Автор нового джоба, взявший этот документ как источник истины, добавил бы поле
+> и получил обход RLS из приложения — прямое нарушение инварианта №1, который тот же документ
+> объявляет неприкосновенным. `grep -rn "bypassRls" packages/server/src` не находит ничего.
+>
+> **Как обход делается на самом деле, когда он нужен.** Не полем контекста, а другой ролью и другим
+> подключением: перечисление организаций в `scripts/provision-system-roles.ts` идёт под
+> `app_migrator` внутри транзакции с `set_config('app.maintenance','on',true)`, и политика
+> `maintenance_access` пускает эту роль явно. Приложение такого подключения не имеет.
+>
+> **Что интерфейс делает вместо этого.** Вложенный `withTenant` с **той же** организацией
+> переиспользует открытую транзакцию — это норма, use-case зовёт помощник, который тоже объявляет
+> область. Вложение с **другой** организацией бросает `CrossTenantNestingError`: код читался бы как
+> исполняющийся под внутренним арендатором, а исполнялся бы под внешним.
 
 Отвергнутая альтернатива — фильтровать `organizationId` вручную в каждом запросе: один забытый
 `where` = утечка между тенантами, и никакой тест этого системно не поймает. RLS ловит забытый
@@ -1006,13 +1021,29 @@ describe.each(TENANT_SCOPED_TABLES)('RLS isolation: %s', (table) => {
 | `pnpm test:integration` | Vitest integration-проект: поднимает Testcontainers, гоняет RLS и репозитории |
 | `pnpm test:integration:local` | То же самое, но с `DOCKER_HOST` и `TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE` из текущего docker-контекста — нужен на Colima и любом rootless-демоне |
 | `pnpm test:e2e` | Playwright из `packages/e2e` поверх поднятого стека |
-| `pnpm db:migrate` | `prisma migrate dev` (dev) / `prisma migrate deploy` (prod-образ) — *планируется, EPIC-003* |
-| `pnpm db:seed` | Наполняет БД демо-данными, идемпотентно — *планируется, EPIC-003* |
-| `pnpm api:gen` | `openapi-typescript docs/api/openapi.yaml` → `api-schema.d.ts` в клиенте — *планируется, STORY-003-05* |
+| `pnpm db:migrate` | `prisma migrate dev` (dev) / `prisma migrate deploy` (prod-образ) |
+| `pnpm db:seed` | Наполняет БД демо-данными, идемпотентно |
+| `pnpm db:bootstrap` | Роли БД из `prisma/sql/00-bootstrap-roles.sql`. Идемпотентно, до миграций |
+| `pnpm db:grants` | Гранты по каталогу. Идемпотентно, **после каждой** миграции |
+| `pnpm db:provision-roles` | Системные роли всем организациям. Идемпотентно, после каждого обновления |
+| `pnpm db:seed:permissions` | Справочник прав в соответствие с кодом. Удалений не делает |
+| `pnpm db:audit-partitions` | Партиции журнала на текущий месяц и два вперёд |
+| `pnpm db:reset` | Пересоздание схемы средствами Prisma |
+| `pnpm check:rls` | Аудит каталога RLS на живой базе, включая партиции. Только читает |
+| `pnpm api:gen` | `openapi-typescript docs/api/openapi.yaml` → `api-schema.d.ts` в клиенте |
+| `pnpm i18n:check` | Паритет ключей EN/RU со сводкой в job summary |
+| `pnpm dev:landing` | Маркетинговый лендинг (`packages/landing`) |
 | `pnpm turbo run typecheck lint build test` | **CI-before-push:** полный набор проверок одной командой |
+| `pnpm coverage:baseline` | **Вторая обязательная команда перед push:** сравнение с `coverage-baseline.json`, падение при просадке больше 0.5 п.п. |
 
-Полное пересоздание локальной БД делается через `pnpm docker:reset` (сносит том), а не отдельной
-`db:reset`: `initdb.d` в любом случае отрабатывает только на пустом томе.
+> **Три строки выше были помечены «планируется» (исправлено 2026-08-16).** `db:migrate`, `db:seed` и
+> `api:gen` существуют с EPIC-003, а `api:gen` вдобавок гоняется в CI с проверкой пустого diff.
+> Отдельно там утверждалось, что `db:reset` не существует; существует. Источник истины по набору —
+> `scripts` в корневом `package.json`, его печатает
+> `node -e "console.log(Object.keys(require('./package.json').scripts).join('\n'))"`.
+
+Полное пересоздание локальной БД с нуля (со сносом тома) — `pnpm docker:reset`: `initdb.d`
+отрабатывает только на пустом томе, поэтому роли и расширения пересоздаются именно так.
 
 `pnpm api:gen` дополнительно прогоняется в CI с проверкой `git diff --exit-code` — забытая
 регенерация типов после правки спеки блокирует PR.
