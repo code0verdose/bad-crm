@@ -162,7 +162,7 @@ export default function TaskCard({ task }: Props) {                     // ❌ d
 | Кастомное правило `bad-crm/no-inline-helpers` | объявление функции в файле компонента вне самого компонента |
 | ESLint `@typescript-eslint/naming-convention` | несоответствие PascalCase/camelCase для символов |
 | `test/architecture/barrels.test.ts` | импорт мимо `index.ts` сегмента |
-| `test/architecture/unit-names.test.ts` | корень `units/*` вне списка канонических имён из `docs/product/glossary.md` — ловит `units/tasks`, `units/permissions`, `units/knowledge-base` и любую новую папку без строки в глоссарии |
+| `test/repo/unit-names.test.ts` | корень `units/*` и модель Prisma вне колонки *Unit / Entity* из `docs/product/glossary.md` — ловит `units/tasks`, `units/permissions`, `units/knowledge-base` и любую новую папку или модель без строки в глоссарии |
 | Агент `code-reviewer` | расхождение имён с `docs/product/glossary.md` |
 | Агент `fsd-architecture-linter` | множественное число и синонимы в имени unit'а при ревью дельты клиента |
 

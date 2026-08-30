@@ -244,9 +244,6 @@ const PENDING: Readonly<Record<string, string>> = {
     'The plugin would replace that pair rather than add to it.',
 
   // ── suites specified for subsystems that are not built ───────────────────────────────────────
-  'naming-and-structure.mdc · file · test/architecture/unit-names.test.ts':
-    'No suite reads `docs/product/glossary.md` yet. `test/architecture/structure.test.ts` checks the ' +
-    'shape of `units/*` but not the vocabulary of their names.',
   'outbox.mdc · file · test/architecture/no-io-in-transaction.test.ts':
     'There is no outbox and no queue in the tree; the suite is specified against the transactional ' +
     'publish path that epic introduces.',

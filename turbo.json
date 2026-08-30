@@ -211,6 +211,11 @@
         // source of truth for names — against the migrations that implement it. A registry naming an
         // index the schema does not have is what the next author plans queries around.
         "docs/architecture/data-model.md",
+        // `test/repo/unit-names.test.ts` holds the client `units/*` tree and the Prisma models
+        // against the «Unit / Entity» column of the glossary. Cached over an edited glossary, a
+        // row deleted or moved into prose is served as a pass, and the vocabulary gate reports on
+        // a document it never re-read.
+        "docs/product/glossary.md",
         // `test/repo/service-checks.test.ts` and `test/repo/preflight.test.ts` import the preflight
         // check modules directly, so the scripts are code under test here, not tooling beside it.
         "scripts/**",
