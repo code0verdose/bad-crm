@@ -115,6 +115,48 @@ const plannedOperations = (): SpecOperation[] =>
 const servedRouteKeys = (): Set<string> =>
   new Set(collectRoutes(createTestApp().app).map(routeKey));
 
+/**
+ * The predicates this file is built on, exercised against inputs it constructs.
+ *
+ * **Every assertion below the fold is vacuous today, and will be until the first
+ * `x-implemented-by` appears in the specification.** `grep -c 'x-implemented-by:' docs/api/openapi.yaml`
+ * prints zero, so `plannedOperations()` is `[]`, and `.filter(...).toEqual([])` passes whatever the
+ * filter does — proven by mutation on 2026-08-30: inverting the malformed-id check left all eleven
+ * cases green.
+ *
+ * Every sibling in this directory guards that with a `CONTROL: the scan found something` case. Here
+ * that guard cannot be written: it would be red until the exemption is first used, and a suite that
+ * is red on purpose is a suite people learn to ignore. So the control moves to the **predicates**:
+ * each is handed one input it must accept and one it must reject. That is what makes the day the
+ * first marker lands the day the checks work, rather than the day somebody finds out they never did.
+ */
+describe('the markers this file judges by', () => {
+  it('tells a well-formed story id from one that only looks like it', () => {
+    expect(STORY_ID.test('STORY-006-02')).toBe(true);
+    expect(STORY_ID.test('STORY-6-2')).toBe(false);
+    expect(STORY_ID.test('EPIC-006')).toBe(false);
+    expect(STORY_ID.test('')).toBe(false);
+  });
+
+  it('finds a story that exists and misses one that does not', () => {
+    // A story the board really carries — chosen from the epic this repository has closed, so the
+    // case does not depend on work in flight.
+    expect(storyExists('STORY-006-01')).toBe(true);
+    expect(storyExists('STORY-999-99')).toBe(false);
+  });
+
+  it('reads the epic out of the id', () => {
+    expect(epicOf('STORY-006-02')).toBe('006');
+    expect(epicOf('STORY-047-01')).toBe('047');
+  });
+
+  it('CONTROL: the specification declares no planned operation today', () => {
+    // Not an assertion about the checks — an assertion about *why* they are quiet. When this fails,
+    // the exemption is in use, and every case below it starts judging something.
+    expect(plannedOperations()).toEqual([]);
+  });
+});
+
 describe('an operation published ahead of its implementation', () => {
   it('names the story that implements it, in a form the board uses', () => {
     const malformed = plannedOperations()
