@@ -23,12 +23,12 @@ alwaysApply: true
 
    - **общие** (`~/.claude/agents/`): `architect`, `backend-architect`, `frontend-developer`,
      `typescript-pro`, `sql-pro`, `database-optimizer`, `ai-engineer`, `deployment-engineer`,
-     `code-reviewer`, `debugger`, `test-automator`, `accessibility-expert`;
+     `code-reviewer`, `debugger`, `test-automator`;
    - **проектные ревьюеры** (`.claude/agents/` этого репозитория, актуальный список —
      `ls .claude/agents/*.md`): `tenancy-rls-auditor`, `permission-matrix-auditor`,
      `e2ee-crypto-reviewer`, `openapi-contract-guardian`, `fsd-architecture-linter`,
      `realtime-event-reviewer`, `search-permission-auditor`, `i18n-coverage-checker`,
-     `selfhost-upgrade-checker`, `stale-claims-auditor`. Когда звать каждого — таблица в `CLAUDE.md`;
+     `accessibility-expert`, `selfhost-upgrade-checker`, `stale-claims-auditor`. Когда звать каждого — таблица в `CLAUDE.md`;
    - **гейт-агенты** — см. п. 12.
 2. **Не более 7 агентов параллельно.** Больше ролей — волны по ≤ 7 или укрупнение задач. Лимит про
    одновременность, а не про суммарное число за сессию.

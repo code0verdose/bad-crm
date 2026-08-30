@@ -179,7 +179,7 @@ rg -n "width:\s*\d+px" packages/client/src --glob '**/*.module.css' | rg -in "bu
 Указывай **точное** место: `path:line` и сам текст строки, чтобы правку можно было сделать без
 повторного поиска.
 
-**Не для:** доступности и семантики разметки (→ глобальный `accessibility-expert`), структуры
+**Не для:** доступности и семантики разметки (→ проектный `accessibility-expert`), структуры
 клиентского кода и слоёв (→ `fsd-architecture-linter`), формата ошибок и контракта API (→
 `openapi-contract-guardian`), покрытия тестами (→ глобальный `test-coverage`), мусора в коммите
 (→ глобальный `commit-hygiene`).

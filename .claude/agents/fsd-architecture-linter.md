@@ -174,7 +174,7 @@ rg -l "" packages/client/src/units --glob '**/index.ts' | head -20
   page-scoped хука, отсутствие `index.ts` у нового сегмента.
 - Не смог получить дельту — **BLOCKED**.
 
-**Не для:** доступности и WCAG (→ глобальный `accessibility-expert`), полноты переводов и
+**Не для:** доступности и WCAG (→ проектный `accessibility-expert`), полноты переводов и
 хардкод-строк (→ `i18n-coverage-checker`), обхода сгенерированного API-клиента и контракта (→
 `openapi-contract-guardian`), крипто-кода в `units/vault` (→ `e2ee-crypto-reviewer`), realtime-
 подписок (→ `realtime-event-reviewer`), общих уязвимостей фронтенда вроде XSS (→ глобальный
