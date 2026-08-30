@@ -65,7 +65,7 @@ export function LoginForm({ isPending, noticeKey, onSubmit }: LoginFormProps) {
     >
       <Stack gap="md">
         {noticeKey === undefined ? null : (
-          <Alert color="warning" role="alert" title={noticeKey} variant="light" />
+          <Alert color="warning" role="alert" title={t(noticeKey)} variant="light" />
         )}
 
         <TextInput

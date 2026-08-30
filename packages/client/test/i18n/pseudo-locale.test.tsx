@@ -325,3 +325,53 @@ describe('the second-factor step in a pseudo locale', () => {
     expect(textNodes(container).filter(isPseudoLocalised).length).toBeGreaterThan(3);
   });
 });
+
+/**
+ * The notice above the sign-in fields, which the `/login` case above never reaches either.
+ *
+ * `noticeKey` is `undefined` on a screen nobody has submitted yet, so the happy mount walks past
+ * an `Alert` that is not rendered. The form shipped with `title={noticeKey}` — the raw key — and
+ * the component's own test asserted `getByRole('alert')` has the text
+ * `auth.login.organizationSelectionRequired`, which is exactly what `cimode` produces from a
+ * *correct* `t(noticeKey)`. Same shape as the `ErrorState` defect above, second occurrence, found
+ * 2026-08-30 and fixed in the same change.
+ *
+ * Both keys the hook can pass are mounted, because they arrive from different namespaces:
+ * `auth.*` from the answer to a well-formed sign-in, `errors.code.*` borrowed from the server's
+ * vocabulary for a second factor whose countdown ran out (`use-login.hook.ts`).
+ */
+describe.each([
+  ['an address that belongs to two organizations', 'auth.login.organizationSelectionRequired'],
+  ['a second factor whose countdown ran out', 'errors.code.mfa_token_expired'],
+])('the sign-in notice for %s', (_case, noticeKey) => {
+  const mountForm = async (): Promise<HTMLElement> => {
+    const instance = await pseudoInstance();
+
+    const { container } = render(
+      <I18nextProvider i18n={instance}>
+        <MantineProvider>
+          <AuthUi.LoginForm isPending={false} noticeKey={noticeKey} onSubmit={() => undefined} />
+        </MantineProvider>
+      </I18nextProvider>,
+    );
+
+    return container;
+  };
+
+  it('shows the sentence, not the key', async () => {
+    const unmarked = textNodes(await mountForm()).filter(
+      (text) => !isPseudoLocalised(text) && !NOT_A_SENTENCE.test(text) && !PROPER_NOUNS.has(text),
+    );
+
+    expect(unmarked).toEqual([]);
+  });
+
+  /** CONTROL: the notice is on screen at all — an `Alert` that never rendered would also pass. */
+  it('CONTROL: is looking at the notice it names', async () => {
+    const container = await mountForm();
+    const alert = container.querySelector('[role="alert"]');
+
+    expect(alert).not.toBeNull();
+    expect(isPseudoLocalised(alert?.textContent ?? '')).toBe(true);
+  });
+});
