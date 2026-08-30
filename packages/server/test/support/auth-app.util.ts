@@ -74,7 +74,7 @@ import { WritePermissionOverrideUseCase } from '@/application/iam/use-cases/writ
 import { BootstrapOrganizationUseCase } from '@/application/organization/use-cases/bootstrap-organization.use-case.js';
 import { createHttpServer } from '@/presentation/http/http-server.factory.js';
 
-import { createTestApp } from './test-app.util.js';
+import { createTestPlatform } from './test-app.util.js';
 import {
   FakeAccessTokens,
   FakeAddressHasher,
@@ -650,11 +650,14 @@ export const createAuthApp = (options: AuthAppOptions = {}): AuthApp => {
     ),
   };
 
-  const testApp = createTestApp(
+  // The platform half only — `identity` and `iam` below replace what a container would have built,
+  // so building them would be work thrown away. See `createTestPlatform` for what that costs
+  // (an argon2 digest per application), what is shared, and what stops being checked here.
+  const platform = createTestPlatform(
     options.trustedProxyHops === undefined ? {} : { TRUSTED_PROXY_HOPS: options.trustedProxyHops },
   );
 
-  const app = createHttpServer({ ...testApp.container.http, identity, iam });
+  const app = createHttpServer({ ...platform.http, identity, iam });
 
   let listening: Server | undefined;
   const server = (): Server => {
@@ -707,6 +710,6 @@ export const createAuthApp = (options: AuthAppOptions = {}): AuthApp => {
     customRoles,
     teams,
     audit,
-    logLines: testApp.logLines,
+    logLines: platform.logLines,
   };
 };
