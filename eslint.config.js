@@ -1055,8 +1055,12 @@ export default tseslint.config(
           'newlines-between': 'always',
         },
       ],
-      // The page is static by design: no forms, no analytics, no backend of its own. A network
-      // call here is a feature nobody decided to add.
+      // The page is static by design: no analytics, no backend of its own, nothing fetched at
+      // runtime. A network call here is a feature nobody decided to add. Note what this does *not*
+      // say: the CTA section does ship a `<form>`, and it is not an exception to any of this —
+      // submitting composes a `mailto:` and hands it to the operating system, so the fields never
+      // travel. The property this rule guards is the absence of a request, not the absence of a
+      // form; a form that posted somewhere would be caught by exactly these two names.
       'no-restricted-globals': [
         'error',
         {

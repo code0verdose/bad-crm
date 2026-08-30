@@ -1,4 +1,5 @@
 import { type Copy } from './locale.types.js';
+import { LEGAL_UPDATED } from './legal-updated.constant.js';
 
 /**
  * The same page in Russian. Annotated with `Copy`, which is inferred from the English dictionary —
@@ -500,7 +501,7 @@ export const RU_COPY: Copy = {
       'Черновик. Сайт — прототип, документы не проверял юрист, реквизиты оператора не заполнены. Публиковать в таком виде нельзя.',
     terms: {
       title: 'Пользовательское соглашение',
-      updated: '4 августа 2026',
+      updated: LEGAL_UPDATED.ru,
       intro:
         'Соглашение касается только этого сайта — страниц, которые вы сейчас читаете. Сама программа Bad CRM распространяется отдельно по лицензии GNU AGPL-3.0-or-later, и что можно делать с кодом, определяет она, а не этот документ.',
       sections: [
@@ -554,7 +555,7 @@ export const RU_COPY: Copy = {
     },
     privacy: {
       title: 'Политика конфиденциальности',
-      updated: '4 августа 2026',
+      updated: LEGAL_UPDATED.ru,
       intro:
         'Коротко: сайт не собирает о вас ничего автоматически. Нет аналитики, рекламы, пикселей и сторонних скриптов. Ниже — то же самое, но в форме, которой требует GDPR и российский закон о персональных данных.',
       sections: [
@@ -606,7 +607,7 @@ export const RU_COPY: Copy = {
     },
     cookies: {
       title: 'Политика в отношении cookie',
-      updated: '4 августа 2026',
+      updated: LEGAL_UPDATED.ru,
       intro:
         'Сайт не использует cookie. В локальном хранилище браузера остаются две настройки — язык и ваш ответ на баннер, — и больше ничего. Ниже объясняем, что это значит и что изменится, если это перестанет быть правдой.',
       sections: [

@@ -1,6 +1,8 @@
 import { type BrandedItem } from '@/shared/lib/brand.types.js';
 import { type MetricItem } from '@/shared/lib/metric.types.js';
 
+import { LEGAL_UPDATED } from './legal-updated.constant.js';
+
 /**
  * Every string on the page, in English. This object is also the *schema* of the page's copy:
  * `Copy` in `locale.types.ts` is inferred from it, and the Russian dictionary is annotated with
@@ -473,7 +475,7 @@ export const EN_COPY = {
       'Draft. This site is a prototype and these documents have not been reviewed by a lawyer; the operator’s legal details are placeholders. Do not publish them as they are.',
     terms: {
       title: 'Terms of Service',
-      updated: '4 August 2026',
+      updated: LEGAL_UPDATED.en,
       intro:
         'These terms cover this website only — the pages you are reading now. The Bad CRM software itself is distributed separately under the GNU AGPL-3.0-or-later licence, and that licence, not this document, governs what you may do with the code.',
       sections: [
@@ -527,7 +529,7 @@ export const EN_COPY = {
     },
     privacy: {
       title: 'Privacy Policy',
-      updated: '4 August 2026',
+      updated: LEGAL_UPDATED.en,
       intro:
         'The short version: this site collects nothing about you automatically. There is no analytics, no advertising, no tracking pixel and no third-party script. What follows is the same statement in the form the GDPR asks for.',
       sections: [
@@ -579,7 +581,7 @@ export const EN_COPY = {
     },
     cookies: {
       title: 'Cookie Policy',
-      updated: '4 August 2026',
+      updated: LEGAL_UPDATED.en,
       intro:
         'This site sets no cookies. It stores two settings in your browser’s local storage — your language and your answer to the cookie banner — and nothing else. This page explains what that means and what would change if that ever stopped being true.',
       sections: [

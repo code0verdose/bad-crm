@@ -14,7 +14,12 @@ other in front of a visitor.
   free to be louder than a product screen is allowed to be.
 - It imports **nothing** from the workspace — not `@bad-crm/shared`, not `@bad-crm/client`. The
   package is a leaf of the dependency graph, so nothing it does can reach the product.
-- It builds to static files with no network calls at runtime: no forms, no analytics, no backend.
+- It builds to static files with **no network calls at runtime**: no analytics, no backend, no
+  third-party script. The one form on the page — the feedback form in the CTA section — composes a
+  `mailto:` and hands it to the operating system, so the fields never leave the browser either. The
+  ban is enforced by lint (`fetch`, `XMLHttpRequest` and their `globalThis.` spellings are
+  restricted for `packages/landing/**` in the root `eslint.config.js`), not by the absence of a
+  `<form>`.
 
 ## Commands
 
