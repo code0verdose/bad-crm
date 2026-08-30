@@ -17,24 +17,25 @@
 
 ## Рецепт
 
-> **`app` ниже — имя сервиса приложения в вашем compose-файле, а не в этом репозитории.**
+> **`api` ниже — имя сервиса приложения в вашем compose-файле, а не в этом репозитории.**
 > `docker-compose.yml` в корне поднимает только backing-сервисы (`postgres`, `redis`, `minio`,
 > `minio-setup`, `meilisearch`, `mailpit`), а приложение в разработке бежит на хосте через
-> `pnpm dev` — там логи идут в терминал, и `grep` применяется прямо к нему. Сервисы `app`/`api`/
+> `pnpm dev` — там логи идут в терминал, и `grep` применяется прямо к нему. Сервисы `api` и
 > `worker` приезжают с дистрибутивным `docker-compose.prod.yml` (EPIC-017). Проверено 2026-08-30;
-> имена сервисов печатает `grep -nE '^  [a-z-]+:' docker-compose.yml`.
+> имена сервисов печатает `docker compose config --services` (`grep` по отступу вернул бы ещё и
+> имена томов — они объявлены на том же уровне).
 
 ```bash
 # 1. Всё, что относится к запросу (логи в JSON, одна строка = одно событие)
-docker compose logs --no-color --since 24h app | grep '01J8Z2F5Q3K9V6N0R4T7YB3XQD'
+docker compose logs --no-color --since 24h api | grep '01J8Z2F5Q3K9V6N0R4T7YB3XQD'
 
 # 2. То же читаемо, если установлен jq: только уровень, маршрут, статус и сообщение
-docker compose logs --no-color --since 24h app \
+docker compose logs --no-color --since 24h api \
   | grep '01J8Z2F5Q3K9V6N0R4T7YB3XQD' \
   | jq -r '[.time, .level, .route // "-", .statusCode // "-", .msg] | @tsv'
 
 # 3. Итоговая строка запроса: сколько заняло и чем закончилось
-docker compose logs --no-color --since 24h app \
+docker compose logs --no-color --since 24h api \
   | grep '01J8Z2F5Q3K9V6N0R4T7YB3XQD' \
   | jq -r 'select(.msg == "request completed" or .msg == "request failed")
            | {route, statusCode, durationMs, organizationId, userId}'

@@ -205,7 +205,7 @@
         // `test/repo/tsconfig-contract.test.ts` reads it: dropping `test/**` from its `include`
         // makes every @ts-expect-error in that package vacuous — and would be cached as a pass.
         "packages/*/tsconfig.test.json",
-        // `docs/runbooks/**`, not the two files that used to be listed here. Three suites read
+        // `docs/runbooks/**`, not the two files that used to be listed here. Four suites read
         // this directory and the newest one reads all of it: `test/repo/runbook-claims.test.ts`
         // resolves every command, compose service, variable, route, metric, audit action and model
         // a runbook names against the code that has to answer for it. A runbook is the only
@@ -213,13 +213,17 @@
         // else's commit — so the day a tenth runbook is added it must invalidate this entry, not
         // the day somebody remembers to append a line. `test/repo/runbook-restore.test.ts` reads
         // the restore procedure, whose three past defects each ended in an empty or unusable
-        // database, and `test/infra/upgrade-runbook.test.ts` asserts that the role bootstrap runs
-        // before the migrations — P3018 followed by P3009 on every later deploy otherwise.
+        // database, `test/infra/upgrade-runbook.test.ts` asserts that the role bootstrap runs
+        // before the migrations — P3018 followed by P3009 on every later deploy otherwise — and
+        // `test/infra/role-canon.test.ts` holds the role names of the restore procedure.
         "docs/runbooks/**",
         "docs/security/rls-design.md",
-        // `test/repo/runbook-claims.test.ts` resolves `/health`, `/ready` and `/metrics` against
-        // this allow-list as well as against the route registry: the probes exist precisely because
-        // they are *not* product operations, so the registry alone would call them undocumented.
+        // `test/repo/runbook-claims.test.ts` reads this allow-list as the second declaration of
+        // what a service path is. It contributes nothing to the namespace today — the registry
+        // declares `/health`, `/ready` and `/metrics` itself, and the one path only this file
+        // carries is `/socket.io`, which no prefix the runbook reader matches can produce — but the
+        // suite opens the file, and `inputs` is an allow-list: a task that does not name a file it
+        // reads is served from cache and reports a PASS over content it never opened.
         "packages/server/test/contract/service-route-allow-list.constant.ts",
         // Three suites read the data model — the source of truth for names — and each reads it in a
         // different direction: `test/infra/data-model-indexes.test.ts` holds its index registry
