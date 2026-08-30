@@ -7,11 +7,11 @@ import { WordReveal } from './word-reveal.component.js';
 import classes from './section-heading.module.css';
 
 /**
- * Heading and subtitle — the two lines that open every section, so that twelve sections introduce
- * themselves the same way.
+ * Heading and subtitle — the two lines that open every section, so that every section that has one
+ * introduces itself the same way.
  *
  * There is no eyebrow. Every section used to carry a small capitalised label above its heading, and
- * twelve of them in a row read as a template rather than as an argument: the heading already says
+ * a page of them in a row read as a template rather than as an argument: the heading already says
  * what the section is, and the label was a second, quieter copy of it.
  */
 interface SectionHeadingProps {

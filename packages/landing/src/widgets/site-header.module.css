@@ -85,8 +85,8 @@
   display: flex;
   align-items: center;
   gap: var(--bcl-space-2xs);
-  /* Hard right. The centred nav used to do this by filling the middle; it is hidden on a phone, and
-     without a push of its own the pair drifted back against the wordmark. */
+  /* Hard right. The centred nav used to do this by filling the middle; below 62em it moves to a row
+     of its own, and without a push the pair drifted back against the wordmark. */
   margin-inline-start: auto;
 }
 
@@ -107,16 +107,46 @@
   transform: translateY(0);
 }
 
+/*
+ * Below the desktop width the navigation moves to a row of its own instead of disappearing.
+ *
+ * It used to be `display: none` with nothing rendered in its place: four of the thirteen sections
+ * left the flow and the tab order at once, on the device where the alternative — scrolling through
+ * every full-screen scene in front of them — costs the most. The replacement is the same list,
+ * wrapped under the bar and scrollable sideways when it runs out of room: no state, no overlay, no
+ * focus to trap and return, and nothing that behaves differently for a keyboard than for a thumb.
+ */
 @media (width <= 62em) {
+  .bar {
+    flex-wrap: wrap;
+    row-gap: var(--bcl-space-2xs);
+  }
+
   .nav {
-    display: none;
+    /* Last in the row, so the wrap puts it under the wordmark and the actions rather than between
+       them; `100%` is what guarantees the wrap happens at all. */
+    order: 1;
+    flex-basis: 100%;
+    justify-content: flex-start;
+    margin-inline: 0;
+    gap: var(--bcl-space-sm);
+    overflow-x: auto;
+    overscroll-behavior-inline: contain;
+    /* A focus ring is drawn outside the link's box, and a scroll container clips what leaves it. */
+    padding-block: var(--bcl-space-3xs);
+  }
+
+  /* The row scrolls; the items in it do not wrap. A two-line "Self-host" inside a scrolling row is
+     how the Russian labels, which are the longer ones, would otherwise land. */
+  .navLink {
+    white-space: nowrap;
   }
 }
 
 /*
- * On a phone the bar holds three things — wordmark, language switch, call to action — and the
- * desktop sizes leave them fighting for the width. Everything steps down one notch so the row fits
- * once, on one line, instead of wrapping into a two-storey header.
+ * On a phone the first row of the bar holds three things — wordmark, language switch, call to
+ * action — and the desktop sizes leave them fighting for the width. Everything steps down one notch
+ * so that row fits on one line, above the navigation rather than tangled into it.
  */
 @media (width <= 30em) {
   .bar {

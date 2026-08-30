@@ -1,7 +1,9 @@
 import { useLocale } from '@/app/i18n/use-locale.hook.js';
-import { GITHUB_URL, LICENCE_URL } from '@/shared/lib/site-links.constant.js';
+import { LICENCE_URL } from '@/shared/lib/site-links.constant.js';
 import { clearConsent } from '@/shared/lib/consent.util.js';
+import { pairFooterColumns } from '@/shared/lib/footer-links.util.js';
 import { navigate, ROUTES } from '@/shared/lib/use-route.hook.js';
+import { SectionLink } from '@/shared/ui/section-link.component.js';
 import { SiteLogo } from '@/shared/ui/site-logo.component.js';
 
 import classes from './site-footer.module.css';
@@ -25,14 +27,22 @@ export const SiteFooter = () => {
           </a>
         </div>
 
-        {copy.footer.columns.map((column) => (
+        {/* On a phone this is the whole navigation of the site, so a link here has to go where its
+            own words say it goes — the sections to the sections, the documents to the documents. */}
+        {pairFooterColumns(copy.footer.columns).map((column) => (
           <nav key={column.title} className={classes['column']} aria-label={column.title}>
             <span className={classes['columnTitle']}>{column.title}</span>
-            {column.links.map((link) => (
-              <a key={link} className={classes['link']} href={GITHUB_URL}>
-                {link}
-              </a>
-            ))}
+            {column.links.map(({ label, target }) =>
+              'section' in target ? (
+                <SectionLink key={label} id={target.section} className={classes['link']}>
+                  {label}
+                </SectionLink>
+              ) : (
+                <a key={label} className={classes['link']} href={target.href}>
+                  {label}
+                </a>
+              ),
+            )}
           </nav>
         ))}
 

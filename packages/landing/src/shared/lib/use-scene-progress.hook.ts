@@ -42,7 +42,7 @@ interface SceneOptions {
  *
  * Every scroll-driven section on the page goes through this hook instead of calling `useScroll`
  * directly, for two reasons: the spring is the same everywhere, and `prefers-reduced-motion` is
- * handled once rather than remembered twelve times.
+ * handled once rather than remembered in every scene.
  */
 export const useSceneProgress = (
   target: RefObject<HTMLElement | null>,

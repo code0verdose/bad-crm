@@ -1,8 +1,8 @@
 import { type Transition, type Variants } from 'motion/react';
 
 /**
- * The page's motion vocabulary. Durations and easings are decided here so that twelve sections
- * written on twelve afternoons still feel like one document scrolling.
+ * The page's motion vocabulary. Durations and easings are decided here so that sections
+ * written on different afternoons still feel like one document scrolling.
  *
  * The easing is the same curve `--bcl-ease-out` names in CSS: things arrive fast and settle slowly,
  * which is what makes a scroll-linked transform feel attached to the wheel rather than chased by it.

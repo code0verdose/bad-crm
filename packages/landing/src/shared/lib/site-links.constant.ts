@@ -14,3 +14,7 @@ export const SECTION_IDS = {
 
 export const GITHUB_URL = 'https://github.com/code0verdose/bad-crm';
 export const LICENCE_URL = 'https://www.gnu.org/licenses/agpl-3.0.html';
+
+/** The two documents of the repository the footer names by title. Both live at its root. */
+export const SECURITY_POLICY_URL = `${GITHUB_URL}/blob/main/SECURITY.md`;
+export const CONTRIBUTING_URL = `${GITHUB_URL}/blob/main/CONTRIBUTING.md`;
