@@ -90,10 +90,21 @@ estimate: M
       `deprecatedAt`, вызывается из `prisma/seed/index.ts` и из entrypoint контейнера.
 - [x] `packages/server/test/integration/permissions/permissions-seed.spec.ts` — идемпотентность,
       deprecated-путь, отсутствие каскадного удаления.
-- [x] `packages/server/src/application/platform/jobs/count-deprecated-permission-usage.job.ts` + тест.
-- [x] `packages/server/test/architecture/single-permission-catalog.spec.ts` — запрет второго каталога.
-- [x] i18n-ключи описаний прав (`descriptionKey`) в `packages/client/src/app/i18n/en/permissions.json`
-      и `.../ru/permissions.json`, линт непарных ключей.
+- [ ] `packages/server/src/application/platform/jobs/count-deprecated-permission-usage.job.ts` + тест.
+      **Отметка снята 2026-08-30:** каталога `application/platform/jobs` не существует, как и любого
+      файла с `job` в имени под `packages/server/src` — планировщика в продукте нет вовсе. Разбор
+      условия отсрочки — ниже.
+- [ ] `packages/server/test/architecture/single-permission-catalog.spec.ts` — запрет второго каталога.
+      **Отметка снята 2026-08-30:** файла нет ни под этим именем, ни под другим — поиск по
+      `packages/server/test` и `test/` не находит ни одной проверки на второй каталог прав.
+      Единственное, что сегодня держит инвариант, — лестница `can.util.ts` в `packages/shared` и
+      ревью; архитектурный запрет объявлен и не написан.
+- [ ] i18n-ключи описаний прав (`descriptionKey`) в
+      `packages/client/src/shared/i18n/locales/{en,ru}/permissions.json`, линт непарных ключей.
+      **Отметка снята 2026-08-30, и путь исправлен** (`app/i18n/en/` в этой строке не существует —
+      локали живут в `shared/i18n/locales/`). Поддерева `permission.<domain>.<action>` нет ни в
+      одной из локалей, поле каталога не читает ни один компонент, и строки матрицы подписаны
+      ключами вида `user:suspend`. Разбор — ниже, в «Что отложено».
 
 ## Ссылки
 
