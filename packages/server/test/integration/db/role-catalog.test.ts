@@ -116,16 +116,39 @@ describe('the role catalog against docs/security/rls-design.md', () => {
 
   /**
    * `app_auth` is the credential a reachable service holds, so the assertion is not only "no table
-   * privilege today" but "no path to one": no membership, and nothing in `relacl` anywhere.
+   * privilege today" but "no path to one": no membership, and no ACL entry anywhere.
+   *
+   * The ACL is exploded into rows rather than matched as text, and that is the whole assertion.
+   * `relacl::text LIKE '%app_auth=%' AND relacl::text NOT LIKE '%app_auth_definer=%'` reads as
+   * "app_auth but not the definer", but both patterns are applied to the **whole relation**: one
+   * `app_auth_definer=r/…` entry discards the row entirely, grant to `app_auth` and all. And
+   * `01-grants.sql` puts exactly that entry on `users`, `sessions`, `password_reset_tokens`,
+   * `invitations` and `organizations` — the five tables the resolvers read, which are also the five
+   * where a stray grant to the connecting role would be a cross-tenant read of every account in the
+   * installation. The test was blind precisely where it mattered; `GRANT SELECT ON users TO
+   * app_auth` appended to `01-grants.sql` left it green.
+   *
+   * `aclexplode` gives one row per (grantee, privilege), so the filter is on the grantee of that
+   * entry and nothing else about the relation can hide it. `PUBLIC` (grantee oid 0) counts as well:
+   * every role is a member of it, so a privilege granted there is a privilege `app_auth` holds.
    */
   it('gives app_auth no privilege on any table, view or sequence', async () => {
-    const { rows } = await pools.owner.query<{ object: string; privileges: string }>(
-      `SELECT c.relname AS object, array_to_string(c.relacl, ',') AS privileges
+    const { rows } = await pools.owner.query<{
+      object: string;
+      grantee: string;
+      privileges: string;
+    }>(
+      `SELECT c.relname                                                    AS object,
+              coalesce(grantee.rolname, 'PUBLIC')                          AS grantee,
+              string_agg(acl.privilege_type, ',' ORDER BY acl.privilege_type) AS privileges
          FROM pg_class c
          JOIN pg_namespace n ON n.oid = c.relnamespace
+        CROSS JOIN LATERAL aclexplode(c.relacl) AS acl
+         LEFT JOIN pg_roles grantee ON grantee.oid = acl.grantee
         WHERE n.nspname = 'public'
-          AND c.relacl::text LIKE '%app_auth=%'
-          AND c.relacl::text NOT LIKE '%app_auth_definer=%'`,
+          AND (grantee.rolname = 'app_auth' OR acl.grantee = 0)
+        GROUP BY c.relname, grantee.rolname
+        ORDER BY c.relname, grantee`,
     );
 
     expect(rows).toEqual([]);
