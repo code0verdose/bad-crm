@@ -21,10 +21,18 @@ const WCAG = ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'];
  * is a fact about the design tokens.
  *
  * `getAnimations()` covers CSS transitions, CSS animations and the Web Animations API in one, which
- * is what makes this independent of how any particular component chooses to move. `prefers-reduced-
- * motion` is emulated for the whole suite as well (`playwright.config.ts`) and the theme honours it
- * — this is the belt to that pair of braces, because a component is free to animate through a path
- * the preference does not reach.
+ * is what makes this independent of how any particular component chooses to move — and that is the
+ * whole of the mechanism here.
+ *
+ * **Corrected 2026-08-30.** This said `prefers-reduced-motion` was «emulated for the whole suite
+ * (`playwright.config.ts`)» and called the wait a belt to that pair of braces. There is no
+ * `reducedMotion` in that config and never was: the suite runs the **animated** path, which is the
+ * right default — `rules/a11y.mdc` puts the reduced-motion pass in the manual checklist, and a
+ * suite that only ever saw the still version would stop being able to catch a component that moves
+ * when it should not. The preference itself is asserted on both sides where it is cheap to do so,
+ * in unit tests (`packages/landing/test/shared/lib/use-scene-progress.hook.test.tsx` and the
+ * smooth-scroll provider). So the wait is not a belt to braces; it is the only thing standing
+ * between axe and a half-drawn frame.
  */
 const settled = async (page: Page): Promise<void> => {
   await page.waitForFunction(
