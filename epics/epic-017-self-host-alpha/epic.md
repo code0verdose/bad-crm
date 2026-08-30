@@ -83,7 +83,7 @@ Bad CRM — self-hosted продукт под AGPL-3.0. Всё остально�
   образы), [EPIC-002](../epic-002-ci-and-commit-gate/epic.md) (сборка образов в CI),
   [EPIC-005](../epic-005-multi-tenancy-rls/epic.md) (роли БД `app_user` / `app_migrator` /
   `app_auth`, bootstrap-скрипт ролей), [EPIC-006](../epic-006-auth-core/epic.md) (создание
-  организации и владельца), [EPIC-009](../epic-009-observability/epic.md) (`/healthz`, `/readyz`),
+  организации и владельца), [EPIC-009](../epic-009-observability/epic.md) (`/health`, `/ready`),
   [EPIC-015](../epic-015-file-storage/epic.md) (инициализация бакета и его preflight),
   [EPIC-013](../epic-013-two-factor-totp/epic.md) (пункт 7 чек-листа — включить обязательную 2FA).
 - **Блокирует:** пилотные внедрения и обратную связь; [EPIC-046](../epic-046-self-host-release-1-0/epic.md)

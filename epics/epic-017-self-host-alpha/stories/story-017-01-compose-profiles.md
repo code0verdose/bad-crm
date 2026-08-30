@@ -19,7 +19,7 @@ estimate: M
    Given чистый хост с Docker 24+ и Compose v2;
    When выполняется `docker compose -f docker-compose.prod.yml --profile full up -d`;
    Then поднимаются app, PostgreSQL 16 (pgvector), Redis 7, MinIO, Meilisearch 1.x и reverse-proxy
-   (Caddy); `/healthz` отвечает, вход в систему доступен.
+   (Caddy); `/health` отвечает, вход в систему доступен.
 
 2. **Профиль `minimal`.**
    Given хост с 2 vCPU / 2 GB;
