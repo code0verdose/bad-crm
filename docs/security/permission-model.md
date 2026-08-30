@@ -2396,7 +2396,7 @@ URL не логируется ни на каком уровне. Это лог �
 
 **Чего нет.** Действия `permission.denied.dangerous` в каталоге нет. Агрегата серий нет — считать
 их нечем: планировщика и очереди в продукте пока не существует. Метрика
-`permission_denied_total{reason}` **есть** (STORY-016-02) — актуальный состав `MetricsPort`
+`permission_denied_total{reason}` **есть** — заведена коммитом `b0df0c6`, а не историей: STORY-016-02, которой её легко приписать, до сих пор в `backlog`. Актуальный состав `MetricsPort`
 печатает `grep -n '^  [a-z].*(' packages/server/src/application/platform/ports/metrics.port.ts`, —
 но она считает отказы, а не серии, и актора в ней нет по построению: `/metrics` читает всё, что
 дотянется до порта. Второй сигнал — `http_requests_total{status="403"}` по шаблону маршрута, тоже
