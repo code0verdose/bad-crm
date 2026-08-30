@@ -17,6 +17,13 @@
 
 ## Рецепт
 
+> **`app` ниже — имя сервиса приложения в вашем compose-файле, а не в этом репозитории.**
+> `docker-compose.yml` в корне поднимает только backing-сервисы (`postgres`, `redis`, `minio`,
+> `minio-setup`, `meilisearch`, `mailpit`), а приложение в разработке бежит на хосте через
+> `pnpm dev` — там логи идут в терминал, и `grep` применяется прямо к нему. Сервисы `app`/`api`/
+> `worker` приезжают с дистрибутивным `docker-compose.prod.yml` (EPIC-017). Проверено 2026-08-30;
+> имена сервисов печатает `grep -nE '^  [a-z-]+:' docker-compose.yml`.
+
 ```bash
 # 1. Всё, что относится к запросу (логи в JSON, одна строка = одно событие)
 docker compose logs --no-color --since 24h app | grep '01J8Z2F5Q3K9V6N0R4T7YB3XQD'
@@ -34,14 +41,17 @@ docker compose logs --no-color --since 24h app \
 ```
 
 Поля, которые есть в итоговой строке всегда: `requestId`, `route` (шаблон `/api/v1/tasks/:taskId`, не
-URL), `statusCode`, `durationMs`, `organizationId`, `userId` (последние два — `null` до появления
-аутентификации, EPIC-006).
+URL), `statusCode`, `durationMs`, `organizationId`, `userId`. Последние два заполняются на
+аутентифицированных маршрутах (`presentation/http/middleware/authenticate.middleware.ts` вызывает
+`requestContext.identify`) и остаются `null` на публичных — вход, регистрация, `/health`. Прежняя
+редакция обещала `null` «до появления аутентификации, EPIC-006»; EPIC-006 отгружен (сверено
+2026-08-30).
 
 ## Что делать, если строк нет
 
 | Симптом | Причина | Что дальше |
 |---|---|---|
-| Ни одной строки с этим id | Запрос не дошёл до приложения | Смотреть логи reverse-proxy: `docker compose logs caddy \| grep <id>` |
+| Ни одной строки с этим id | Запрос не дошёл до приложения | Смотреть логи вашего reverse-proxy (`docker compose logs <имя-сервиса-прокси> \| grep <id>`). Прокси в поставку не входит и в compose-файле репозитория его нет — имя сервиса ваше |
 | Есть только `request completed` со статусом 4xx | Запрос отклонён на границе (валидация, права) | В строке уровня `warn` есть `code` — он же в ответе пользователю |
 | Есть строка уровня `error` с `err.stack` | Непредвиденное исключение | Стек полный, в ответе пользователю его нет и не должно быть |
 | `route` = `unmatched` | Маршрут не найден (`route_not_found`) | Проверить путь: URL в лог не пишется намеренно |
@@ -56,6 +66,9 @@ URL), `statusCode`, `durationMs`, `organizationId`, `userId` (последние
 
 ## Дальше
 
-`traceId` в каждой строке и переход из лога в трейс появляются вместе с OpenTelemetry в
-[EPIC-009](../../epics/epic-009-observability/epic.md); `requestId` наследуется job'ами очереди, так
-что цепочка «HTTP-запрос → outbox-событие → письмо» прослеживается тем же grep.
+`traceId` в каждой строке **уже есть**: логгер подмешивает идентификатор активного спана
+(`infrastructure/logging/pino-logger.adapter.ts`), а SDK стартует, когда задан
+`OTEL_EXPORTER_OTLP_ENDPOINT` (`infrastructure/tracing/tracing.factory.ts`) — EPIC-009 отгружен,
+сверено 2026-08-30. Чего ещё нет: наследования `requestId` job'ами очереди, потому что очередей нет
+(`grep -n bullmq packages/server/package.json` — пусто). Цепочка «HTTP-запрос → outbox-событие →
+письмо» станет прослеживаемой тем же grep, когда появится outbox.

@@ -1,7 +1,7 @@
 ---
 doc: runbook-local-environment
 project: bad-crm
-updated: 2026-07-27
+updated: 2026-08-30
 ---
 
 # Runbook — локальная среда разработки
@@ -26,12 +26,16 @@ updated: 2026-07-27
 
 | Контейнер | Образ | Порт по умолчанию | Переменная порта | Том | Профиль | Без него не работает |
 |---|---|---|---|---|---|---|
-| `postgres` | `pgvector/pgvector:0.8.5-pg16` | 5432 | `POSTGRES_PORT` | `pgdata` | все | ничего: это источник истины |
-| `redis` | `redis:8.8.1-alpine` | 6379 | `REDIS_PORT` | `redis-data` | все | очереди BullMQ, socket.io, rate-limit, отзыв сессий |
-| `minio` | `minio/minio` | 9000 (API), 9001 (консоль) | `MINIO_PORT`, `MINIO_CONSOLE_PORT` | `minio-data` | все | загрузка и выдача файлов (presigned URL) |
-| `minio-setup` | `minio/mc` | — | — | — | все | одноразовый: создаёт бакет `S3_BUCKET`, выходит с кодом 0 |
-| `meilisearch` | `getmeili/meilisearch:v1.50.0` | 7700 | `MEILI_PORT` | `meili-data` | `default`, `full` | расширенный поиск; без него — полнотекст PostgreSQL ([ADR-0011](../architecture/adr/0011-meilisearch-permission-aware-search.md)) |
-| `mailpit` | `axllent/mailpit` | 1025 (SMTP), 8025 (веб) | `MAILPIT_SMTP_PORT`, `MAILPIT_UI_PORT` | `mailpit-data` | `default`, `full` | письма; без него они пишутся в лог |
+| `postgres` | `pgvector/pgvector:0.8.6-pg16` | 5432 | `POSTGRES_PORT` | `pgdata` | все | ничего: это источник истины |
+| `redis` | `redis:8.10.0-alpine` | 6379 | `REDIS_PORT` | `redis-data` | все | очереди BullMQ, socket.io, rate-limit, отзыв сессий |
+| `minio` | `minio/minio:RELEASE.2025-09-07T16-13-09Z` | 9000 (API), 9001 (консоль) | `MINIO_PORT`, `MINIO_CONSOLE_PORT` | `minio-data` | все | загрузка и выдача файлов (presigned URL) |
+| `minio-setup` | `minio/mc:RELEASE.2025-08-13T08-35-41Z` | — | — | — | все | одноразовый: создаёт бакет `S3_BUCKET`, выходит с кодом 0 |
+| `meilisearch` | `getmeili/meilisearch:v1.52.0` | 7700 | `MEILI_PORT` | `meili-data` | `default`, `full` | расширенный поиск; без него — полнотекст PostgreSQL ([ADR-0011](../architecture/adr/0011-meilisearch-permission-aware-search.md)) |
+| `mailpit` | `axllent/mailpit:v1.30.6` | 1025 (SMTP), 8025 (веб) | `MAILPIT_SMTP_PORT`, `MAILPIT_UI_PORT` | `mailpit-data` | `default`, `full` | письма: без релея почтовые операции отвечают 503 `mail_not_configured`, и письмо **никуда не пишется** — ссылка сброса несёт одноразовый токен, а лог для него слишком публичное место |
+
+> Теги образов сверены с `docker-compose.yml` 2026-08-30 и в нём же и живут — источник истины
+> печатает `grep -nE '^\s+image:' docker-compose.yml`. Прежняя редакция таблицы отстала сразу по
+> шести строкам: три тега были старее фактических, у трёх образов тега не было вовсе.
 
 Все порты публикуются **только на `127.0.0.1`**. Docker публикует порты прямо в `iptables` и
 обходит `ufw`, поэтому bind на `0.0.0.0` открыл бы базу каждого ноутбука и CI-раннера
@@ -177,8 +181,12 @@ API: `curl -s http://localhost:8025/api/v1/messages`. SMTP слушает на 1
 пользоваться?» — подключается теми же кредами из `.env`, что и сервер:
 
 - **PostgreSQL** — соединение под ролью из `DATABASE_URL`; наличие `vector`, `pgcrypto`, `citext`,
-  `pg_trgm`, `btree_gist`; существование `app_migrator`, `app_user`, `app_auth`, `backup_role` и их
-  ключевых атрибутов (`app_user` — без `BYPASSRLS`, `backup_role` — с ним);
+  `pg_trgm`, `btree_gist`; существование **всех пяти** ролей — `app_migrator`, `app_user`,
+  `app_auth`, `app_auth_definer`, `backup_role` — и их ключевых атрибутов (`app_user` — без
+  `BYPASSRLS`, `backup_role` — с ним, `app_auth_definer` — `NOLOGIN` и с `BYPASSRLS`). Список ролей
+  задан в коде проверки, а не здесь: его печатает
+  `grep -n "role: '" scripts/lib/checks/postgres.check.ts`. Прежняя редакция перечисляла четыре
+  роли и не упоминала `app_auth_definer` — в самой проверке он есть (сверено 2026-08-30);
 - **Redis** — `PING`;
 - **MinIO** — `HeadBucket` бакета из `S3_BUCKET`, **подписанный** ключами из `.env`: анонимный
   запрос сказал бы «бакет есть» и ничего не сказал бы про `S3_ACCESS_KEY`/`S3_SECRET_KEY`;
@@ -198,7 +206,7 @@ bad-crm — development services
   OK       postgres     postgres://app_user@localhost:5433/bad_crm
            · connected as app_user
            · extensions present: btree_gist, citext, pg_trgm, pgcrypto, vector
-           · roles present with the expected attributes: app_migrator, app_user, app_auth, backup_role
+           · roles present with the expected attributes: app_migrator, app_user, app_auth, app_auth_definer, backup_role
   OK       redis        localhost:6379
   OK       minio        http://localhost:9000/bad-crm
   SKIPPED  meilisearch  http://localhost:7700 (optional)

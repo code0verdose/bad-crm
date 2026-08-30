@@ -1,14 +1,18 @@
 ---
 doc: runbook-incident
 project: bad-crm
-updated: 2026-07-26
+updated: 2026-08-30
 ---
 
 # Runbook — реакция на инциденты
 
-> **Статус: процедура спроектирована, поставки ещё нет.** Приложение, `AuditLog` и админ-интерфейс
-> появляются в майлстоунах M1–M2 (аудит — [EPIC-016](../../epics/epic-016-audit-log/epic.md)).
-> Документ описывает целевые процедуры; читайте его **до** инцидента, а не во время.
+> **Статус: процедура спроектирована, поставки ещё нет.** Дистрибутивного compose-файла и образа
+> нет (EPIC-017), поэтому команды с сервисами `api`/`worker` описывают целевой интерфейс.
+> Что при этом **уже существует** (сверено 2026-08-30): таблица `audit_logs` с партициями и
+> append-only-грантами, отзыв сессий и семей токенов, детекция повторного использования refresh,
+> административный сброс 2FA. Чего нет: vault, поиска, файлов, очередей и AI — поэтому часть
+> запросов раздела 7 сегодня вернёт пустую выдачу, и это помечено по месту.
+> Читайте его **до** инцидента, а не во время.
 
 Связанные документы: [`install.md`](install.md) · [`upgrade.md`](upgrade.md) ·
 [`backup-restore.md`](backup-restore.md) · [`../security/threat-model.md`](../security/threat-model.md) ·
@@ -277,15 +281,15 @@ docker compose exec -T postgres psql -U backup_role -d bad_crm -c "
 docker compose ps                                  # что упало
 docker compose logs --tail=200 api worker          # почему
 df -h && free -m                                   # диск и память — самые частые причины
-curl -sf https://crm.example.com/healthz || echo "процесс мёртв"
-curl -sf https://crm.example.com/readyz  || echo "зависимости недоступны"
+curl -sf https://crm.example.com/health || echo "процесс мёртв"
+curl -sf https://crm.example.com/ready  || echo "зависимости недоступны"
 ```
 
 | Симптом | Вероятная причина | Что делать |
 |---|---|---|
-| `/healthz` не отвечает | Процесс упал или не стартовал | Логи `api`; частая причина после обновления — новая обязательная переменная окружения |
-| `/healthz` отвечает, `/readyz` — 503 | Недоступны PostgreSQL или Redis | Проверить контейнеры БД, диск, соединения |
-| `/healthz` отвечает, `/readyz` — 503, вход отдаёт 503 `service_unavailable` | Redis недоступен: ограничитель попыток отказывает вместо того, чтобы пропускать без счёта | Поднять Redis. **Не** обходить лимитер: вход без ограничения — это открытый перебор паролей |
+| `/health` не отвечает | Процесс упал или не стартовал | Логи `api`; частая причина после обновления — новая обязательная переменная окружения |
+| `/health` отвечает, `/ready` — 503 | Недоступны PostgreSQL или Redis | Проверить контейнеры БД, диск, соединения |
+| `/health` отвечает, `/ready` — 503, вход отдаёт 503 `service_unavailable` | Redis недоступен: ограничитель попыток отказывает вместо того, чтобы пропускать без счёта | Поднять Redis. **Не** обходить лимитер: вход без ограничения — это открытый перебор паролей |
 | Всё поднято, но всё медленно | Кончился диск или память; долгие запросы; блокировки в БД | `df -h`, `pg_stat_activity`, метрики |
 | Растёт лаг outbox, копится DLQ | Воркер упал или внешний сервис недоступен | Логи `worker`; проверить очереди |
 | 429 у всех подряд | Rate-limit срабатывает массово — либо атака, либо прокси не передаёт `X-Forwarded-For` и все выглядят одним IP | Проверить конфигурацию прокси |
@@ -360,7 +364,8 @@ docker compose exec -T postgres psql -U backup_role -d bad_crm \
 
 # выгрузка аудита за окно
 docker compose exec -T postgres psql -U backup_role -d bad_crm -At -F'|' -c "
-  SELECT occurred_at, organization_id, actor_user_id, action, entity_type, entity_id, ip, user_agent
+  SELECT occurred_at, organization_id, actor_id, actor_type, action,
+         resource_type, resource_id, severity, ip_hash, user_agent, request_id
   FROM audit_logs
   WHERE occurred_at >= now() - interval '7 days'
   ORDER BY occurred_at;
@@ -371,54 +376,70 @@ sha256sum * > MANIFEST.sha256      # чтобы позже доказать не
 
 ### Типовые запросы
 
+> **Имена колонок — из схемы, а не из привычки** (сверено 2026-08-30 с `model AuditLog` в
+> `packages/server/prisma/schema.prisma`). Актор — `actor_id`, не `actor_user_id`; объект —
+> `resource_type` / `resource_id`, не `entity_*`; адреса в таблице **нет вообще** — есть `ip_hash`,
+> который отвечает «тот же самый снова» и не восстанавливает сам адрес. Запрос со старыми именами
+> падает на `column … does not exist` — в инциденте это потерянные минуты. Актуальный список
+> колонок печатает `\d+ audit_logs` в psql.
+
+> **Словарь `action` открыт и заполняется по мере появления доменов.** Что пишется сегодня —
+> печатает `grep -rhoE "action: '[a-z_.]+'" packages/server/src | sort -u`. Запросы 5, 6 и 7 ниже
+> относятся к экспорту, vault и обходу RLS: этих действий в коде **пока нет** (2026-08-30) и
+> выдача будет пустой. Строки оставлены, потому что процедура расследования от этого не меняется,
+> а не потому, что данные там ожидаются.
+
 ```sql
 -- 1. всё, что делала конкретная учётная запись
-SELECT occurred_at, action, entity_type, entity_id, ip, user_agent
+SELECT occurred_at, action, resource_type, resource_id, severity, ip_hash, user_agent
 FROM audit_logs
-WHERE actor_user_id = :user_id AND occurred_at BETWEEN :from AND :to
+WHERE actor_id = :user_id AND occurred_at BETWEEN :from AND :to
 ORDER BY occurred_at;
 
--- 2. кто и откуда входил: неизвестные IP и агенты
-SELECT actor_user_id, ip, user_agent, count(*), min(occurred_at), max(occurred_at)
+-- 2. кто и откуда входил: незнакомые агенты и повторяющиеся источники
+SELECT actor_id, ip_hash, user_agent, count(*), min(occurred_at), max(occurred_at)
 FROM audit_logs
-WHERE action IN ('auth.login.success', 'auth.login.failed', 'auth.refresh.reuse_detected')
+WHERE action IN ('session.signed_in', 'session.revoked', 'session.refresh_reuse_detected')
   AND occurred_at >= :from
 GROUP BY 1, 2, 3
 ORDER BY max(occurred_at) DESC;
 
 -- 3. признак кражи токена: сработала детекция повторного использования refresh
 SELECT * FROM audit_logs
-WHERE action = 'auth.refresh.reuse_detected' AND occurred_at >= :from;
+WHERE action = 'session.refresh_reuse_detected' AND occurred_at >= :from;
 
--- 4. изменения прав и ролей — так закрепляется доступ
-SELECT occurred_at, actor_user_id, action, entity_type, entity_id
+-- 4. изменения прав и ролей — так закрепляется доступ.
+--    Скобки обязательны: без них AND связывает сильнее OR и окно времени применяется
+--    только к последнему шаблону.
+SELECT occurred_at, actor_id, action, resource_type, resource_id
 FROM audit_logs
-WHERE action LIKE 'permission.%' OR action LIKE 'role.%' OR action LIKE 'acl.%'
+WHERE (action LIKE 'permission.%' OR action LIKE 'role.%' OR action LIKE 'acl.%')
   AND occurred_at >= :from
 ORDER BY occurred_at;
 
--- 5. массовое чтение или экспорт — признак выкачивания
-SELECT actor_user_id, action, date_trunc('hour', occurred_at) AS hour, count(*)
+-- 5. массовое чтение или экспорт — признак выкачивания (действий пока нет, см. врезку)
+SELECT actor_id, action, date_trunc('hour', occurred_at) AS hour, count(*)
 FROM audit_logs
 WHERE occurred_at >= :from AND action LIKE '%.export%'
 GROUP BY 1, 2, 3 HAVING count(*) > 50
 ORDER BY 4 DESC;
 
--- 6. активность вокруг vault: разблокировки, шаринг, отзывы
-SELECT occurred_at, actor_user_id, action, entity_id
+-- 6. активность вокруг vault: разблокировки, шаринг, отзывы (действий пока нет)
+SELECT occurred_at, actor_id, action, resource_id
 FROM audit_logs
 WHERE action LIKE 'vault.%' AND occurred_at >= :from
 ORDER BY occurred_at;
 
--- 7. использование обхода RLS системными job'ами (должно быть редким и объяснимым)
-SELECT occurred_at, action, entity_type, entity_id
+-- 7. использование обхода RLS системными job'ами (действий пока нет; должно быть
+--    редким и объяснимым, когда появится)
+SELECT occurred_at, action, resource_type, resource_id
 FROM audit_logs
 WHERE action LIKE '%bypass_rls%' AND occurred_at >= :from;
 
 -- 8. кросс-тенантная аномалия: одна учётная запись фигурирует в нескольких организациях
-SELECT actor_user_id, count(DISTINCT organization_id) AS orgs
+SELECT actor_id, count(DISTINCT organization_id) AS orgs
 FROM audit_logs
-WHERE occurred_at >= :from
+WHERE occurred_at >= :from AND actor_id IS NOT NULL
 GROUP BY 1 HAVING count(DISTINCT organization_id) > 1;
 ```
 
