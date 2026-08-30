@@ -157,7 +157,8 @@ const PENDING: Readonly<Record<string, string>> = {
 
   // ── custom ESLint rules of the repository plugin, none of them written yet ───────────────────
   'design-system.mdc · eslint-rule · bad-crm/classnames-via-clsx':
-    '`eslint/bad-crm.plugin.js` ships three rules and this is not one of them. Reason narrowed ' +
+    '`eslint/bad-crm.plugin.js` ships four rules and this is not one of them — the count printed by '  +
+    '`sed -n \'/^  rules: {/,/^  },/p\' eslint/bad-crm.plugin.js`, three when this reason was written. Reason narrowed ' +
     '2026-08-30: it used to say nothing composes a className conditionally, which is true of ' +
     '`packages/client` and false of `packages/landing`, where about ten files do it through `clsx`.',
   'errors-and-toasts.mdc · eslint-rule · bad-crm/no-toast-in-onerror-query':

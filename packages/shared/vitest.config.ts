@@ -16,11 +16,16 @@ export default defineConfig({
       include: ['src/**'],
       reporter: ['text-summary', 'json-summary', 'lcovonly'],
       /**
-       * `rules/testing.mdc` §7 has no row for `packages/shared` — the table was written before the
-       * package was filled. What lives here (value objects with invariants, the permission
-       * catalogue) is domain code by every other definition in that table, so it is held to the
-       * `domain/**` tier. `src/permissions/**` carries the `can()` decision function, a policy in
-       * everything but its path, and policies are 100 % lines and branches (§7, row 1).
+       * **Corrected 2026-08-30: the table has the rows now.** This said `rules/testing.mdc` §7 had no
+       * row for `packages/shared`, which was true when the thresholds below were chosen and stopped
+       * being true afterwards — §7 today carries two rows for this package, `src/permissions/**` at
+       * 100/100 and the package as a whole at 95/90, and both match what is set here.
+       *
+       * The reasoning that produced them is worth keeping, because it is what the rows encode: what
+       * lives here — value objects with invariants, the permission catalogue — is domain code by
+       * every other definition in that table, so it is held to the `domain/**` tier;
+       * `src/permissions/**` carries the `can()` decision function, a policy in everything but its
+       * path, and policies are 100 % lines and branches.
        */
       thresholds: {
         lines: 95,
