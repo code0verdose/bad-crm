@@ -126,13 +126,22 @@ describe('GetUserPermissionsQuery', () => {
 
   /**
    * The property the whole design is for: what this screen says and what the guard decides are the
-   * same function, checked here over the **entire** catalogue rather than over the three keys the
-   * case above happens to name.
+   * same function — checked on every key the answer carries rather than on the three the case above
+   * happens to name.
    *
    * `effectivePermission` is what `authorizeCapability` answers with, so a divergence between the
    * screen and the door shows up as a list of keys instead of as a support ticket.
+   *
+   * **That the answer carries the whole catalogue is asserted elsewhere, and deliberately not
+   * here.** This filter runs over `result.permissions`, so it holds over a short list as happily as
+   * over a complete one: truncate the `SharedPermissions.PERMISSIONS.map(...)` in the query and this
+   * case stays green. The length is pinned where the response is the response —
+   * `test/integration/http/user-permissions-endpoints.test.ts`, «answers every key of the
+   * catalogue», which compares against `SharedPermissions.PERMISSIONS.length` and reddens on that
+   * mutation. Restating it here would be a second copy to keep in step, and the one that matters is
+   * the one on the wire.
    */
-  it('agrees with the shared ladder on every key of the catalogue', async () => {
+  it('agrees with the shared ladder on every key it answers', async () => {
     const result = await queryOver(reader()).execute({
       actor: actorWith(),
       subjectUserId: IVAN,

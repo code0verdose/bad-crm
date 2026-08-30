@@ -281,22 +281,43 @@ describe('the order of the two layers', () => {
  * `holdsEffectively` is checked against the same source, because it is the third place the same
  * question used to be answered: «you may not grant what you do not have» has to mean exactly what
  * the guard means, or an administrator can hand out a key a DENY took away from them.
+ *
+ * **The expected answer of every row is written out by hand, and that is not decoration.** An
+ * agreement assertion alone compares a function with the function it delegates to, so it holds just
+ * as well when both are wrong together: deleting the DENY branch from
+ * `packages/shared/src/permissions/can.util.ts` moves all three answers at once and leaves every
+ * agreement row green. The `decides` column below is the model read off
+ * `docs/security/permission-model.md` §5 rather than off the code, so the same mutation fails the
+ * row where a DENY meets a grant — by name, from this file. The agreement assertions stay on top of
+ * it, because they catch the other failure: a private ladder reinstated in this package, which would
+ * disagree without either side being obviously wrong.
  */
 describe('the domain decision and the shared ladder are the same ladder', () => {
-  const VIEWS: readonly (readonly [string, Actor])[] = [
-    ['nothing granted', actorWith()],
-    ['granted by a role', actorWith({ permissions: new Set([ORG_SCOPED]) })],
+  /** name · actor · what the model says the answer is, independent of what any function computes. */
+  const VIEWS: readonly (readonly [string, Actor, boolean])[] = [
+    ['nothing granted', actorWith(), false],
+    ['granted by a role', actorWith({ permissions: new Set([ORG_SCOPED]) }), true],
     [
       'granted and denied — the exception wins',
       actorWith({ permissions: new Set([ORG_SCOPED]), denied: new Set([ORG_SCOPED]) }),
+      false,
     ],
-    ['denied without a grant', actorWith({ denied: new Set([ORG_SCOPED]) })],
-    ['the owner, whose set is empty', actorWith({ isOwner: true })],
+    ['denied without a grant', actorWith({ denied: new Set([ORG_SCOPED]) }), false],
+    ['the owner, whose set is empty', actorWith({ isOwner: true }), true],
     [
       'the owner with a DENY row that should never exist',
       actorWith({ isOwner: true, denied: new Set([ORG_SCOPED]) }),
+      true,
     ],
   ];
+
+  it.each(VIEWS)(
+    '%s — both entry points answer what the model writes down',
+    (_name, actor, decides) => {
+      expect(authorizeCapability(actor, ORG_SCOPED).allowed).toBe(decides);
+      expect(holdsEffectively(actor, ORG_SCOPED)).toBe(decides);
+    },
+  );
 
   it.each(VIEWS)('%s — authorizeCapability agrees with effectivePermission', (_name, actor) => {
     expect(authorizeCapability(actor, ORG_SCOPED).allowed).toBe(
