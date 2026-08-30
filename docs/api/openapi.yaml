@@ -1869,7 +1869,8 @@ paths:
         Shares the creation budget of 20 per 10 minutes: it mints a token and sends a letter, so a
         separate counter would be a way around the first one.
 
-        **`Idempotency-Key` is required, for the same reason as on creation (added 2026-08-16).**
+        **`Idempotency-Key` is required, for the same reason as on creation (added 2026-08-30 by `869ee32`;
+        this line said 2026-08-16 until the date was checked against the commit).**
         A retry after a dropped connection would mint a second token — invalidating the link the
         first response already handed over — and deliver a second letter to somebody who is not
         expecting one. The header was missing here while the creation it repeats has always had it;

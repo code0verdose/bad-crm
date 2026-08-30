@@ -10,8 +10,11 @@ import { contrastRatio, roundRatio } from './contrast.util.js';
  *
  * **The page had none of this, and it cost a real defect.** `--bcl-text-faint` was `#656d85`:
  * 3.89:1 on `--bcl-bg` and 3.69:1 on `--bcl-surface`, against the 4.5:1 that `rules/a11y.mdc` §1
- * requires. It is used in more than fifty declarations and always with `--bcl-text-xs` (13 px), so
- * the 3:1 exemption for large text applies nowhere. Among what it painted: the inactive half of the
+ * requires. It is used in more than fifty declarations, and in the great majority of them with
+ * `--bcl-text-xs` (13 px) — «always» is what this said until 2026-08-30, and it is not quite true:
+ * two rules pair it with `--bcl-text-sm` (15 px) and six with literal `0.65rem`/`0.6rem`. Every one
+ * of those is far below the 24 px the large-text exemption starts at, so the conclusion is the one
+ * the sentence was reaching for: the 3:1 exemption for large text applies nowhere. Among what it painted: the inactive half of the
  * language switch — the very control a Russian-speaking visitor looks for — and the disclaimer
  * saying the page is a prototype.
  *
