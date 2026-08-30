@@ -9,6 +9,7 @@ import { BootstrapOrganizationUseCase } from '@/application/organization/use-cas
 import { ConflictError } from '@/domain/shared/errors/app.errors.js';
 import { PrismaOrganizationRepository } from '@/infrastructure/persistence/prisma/organization.repository.js';
 import { ProvisionSystemRolesUseCase } from '@/application/iam/use-cases/provision-system-roles.use-case.js';
+import { type AuditLoggerPort } from '@/application/platform/ports/audit-logger.port.js';
 import { PrismaRoleRepository } from '@/infrastructure/persistence/prisma/role.repository.js';
 import { createPrismaClient } from '@/infrastructure/persistence/prisma/prisma.client.js';
 import { PrismaUnitOfWork } from '@/infrastructure/persistence/prisma/unit-of-work.adapter.js';
@@ -50,6 +51,15 @@ const silentLogger: LoggerPort = {
   child: (): LoggerPort => silentLogger,
 };
 
+/**
+ * A sink that refuses everything, which is the assertion: creating an organization is not a rights
+ * change, so provisioning its seven roles files nothing. A permissive double would let a regression
+ * that filed seven entries per registration pass unnoticed.
+ */
+const silentAuditLogger: AuditLoggerPort = {
+  record: () => Promise.reject(new Error('provisioning a fresh organization must file nothing')),
+};
+
 /** An organization of somebody else, created before every test and never touched afterwards. */
 const OTHER_ORG = randomUUID();
 
@@ -80,7 +90,7 @@ const useCaseFor = (organizationId: string): BootstrapOrganizationUseCase =>
     new PrismaUnitOfWork(base),
     new PrismaOrganizationRepository(),
     idsReturning(organizationId),
-    new ProvisionSystemRolesUseCase(new PrismaRoleRepository()),
+    new ProvisionSystemRolesUseCase(new PrismaRoleRepository(), silentAuditLogger),
   );
 
 const countUsers = async (): Promise<number> =>

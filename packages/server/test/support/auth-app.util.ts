@@ -312,7 +312,7 @@ export const createAuthApp = (options: AuthAppOptions = {}): AuthApp => {
     unitOfWork,
     organizations,
     new FakeIdGenerator(),
-    new ProvisionSystemRolesUseCase(new FakeRoleRepository()),
+    new ProvisionSystemRolesUseCase(new FakeRoleRepository(), audit),
   );
 
   // The 2FA surface (STORY-013-01, STORY-013-02). Real crypto adapters rather than scripted doubles

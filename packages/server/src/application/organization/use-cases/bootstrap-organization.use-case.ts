@@ -82,7 +82,7 @@ export class BootstrapOrganizationUseCase {
       // statement later is an organization that existed, for a moment, with nobody able to do
       // anything — and if that statement failed, for ever. The composition itself is code
       // (`SYSTEM_ROLE_PERMISSIONS`), so this call is also what an upgrade re-runs.
-      await this.provisionRoles.execute();
+      await this.provisionRoles.execute({ organizationId });
 
       return { organizationId, ownerId };
     });

@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 
 import { loadEnv } from '../src/infrastructure/bootstrap/load-env.util.js';
@@ -6,6 +7,10 @@ import { PrismaRoleRepository } from '../src/infrastructure/persistence/prisma/r
 import { ProvisionSystemRolesUseCase } from '../src/application/iam/use-cases/provision-system-roles.use-case.js';
 import { withTenant } from '../src/infrastructure/persistence/prisma/tenant.context.js';
 import { type LoggerPort } from '../src/application/platform/ports/logger.port.js';
+import { HmacAddressHasher } from '../src/infrastructure/crypto/address-hasher.adapter.js';
+import { PrismaAuditLogger } from '../src/infrastructure/persistence/prisma/audit-log.adapter.js';
+import { AsyncRequestContextAdapter } from '../src/infrastructure/logging/async-request-context.adapter.js';
+import { pinoAuditLogger } from '../src/infrastructure/logging/pino-audit.adapter.js';
 
 /**
  * `pnpm db:provision-roles` — re-applies system roles to every organization.
@@ -19,6 +24,12 @@ import { type LoggerPort } from '../src/application/platform/ports/logger.port.j
  *
  * Runs sequentially: fetches all organizations, then opens a transaction for each one to provision
  * its roles using the standard `withTenant` pattern. Each organization is provisioned independently.
+ *
+ * **A run that moves rights leaves a record in the organization it moved them in** (STORY-011-02,
+ * acceptance 7). The entries are written by the use-case, inside the same transaction as the change,
+ * as `actorType = SYSTEM` — there is no person here, only an operator at a shell. An organization
+ * this run did not actually change gets no entry at all, which is what keeps the trail of an
+ * installation with hundreds of tenants worth reading after an upgrade.
  */
 
 try {
@@ -36,6 +47,24 @@ const silent: LoggerPort = {
 };
 
 const env = loadEnv(process.env);
+
+/**
+ * One identifier for the whole run, shared by every entry it writes.
+ *
+ * `request_id` is `NOT NULL` and there is no request here; the alternative the writer falls back to
+ * is an empty string, which would leave the entries of one upgrade with no way to be grouped — and
+ * «show me everything that release did» is the question this record exists to answer.
+ */
+const runId = randomUUID();
+const requestContext = new AsyncRequestContextAdapter();
+const clock = { now: () => new Date() };
+const audit = new PrismaAuditLogger({
+  addressHasher: new HmacAddressHasher(env.APP_ENCRYPTION_KEY),
+  requestContext,
+  // Unreachable for the actions this script writes — both name an organization — but the writer
+  // takes no optional dependency, and a sink that threw would be a worse answer than a log line.
+  unscoped: pinoAuditLogger(silent, clock),
+});
 
 /**
  * Two connections, because the two halves of this script need different privileges — and the
@@ -102,7 +131,7 @@ try {
   // Provision roles for each organization using the standard withTenant pattern.
   // This is idempotent: a second run changes nothing.
   const roleRepository = new PrismaRoleRepository();
-  const provisionUseCase = new ProvisionSystemRolesUseCase(roleRepository);
+  const provisionUseCase = new ProvisionSystemRolesUseCase(roleRepository, audit);
 
   let provisioned = 0;
   const failed: string[] = [];
@@ -114,8 +143,10 @@ try {
     // others down with it; the failures are counted and reported at the end, because an upgrade
     // that stops on the first bad tenant leaves the rest unprovisioned with no record of which.
     try {
-      await withTenant(runtime, { organizationId: org.id, userId: null }, () =>
-        provisionUseCase.execute(),
+      await requestContext.run({ requestId: runId, organizationId: org.id, userId: null }, () =>
+        withTenant(runtime, { organizationId: org.id, userId: null }, () =>
+          provisionUseCase.execute({ organizationId: org.id }),
+        ),
       );
 
       provisioned++;

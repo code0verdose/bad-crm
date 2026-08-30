@@ -27,6 +27,46 @@ export interface RoleSummary {
   readonly permissionCount: number;
 }
 
+/**
+ * What provisioning did to one system role, as the trail needs to read it.
+ *
+ * The composition of a system role is code, so an upgrade can move the rights of every organization
+ * in an installation at once. `before`/`after` therefore carry the **delta** and the sizes rather
+ * than the two full lists: the lists are `SYSTEM_ROLE_PERMISSIONS` of the two releases and are
+ * recomputable from them, while «which keys moved, in this organization, on this run» is the fact
+ * nothing else records — and `owner` alone would otherwise write the whole catalogue into the trail
+ * twice per organization.
+ */
+export interface SystemRoleChange {
+  readonly roleId: string;
+  readonly key: SharedPermissions.SystemRoleKey;
+  /** `false` when this run created the row — a role the release added to an existing installation. */
+  readonly existedBefore: boolean;
+  readonly countBefore: number;
+  readonly countAfter: number;
+  readonly granted: readonly SharedPermissions.PermissionKey[];
+  readonly revoked: readonly SharedPermissions.PermissionKey[];
+}
+
+/**
+ * The result of a provisioning run: what the organization now has, and what actually moved.
+ *
+ * `changes` is empty for an idempotent re-run, which is what keeps the trail readable — an
+ * installation carrying hundreds of organizations re-provisions all of them on every upgrade, and a
+ * record per organization per run would bury the one release that did change something.
+ */
+export interface SystemRoleProvisioning {
+  readonly roles: readonly RoleSummary[];
+  /**
+   * How many of the drafted roles the organization already had.
+   *
+   * `0` means this is a first provisioning — a fresh organization, whose seven roles are what
+   * `organization.registered` already says it was given, not a change of anybody's rights.
+   */
+  readonly preexistingCount: number;
+  readonly changes: readonly SystemRoleChange[];
+}
+
 export interface RoleRepositoryPort {
   /**
    * Writes the system roles of the current organization and the permissions they grant.
@@ -39,7 +79,7 @@ export interface RoleRepositoryPort {
    * **Custom roles are never touched.** They belong to the organization, not to the release, and an
    * upgrade that rewrote them would be an upgrade that silently changes who can do what.
    */
-  provisionSystemRoles(drafts: readonly SystemRoleDraft[]): Promise<readonly RoleSummary[]>;
+  provisionSystemRoles(drafts: readonly SystemRoleDraft[]): Promise<SystemRoleProvisioning>;
 
   /** Every role of the current organization, system and custom alike. */
   listRoles(): Promise<readonly RoleSummary[]>;

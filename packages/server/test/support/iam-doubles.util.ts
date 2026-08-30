@@ -14,7 +14,9 @@ import {
 import {
   type RoleRepositoryPort,
   type RoleSummary,
+  type SystemRoleChange,
   type SystemRoleDraft,
+  type SystemRoleProvisioning,
 } from '../../src/application/iam/ports/role-repository.port.js';
 import {
   type CustomRoleRepositoryPort,
@@ -91,14 +93,51 @@ import {
 export class FakeRoleRepository implements RoleRepositoryPort {
   readonly provisioned: SystemRoleDraft[][] = [];
 
-  constructor(private readonly failing = false) {}
+  /**
+   * What the organization already holds, so the double can answer «what actually moved».
+   *
+   * Given as key → permissions rather than as a flag, because the property under test is that the
+   * trail records the *delta*: a double that only knew «this org was provisioned before» would let
+   * a use-case pass by filing an entry per role on every run, which is the noise the design refuses.
+   */
+  constructor(
+    private readonly failing = false,
+    private readonly existing: ReadonlyMap<
+      string,
+      readonly SharedPermissions.PermissionKey[]
+    > = new Map(),
+  ) {}
 
-  provisionSystemRoles(drafts: readonly SystemRoleDraft[]): Promise<readonly RoleSummary[]> {
+  provisionSystemRoles(drafts: readonly SystemRoleDraft[]): Promise<SystemRoleProvisioning> {
     if (this.failing) return Promise.reject(new Error('role repository is unavailable'));
 
     this.provisioned.push([...drafts]);
 
-    return Promise.resolve(this.summaries());
+    const changes: SystemRoleChange[] = [];
+
+    for (const [index, draft] of drafts.entries()) {
+      const before = this.existing.get(draft.key);
+      const granted = draft.permissions.filter((key) => !(before ?? []).includes(key));
+      const revoked = (before ?? []).filter((key) => !draft.permissions.includes(key));
+
+      if (granted.length === 0 && revoked.length === 0) continue;
+
+      changes.push({
+        roleId: `role-${String(index)}`,
+        key: draft.key,
+        existedBefore: before !== undefined,
+        countBefore: (before ?? []).length,
+        countAfter: draft.permissions.length,
+        granted,
+        revoked,
+      });
+    }
+
+    return Promise.resolve({
+      roles: this.summaries(),
+      preexistingCount: drafts.filter((draft) => this.existing.has(draft.key)).length,
+      changes,
+    });
   }
 
   listRoles(): Promise<readonly RoleSummary[]> {

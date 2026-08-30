@@ -61,7 +61,7 @@ const harness = (
     unitOfWork,
     organizations,
     new FakeIdGenerator(),
-    new ProvisionSystemRolesUseCase(new FakeRoleRepository()),
+    new ProvisionSystemRolesUseCase(new FakeRoleRepository(), audit),
   );
 
   const issue = new IssueSessionUseCase(

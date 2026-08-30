@@ -13,6 +13,13 @@ import { PrismaRoleRepository } from '@/infrastructure/persistence/prisma/role.r
 import { createPrismaClient } from '@/infrastructure/persistence/prisma/prisma.client.js';
 import { PrismaUnitOfWork } from '@/infrastructure/persistence/prisma/unit-of-work.adapter.js';
 import { withTenant } from '@/infrastructure/persistence/prisma/tenant.context.js';
+import { HmacAddressHasher } from '@/infrastructure/crypto/address-hasher.adapter.js';
+import { PrismaAuditLogger } from '@/infrastructure/persistence/prisma/audit-log.adapter.js';
+import {
+  type RequestContext,
+  type RequestContextPort,
+} from '@/application/platform/ports/request-context.port.js';
+import { type AuditLoggerPort } from '@/application/platform/ports/audit-logger.port.js';
 
 import {
   asMaintenance,
@@ -46,12 +53,60 @@ let base: PrismaClient;
 
 const idsReturning = (id: string): IdGeneratorPort => ({ next: () => id, uuid: () => id });
 
+const RUN_ID = '00000000-0000-4000-8000-0000000000aa';
+
+/** The context `pnpm db:provision-roles` opens: one identifier for the run, no person in it. */
+const fixedRequestContext: RequestContextPort = {
+  run: <T>(_context: RequestContext, fn: () => T): T => fn(),
+  identify: () => undefined,
+  current: () => ({ requestId: RUN_ID, organizationId: null, userId: null }),
+};
+
+const refusingUnscoped: AuditLoggerPort = {
+  record: () => Promise.reject(new Error('an entry naming an organization must not land here')),
+};
+
+/** The real writer: these cases are about rows in `audit_logs`, so nothing about it is a double. */
+const auditLogger = (): AuditLoggerPort =>
+  new PrismaAuditLogger({
+    addressHasher: new HmacAddressHasher(Buffer.alloc(32).toString('base64')),
+    requestContext: fixedRequestContext,
+    unscoped: refusingUnscoped,
+  });
+
+const provisioning = (): ProvisionSystemRolesUseCase =>
+  new ProvisionSystemRolesUseCase(new PrismaRoleRepository(), auditLogger());
+
+/** What the trail of one organization holds, newest last. */
+const trailOf = async (
+  organizationId: string,
+): Promise<{ action: string; actorType: string; actorId: string | null; after: unknown }[]> =>
+  asMaintenance(pools.owner, async (client) =>
+    (
+      await client.query<{
+        action: string;
+        actor_type: string;
+        actor_id: string | null;
+        after: unknown;
+      }>(
+        `SELECT action, actor_type, actor_id, after FROM audit_logs
+          WHERE organization_id = $1 ORDER BY occurred_at, action`,
+        [organizationId],
+      )
+    ).rows.map((row) => ({
+      action: row.action,
+      actorType: row.actor_type,
+      actorId: row.actor_id,
+      after: row.after,
+    })),
+  );
+
 const bootstrapFor = (organizationId: string): BootstrapOrganizationUseCase =>
   new BootstrapOrganizationUseCase(
     new PrismaUnitOfWork(base),
     new PrismaOrganizationRepository(),
     idsReturning(organizationId),
-    new ProvisionSystemRolesUseCase(new PrismaRoleRepository()),
+    provisioning(),
   );
 
 const createOrganization = async (slug: string): Promise<string> => {
@@ -151,7 +206,7 @@ describe('re-provisioning, which is what an upgrade does', () => {
     const before = await rolesOf(organizationId);
 
     await withTenant(base, { organizationId, userId: null }, () =>
-      new ProvisionSystemRolesUseCase(new PrismaRoleRepository()).execute(),
+      provisioning().execute({ organizationId }),
     );
 
     expect(await rolesOf(organizationId)).toEqual(before);
@@ -175,7 +230,7 @@ describe('re-provisioning, which is what an upgrade does', () => {
     });
 
     await withTenant(base, { organizationId, userId: null }, () =>
-      new ProvisionSystemRolesUseCase(new PrismaRoleRepository()).execute(),
+      provisioning().execute({ organizationId }),
     );
 
     const stray = await asMaintenance(
@@ -192,6 +247,63 @@ describe('re-provisioning, which is what an upgrade does', () => {
     );
 
     expect(stray).toBe(0);
+  });
+
+  /**
+   * Acceptance 7, second half: an upgrade that moves rights leaves a record of it.
+   *
+   * The composition of a system role is code, so `pnpm db:provision-roles` can change what people
+   * may do in every organization of an installation at once. Until this case existed it did so in
+   * silence — «people held rights on Monday they did not hold on Friday, and the journal says
+   * nothing». Written against the real table rather than a double, because the two properties worth
+   * proving are properties of the row: it is filed inside the organization whose rights moved, and
+   * `actor_type` says `SYSTEM` because the writer found no person in the actor.
+   */
+  it('records the change as SYSTEM in the trail of the organization it changed', async () => {
+    const organizationId = await createOrganization('acme');
+
+    // A key the release removed: the administrator holds `invoice:issue`, the matrix does not give
+    // it, so the next provisioning revokes it — a rights change of exactly the shape an upgrade makes.
+    await asMaintenance(pools.owner, async (client) => {
+      await client.query(
+        `INSERT INTO role_permissions (organization_id, role_id, permission_key, updated_at)
+         SELECT $1, id, 'invoice:issue', now() FROM roles
+          WHERE organization_id = $1 AND key = 'admin'`,
+        [organizationId],
+      );
+    });
+
+    await withTenant(base, { organizationId, userId: null }, () =>
+      provisioning().execute({ organizationId }),
+    );
+
+    const trail = await trailOf(organizationId);
+
+    expect(trail).toHaveLength(1);
+    expect(trail[0]?.action).toBe('role.updated');
+    expect(trail[0]?.actorType).toBe('SYSTEM');
+    expect(trail[0]?.actorId).toBeNull();
+    expect(trail[0]?.after).toMatchObject({
+      key: 'admin',
+      revoked: ['invoice:issue'],
+      granted: [],
+    });
+  });
+
+  /**
+   * CONTROL for the case above, and the reason the trail stays readable: the command runs on every
+   * upgrade against every organization of the installation, and a run that changed nothing must
+   * leave nothing. Without this, an installation of hundreds of tenants would file hundreds of
+   * «nothing happened» entries per release and the entry above would be unfindable among them.
+   */
+  it('CONTROL: writes nothing when the re-run changed nothing', async () => {
+    const organizationId = await createOrganization('acme');
+
+    await withTenant(base, { organizationId, userId: null }, () =>
+      provisioning().execute({ organizationId }),
+    );
+
+    expect(await trailOf(organizationId)).toEqual([]);
   });
 
   /**
@@ -216,7 +328,7 @@ describe('re-provisioning, which is what an upgrade does', () => {
     });
 
     await withTenant(base, { organizationId, userId: null }, () =>
-      new ProvisionSystemRolesUseCase(new PrismaRoleRepository()).execute(),
+      provisioning().execute({ organizationId }),
     );
 
     const custom = (await rolesOf(organizationId)).find((role) => role.key === 'reviewer');
@@ -255,7 +367,7 @@ describe('re-provisioning, which is what an upgrade does', () => {
 
     // Provision roles as the upgrade procedure would
     await withTenant(base, { organizationId, userId: null }, () =>
-      new ProvisionSystemRolesUseCase(new PrismaRoleRepository()).execute(),
+      provisioning().execute({ organizationId }),
     );
 
     // Verify all seven system roles are now present

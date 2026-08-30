@@ -68,24 +68,26 @@ estimate: M
 
 ## Задачи
 
-- [x] `packages/shared/src/permissions/system-roles.ts` — `SYSTEM_ROLE_KEYS`, `SystemRoleKey`,
+- [x] `packages/shared/src/permissions/system-roles.enums.ts` — `SYSTEM_ROLE_KEYS`, `SystemRoleKey`,
       `SYSTEM_ROLE_PERMISSIONS` (перенос §4 документа, все 10 подтаблиц).
-- [x] `packages/shared/src/permissions/system-roles.spec.ts` — owner = весь каталог, ключи из
+- [x] `packages/shared/test/permissions/system-roles.test.ts` — owner = весь каталог, ключи из
       каталога, снапшот матрицы, проверки разделения обязанностей (п. 3).
 - [x] `packages/server/prisma/migrations/*_roles/migration.sql` — таблицы `roles`, `role_permissions`
       с `organization_id`, `uq_roles_org_key`, частичный `idx_roles_org_default (organization_id) WHERE is_default`,
       `uq_role_permissions (role_id, permission_key)`, покрывающий
       `idx_role_permissions_org_role (organization_id, role_id) INCLUDE (permission_key)`,
       RLS `ENABLE` + `FORCE` + политика `tenant_isolation` (USING = WITH CHECK) + `maintenance_access`.
-- [x] `packages/server/prisma/seed/system-roles.seed.ts` — идемпотентный сид ролей на организацию.
+- [x] `packages/server/scripts/provision-system-roles.ts` (`pnpm db:provision-roles`) — идемпотентный
+      сид ролей на организацию.
 - [x] `packages/server/src/application/iam/use-cases/provision-system-roles.use-case.ts` — вызывается
       из создания организации ([EPIC-006](../../epic-006-auth-core/epic.md)) в той же транзакции.
-- [x] `packages/server/src/application/iam/use-cases/update-role.use-case.ts` — проверка
-      `isSystem → DomainError('system_role_immutable')` (расширяется в STORY-011-03).
-- [x] `packages/server/test/integration/rls/row-factories.ts` — фабрики для `roles`, `role_permissions`;
-      регистрация в `tenant-tables.ts`.
-- [x] `packages/server/test/integration/rls/rls-isolation.test.ts` — isolation-тест для обеих таблиц.
-- [x] `packages/server/test/integration/iam/system-roles-provisioning.spec.ts` — п. 1, 6, 7.
+- [x] `packages/server/src/domain/iam/access/role-composition.policy.ts` — проверка
+      `isSystem → deny('system_role_immutable')`, вызывается из `write-custom-role.use-case.ts` и
+      `write-role-changes.use-case.ts` (расширяется в STORY-011-03).
+- [x] `packages/server/test/integration/db/row-factories.util.ts` — фабрики для `roles`, `role_permissions`;
+      регистрация в `tenant-tables.constant.ts`.
+- [x] `packages/server/test/integration/db/rls-isolation.test.ts` — isolation-тест для обеих таблиц.
+- [x] `packages/server/test/integration/db/system-roles-provisioning.test.ts` — п. 1, 6, 7.
 
 ## Ссылки
 
@@ -159,19 +161,48 @@ unit-тестов use-case'а и пять — репозитория с запи
 параметром. Правило запрещает это ровно потому, что параметр — второй ответ на вопрос «какой
 арендатор», и при расхождении со скоупом запрос не отвергается, а молча фильтруется в ноль.
 
-**Осталось по истории, ревизия 2026-08-30 — два пункта, оба открытые:**
+**Критерий 7 закрыт полностью — 2026-08-30.** Вторая половина («событие `role.updated` с
+`actorType = SYSTEM` пишется в `AuditLog`») отгружена: `ProvisionSystemRolesUseCase` принимает
+`AuditLoggerPort` и пишет запись **в той же транзакции**, что и изменение прав, внутри `withTenant`
+организации, чьи права поехали. Три решения, принятые по дороге, и каждое отказ от более лёгкой
+версии:
 
-1. **Критерий 7 закрыт наполовину: пересид работает, записи в журнале нет.** Первая половина
-   отгружена и покрыта — роль `lead` получает новый ключ у всех организаций, кастомные роли не
-   трогаются (`test/integration/db/system-roles-provisioning.test.ts:165,201`, замена грантов
-   вместо слияния). Второй половины — «событие `role.updated` с `actorType = SYSTEM` пишется в
-   `AuditLog`» — нет: `provision-system-roles.use-case.ts` не зовёт `audit` ни разу
-   (`grep -n audit` по файлу пуст), а `role.updated` пишут только `write-custom-role.use-case.ts` и
-   `write-role-changes.use-case.ts`, оба с человеком в акторе. То есть пересид меняет права во всех
-   организациях инсталляции и не оставляет следа. Это не оформление: `AuditActorType` со значением
-   `SYSTEM` в схеме есть, и именно такие изменения — «права поехали после обновления, кто это
-   сделал» — журнал и должен объяснять.
-2. **Критерий 4 (`guest` получает 404 через ACL, а не 403) — проверить не на чем.** У всех
+- **Запись — на организацию, а не на инсталляцию.** Аудит арендатора тенант-скоупный по построению
+  (`organization_id NOT NULL`, RLS), а читатель «в моей организации поменялись права» — владелец
+  этой организации, не оператор у консоли. Сводке по инсталляции некуда лечь и некому её читать.
+  Внутри организации — одна запись на роль, состав которой сдвинулся.
+- **Только когда что-то реально изменилось.** Репозиторий читает состав ролей **до** замены грантов
+  и возвращает дельту; идемпотентный прогон возвращает пустой список изменений и не пишет ничего.
+  Иначе инсталляция на сотни арендаторов давала бы сотни «ничего не произошло» на каждый релиз, и
+  единственный релиз, который правда что-то поменял, стал бы ненаходимым.
+- **На первом провижининге — молчание.** Свежая организация не «инсталляция, у которой поехали
+  права»: она создаётся, и что ей выдали — это `organization.registered`, уже записанный. Семь
+  записей рядом были бы тем же фактом, написанным восемь раз. Условие — `preexistingCount > 0`, то
+  есть организация уже держала эти роли до прогона.
+
+Нового действия каталог не потребовал: `role.created` и `role.updated` в
+`audit-action.enums.ts` уже есть, severity берётся из действия, а `actorType = SYSTEM` выводит
+писатель из актора без `userId` (`audit-log.adapter.ts:111`) — то есть повторён принятый способ, а
+не изобретён свой. Комментарий каталога, объявлявший эти два действия делом только кастомных ролей,
+исправлен по факту. `before`/`after` несут **дельту** (`granted`/`revoked` плюс размеры), а не два
+полных состава: оба состава — это `SYSTEM_ROLE_PERMISSIONS` двух релизов и восстанавливаются из
+кода, а `owner` иначе клал бы весь каталог в журнал дважды на каждую организацию инсталляции.
+
+Покрытие: шесть unit-случаев в `packages/server/test/unit/iam/provision-system-roles.test.ts`
+(запись только на сдвинувшейся роли, актор без человека, молчание на идемпотентном прогоне,
+молчание на первом провижининге, `role.created` для роли, которую релиз добавил в существующую
+организацию, и контроль «отказ журнала не проглатывается») плюс два интеграционных на реальном
+Postgres — `system-roles-provisioning.test.ts`: строка в `audit_logs` с `actor_type = SYSTEM` и
+`actor_id IS NULL` в организации, чьи права изменились, и контроль «повторный прогон не пишет
+ничего». Сид и бутстрап получают в тестах **отказывающий** сток: провижининг свежей организации,
+который что-то запишет, роняет тест, а не проходит незамеченным.
+
+`pnpm db:provision-roles` открывает один `requestId` на прогон (`request_id` в таблице `NOT NULL`,
+и запасной вариант писателя — пустая строка), так что записи одного обновления группируются.
+
+**Осталось по истории — один пункт:**
+
+1. **Критерий 4 (`guest` получает 404 через ACL, а не 403) — проверить не на чем.** У всех
    маршрутов сегодня `requiredLevel = null`, `ResourceAcl` не существует; предмет появится в
    [STORY-011-06](story-011-06-resource-acl.md), заблокированной до EPIC-014. Заглушки критерий не
    получил.

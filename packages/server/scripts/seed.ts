@@ -10,6 +10,7 @@ import { createPrismaClient } from '../src/infrastructure/persistence/prisma/pri
 import { PrismaUnitOfWork } from '../src/infrastructure/persistence/prisma/unit-of-work.adapter.js';
 import { SystemIdGeneratorAdapter } from '../src/infrastructure/platform/system-id-generator.adapter.js';
 import { type LoggerPort } from '../src/application/platform/ports/logger.port.js';
+import { pinoAuditLogger } from '../src/infrastructure/logging/pino-audit.adapter.js';
 
 import { renderSeedSummary, seedInstallation, seedRefusalReason } from './seed.util.js';
 
@@ -73,7 +74,12 @@ try {
       new PrismaUnitOfWork(prisma),
       new PrismaOrganizationRepository(),
       new SystemIdGeneratorAdapter(),
-      new ProvisionSystemRolesUseCase(new PrismaRoleRepository()),
+      // A seeded organization is created, not upgraded, so provisioning files nothing here — the
+      // sink is what the constructor asks for, not a path this run takes.
+      new ProvisionSystemRolesUseCase(
+        new PrismaRoleRepository(),
+        pinoAuditLogger(silentLogger, { now: () => new Date() }),
+      ),
     ),
     hashPassword: (plain) =>
       new Argon2PasswordHasher({

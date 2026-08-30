@@ -113,7 +113,16 @@ export const AUDIT_ACTIONS = [
    * offboarding as counters rather than as reassurance.
    */
   'user.mfa_reset_by_admin',
-  /** A custom role was composed, recomposed or removed (STORY-011-03). */
+  /**
+   * A role was composed, recomposed or removed.
+   *
+   * Two callers, and the second is why the entry names no person by construction: an administrator
+   * editing a custom role (STORY-011-03), and the upgrade path re-applying the system matrix to
+   * every organization of an installation (STORY-011-02, acceptance 7), which files these as
+   * `actorType = SYSTEM`. The second is deliberately not an action of its own — a reader asking
+   * «what happened to this role» must not have to know which of the two moved it — and it is filed
+   * only when the composition actually moved, so an idempotent re-run leaves the trail alone.
+   */
   'role.created',
   'role.updated',
   'role.deleted',

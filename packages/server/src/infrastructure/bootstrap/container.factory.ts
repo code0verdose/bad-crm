@@ -710,7 +710,7 @@ const buildIdentity = (input: {
     unitOfWork,
     organizations,
     input.idGenerator,
-    new ProvisionSystemRolesUseCase(new PrismaRoleRepository()),
+    new ProvisionSystemRolesUseCase(new PrismaRoleRepository(), input.audit),
   );
 
   const dependencies: IdentityDependencies = {

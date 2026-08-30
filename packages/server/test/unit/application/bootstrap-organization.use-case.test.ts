@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
+import { FakeAuditLogger } from '../../support/identity-doubles.util.js';
 import { FakeRoleRepository } from '../../support/iam-doubles.util.js';
 
 import { ProvisionSystemRolesUseCase } from '@/application/iam/use-cases/provision-system-roles.use-case.js';
@@ -123,7 +124,7 @@ const buildUseCase = (database: InMemoryDatabase): BootstrapOrganizationUseCase 
     database.unitOfWork,
     database.organizations,
     fixedIds,
-    new ProvisionSystemRolesUseCase(new FakeRoleRepository()),
+    new ProvisionSystemRolesUseCase(new FakeRoleRepository(), new FakeAuditLogger()),
   );
 
 describe('BootstrapOrganizationUseCase', () => {
