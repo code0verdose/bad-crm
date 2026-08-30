@@ -25,6 +25,16 @@ estimate: L
 > (`schema.prisma:403`, `domain/iam/access/team-access.policy.ts:25`), а
 > [EPIC-014](../../epic-014-project-core/epic.md) в статусе `backlog`. Причина блокировки не
 > устранена и не изменилась.
+>
+> **Блокировка подтверждена повторно 2026-08-12 → 2026-08-30.** Сверка та же и с тем же исходом:
+> `grep -c '^model Project' packages/server/prisma/schema.prisma` печатает `0`, миграции с
+> `resource_acl` нет ни одной, EPIC-014 всё ещё `backlog`. Отдельно проверено, что **заглушек
+> история не получила** — ни `domain/access/acl-resolution.ts`, ни `implicit-level.ts`, ни каталога
+> `application/access/` не существует, `implicitLevel` не встречается в коде ни разу, TODO про ACL
+> в `domain/**` и `shared/src/permissions/**` нет. Ключи `acl:read`/`acl:grant`/`acl:revoke` в
+> каталоге присутствуют (`permissions.catalog.ts:88-90`) и это не заглушка, а устройство
+> STORY-011-01: каталог объявляется закрытым списком заранее — ни один из трёх ключей не стоит ни
+> на одном маршруте.
 
 ## Acceptance (Given/When/Then)
 
