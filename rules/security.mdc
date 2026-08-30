@@ -39,9 +39,19 @@ alwaysApply: true
 
 ### Аутентификация и сессии
 
-6. **Пароли — argon2id** (`@node-rs/argon2`, `memoryCost` 19456, `timeCost` 2, `parallelism` 1,
-   `outputLen` 32). Параметры в env; хеш хранит их внутри строки, поэтому старые пароли прозрачно
+6. **Пароли — argon2id** (`@node-rs/argon2`, `memoryCost` 19456, `timeCost` 2, `parallelism` 1).
+   Параметры в env; хеш хранит их внутри строки, поэтому старые пароли прозрачно
    перехешируются при следующем успешном логине. bcrypt и sha-* для паролей запрещены.
+
+   Здесь до 2026-08-30 стоял четвёртый параметр — `outputLen` 32. Такого параметра в проекте нет:
+   ни `env.schema.ts`, ни `argon2-password-hasher.adapter.ts`, ни `.env.example` его не знают, длину
+   дайджеста задаёт умолчание библиотеки. Параметры самого хеша — три перечисленных выше; какие
+   ещё ручки с префиксом `ARGON2` есть у окружения (там же живут ограничители параллелизма),
+   печатает команда, а не число в правиле:
+
+   ```bash
+   grep -n 'ARGON2_' packages/server/src/infrastructure/bootstrap/env.schema.ts
+   ```
 7. **Access JWT живёт только в памяти клиента** (TTL 15 мин), refresh — opaque 32 байта в httpOnly
    cookie (`SameSite=Lax`, `Secure`, `Path=/api/v1/auth`, TTL 30 дней), в БД хранится SHA-256-хеш.
    Токены в `localStorage` запрещены.
@@ -62,6 +72,15 @@ alwaysApply: true
     общий счётчик для всех реплик): логин/сброс/2FA — 5 попыток / 15 мин по IP+email;
     API — 300 req/мин; тяжёлые endpoint'ы — 10/мин; регистрация организации — 3/час; события
     WebSocket — 50/с. При срабатывании — 429 + `Retry-After` + `code: "rate_limited"`.
+
+    Четыре первых числа сверены с кодом 2026-08-30 и совпадают. Пятое — заявка, а не описание:
+    политики `WebSocket — 50/с` в `RATE_LIMIT_POLICY` нет, потому что нет и сокет-сервера
+    (EPIC-025). Заводящий его эпик добавляет политику тем же коммитом. Полный набор политик,
+    которые действительно отгружены, печатает:
+
+    ```bash
+    grep -nE '^  [a-z_]+: \{' packages/server/src/infrastructure/rate-limit/rate-limit-policy.constant.ts
+    ```
 
 ### Транспорт и вход
 
@@ -97,12 +116,17 @@ return { id: provider.id, kind: provider.kind, apiKeyTail };   // полного
 ```
 
 ```ts
-// infrastructure/bootstrap/env.ts
-APP_ENCRYPTION_KEY: z.string().refine(
-  (v) => Buffer.from(v, 'base64').length === 32,
-  'APP_ENCRYPTION_KEY must be 32 bytes, base64-encoded',
-),
+// infrastructure/bootstrap/env.schema.ts
+APP_ENCRYPTION_KEY: z.string().refine((value) => isBase64Bytes(value, APP_ENCRYPTION_KEY_BYTES), {
+  error: 'APP_ENCRYPTION_KEY must be 32 bytes, base64-encoded',
+}),
 ```
+
+До 2026-08-30 пример стоял в файле `infrastructure/bootstrap/env.ts` (такого файла нет — схема
+живёт в `env.schema.ts`) и проверял длину через `Buffer.from(v, 'base64').length`. Второе не
+опечатка, а ровно тот приём, который источник отвергает вслух: `Buffer` молча усекает строку, лишь
+похожую на base64, поэтому `isBase64Bytes` сперва проверяет алфавит регуляркой и затем считает
+длину через `atob`. Сообщение — объектом `{ error }` (Zod 4), как во всём остальном файле.
 
 ### ❌ Неправильно
 

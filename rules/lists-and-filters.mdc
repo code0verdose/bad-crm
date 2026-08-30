@@ -19,22 +19,40 @@ alwaysApply: false
 1. **URL search-params — единственный источник правды состояния фильтров, сортировки и страницы.**
    Локальный `useState` для этого запрещён: состояние обязано переживать перезагрузку, работать в
    back/forward и уезжать ссылкой коллеге.
-2. **Схема search-параметров — Zod, подключение — `validateSearch: zodValidator(schema)`.** Парсинг,
+2. **Схема search-параметров — Zod, подключение — `validateSearch: schema` напрямую.** Парсинг,
    приведение (`z.coerce`) и whitelist делает схема, а не руками написанный разбор строки.
    Мусорное значение отбрасывается схемой.
+
+   До 2026-08-30 правило предписывало `validateSearch: zodValidator(schema)`. `zodValidator` живёт
+   в `@tanstack/zod-adapter`, которого в `packages/client/package.json` нет и который объявляет
+   пирой `zod@^3.23.8`; воркспейс на Zod 4, и роутер принимает такую схему как standard-schema
+   валидатор без адаптера. Так и написаны все отгруженные маршруты — проверить:
+   `grep -rn 'validateSearch' packages/client/src/app/routes`.
 3. **Мульти-значения** — повторяющиеся ключи или список через запятую, всегда валидируемые против
    допустимого множества (`z.enum`). Неизвестное значение молча отбрасывается, а не роняет экран.
 4. **Чтение — `Route.useSearch()`** (типизировано). Запись — `navigate({ search: prev => ({...}),
    replace: true })`: фильтры не засоряют историю браузера.
 5. **Смена любого фильтра сбрасывает `page` в 1.** Иначе пользователь оказывается на пустой
    седьмой странице результата из трёх строк.
-6. **Текстовый поиск — `useDebouncedValue(value, 300)` из `@mantine/hooks`.** В URL и в query-key
-   уходит уже debounced-значение; поле ввода при этом контролируемое и мгновенное, иначе курсор
-   «прыгает».
+6. **Текстовый поиск — `useDebouncedCallback(publish, 300)` из `@mantine/hooks`.** Поле ввода
+   контролируется локальным состоянием и отвечает мгновенно, а в URL и в query-key значение уходит
+   один раз, после паузы.
+
+   До 2026-08-30 правило называло `useDebouncedValue(value, 300)`. Оба отгруженных фильтра
+   (`use-employee-filters.hook.ts`, `use-team-filters.hook.ts`) используют
+   `useDebouncedCallback`, и это не вкусовщина: адрес здесь **и есть** состояние, поэтому
+   притормаживать надо запись, а не производное значение — иначе URL и поле расходятся на 300 мс.
+   Пауза — 300 мс, `TYPING_PAUSE_MS` в обоих хуках; число сверено и совпадает.
 7. **Логика фильтра живёт в хуке юнита** `units/<unit>/service/hooks/use-<entity>-filters.hook.ts`
-   (читает/пишет URL, debounce, отдаёт `{ filters, setFilter, resetFilters, queryParams }`) и
-   `use-<entity>-list.hook.ts` (композит фильтра и запроса). Страница только раскладывает
-   `<FilterBar>` + `<list>` + `<PaginationBar>`.
+   (читает/пишет URL, debounce) и `use-<entity>-list.hook.ts` (композит фильтра и запроса).
+   Страница только раскладывает `<FilterBar>` + `<list>` + `<PaginationBar>`.
+
+   Форма возвращаемого объекта здесь **не** фиксирована, и до 2026-08-30 правило утверждало
+   обратное: требовало `{ filters, setFilter, resetFilters, queryParams }`. Ни один отгруженный
+   хук так не выглядит — оба отдают именованные сеттеры по полям (`setQuery`, `setStatuses`,
+   `toggleRole`, `setSort`, `setPage`, `reset`) плюс `search`, `typed`, `isFiltered` и `params`.
+   Расхождение зафиксировано и **не разрешено**: либо правило описывает отгруженную форму, либо оба
+   хука переписываются под общий `setFilter`. Пока решения нет — держись формы соседнего юнита.
 8. **Запрос — с `placeholderData: keepPreviousData` и обязательным `signal`** (см.
    `rules/tanstack-query.mdc`). Смена фильтра отменяет предыдущий запрос; `AbortError` не ошибка.
 9. **Тип пагинации выбирается по типу данных, а не по удобству:** ленты (activity, комментарии,
@@ -68,7 +86,7 @@ export type TaskFilters = z.infer<typeof taskFiltersSchema>;
 ```ts
 // app/routes/_authenticated/tasks.tsx — тонкий route-файл
 export const Route = createFileRoute('/_authenticated/tasks')({
-  validateSearch: zodValidator(taskFiltersSchema),
+  validateSearch: taskFiltersSchema,
   component: TasksPage,
 });
 ```
@@ -78,13 +96,23 @@ export const Route = createFileRoute('/_authenticated/tasks')({
 export function useTaskFilters() {
   const search = Route.useSearch();
   const navigate = Route.useNavigate();
-  const [debouncedQ] = useDebouncedValue(search.q, 300);
+  // Поле отвечает мгновенно из локального состояния; URL догоняет после паузы.
+  const [typed, setTyped] = useState(search.q);
 
-  const setFilter = <K extends keyof TaskFilters>(key: K, value: TaskFilters[K]) =>
-    navigate({ search: (prev) => ({ ...prev, [key]: value, page: 1 }), replace: true }); // page → 1
+  const applyFilter = (change: Partial<TaskFilters>) =>
+    navigate({ search: (prev) => ({ ...prev, ...change, page: 1 }), replace: true }); // page → 1
 
-  return { filters: search, setFilter, resetFilters: () => navigate({ search: {}, replace: true }),
-           queryParams: { ...search, q: debouncedQ } };
+  const publishQuery = useDebouncedCallback((q: string) => applyFilter({ q }), TYPING_PAUSE_MS);
+
+  return {
+    search,
+    typed,
+    setQuery: (q: string) => { setTyped(q); publishQuery(q); },
+    setStatuses: (status: readonly TaskStatus[]) => applyFilter({ status: [...status] }),
+    // `page` — единственное, что не сбрасывает само себя.
+    setPage: (page: number) => navigate({ search: (prev) => ({ ...prev, page }), replace: true }),
+    reset: () => { setTyped(''); applyFilter({ q: '', status: [] }); },
+  };
 }
 ```
 

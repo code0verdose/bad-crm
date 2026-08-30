@@ -16,8 +16,17 @@ alwaysApply: false
 ## Правило
 
 1. **Тостер один на всё приложение** — `@mantine/notifications`, обёрнутый в `shared/ui/toaster`
-   (`notify.success/error/loading/update/dismiss`). Компоненты вызывают обёртку, а не вендора.
+   (`notify.error/success/loading/dismiss/clear`). Компоненты вызывают обёртку, а не вендора.
    `<Notifications />` монтируется в `app/providers.tsx` ровно один раз.
+
+   До 2026-08-30 здесь стоял `notify.update`, которого нет: обновление не отдельный метод, а
+   следствие пункта 6 — повторный вызов `notify.*` с тем же `id` внутри обёртки уходит в
+   `notifications.update` вместо `show`. Зато не был назван `notify.clear` (гасит всё разом — смена
+   маршрута и тесты). Актуальную поверхность печатает
+   ```bash
+   sed -n '/^export const notify/,/^} as const/p' \
+     packages/client/src/shared/ui/toaster/notify.util.tsx | grep -E '^  [a-z]+:'
+   ```
 2. **Одно логическое действие — максимум один сигнал.** Не бывает «и тост, и баннер», «и тост, и
    inline-ошибка», «и `onError`, и `try/catch` вокруг того же вызова».
 3. **Единый источник ошибок мутаций — глобальный `MutationCache.onError`** → красный тост

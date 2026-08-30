@@ -41,7 +41,8 @@ job'ов, формы, search-параметры URL, `localStorage`, перем�
 11. **Размещение и нейминг:** доменные схемы и `*Draft` — `units/<unit>/model/validation/
     <entity>.schema.ts`; переиспользуемые примитивы (email, phone, money, id, пагинация) —
     `shared/lib/validation`; серверные схемы запросов — `presentation/http/validators/`; схемы
-    ответов внешних API — рядом с адаптером; схема `env` — `infrastructure/bootstrap/env.ts`.
+    ответов внешних API — рядом с адаптером; схема `env` — `infrastructure/bootstrap/env.schema.ts`
+    (до 2026-08-30 здесь стоял `env.ts` — файла с таким именем в дереве нет и не было).
     Файл — `<name>.schema.ts`, схема `camelCaseSchema`, тип `PascalCase` через `z.infer`.
 12. **Формы — `@mantine/form` со встроенным `schemaResolver`.** Mantine 9 поддерживает Standard
     Schema, поэтому схема подключается пакетом формы, а не отдельным резолвером:

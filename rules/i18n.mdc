@@ -25,6 +25,21 @@ alwaysApply: true
 4. **Namespace совпадают с юнитами:** `common`, `validation`, `errors`, `nav` + `auth`, `projects`,
    `tasks`, `docs`, `kb`, `chat`, `files`, `vault`, `time`, `reports`, `delivery`, `onboarding`,
    `admin`, `ai`. `common` и `validation` грузятся всегда, доменные — лениво вместе с чанком маршрута.
+
+   **Список выше — план на все майлстоуны, а не опись каталога.** Сверено 2026-08-30: из доменных
+   имён отгружен один `auth`, а половины отгруженных namespace в списке нет вовсе (`dashboard`,
+   `employee`, `filter`, `members`, `offboarding`, `pagination`, `permissions`, `roles`, `security`,
+   `teams`). Что лежит в каталоге — печатает `ls packages/client/src/shared/i18n/locales/en`;
+   паритет `en`/`ru` держит `pnpm i18n:check`, поэтому вторую сторону перечислять незачем.
+
+   **Не разрешено и правится решением человека.** Пункт 11 `rules/naming-and-structure.mdc`
+   требует единственного числа в корне юнита и прямо запрещает `units/tasks`, `units/projects`,
+   `units/files`, `units/permissions`, `units/roles`. «Namespace совпадают с юнитами» вместе с
+   этим означало бы namespace `task`, `project`, `file`, `iam`, — а плановый список выше называет
+   `tasks`, `projects`, `docs`, `files`, и отгруженный каталог продолжает ту же линию
+   (`permissions`, `roles`, `members`, `teams` при юнитах `iam` и `team`). Два правила сегодня
+   требуют разного: либо namespace перестают совпадать с юнитами, либо каталог переименовывается.
+   Выбор за человеком; чинить это здесь, в одностороннем порядке, нельзя.
 5. **Пользовательский текст в `.ts` хранится ключом, а не строкой.** Label-map статусов, заголовки
    колонок, тексты ошибок: `{ value: 'paid', labelKey: 'delivery.invoice.status.paid' }`, перевод —
    в компоненте.

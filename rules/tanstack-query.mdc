@@ -116,8 +116,16 @@ export const tasksQueryOptions = (params: TaskListParams) =>
 export const useToggleTaskDone = () =>
   useMutation({
     mutationFn: TaskApi.toggleDone,
-    onMutate: (vars) => runOptimisticPatch(QueryKeys.Tasks.all, vars.id, { done: vars.done }),
-    onError: (_e, _v, ctx) => rollbackOptimistic(ctx),
+    // Оба хелпера первым аргументом берут `QueryClient`, вторым — объект, а не позиционный список.
+    // До 2026-08-30 здесь стояли формы `runOptimisticPatch(key, id, patch)` и
+    // `rollbackOptimistic(ctx)`: они не компилируются против `shared/api/optimistic.util.ts`.
+    onMutate: (vars) =>
+      runOptimisticPatch(queryClient, {
+        queryKeys: [QueryKeys.Tasks.all],
+        itemId: vars.id,
+        patch: { done: vars.done },
+      }),
+    onError: (_e, _v, ctx) => rollbackOptimistic(queryClient, ctx),
     onSettled: () => queryClient.invalidateQueries({ queryKey: QueryKeys.Tasks.all }),
   });
 

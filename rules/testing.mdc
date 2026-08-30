@@ -27,9 +27,13 @@ alwaysApply: true
    | contract | `packages/server/test/contract/**` | Vitest | спека ↔ роутер, каталог кодов ошибок, покрытие ACL, авторизацию маршрутов |
    | e2e | `packages/e2e/tests/**` | Playwright поверх `docker compose` | критичные пользовательские сценарии |
 
-   **Имя файла Vitest-теста — `*.test.ts` / `*.test.tsx`, и только оно.** Все четыре конфига Vitest
-   (`vitest.config.ts` в корне и в трёх пакетах, плюс `packages/server/vitest.integration.config.ts`)
-   включают исключительно этот шаблон. Файл с суффиксом `spec` вместо `test` **не запускается ни
+   **Имя файла Vitest-теста — `*.test.ts` / `*.test.tsx`, и только оно.** Каждый конфиг Vitest
+   репозитория включает исключительно этот шаблон — список конфигов печатает
+   `git ls-files | grep 'vitest.*config'`, и числом он здесь не записан: до 2026-08-30 тут стояло
+   «все четыре конфига (`vitest.config.ts` в корне и в трёх пакетах, плюс
+   `packages/server/vitest.integration.config.ts`)», а пакетов с собственным конфигом уже четыре —
+   `packages/landing` завёл свой вместе с лендингом (EPIC-047) и в счёт не попал. Файл с суффиксом
+   `spec` вместо `test` **не запускается ни
    одним раннером и не даёт ни одной ошибки** — он просто отсутствует в прогоне, а история числится
    сделанной. Суффикс `spec` в этом репозитории означает ровно одно: сценарий Playwright под
    `packages/e2e/tests/**`, где раннер другой и шаблон имени свой.
@@ -264,9 +268,11 @@ expect(renderDashboard()).toMatchSnapshot();
 | Агент `test-coverage` в commit-гейте | непокрытые изменённые строки и ветки, тесты-пустышки; вердикт PASS обязателен |
 
 **Запрета на сеть из тестов автоматической проверки пока нет.** Правила
-`bad-crm/no-network-in-tests` в плагине `eslint/bad-crm.plugin.js` не существует — там живут
-`no-effect-for-derived-state`, `no-foreign-unit-internals` и `require-role-suffix`. Пункт 12
-держится на ревью; ссылаться на несуществующее правило как на гейт нельзя.
+`bad-crm/no-network-in-tests` в плагине `eslint/bad-crm.plugin.js` не существует. Что в нём живёт —
+печатает `sed -n '/^  rules: {/,/^  },/p' eslint/bad-crm.plugin.js`; выписанный здесь до 2026-08-30
+список из трёх имён (`no-effect-for-derived-state`, `no-foreign-unit-internals`,
+`require-role-suffix`) отстал: к ним добавился `no-raw-mantine-color`. Пункт 12 держится на ревью;
+ссылаться на несуществующее правило как на гейт нельзя.
 
 ## Исключения
 

@@ -29,10 +29,24 @@ alwaysApply: false
    через все слои. Логгер подмешивает его сам — вызывающему коду передавать ничего не нужно.
 3. **В job'ах контекст создаёт обёртка `runJob`.** `requestId` наследуется от события, породившего
    job; по цепочке `causationId` прослеживается путь от HTTP-запроса до письма.
-4. **Секретов и ПДн в логах нет.** Редактируются: `authorization`, `cookie`, `set-cookie`,
-   `*.password`, `*.token`, `*.refreshToken`, `*.apiKey`, `*.apiKeyEnc`, `*.secret`, `*.otp`,
-   `*.recoveryCode`. Сериализатор ошибок вырезает `config.headers` из ошибок HTTP-клиентов.
-   Новый секретный ключ — новая строка в `REDACTED_PATHS` в том же PR.
+4. **Секретов и ПДн в логах нет.** Список путей, которые pino вырезает, живёт **в одном месте** —
+   `REDACTED_PATHS` в `infrastructure/logging/log-redaction.constant.ts`; сериализатор ошибок
+   дополнительно вырезает `config.headers` из ошибок HTTP-клиентов. Новый секретный ключ — новая
+   строка в `REDACTED_PATHS` в том же PR. Актуальный список печатает:
+
+   ```bash
+   sed -n '/REDACTED_PATHS/,/^];/p' \
+     packages/server/src/infrastructure/logging/log-redaction.constant.ts | grep -E "^  '"
+   ```
+
+   Здесь до 2026-08-30 стояла выписанная копия из одиннадцати путей (`authorization`, `cookie`,
+   `set-cookie`, `*.password`, `*.token`, `*.refreshToken`, `*.apiKey`, `*.apiKeyEnc`, `*.secret`,
+   `*.otp`, `*.recoveryCode`). Фактически их было втрое больше: pino сопоставляет **ключ целиком**,
+   а не подстроку, поэтому к каждому шаблону пришлось добавить и точное имя поля, которым этот
+   репозиторий пользуется (`*.accessToken`, `*.refreshTokenHash`, `*.passwordHash`,
+   `*.base32Secret`, `*.secretEnc`, `*.recoveryCodes`, `*.mfaToken`), и те же имена без префикса
+   `*.` — для `logger.info({ password })`, у которого нет родительского объекта. Копия отставала от
+   источника три раза подряд, поэтому копии здесь больше нет — только команда.
 5. **Содержимое пользовательских данных не логируется:** тело сообщения, текст документа, имя файла
    с персональными данными, email в открытом виде в массовых логах. Логируются идентификаторы,
    типы и размеры. Расшифрованное содержимое vault не логируется никогда — см. `rules/e2ee-crypto.mdc`.
@@ -49,6 +63,16 @@ alwaysApply: false
    `http_request_duration_seconds{method,route}`, `bullmq_jobs_total{queue,status}`,
    `bullmq_job_duration_seconds{queue}`, `bullmq_queue_depth{queue}`, `outbox_lag_seconds`,
    `db_query_duration_seconds`, `db_pool_active/idle` + default metrics Node.
+
+   Это состав, к которому обязывает правило, а не опись того, что отгружено. Сверено 2026-08-30:
+   из перечисленных зарегистрированы только два первых — очередей в дереве нет (`bullmq_*`,
+   `outbox_lag_seconds` приходят с EPIC-021), пул Postgres метрик пока не отдаёт. Зато
+   зарегистрированы счётчики, которых в списке нет вовсе: они пришли с правами, аудитом и вторым
+   фактором. Что действительно отдаёт `/metrics` сегодня, печатает:
+
+   ```bash
+   grep -n "name: '" packages/server/src/infrastructure/metrics/prom-client.adapter.ts
+   ```
 9. **`route` берётся из шаблона Express** (`/api/v1/tasks/:id`), а не из URL — иначе кардинальность
    взрывается на идентификаторах. **Идентификаторы, email и любые пользовательские значения не
    попадают в лейблы метрик.**
