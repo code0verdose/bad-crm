@@ -30,10 +30,10 @@ const relative = (path: string): string => path.slice(SRC.length + 1);
  * forbidden — the module that keeps the token in memory names `localStorage` in the comment saying
  * it must not be used. Scanning the comments too would make the rule unexplainable.
  */
-const codeOf = (path: string): string =>
-  readFileSync(path, 'utf8')
-    .replaceAll(/\/\*[\s\S]*?\*\//g, '')
-    .replaceAll(/\/\/.*$/gm, '');
+const stripComments = (source: string): string =>
+  source.replaceAll(/\/\*[\s\S]*?\*\//g, '').replaceAll(/\/\/.*$/gm, '');
+
+const codeOf = (path: string): string => stripComments(readFileSync(path, 'utf8'));
 
 /**
  * `queryKey: [` — the literal array that `rules/tanstack-query.mdc` §2 forbids.
@@ -60,6 +60,38 @@ describe('the ad-hoc key detector', () => {
     ['a key held in a variable', 'const key = QueryKeys.Tasks.all;\nuseQuery({ queryKey: key })'],
   ])('accepts %s', (_case, source) => {
     expect(AD_HOC_QUERY_KEY.test(source)).toBe(false);
+  });
+});
+
+/**
+ * The stripper is the one step between the tree and both rules, and it is the one step whose
+ * failure mode is silent: it returns a string either way, and a string with nothing in it matches
+ * no pattern, so both assertions below go green over a tree it has emptied. Every source file here
+ * opens with a doc block, so «the comments were removed» and «the file was removed» look the same
+ * from the assertions' side.
+ *
+ * Two controls, because one is not enough. The fixture pins the shape — two comments in one file,
+ * which is where a greedy quantifier starts eating the code between them — and the tree control
+ * pins the result on the sources actually walked, so a stripper that survives the fixture and
+ * destroys the tree still fails here.
+ */
+describe('the comment stripper (CONTROL)', () => {
+  it('removes the comments and keeps the code between and after them', () => {
+    expect(
+      stripComments(
+        ['/** never localStorage */', 'const a = 1;', '/* nor sessionStorage */', 'const b = 2;'] //
+          .join('\n'),
+      ).replaceAll(/\s+/g, ' '),
+    ).toBe(' const a = 1; const b = 2;');
+  });
+
+  it('leaves the walked tree with code in it', () => {
+    // Not a count of files but a fact about their contents: something in the tree still says
+    // `QueryKeys.` after stripping. A stripper that ate the sources reports nothing and both rules
+    // below would then pass by finding nothing to fault.
+    const usingTheFactory = sourceFiles().filter((path) => /QueryKeys\./.test(codeOf(path)));
+
+    expect(usingTheFactory).not.toEqual([]);
   });
 });
 

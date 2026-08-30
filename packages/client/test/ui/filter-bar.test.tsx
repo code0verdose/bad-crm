@@ -1,11 +1,12 @@
 import { MantineProvider } from '@mantine/core';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import axe from 'axe-core';
 import { type ReactNode } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 
 import { SharedUi } from '@shared';
+
+import { axeViolationsIn } from '../support/axe-scan.util.js';
 
 /**
  * What is currently narrowing a list, shown as things that can be taken off.
@@ -99,10 +100,8 @@ describe('FilterBar', () => {
       <SharedUi.FilterBar active={FILTERS} onRemove={vi.fn()} onReset={vi.fn()} />,
     );
 
-    const { violations } = await axe.run(container, {
-      rules: { 'color-contrast': { enabled: false } },
-    });
-
-    expect(violations.map((violation) => violation.id)).toEqual([]);
+    // The bar is made of buttons — one per chip, plus the reset — so `button-name` is the rule it
+    // is known to answer, and a scan that reports nothing without exercising it scanned nothing.
+    expect(await axeViolationsIn(container, { control: 'button-name' })).toEqual([]);
   });
 });

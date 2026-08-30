@@ -37,10 +37,10 @@ const relative = (path: string): string => path.slice(SRC.length + 1);
  * Комментарии вырезаны: они объясняют запреты и называют их словами. Файл, объясняющий, почему
  * `create()` здесь не годится, не должен становиться нарушением из-за собственного объяснения.
  */
-const codeOf = (path: string): string =>
-  readFileSync(path, 'utf8')
-    .replaceAll(/\/\*[\s\S]*?\*\//g, '')
-    .replaceAll(/\/\/.*$/gm, '');
+const stripComments = (source: string): string =>
+  source.replaceAll(/\/\*[\s\S]*?\*\//g, '').replaceAll(/\/\/.*$/gm, '');
+
+const codeOf = (path: string): string => stripComments(readFileSync(path, 'utf8'));
 
 /** Файл стора: `units/<unit>/service/stores/<name>.store.ts` и нигде больше. */
 const isStoreFile = (path: string): boolean => /\.store\.tsx?$/.test(path);
@@ -63,6 +63,33 @@ const REACT_STORE_FACTORY = /\bcreate\s*[(<]/;
 const MANUAL_EXTERNAL_STORE = /\buseSyncExternalStore\b/;
 
 describe('детекторы (CONTROL — без этого блока проверки ниже проходят на пустом множестве)', () => {
+  /**
+   * Стриппер — единственный шаг между деревом и тремя из пяти проверок, и единственный, чья поломка
+   * ничего не роняет: он возвращает строку в любом случае, а пустая строка не совпадает ни с одним
+   * паттерном. Проверки «zustand за пределами service», «серверные данные в сторе» и «create вместо
+   * createStore» после такой поломки зеленеют, ничего не прочитав. Детекторы ниже прогоняются по
+   * фикстурам-строкам и этого не ловят — фикстура мимо стриппера идёт.
+   *
+   * Поэтому два контроля: фикстура фиксирует форму (два комментария в одном файле — место, где
+   * жадный квантификатор начинает съедать код между ними), а контроль по дереву фиксирует результат
+   * на тех самых файлах, которые обходятся.
+   */
+  it('стриппер убирает комментарии и оставляет код между ними и после них', () => {
+    expect(
+      stripComments(
+        ['/** здесь про create() */', 'const a = 1;', '/* и про zustand */', 'const b = 2;'] //
+          .join('\n'),
+      ).replaceAll(/\s+/g, ' '),
+    ).toBe(' const a = 1; const b = 2;');
+  });
+
+  it('стриппер оставляет в обойдённом дереве код: zustand в нём импортируют', () => {
+    // Не счётчик файлов, а факт об их содержимом: после вырезания комментариев в дереве всё ещё
+    // есть импорт `zustand`. Стриппер, съевший исходники, отдаёт пустоту — и проверки ниже проходят
+    // потому, что им нечего забраковать.
+    expect(sourceFiles().filter((path) => IMPORTS_ZUSTAND.test(codeOf(path)))).not.toEqual([]);
+  });
+
   it.each([
     ['стор в юните', 'units/auth/service/stores/auth-session.store.ts', true],
     ['стор в виджете', 'widgets/app-shell/sidebar.store.ts', false],

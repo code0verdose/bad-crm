@@ -1,11 +1,12 @@
 import { MantineProvider } from '@mantine/core';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import axe from 'axe-core';
 import { type ReactNode } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 
 import { SharedUi } from '@shared';
+
+import { axeViolationsIn } from '../support/axe-scan.util.js';
 
 /**
  * The four states every screen owes, and the accessibility of the components that draw them.
@@ -221,26 +222,29 @@ describe('the skeleton', () => {
  * in `test/theme/tokens.test.ts`, which is the only place where the real values exist.
  */
 describe.each(['light', 'dark'] as const)('accessibility in the %s scheme', (scheme) => {
+  /**
+   * The third column is the control the scan is asserted to have exercised, and it differs per
+   * state because the markup does: the error state offers a button, the two headed states carry a
+   * heading, and the skeleton is a set of `aria-hidden` boxes with neither. Naming a rule the state
+   * is known to answer is what separates «clean» from «scanned nothing» — an empty run reports no
+   * violation just as convincingly as a correct one.
+   */
   it.each([
     [
       'the error state',
       <SharedUi.ErrorState key="e" messageKey="errors.conflict" onRetry={() => undefined} />,
+      'button-name',
     ],
     [
       'the empty state',
       <SharedUi.EmptyState key="m" descriptionKey="tasks.empty.d" titleKey="tasks.empty.t" />,
+      'heading-order',
     ],
-    ['the page header', <SharedUi.PageHeader key="h" titleKey="nav.dashboard" />],
-    ['the skeleton', <SharedUi.TextSkeleton key="s" />],
-  ])('%s has no violation', async (_name, element) => {
+    ['the page header', <SharedUi.PageHeader key="h" titleKey="nav.dashboard" />, 'empty-heading'],
+    ['the skeleton', <SharedUi.TextSkeleton key="s" />, 'aria-hidden-focus'],
+  ])('%s has no violation', async (_name, element, control) => {
     const { container } = render(<Themed scheme={scheme}>{element}</Themed>);
 
-    const results = await axe.run(container, {
-      // Colour is resolved from CSS variables a stylesheet declares, and jsdom loads no stylesheet:
-      // the rule would report every element as «unable to determine» or, worse, as a false failure.
-      rules: { 'color-contrast': { enabled: false } },
-    });
-
-    expect(results.violations.map((violation) => violation.id)).toEqual([]);
+    expect(await axeViolationsIn(container, { control })).toEqual([]);
   });
 });

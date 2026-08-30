@@ -1,11 +1,12 @@
 import { MantineProvider } from '@mantine/core';
 import { fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import axe from 'axe-core';
 import { type ReactNode } from 'react';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { SharedUi } from '@shared';
+
+import { axeViolationsIn } from '../support/axe-scan.util.js';
 
 /**
  * A resizable split, and the half of it that is not the dragging.
@@ -228,10 +229,9 @@ describe('SplitPane', () => {
   it('has no accessibility violation', async () => {
     const { container } = renderPane();
 
-    const { violations } = await axe.run(container, {
-      rules: { 'color-contrast': { enabled: false } },
-    });
-
-    expect(violations.map((violation) => violation.id)).toEqual([]);
+    // The control names a rule this markup is known to answer — the separator carries
+    // `aria-valuenow`/`aria-valuemin`/`aria-valuemax` — so a run over an empty subtree cannot pass
+    // as a clean one.
+    expect(await axeViolationsIn(container, { control: 'aria-valid-attr-value' })).toEqual([]);
   });
 });

@@ -1,11 +1,12 @@
 import { MantineProvider } from '@mantine/core';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import axe from 'axe-core';
 import { type ReactNode } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 
 import { SharedUi } from '@shared';
+
+import { axeViolationsIn } from '../support/axe-scan.util.js';
 
 /**
  * The bar under a list, and the one number people actually look for.
@@ -73,10 +74,8 @@ describe('PaginationBar', () => {
       <SharedUi.PaginationBar page={2} perPage={25} total={137} onPageChange={vi.fn()} />,
     );
 
-    const { violations } = await axe.run(container, {
-      rules: { 'color-contrast': { enabled: false } },
-    });
-
-    expect(violations.map((violation) => violation.id)).toEqual([]);
+    // A pager past page one draws previous, next and the page numbers, so `button-name` is the rule
+    // this markup is known to answer — the control that separates «clean» from «scanned nothing».
+    expect(await axeViolationsIn(container, { control: 'button-name' })).toEqual([]);
   });
 });

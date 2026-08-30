@@ -23,7 +23,13 @@ const stubReducedMotion = (matches: boolean) => {
   );
 };
 
-const Probe = ({ staticProgress }: { staticProgress?: number }) => {
+const Probe = ({
+  staticProgress,
+  testId = 'probe',
+}: {
+  staticProgress?: number;
+  testId?: string;
+}) => {
   const target = useRef<HTMLDivElement>(null);
   const progress = useSceneProgress(target, {
     offset: ['start end', 'end start'],
@@ -31,7 +37,7 @@ const Probe = ({ staticProgress }: { staticProgress?: number }) => {
   });
 
   return (
-    <div ref={target} data-testid="probe">
+    <div ref={target} data-testid={testId}>
       {progress.get()}
     </div>
   );
@@ -44,20 +50,28 @@ const Probe = ({ staticProgress }: { staticProgress?: number }) => {
  * motion.
  */
 describe('useSceneProgress under prefers-reduced-motion', () => {
-  it('freezes at the default static progress (0) instead of tracking scroll', () => {
+  /**
+   * The default and the declared value are asserted in one case, on purpose.
+   *
+   * A scene left at the default freezes at `0` — and so, in jsdom, does a scene that never froze at
+   * all: there is no layout and nothing scrolls, so the animated path reports `0` too. A case
+   * asserting only that number is green whether or not the hook reads `prefers-reduced-motion`, and
+   * it was: removing the `reduced` term from the guard left it passing. The declared `1` is the only
+   * value the frozen path can produce and the animated one cannot, so it carries the proof, and the
+   * default is pinned in the same breath rather than in a case that proves nothing on its own.
+   */
+  it('freezes at whatever static progress the scene declares, defaulting to 0', () => {
     stubReducedMotion(true);
 
-    render(<Probe />);
+    render(
+      <>
+        <Probe testId="default" />
+        <Probe testId="declared" staticProgress={1} />
+      </>,
+    );
 
-    expect(screen.getByTestId('probe')).toHaveTextContent('0');
-  });
-
-  it('freezes at whatever static progress the scene declares, not always 0', () => {
-    stubReducedMotion(true);
-
-    render(<Probe staticProgress={1} />);
-
-    expect(screen.getByTestId('probe')).toHaveTextContent('1');
+    expect(screen.getByTestId('declared')).toHaveTextContent('1');
+    expect(screen.getByTestId('default')).toHaveTextContent('0');
   });
 
   it('does not freeze when the query does not match — the animated path is untouched', () => {
