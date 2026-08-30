@@ -4,6 +4,12 @@ import { type RenderedMail } from '@/domain/identity/password-changed-mail.util.
 /**
  * Which 2FA change this account owner is being told about.
  *
+ * `recovery_code_used` is the one reason here that reports a *sign-in* rather than a change of
+ * configuration, and it is the loudest of the five in practice: nothing about the account changed,
+ * but the credential kept for "I lost my authenticator" was spent — which is exactly what a stranger
+ * holding a printed sheet of codes produces, and the audit row alone reaches nobody until an
+ * administrator goes looking.
+ *
  * `disabled` is the self-service path (`DisableTotpUseCase`, STORY-013-04 acceptance 1) — reached
  * only after the password and a second-factor proof were both checked, so the mail is confirmation
  * rather than a warning of somebody else's action. `reset_by_admin` is the opposite fact and reads
@@ -14,7 +20,7 @@ import { type RenderedMail } from '@/domain/identity/password-changed-mail.util.
  * settings" reduces to for as long as that stays true).
  */
 export type MfaChangeReason =
-  'enabled' | 'recovery_codes_regenerated' | 'disabled' | 'reset_by_admin';
+  'enabled' | 'recovery_codes_regenerated' | 'recovery_code_used' | 'disabled' | 'reset_by_admin';
 
 export interface MfaChangedMailInput {
   /** `users.locale` of the account, as stored. Anything that is not Russian is answered in English. */
@@ -88,6 +94,19 @@ const TEMPLATES: Readonly<Record<MailLocale, Readonly<Record<MfaChangeReason, Re
           `<p><a href="${escapeHtml(url)}">Your security settings</a></p>`,
         ].join('\n'),
       }),
+      recovery_code_used: (url) => ({
+        subject: 'A recovery code was used to sign in to your Bad CRM account',
+        text: [
+          'Somebody signed in to your Bad CRM account with a two-factor recovery code instead of your authenticator app. That code has been used up and will not work again.',
+          'If this was not you, change your password and contact the administrator of this installation immediately.',
+          `Your security settings: ${url}`,
+        ].join('\n\n'),
+        html: [
+          '<p>Somebody signed in to your Bad CRM account with a two-factor recovery code instead of your authenticator app. That code has been used up and will not work again.</p>',
+          '<p>If this was not you, change your password and contact the administrator of this installation immediately.</p>',
+          `<p><a href="${escapeHtml(url)}">Your security settings</a></p>`,
+        ].join('\n'),
+      }),
       disabled: (url) => ({
         subject: 'Two-factor authentication was turned off for your Bad CRM account',
         text: [
@@ -140,6 +159,19 @@ const TEMPLATES: Readonly<Record<MailLocale, Readonly<Record<MfaChangeReason, Re
         html: [
           '<p>Резервные коды двухфакторной аутентификации вашей учётной записи Bad CRM только что перевыпущены. Все прежние коды перестали работать.</p>',
           '<p>Если это были не вы, немедленно свяжитесь с администратором инсталляции.</p>',
+          `<p><a href="${escapeHtml(url)}">Настройки безопасности</a></p>`,
+        ].join('\n'),
+      }),
+      recovery_code_used: (url) => ({
+        subject: 'Для входа в вашу учётную запись Bad CRM использован резервный код',
+        text: [
+          'В вашу учётную запись Bad CRM вошли по резервному коду двухфакторной аутентификации, а не через приложение-аутентификатор. Этот код израсходован и больше не сработает.',
+          'Если это были не вы, смените пароль и немедленно свяжитесь с администратором инсталляции.',
+          `Настройки безопасности: ${url}`,
+        ].join('\n\n'),
+        html: [
+          '<p>В вашу учётную запись Bad CRM вошли по резервному коду двухфакторной аутентификации, а не через приложение-аутентификатор. Этот код израсходован и больше не сработает.</p>',
+          '<p>Если это были не вы, смените пароль и немедленно свяжитесь с администратором инсталляции.</p>',
           `<p><a href="${escapeHtml(url)}">Настройки безопасности</a></p>`,
         ].join('\n'),
       }),

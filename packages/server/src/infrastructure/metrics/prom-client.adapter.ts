@@ -74,6 +74,12 @@ export const createPromMetrics = (): MetricsPort => {
     registers: [registry],
   });
 
+  const mfaRecoveryFailed = new Counter({
+    name: 'mfa_recovery_failed_total',
+    help: 'Recovery codes presented at the second-factor step and refused.',
+    registers: [registry],
+  });
+
   return {
     observeHttpRequest: ({
       method,
@@ -95,6 +101,9 @@ export const createPromMetrics = (): MetricsPort => {
     },
     incrementAuditUnscoped: (): void => {
       auditUnscoped.inc();
+    },
+    incrementMfaRecoveryFailed: (): void => {
+      mfaRecoveryFailed.inc();
     },
     render: () => registry.metrics(),
     contentType: registry.contentType,

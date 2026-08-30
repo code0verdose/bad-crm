@@ -7,6 +7,7 @@ import { IssueSessionUseCase } from '@/application/identity/use-cases/issue-sess
 import { RecoveryCodeMatcher } from '@/application/identity/use-cases/recovery-code-matcher.use-case.js';
 import { VerifySecondFactorUseCase } from '@/application/identity/use-cases/verify-second-factor.use-case.js';
 import { SECURITY_EVENTS } from '@/domain/identity/security-event.constant.js';
+import { noopMetrics } from '@/infrastructure/metrics/noop-metrics.adapter.js';
 import {
   type AppError,
   MfaCodeReplayedError,
@@ -22,6 +23,7 @@ import {
   FakeAuditLogger,
   FakeClock,
   FakeIdGenerator,
+  FakeMailDispatcher,
   FakeOrganizations,
   FakePasswordHasher,
   FakeRateLimit,
@@ -69,6 +71,16 @@ const buildHarness = (rateLimitOptions: Omit<FakeRateLimitOptions, 'journal'> = 
       permissionsVersion: PERMISSIONS_VERSION,
     },
   ]);
+  // The credential the recovery-code notice is addressed to. Seeded here rather than only in
+  // `ConsumeRecoveryCodeUseCase`'s own suite so that the *composition* is exercised: the notice is
+  // dispatched from a use-case this one delegates to, and a harness with no credential would let
+  // the whole branch stay silent without a test noticing.
+  users.credentials.set(USER_ID, {
+    email: 'ada@example.com',
+    passwordHash: '$argon2id$hashed:irrelevant',
+    locale: 'en',
+  });
+
   const enrollment = new JournalingTotpEnrollment(journal);
   const fields = new FakeFieldEncryption();
   const totp = new ScriptedTotp();
@@ -89,14 +101,19 @@ const buildHarness = (rateLimitOptions: Omit<FakeRateLimitOptions, 'journal'> = 
     new FakeIdGenerator(),
   );
 
+  const dispatcher = new FakeMailDispatcher();
   const consumeRecoveryCode = new ConsumeRecoveryCodeUseCase(
     new RecoveryCodeMatcher(codes, hasher),
     codes,
+    users,
     unitOfWork,
     rateLimit,
     clock,
     logger,
     audit,
+    noopMetrics,
+    dispatcher,
+    'https://crm.example.test',
   );
 
   const verify = new VerifySecondFactorUseCase(
@@ -153,6 +170,7 @@ const buildHarness = (rateLimitOptions: Omit<FakeRateLimitOptions, 'journal'> = 
     totp,
     codes,
     mfaTokens,
+    dispatcher,
     organizationsStore: organizations,
     seedRecoveryCode,
   };
@@ -682,6 +700,19 @@ describe('a recovery code instead of an authenticator', () => {
       'session.signed_in',
     ]);
     expect(test.audit.events[1]).toMatchObject({ after: { mfa: 'recovery_code' } });
+  });
+
+  it('tells the account owner by mail that a recovery code opened the session', async () => {
+    const test = buildHarness();
+
+    test.seedRecoveryCode();
+
+    const token = await pendingToken(test);
+
+    await test.verify.execute({ mfaToken: token, code: RECOVERY_CODE, client: CLIENT });
+
+    expect(test.dispatcher.dispatched).toHaveLength(1);
+    expect(test.dispatcher.dispatched[0]?.context.event).toBe(SECURITY_EVENTS.recoveryCodeUsed);
   });
 
   it('spends the intermediate token on this path too', async () => {

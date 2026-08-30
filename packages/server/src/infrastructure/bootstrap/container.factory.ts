@@ -2,6 +2,7 @@ import { type Logger } from 'pino';
 
 import { type LoggerPort } from '@/application/platform/ports/logger.port.js';
 import { type MailDispatchPort } from '@/application/platform/ports/mail-dispatch.port.js';
+import { type MetricsPort } from '@/application/platform/ports/metrics.port.js';
 import { type MailPort } from '@/application/platform/ports/mail.port.js';
 import { type RateLimitPort } from '@/application/platform/ports/rate-limit.port.js';
 import { type ReadinessProbePort } from '@/application/platform/ports/readiness-probe.port.js';
@@ -300,6 +301,7 @@ export const buildContainer = (input: ContainerInput): AppContainer => {
     mail: mailer,
     mailDispatcher,
     audit,
+    metrics,
     redis: input.redis,
   });
 
@@ -634,6 +636,8 @@ const buildIdentity = (input: {
   readonly mail: MailPort;
   readonly mailDispatcher: MailDispatchPort;
   readonly audit: AuditLoggerPort;
+  /** Carried for the one counter this slice publishes: `mfa_recovery_failed_total`. */
+  readonly metrics: MetricsPort;
   /**
    * Needed for the one-shot denylist behind the second factor's intermediate token, on the same
    * terms as the limiter above: present in a real installation, absent in a container built without
@@ -858,11 +862,15 @@ const buildIdentity = (input: {
       new ConsumeRecoveryCodeUseCase(
         new RecoveryCodeMatcher(recoveryCodeRows, hasher),
         recoveryCodeRows,
+        users,
         unitOfWork,
         input.rateLimit,
         input.clock,
         input.logger,
         input.audit,
+        input.metrics,
+        input.mailDispatcher,
+        input.env.APP_URL,
       ),
       users,
       organizations,

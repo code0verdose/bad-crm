@@ -42,6 +42,7 @@ import { AesFieldEncryption } from '@/infrastructure/crypto/field-encryption.ada
 import { CsprngRecoveryCodeGenerator } from '@/infrastructure/crypto/csprng-recovery-code-generator.adapter.js';
 import { OtplibTotpAdapter } from '@/infrastructure/crypto/otplib-totp.adapter.js';
 import { QrcodeSvgAdapter } from '@/infrastructure/qr/qrcode-svg.adapter.js';
+import { noopMetrics } from '@/infrastructure/metrics/noop-metrics.adapter.js';
 import { ListInvitationsQuery } from '@/application/iam/use-cases/list-invitations.query.js';
 import { ListRolesQuery } from '@/application/iam/use-cases/list-roles.query.js';
 import { ListTeamsQuery } from '@/application/iam/use-cases/list-teams.query.js';
@@ -499,11 +500,15 @@ export const createAuthApp = (options: AuthAppOptions = {}): AuthApp => {
       new ConsumeRecoveryCodeUseCase(
         new RecoveryCodeMatcher(recoveryCodeRows, hasher),
         recoveryCodeRows,
+        users,
         unitOfWork,
         rateLimit,
         clock,
         logger,
         audit,
+        noopMetrics,
+        dispatcher,
+        APP_URL,
       ),
       users,
       organizations,

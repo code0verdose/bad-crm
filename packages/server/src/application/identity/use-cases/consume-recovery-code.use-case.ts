@@ -1,10 +1,17 @@
 import { type AuditLoggerPort } from '@/application/platform/ports/audit-logger.port.js';
 import { type RecoveryCodeMatcher } from '@/application/identity/use-cases/recovery-code-matcher.use-case.js';
 import { type RecoveryCodeRepositoryPort } from '@/application/identity/ports/recovery-code-repository.port.js';
+import {
+  type UserCredentialRecord,
+  type UserRepositoryPort,
+} from '@/application/identity/ports/user-repository.port.js';
 import { type ClockPort } from '@/application/platform/ports/clock.port.js';
 import { type LoggerPort } from '@/application/platform/ports/logger.port.js';
+import { type MailDispatchPort } from '@/application/platform/ports/mail-dispatch.port.js';
+import { type MetricsPort } from '@/application/platform/ports/metrics.port.js';
 import { type RateLimitPort } from '@/application/platform/ports/rate-limit.port.js';
 import { type UnitOfWorkPort } from '@/application/platform/ports/unit-of-work.port.js';
+import { renderMfaChangedMail } from '@/domain/identity/mfa-changed-mail.util.js';
 import {
   isWellFormedRecoveryCode,
   normalizeRecoveryCode,
@@ -55,6 +62,16 @@ export interface ConsumeRecoveryCodeInput {
  * setup screen. This is a load-shedding measure, not a timing decision: without it, an arbitrary
  * string of any shape costs the full ten verifications the same as a well-formed guess.
  *
+ * ## What a refusal leaves behind, and what a run of them does
+ *
+ * Every refused code increments `mfa_recovery_failed_total` (`MetricsPort`) and writes a
+ * `recovery_code_refused` line. The refusal that spends the last of the `mfa_recovery_consume_attempt`
+ * budget additionally files **one** `user.mfa_recovery_locked_out` row in the trail — the aggregated
+ * record STORY-013-02 acceptance 10 asks for. It is filed there, on the transition, rather than on
+ * every subsequent 429, because every attempt after that one is turned away by the limiter before a
+ * code is compared: a row per turned-away attempt would be the limiter's own counter written into
+ * the trail, and would bury the runs the entry exists to surface.
+ *
  * ## Why the winner is still decided by the database, not by the loop
  *
  * Two requests can both resolve the *same* row as the match — they are running the identical
@@ -79,11 +96,15 @@ export class ConsumeRecoveryCodeUseCase {
   constructor(
     private readonly matcher: RecoveryCodeMatcher,
     private readonly codes: RecoveryCodeRepositoryPort,
+    private readonly users: UserRepositoryPort,
     private readonly unitOfWork: UnitOfWorkPort,
     private readonly rateLimit: RateLimitPort,
     private readonly clock: ClockPort,
     private readonly logger: LoggerPort,
     private readonly audit: AuditLoggerPort,
+    private readonly metrics: MetricsPort,
+    private readonly mailDispatcher: MailDispatchPort,
+    private readonly appUrl: string,
   ) {}
 
   /** The id of the row that was spent, or throws `RecoveryCodeInvalidError`/`RateLimitedError`. */
@@ -106,6 +127,7 @@ export class ConsumeRecoveryCodeUseCase {
       : null;
 
     if (spent === null) {
+      this.metrics.incrementMfaRecoveryFailed();
       this.logger.warn(
         {
           event: SECURITY_EVENTS.recoveryCodeRefused,
@@ -115,6 +137,11 @@ export class ConsumeRecoveryCodeUseCase {
         'recovery code refused',
       );
 
+      // `remaining === 0` is the last attempt this budget allows: the run ends here, and every
+      // further guess is turned away by the limiter above without reaching a comparison. See the
+      // class docstring, «What a refusal leaves behind».
+      if (decision.remaining === 0) await this.recordLockout(input);
+
       throw new RecoveryCodeInvalidError();
     }
 
@@ -123,14 +150,64 @@ export class ConsumeRecoveryCodeUseCase {
       ipAddress: input.ipAddress,
     });
 
-    return spent;
+    // After the transaction that spent the row has committed, and never awaited: a notice that
+    // could not be delivered must not undo a sign-in that already happened (`MailDispatchPort`).
+    this.notify(input, spent.credential);
+
+    return spent.id;
+  }
+
+  /** The aggregated trail entry for a run of refusals — one per exhausted budget, not per attempt. */
+  private async recordLockout(input: ConsumeRecoveryCodeInput): Promise<void> {
+    await this.unitOfWork.withTenant(input.actor, () =>
+      this.audit.record({
+        action: 'user.mfa_recovery_locked_out',
+        actor: {
+          userId: input.actor.userId,
+          organizationId: input.actor.organizationId,
+          ipAddress: input.ipAddress,
+        },
+        target: { type: 'USER', id: input.actor.userId },
+        // Which budget was burnt, and nothing else: not the code, not its digest, and not how many
+        // unused codes remain — the number the fixed-cost match refuses to leak through timing.
+        after: { policy: 'mfa_recovery_consume_attempt' },
+        requestId: undefined,
+      }),
+    );
+  }
+
+  /**
+   * "A recovery code was used to sign in", best-effort and after the commit.
+   *
+   * `credential` is `null` when the account row vanished between the match and the read — the same
+   * window `UserRepositoryPort` documents elsewhere. There is then no address to write to, and the
+   * sign-in stands regardless: the row is spent and committed by the time this runs.
+   */
+  private notify(input: ConsumeRecoveryCodeInput, credential: UserCredentialRecord | null): void {
+    if (credential === null) return;
+
+    this.mailDispatcher.dispatch(
+      {
+        to: credential.email,
+        ...renderMfaChangedMail({
+          locale: credential.locale,
+          appUrl: this.appUrl,
+          reason: 'recovery_code_used',
+        }),
+      },
+      {
+        event: SECURITY_EVENTS.recoveryCodeUsed,
+        organizationId: input.actor.organizationId,
+        userId: input.actor.userId,
+      },
+    );
   }
 
   private async spend(
     actor: ConsumeRecoveryCodeInput['actor'],
     normalizedCode: string,
     ipAddress: string | undefined,
-  ): Promise<string | null> {
+  ): Promise<{ readonly id: string; readonly credential: UserCredentialRecord | null } | null> {
     const matchId = await this.matcher.match(actor.userId, normalizedCode);
 
     if (matchId === null) return null;
@@ -149,6 +226,8 @@ export class ConsumeRecoveryCodeUseCase {
       requestId: undefined,
     });
 
-    return matchId;
+    // Read inside the tenant scope, dispatched outside it: the address the notice goes to is tenant
+    // data like any other, and `guardedClient` refuses a read taken after the scope has closed.
+    return { id: matchId, credential: await this.users.findCredential(actor.userId) };
   }
 }

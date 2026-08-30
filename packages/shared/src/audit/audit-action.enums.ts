@@ -63,6 +63,26 @@ export const AUDIT_ACTIONS = [
    */
   'user.mfa_recovery_code_used',
   /**
+   * A run of refused recovery codes exhausted the `mfa_recovery_consume_attempt` budget
+   * (STORY-013-02, acceptance 10).
+   *
+   * The one entry in this catalogue that records something that **did not** succeed, and the
+   * exception is deliberate rather than an oversight of the rule stated at the top of this file: a
+   * single wrong code is a typo and belongs in the log, while a run of them against the credential
+   * that exists specifically for "I lost my authenticator" is somebody working through a printed
+   * sheet they should not have. `user.mfa_setup_failed` is the same shape for enrolment.
+   *
+   * **One entry per run, not one per attempt.** It is filed by the refusal that spends the last of
+   * the budget; every attempt after it is turned away by the limiter before a code is compared, so
+   * the next entry costs the caller a whole new budget. A record per attempt would be the rate-limiter
+   * counter written twice, and would bury the runs it exists to surface.
+   *
+   * `after` names which budget was burnt and nothing else — no code, no digest, not how many unused
+   * codes the account still holds, which is precisely the number the fixed-cost match in
+   * `ConsumeRecoveryCodeUseCase` refuses to leak through elapsed time.
+   */
+  'user.mfa_recovery_locked_out',
+  /**
    * The recovery code set was replaced: every unused code was invalidated and a fresh set of ten
    * was issued (STORY-013-02, acceptance 7).
    *

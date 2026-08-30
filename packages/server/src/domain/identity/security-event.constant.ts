@@ -150,6 +150,16 @@ export const SECURITY_EVENTS = {
    */
   recoveryCodeRefused: 'recovery_code_refused',
   /**
+   * A recovery code was spent to open a session, and the notice telling the account owner so was
+   * handed to the transport (`ConsumeRecoveryCodeUseCase`, STORY-013-02 acceptance 4).
+   *
+   * A distinct name from `signInSucceeded` for the reason the trail keeps
+   * `user.mfa_recovery_code_used` distinct from `session.signed_in`: the alternate credential that
+   * exists for "I no longer have my authenticator" was exercised, and that is the line an incident
+   * review reaches for first when an authenticator was reported lost.
+   */
+  recoveryCodeUsed: 'recovery_code_used',
+  /**
    * The account owner turned 2FA off through `POST /auth/2fa/disable`: `totpEnabledAt` was cleared
    * and every recovery code was deleted, in the same transaction (STORY-013-04, acceptance 1).
    */

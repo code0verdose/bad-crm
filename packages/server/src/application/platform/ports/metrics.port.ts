@@ -76,6 +76,21 @@ export interface MetricsPort {
    * needs none of them. Which event it was is in the log line itself.
    */
   incrementAuditUnscoped(): void;
+  /**
+   * One recovery code presented at the second-factor step and refused (STORY-013-02, acceptance 10).
+   *
+   * A counter of its own rather than a share of `incrementAuthRateLimited`, which counts something
+   * else: that one is the *lock-out* — the attempts the limiter turned away without comparing
+   * anything — and it starts at the sixth guess. The five before it are the interesting ones, and
+   * they are invisible in it. Nor does the RED set answer this: every refusal here answers 401,
+   * indistinguishable in `http_requests_total` from a wrong TOTP code on the same route.
+   *
+   * Unlabelled, for the reason the two audit counters are: the tempting label is the outcome
+   * (unknown, spent, malformed), and the answer is deliberately one refusal — a label separating
+   * them would publish on `/metrics` the distinction the response spends a fixed ten Argon2id
+   * verifications to hide.
+   */
+  incrementMfaRecoveryFailed(): void;
   /** The exposition format, rendered on demand. */
   render(): Promise<string>;
   readonly contentType: string;

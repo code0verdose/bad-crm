@@ -6,12 +6,16 @@ import { ConsumeRecoveryCodeUseCase } from '@/application/identity/use-cases/con
 import { RecoveryCodeMatcher } from '@/application/identity/use-cases/recovery-code-matcher.use-case.js';
 import { RateLimitedError, RecoveryCodeInvalidError } from '@/domain/shared/errors/app.errors.js';
 
+import { createPromMetrics } from '@/infrastructure/metrics/prom-client.adapter.js';
+
 import {
   FakeAuditLogger,
   FakeClock,
+  FakeMailDispatcher,
   FakePasswordHasher,
   FakeRateLimit,
   FakeUnitOfWork,
+  FakeUsers,
   ORGANIZATION_ID,
   RecordingLogger,
   USER_ID,
@@ -21,25 +25,46 @@ import { FakeRecoveryCodes } from '../../support/mfa-doubles.util.js';
 const ACTOR = { organizationId: ORGANIZATION_ID, userId: USER_ID };
 const VALID_CODE = 'ABCDE23456';
 const IP_ADDRESS = '203.0.113.7';
+const APP_URL = 'https://crm.example.test';
 
-const buildHarness = () => {
+interface HarnessOptions {
+  readonly locale?: string;
+  readonly limits?: { readonly mfa_recovery_consume_attempt: number };
+}
+
+const buildHarness = (options: HarnessOptions = {}) => {
   const codes = new FakeRecoveryCodes();
   const hasher = new FakePasswordHasher();
   const unitOfWork = new FakeUnitOfWork();
-  const rateLimit = new FakeRateLimit();
+  const rateLimit = new FakeRateLimit(
+    options.limits === undefined ? {} : { limits: options.limits },
+  );
   const clock = new FakeClock();
   const logger = new RecordingLogger();
   const audit = new FakeAuditLogger();
+  const metrics = createPromMetrics();
+  const dispatcher = new FakeMailDispatcher();
+  const users = new FakeUsers();
   const matcher = new RecoveryCodeMatcher(codes, hasher);
+
+  users.credentials.set(USER_ID, {
+    email: 'ada@example.com',
+    passwordHash: '$argon2id$hashed:irrelevant',
+    locale: options.locale ?? 'en',
+  });
 
   const useCase = new ConsumeRecoveryCodeUseCase(
     matcher,
     codes,
+    users,
     unitOfWork,
     rateLimit,
     clock,
     logger,
     audit,
+    metrics,
+    dispatcher,
+    APP_URL,
   );
 
   const seedCode = (plaintext: string): string => {
@@ -55,7 +80,20 @@ const buildHarness = () => {
     return id;
   };
 
-  return { useCase, codes, hasher, unitOfWork, rateLimit, clock, logger, audit, seedCode };
+  return {
+    useCase,
+    codes,
+    hasher,
+    unitOfWork,
+    rateLimit,
+    clock,
+    logger,
+    audit,
+    metrics,
+    dispatcher,
+    users,
+    seedCode,
+  };
 };
 
 describe('consuming a valid code', () => {
@@ -216,16 +254,199 @@ describe('the rate limit', () => {
     const limitedUseCase = new ConsumeRecoveryCodeUseCase(
       new RecoveryCodeMatcher(harness.codes, harness.hasher),
       harness.codes,
+      harness.users,
       harness.unitOfWork,
       new FakeRateLimit({ limits: { mfa_recovery_consume_attempt: 0 } }),
       harness.clock,
       harness.logger,
       harness.audit,
+      harness.metrics,
+      harness.dispatcher,
+      APP_URL,
     );
 
     await expect(
       limitedUseCase.execute({ actor: ACTOR, code: VALID_CODE, ipAddress: IP_ADDRESS }),
     ).rejects.toBeInstanceOf(RateLimitedError);
     expect(harness.codes.rows.get(id)?.usedAt).toBeNull();
+  });
+});
+
+/**
+ * Acceptance 4, the half that was still open: spending a code has to reach the account owner
+ * through a channel the session that spent it does not control.
+ *
+ * The audit row is not that channel — it is read by an administrator, later, if anybody looks. A
+ * stranger who found a printed sheet of recovery codes signs in successfully, and the owner's only
+ * chance of noticing is a message arriving in their mailbox. Same notice, same renderer and same
+ * after-the-commit dispatch `ConfirmTotpUseCase` and `DisableTotpUseCase` already use for the other
+ * three 2FA changes.
+ */
+describe('the notice to the account owner', () => {
+  it('mails the owner after the transaction has committed', async () => {
+    const harness = buildHarness();
+
+    harness.seedCode(VALID_CODE);
+
+    // The seam that makes "after" observable: checking once the call returned would pass just as
+    // well for a dispatch made from inside the transaction.
+    harness.unitOfWork.onScopeClosed = (): void => {
+      expect(harness.dispatcher.dispatched).toEqual([]);
+    };
+
+    await harness.useCase.execute({ actor: ACTOR, code: VALID_CODE, ipAddress: IP_ADDRESS });
+
+    expect(harness.dispatcher.dispatched).toHaveLength(1);
+    expect(harness.dispatcher.dispatched[0]?.mail.to).toBe('ada@example.com');
+    expect(harness.dispatcher.dispatched[0]?.context).toEqual({
+      event: 'recovery_code_used',
+      organizationId: ORGANIZATION_ID,
+      userId: USER_ID,
+    });
+  });
+
+  it('writes the notice in the account’s own language, carrying no code', async () => {
+    const harness = buildHarness({ locale: 'ru' });
+
+    harness.seedCode(VALID_CODE);
+    await harness.useCase.execute({ actor: ACTOR, code: VALID_CODE, ipAddress: IP_ADDRESS });
+
+    const mail = harness.dispatcher.dispatched[0]?.mail;
+
+    expect(mail?.subject).toContain('резервный код');
+    expect(mail?.text).toContain(`${APP_URL}/settings/security`);
+    // A notice, never the secret it is about — the restraint `renderMfaChangedMail` documents.
+    expect(`${mail?.subject ?? ''}${mail?.text ?? ''}${mail?.html ?? ''}`).not.toContain(
+      VALID_CODE,
+    );
+  });
+
+  it('sends nothing when the code was refused', async () => {
+    const harness = buildHarness();
+
+    harness.seedCode(VALID_CODE);
+    await harness.useCase
+      .execute({ actor: ACTOR, code: 'ZZZZZ99999', ipAddress: IP_ADDRESS })
+      .catch(() => undefined);
+
+    expect(harness.dispatcher.dispatched).toEqual([]);
+  });
+
+  /**
+   * A notice that could not be addressed must not undo a sign-in that already happened: the row is
+   * spent and committed by the time this runs. The account row can be missing for the same reason
+   * `FakeUsers.vanished` exists — soft-deleted between the read and the write — and an installation
+   * with no SMTP configured reaches the identical branch one layer down
+   * (`unconfigured-mail.adapter.ts`), which is why the dispatch is fire-and-forget rather than awaited.
+   */
+  it('still spends the code when there is no credential to address the notice to', async () => {
+    const harness = buildHarness();
+    const id = harness.seedCode(VALID_CODE);
+
+    harness.users.credentials.delete(USER_ID);
+
+    await expect(
+      harness.useCase.execute({ actor: ACTOR, code: VALID_CODE, ipAddress: IP_ADDRESS }),
+    ).resolves.toBe(id);
+    expect(harness.codes.rows.get(id)?.usedAt).not.toBeNull();
+    expect(harness.dispatcher.dispatched).toEqual([]);
+  });
+});
+
+/**
+ * Acceptance 10, the half that was still open: a run of refused codes has to be visible as a number
+ * an operator can alert on, and as **one** trail entry rather than none.
+ */
+describe('the counter and the record of a series', () => {
+  const failedTotal = async (harness: ReturnType<typeof buildHarness>): Promise<string[]> =>
+    (await harness.metrics.render())
+      .split('\n')
+      .filter((line) => line.startsWith('mfa_recovery_failed_total'));
+
+  it('counts every refused code', async () => {
+    const harness = buildHarness();
+
+    harness.seedCode(VALID_CODE);
+
+    for (const code of ['ZZZZZ99999', 'YYYYY88888']) {
+      await harness.useCase
+        .execute({ actor: ACTOR, code, ipAddress: IP_ADDRESS })
+        .catch(() => undefined);
+    }
+
+    expect(await failedTotal(harness)).toContain('mfa_recovery_failed_total 2');
+  });
+
+  it('counts a malformed code too — it is a guess like any other', async () => {
+    const harness = buildHarness();
+
+    await harness.useCase
+      .execute({ actor: ACTOR, code: 'too-short', ipAddress: IP_ADDRESS })
+      .catch(() => undefined);
+
+    expect(await failedTotal(harness)).toContain('mfa_recovery_failed_total 1');
+  });
+
+  it('leaves the counter alone when a code is spent successfully', async () => {
+    const harness = buildHarness();
+
+    harness.seedCode(VALID_CODE);
+    await harness.useCase.execute({ actor: ACTOR, code: VALID_CODE, ipAddress: IP_ADDRESS });
+
+    expect(await failedTotal(harness)).toContain('mfa_recovery_failed_total 0');
+  });
+
+  /**
+   * One entry for the whole run, filed by the refusal that spent the last of the budget — not one
+   * per attempt, which is what «агрегированная запись» rules out, and not none, which is what the
+   * trail carried before.
+   *
+   * The transition is observable exactly once: the attempt that burns the budget is the last one
+   * the limiter allows (`remaining === 0`), and every attempt after it is refused by the limiter
+   * before a code is ever compared. The next entry therefore costs the attacker a fresh window.
+   */
+  it('files one aggregated entry on the refusal that exhausts the budget', async () => {
+    const harness = buildHarness({ limits: { mfa_recovery_consume_attempt: 3 } });
+
+    for (const code of ['ZZZZZ99999', 'YYYYY88888', 'XXXXX77777']) {
+      await harness.useCase
+        .execute({ actor: ACTOR, code, ipAddress: IP_ADDRESS })
+        .catch(() => undefined);
+    }
+
+    expect(
+      harness.audit.events.filter((event) => event.action === 'user.mfa_recovery_locked_out'),
+    ).toEqual([
+      expect.objectContaining({
+        action: 'user.mfa_recovery_locked_out',
+        target: { type: 'USER', id: USER_ID },
+        actor: expect.objectContaining({ ipAddress: IP_ADDRESS }),
+      }),
+    ]);
+  });
+
+  it('does not file a second entry while the lock-out holds', async () => {
+    const harness = buildHarness({ limits: { mfa_recovery_consume_attempt: 3 } });
+
+    for (const code of ['ZZZZZ99999', 'YYYYY88888', 'XXXXX77777', 'WWWWW66666', 'VVVVV55555']) {
+      await harness.useCase
+        .execute({ actor: ACTOR, code, ipAddress: IP_ADDRESS })
+        .catch(() => undefined);
+    }
+
+    expect(
+      harness.audit.events.filter((event) => event.action === 'user.mfa_recovery_locked_out'),
+    ).toHaveLength(1);
+  });
+
+  it('files nothing when the last allowed attempt succeeds', async () => {
+    const harness = buildHarness({ limits: { mfa_recovery_consume_attempt: 1 } });
+
+    harness.seedCode(VALID_CODE);
+    await harness.useCase.execute({ actor: ACTOR, code: VALID_CODE, ipAddress: IP_ADDRESS });
+
+    expect(
+      harness.audit.events.filter((event) => event.action === 'user.mfa_recovery_locked_out'),
+    ).toEqual([]);
   });
 });

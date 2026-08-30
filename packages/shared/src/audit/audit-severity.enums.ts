@@ -50,6 +50,10 @@ export const AUDIT_ACTION_SEVERITY: Readonly<Record<AuditAction, AuditSeverity>>
   // specifically for "I no longer have my authenticator" was exercised. Worth a reviewer's attention
   // even when nothing else about the sign-in is unusual, which is what `WARNING` buys here.
   'user.mfa_recovery_code_used': 'WARNING',
+  // The same level as `user.mfa_setup_failed`, and for the same reason: nothing was granted or taken
+  // away, but a run of wrong recovery codes is where an incident review starts when the account is
+  // later found compromised — it is what somebody working through a stolen sheet of codes looks like.
+  'user.mfa_recovery_locked_out': 'WARNING',
   // The whole recovery-code set was replaced. Same level as a permission override: it is a change to
   // what can get somebody back into the account, made after the stronger reauthentication check.
   'user.mfa_recovery_codes_regenerated': 'WARNING',
