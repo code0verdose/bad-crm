@@ -111,10 +111,37 @@ describe('audit call sites carry an address when the action is privileged and hu
     expect(selfServiceOrCreation.length).toBeGreaterThan(0);
   });
 
+  /**
+   * A call site written with `actor,`/`target,` shorthand has no object literal to read a target
+   * type or an address out of, so this gate cannot judge it. That is tolerable for the two `INFO`
+   * membership entries the tree has today and for nothing else: the shorthand is otherwise a way to
+   * write a privileged entry that no assertion here can see. The revocation shape is excluded too —
+   * it is the one thing that makes an `INFO` action required (`invitation.revoked`), and on an
+   * unresolved site the target type that would confirm it is exactly what is missing.
+   */
+  it('no unresolved call site hides an action this gate would have to judge', () => {
+    const unjudgeable = sites.filter(
+      (site) => !site.resolved && (site.severity !== 'INFO' || (site.hasBefore && !site.hasAfter)),
+    );
+
+    const report = unjudgeable
+      .map(
+        (v) =>
+          `${v.filePath}:${v.line} — ${v.action} (${v.severity}) passes actor/target as shorthand; ` +
+          `the gate cannot read an address from it. Write the literals out.`,
+      )
+      .join('\n');
+
+    expect(unjudgeable, report).toEqual([]);
+  });
+
   it('every privileged, human-triggered call site threads a real address', () => {
     const violations = sites.filter(
       (site) =>
-        site.humanOrigin && requiresAddressWhenHuman(site, site.severity) && !site.hasIpAddress,
+        site.resolved &&
+        site.humanOrigin &&
+        requiresAddressWhenHuman(site, site.severity) &&
+        !site.hasIpAddress,
     );
 
     const report = violations
@@ -281,5 +308,71 @@ describe('findAuditRecordCalls: parses the shape a real call site has', () => {
     expect(site?.actions).toEqual(
       expect.arrayContaining(['permission.override.created', 'permission.override.updated']),
     );
+  });
+
+  /**
+   * CONTROL for the parser's one structural assumption. Object keys have no order in TypeScript, and
+   * a reformat that moves `target` above `actor` — a change with no behaviour in it at all — used to
+   * drop the whole call site out of the gate's scope, taking a missing address with it. The two
+   * sources below are the same call written twice; the gate has to see the same site in both.
+   */
+  it('CONTROL: key order does not move a call site out of the gate’s scope', () => {
+    const actorFirst = `
+      await this.audit.record({
+        action: 'user.mfa_reset_by_admin',
+        actor: { userId: input.actor.userId, organizationId: input.actor.organizationId, ipAddress: undefined },
+        target: { type: 'USER', id: subject.id },
+        before: { totpEnabled: wasEnabled },
+        after: { totpEnabled: false },
+        requestId: undefined,
+      });
+    `;
+    const targetFirst = `
+      await this.audit.record({
+        action: 'user.mfa_reset_by_admin',
+        target: { type: 'USER', id: subject.id },
+        actor: { userId: input.actor.userId, organizationId: input.actor.organizationId, ipAddress: undefined },
+        before: { totpEnabled: wasEnabled },
+        after: { totpEnabled: false },
+        requestId: undefined,
+      });
+    `;
+
+    const [reordered] = findAuditRecordCalls('x.ts', targetFirst);
+    const [original] = findAuditRecordCalls('x.ts', actorFirst);
+
+    expect(reordered, 'a target-first call site must still be found').toBeDefined();
+    expect({ ...reordered, line: 0 }).toEqual({ ...original, line: 0 });
+    // And the site the reordered source yields is one the gate refuses: the whole point of keeping
+    // it in scope is that its missing address is still a violation.
+    expect(
+      reordered !== undefined &&
+        reordered.humanOrigin &&
+        requiresAddressWhenHuman(reordered, 'CRITICAL') &&
+        !reordered.hasIpAddress,
+    ).toBe(true);
+  });
+
+  /**
+   * The other way out of the parser's reach: `actor`/`target` passed as shorthand, where there is no
+   * object literal to read a type or an address from. The site cannot be *certified*, so it must not
+   * be silently dropped either — it comes back marked `resolved: false`, and the scan above decides
+   * what an uncertifiable site is allowed to be.
+   */
+  it('CONTROL: a shorthand call site is reported as unresolved, not silently skipped', () => {
+    const source = `
+      await this.audit.record({
+        action: 'team.member_added',
+        actor,
+        target,
+        after: { userId: input.userId },
+        requestId: undefined,
+      });
+    `;
+
+    const [site] = findAuditRecordCalls('x.ts', source);
+
+    expect(site?.resolved).toBe(false);
+    expect(site?.actions).toEqual(['team.member_added']);
   });
 });

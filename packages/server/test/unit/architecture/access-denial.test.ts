@@ -16,21 +16,32 @@ import { readSource, sourceFiles } from './source-tree.util.js';
  * would be a refactor of a hundred places instead of a rule nobody has to remember.
  */
 
-/** Files allowed to construct these errors directly, each for a reason that is not about tenancy. */
-const ALLOWED = [
+/**
+ * Files allowed to construct these errors directly, each for a reason that is not about tenancy —
+ * and each with the shape that reason predicts, so the allow-list cannot outlive it.
+ *
+ * `kind` is the point. An entry earns its exemption by doing one specific thing: two of these
+ * construct an error directly, one only declares the classes. Asserting merely that the *file*
+ * still exists lets an entry survive the disappearance of the code it excuses — a dead exemption
+ * that silently widens the next time somebody adds a `new NotFoundError` to that path.
+ */
+const ALLOWED: readonly { readonly file: string; readonly kind: 'constructs' | 'declares' }[] = [
   // The one place that decides between the two, from a resource scope and an actor.
-  'domain/shared/errors/access-denial.util.ts',
-  // Their own declarations.
-  'domain/shared/errors/app.errors.ts',
+  { file: 'domain/shared/errors/access-denial.util.ts', kind: 'constructs' },
+  // Their own declarations — this file never constructs one, it defines the classes.
+  { file: 'domain/shared/errors/app.errors.ts', kind: 'declares' },
   // A request that matched no route at all: there is no resource and no tenant to leak.
-  'presentation/http/middleware/not-found.middleware.ts',
+  { file: 'presentation/http/middleware/not-found.middleware.ts', kind: 'constructs' },
 ];
 
+const ALLOWED_FILES = ALLOWED.map((entry) => entry.file);
+
 const DIRECT_CONSTRUCTION = /new\s+(ForbiddenError|NotFoundError)\s*\(/;
+const DECLARATION = /\bclass\s+(ForbiddenError|NotFoundError)\s+extends\b/;
 
 const offenders = (): string[] =>
   sourceFiles().filter(
-    (file) => !ALLOWED.includes(file) && DIRECT_CONSTRUCTION.test(readSource(file)),
+    (file) => !ALLOWED_FILES.includes(file) && DIRECT_CONSTRUCTION.test(readSource(file)),
   );
 
 describe('the 404-not-403 choice is made in one place', () => {
@@ -63,9 +74,27 @@ describe('the 404-not-403 choice is made in one place', () => {
     expect(DIRECT_CONSTRUCTION.test(sample)).toBe(false);
   });
 
-  it('keeps the allow-list honest: every entry still exists and still constructs one', () => {
-    for (const file of ALLOWED) {
-      expect(sourceFiles(), `${file} is on the allow-list but not in the tree`).toContain(file);
+  /**
+   * The allow-list is a set of exemptions from the rule above, and an exemption whose reason has
+   * gone is a hole waiting for the next edit to that path. Checking only that the file still exists
+   * cannot see that: delete the `new NotFoundError` out of `not-found.middleware.ts` and the entry
+   * stays on the list as a dead exception, still green.
+   */
+  it('keeps the allow-list honest: every entry still exists and still does what it is excused for', () => {
+    const tree = sourceFiles();
+
+    for (const { file, kind } of ALLOWED) {
+      expect(tree, `${file} is on the allow-list but not in the tree`).toContain(file);
+
+      const source = readSource(file);
+      const pattern = kind === 'constructs' ? DIRECT_CONSTRUCTION : DECLARATION;
+
+      expect(
+        pattern.test(source),
+        `${file} is on the allow-list as '${kind}', but no longer ${
+          kind === 'constructs' ? 'constructs' : 'declares'
+        } ForbiddenError or NotFoundError — the exemption is dead and must be removed`,
+      ).toBe(true);
     }
   });
 });

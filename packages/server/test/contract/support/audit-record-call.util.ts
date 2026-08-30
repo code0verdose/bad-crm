@@ -33,6 +33,14 @@ export interface AuditRecordCallSite {
   readonly hasBefore: boolean;
   /** Whether the payload section (after `target`) contains an `after:` key. */
   readonly hasAfter: boolean;
+  /**
+   * `false` when `actor` or `target` was not written as an object literal here — the shorthand
+   * `actor,`/`target,` form, which has no `type` and no `ipAddress` to read. Such a site is reported
+   * rather than dropped: what an unjudgeable site is allowed to be is the gate's decision, not this
+   * parser's. Every other field of an unresolved site is the conservative reading — human origin,
+   * no address, unknown target.
+   */
+  readonly resolved: boolean;
 }
 
 const CALL_PATTERN = /\baudit\.record\(\{/g;
@@ -116,6 +124,27 @@ const readKeyValue = (section: string, key: string): string | null => {
   return section.slice(start).trim();
 };
 
+/**
+ * The span of one object-valued key (`actor: { … }`) inside a call block, located wherever it sits.
+ *
+ * Deliberately independent of the other keys' positions: object keys have no order in TypeScript,
+ * and a parser that assumed one (`actor` before `target`) let a pure reformat carry a call site out
+ * of the gate's scope along with its missing address.
+ */
+const objectSectionSpan = (
+  block: string,
+  key: 'actor' | 'target',
+): { readonly start: number; readonly end: number } | null => {
+  const match = new RegExp(`\\b${key}:\\s*\\{`).exec(block);
+
+  if (match === null) return null;
+
+  const openBraceIndex = match.index + match[0].length - 1;
+  const closeIndex = findMatchingBrace(block, openBraceIndex);
+
+  return closeIndex === null ? null : { start: match.index, end: closeIndex };
+};
+
 /** Finds every `audit.record({ ... })` call site in one file's source text. */
 export const findAuditRecordCalls = (
   filePath: string,
@@ -131,28 +160,25 @@ export const findAuditRecordCalls = (
 
     const block = source.slice(openBraceIndex, closeIndex);
 
-    const actorKeyIndex = block.search(/\bactor:\s*\{/);
-    const targetKeyIndex = block.search(/\btarget:\s*\{/);
+    const actorSpan = objectSectionSpan(block, 'actor');
+    const targetSpan = objectSectionSpan(block, 'target');
+    const resolved = actorSpan !== null && targetSpan !== null;
 
-    // `manage-team-members.use-case.ts` passes `actor,`/`target,` shorthand for two INFO-severity
-    // actions — there is nothing to parse structurally there, and nothing in this gate's rule ever
-    // requires an address from an INFO action, so an unresolved shorthand site is simply skipped
-    // rather than guessed at.
-    if (actorKeyIndex === -1 || targetKeyIndex === -1 || targetKeyIndex < actorKeyIndex) continue;
+    const actorSection = actorSpan === null ? '' : block.slice(actorSpan.start, actorSpan.end);
+    const targetSection = targetSpan === null ? '' : block.slice(targetSpan.start, targetSpan.end);
 
-    const actorSection = block.slice(actorKeyIndex, targetKeyIndex);
-    const afterTargetOpen = targetKeyIndex + block.slice(targetKeyIndex).indexOf('{');
-    const targetCloseIndex = findMatchingBrace(block, afterTargetOpen);
-    const targetSection =
-      targetCloseIndex === null
-        ? block.slice(targetKeyIndex)
-        : block.slice(targetKeyIndex, targetCloseIndex);
-    const payloadSection = targetCloseIndex === null ? '' : block.slice(targetCloseIndex);
+    // The payload is what is left once both object sections are cut out — computed by removal
+    // rather than as «everything after `target`», so `before`/`after` are found whichever side of
+    // the payload the two sections happen to be written on.
+    const payloadSection = [actorSpan, targetSpan]
+      .filter((span): span is { start: number; end: number } => span !== null)
+      .sort((a, b) => b.start - a.start)
+      .reduce((text, span) => text.slice(0, span.start) + text.slice(span.end), block);
 
-    const actorUserIdExpr = readKeyValue(actorSection, 'userId');
-    const actorIpExpr = readKeyValue(actorSection, 'ipAddress');
-    const targetTypeExpr = readKeyValue(targetSection, 'type');
-    const targetIdExpr = readKeyValue(targetSection, 'id');
+    const actorUserIdExpr = resolved ? readKeyValue(actorSection, 'userId') : null;
+    const actorIpExpr = resolved ? readKeyValue(actorSection, 'ipAddress') : null;
+    const targetTypeExpr = resolved ? readKeyValue(targetSection, 'type') : null;
+    const targetIdExpr = resolved ? readKeyValue(targetSection, 'id') : null;
 
     const actions = [
       ...new Set(
@@ -168,12 +194,13 @@ export const findAuditRecordCalls = (
       line,
       actions,
       humanOrigin: actorUserIdExpr !== 'undefined',
-      hasIpAddress: actorIpExpr !== 'undefined',
+      hasIpAddress: resolved && actorIpExpr !== 'undefined',
       targetType: targetTypeExpr === null ? null : targetTypeExpr.replace(/^'|'$/g, ''),
       targetIdExpr,
       actorUserIdExpr,
       hasBefore: /\bbefore:/.test(payloadSection),
       hasAfter: /\bafter:/.test(payloadSection),
+      resolved,
     });
   }
 
