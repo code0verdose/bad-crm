@@ -1,6 +1,7 @@
 import { SharedHooks } from '@shared';
 
 import { ERROR_MESSAGE_KEY, errorMessageKey, isApiError } from '@shared/api';
+import { loginAttempt } from '@units/auth/lib';
 import {
   ORGANIZATION_SELECTION_NOTICE_KEY,
   type LoginFormValues,
@@ -105,7 +106,10 @@ export const useLogin = (): LoginController => {
       // the next step before anything was typed into it, and `mfa_token_expired` would end that step
       // before it was drawn.
       secondFactor.reset();
-      password.mutate(credentials);
+      // The password becomes a one-shot rather than a mutation variable: `state.variables` is as
+      // readable from the published router as `state.data`, and the code step keeps this mutation
+      // observed for as long as somebody is typing (`units/auth/lib/login-attempt.util.ts`).
+      password.mutate(loginAttempt(credentials.email, credentials.password));
     },
 
     secondFactor: {

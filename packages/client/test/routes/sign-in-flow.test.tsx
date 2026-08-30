@@ -406,6 +406,13 @@ describe('signing in when the account carries a second factor', () => {
     expect(published).toBeDefined();
     expect(JSON.stringify(states)).not.toContain(MFA_TOKEN);
 
+    // And neither does the password that bought the step. `gcTime: 0` does not help here: it only
+    // runs once nothing observes the mutation, and the code step keeps that observer mounted for as
+    // long as the person is typing. So the window in which `state.variables` holds an address and a
+    // password is exactly the window an attacker would pick, and the entry is reachable by the same
+    // three property reads as the token above.
+    expect(JSON.stringify(states)).not.toContain(PASSWORD);
+
     await user.type(code, '123456');
     await user.click(app.getByRole('button', { name: 'auth.twoFactor.submit' }));
 

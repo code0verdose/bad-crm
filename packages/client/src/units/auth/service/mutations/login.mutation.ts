@@ -1,7 +1,13 @@
 import { useMutation, type UseMutationResult } from '@tanstack/react-query';
 
 import { login, type LoginCredentials, type LoginResult } from '@units/auth/api';
-import { adoptSession, clearMfaToken, emitAuthEvent, setMfaToken } from '@units/auth/lib';
+import {
+  adoptSession,
+  clearMfaToken,
+  emitAuthEvent,
+  type LoginAttempt,
+  setMfaToken,
+} from '@units/auth/lib';
 import { authSession } from '@units/auth/service/stores';
 import { type SessionIdentity } from '@units/auth/types';
 
@@ -95,15 +101,27 @@ const adoptLoginResult = (result: LoginResult): LoginOutcome => {
  * empty or was cleared by the sign-out that preceded it (`app/auth-events.util.ts`); clearing it
  * mid-mutation would also throw away the mutation that is still settling.
  */
-export const useLoginMutation = (): UseMutationResult<LoginOutcome, Error, LoginCredentials> =>
+export const useLoginMutation = (): UseMutationResult<LoginOutcome, Error, LoginAttempt> =>
   useMutation({
-    // The answer is taken apart above so the access token never reaches the cache; `gcTime: 0` is the
-    // same rule applied to the *arguments*, which are an address and a password. `state.variables`
-    // outlives the screen by the whole `gcTime` and is reachable through `self.__TSR_ROUTER__` exactly
-    // like `state.data` — stripping one and keeping the other secures the cheaper of the two.
+    // The answer is taken apart above so the access token never reaches the cache. `state.variables`
+    // is reachable through `self.__TSR_ROUTER__` exactly like `state.data`, so the *arguments* get
+    // the same treatment — but by never carrying the password, not by `gcTime`. `gcTime: 0` is kept
+    // because it disposes of the entry the moment nothing watches it; on its own it was not enough,
+    // since the second-factor step keeps an observer mounted while the password sat in `variables`
+    // (`lib/login-attempt.util.ts` tells that story in full).
     gcTime: 0,
 
-    mutationFn: async (credentials: LoginCredentials) => {
+    mutationFn: async (attempt: LoginAttempt) => {
+      const password = attempt.takePassword();
+
+      if (password === null) {
+        // Not a retry: mutations here are not retried. Two reads mean two callers thought they owned
+        // this attempt, and re-sending a spent password would hide that rather than surface it.
+        throw new Error('login attempt has already been spent');
+      }
+
+      const credentials: LoginCredentials = { email: attempt.email, password };
+
       // Sending a password ends whatever step was in progress, whichever way this request goes: the
       // answer supersedes it, and a refusal leaves nobody on a screen that could spend it. Clearing
       // before the request rather than after means there is no window in which a token nothing owns

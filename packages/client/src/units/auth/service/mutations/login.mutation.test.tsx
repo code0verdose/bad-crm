@@ -27,6 +27,30 @@ const ACCESS_TOKEN = 'access-token-1';
 
 const CREDENTIALS = { email: 'ada@example.com', password: 'correct-horse-battery' };
 
+/**
+ * A fresh attempt per case, built here rather than imported.
+ *
+ * `loginAttempt` hands its password over once, so a shared constant would make the second case in
+ * this file send `null` and the failure would read as a bug in the mutation. Built inline because
+ * the unit is re-imported per case (`freshUnit`) and the shape is structural: what the mutation
+ * needs is an address and a function that answers the password, not a particular module's copy of
+ * the factory.
+ */
+const attempt = () => {
+  let secret: string | null = CREDENTIALS.password;
+
+  return {
+    email: CREDENTIALS.email,
+    takePassword: () => {
+      const value = secret;
+
+      secret = null;
+
+      return value;
+    },
+  };
+};
+
 const json = (body: unknown, status = 200): Response =>
   new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
 
@@ -89,7 +113,7 @@ describe('what a successful sign-in leaves in the mutation cache', () => {
     const { queryClient, wrapper } = harness();
 
     const { result } = renderHook(() => AuthService.useLoginMutation(), { wrapper });
-    result.current.mutate(CREDENTIALS);
+    result.current.mutate(attempt());
 
     await waitFor(() => {
       expect(result.current.isSuccess).toBe(true);
@@ -122,7 +146,7 @@ describe('what a successful sign-in leaves in the mutation cache', () => {
     const { queryClient, wrapper } = harness();
 
     const { result, unmount } = renderHook(() => AuthService.useLoginMutation(), { wrapper });
-    result.current.mutate(CREDENTIALS);
+    result.current.mutate(attempt());
 
     await waitFor(() => {
       expect(result.current.isSuccess).toBe(true);
@@ -145,7 +169,7 @@ describe('what a successful sign-in leaves in the mutation cache', () => {
     const { wrapper } = harness();
 
     const { result } = renderHook(() => AuthService.useLoginMutation(), { wrapper });
-    result.current.mutate(CREDENTIALS);
+    result.current.mutate(attempt());
 
     await waitFor(() => {
       expect(AuthService.authSession.read()).toEqual({
@@ -174,7 +198,7 @@ describe('what a successful sign-in leaves in the mutation cache', () => {
     const { wrapper } = harness();
 
     const { result } = renderHook(() => AuthService.useLoginMutation(), { wrapper });
-    result.current.mutate(CREDENTIALS);
+    result.current.mutate(attempt());
 
     await waitFor(() => {
       expect(result.current.isSuccess).toBe(true);
