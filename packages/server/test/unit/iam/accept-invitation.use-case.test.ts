@@ -275,9 +275,36 @@ describe('accepting an invitation', () => {
     expect(unknown.accounts).toEqual([]);
   });
 
+  /**
+   * The expensive work is behind the cheap answer: an argon2id run over 19 MiB for every guessed
+   * token is the memory-exhaustion vector `T-IAM-08` names.
+   *
+   * **This buys a timing oracle, and the trade is deliberate — written down 2026-08-30, when a
+   * review read the early exit as an oversight.** It is not one, but the other side of it had never
+   * been recorded, so the next reader had nothing to weigh:
+   *
+   * - A token the resolver does not find is refused **before** the hash; a token it finds but that
+   *   is spent or expired is refused **after** one, inside the transaction. The two answers are
+   *   identical in body and status and differ by the cost of an argon2id run, so a holder of a
+   *   candidate token learns whether it ever existed. STORY-012-02 acceptance 4 asks for the two to
+   *   be indistinguishable, and by time they are not.
+   * - **`LoginUseCase` resolves the same tension the other way**: an unknown address is verified
+   *   against `hasher.dummyHash` so that it costs exactly what a known one costs. The two paths
+   *   are inconsistent on purpose only if somebody decided so; until 2026-08-30 nobody had.
+   * - What makes the trade defensible here and not there: the token is 32 bytes of entropy, so the
+   *   oracle answers «did this token ever exist» for a token the attacker already holds — a
+   *   forwarded or revoked one — rather than helping to guess one. `invitation_accept` also allows
+   *   ten attempts per address per fifteen minutes with no escalation, against five with escalation
+   *   for `auth_attempt`, so paying the KDF here is twice the exposure it is on the login path.
+   * - What would settle it: equalising by verifying `dummyHash` on the unresolved branch — the
+   *   mechanism already exists and is one line — **and** accepting that a guessed token then costs
+   *   19 MiB, which is the very thing `T-IAM-08` argues against while no concurrency semaphore
+   *   exists (STORY-013-06, backlog).
+   *
+   * Left as it stands, because flipping it is a security decision with a real cost either way, not
+   * a defect fix. If it is flipped, this case is the one that must change with it.
+   */
   it('hashes nothing for a token the resolver does not find', async () => {
-    // The expensive work is behind the cheap answer: an argon2id run over 19 MiB for every guessed
-    // token is the memory-exhaustion vector `T-IAM-08` names.
     const invitations = new FakeInvitations();
 
     await expect(accept(invitations, { resolved: null })).rejects.toBeInstanceOf(
