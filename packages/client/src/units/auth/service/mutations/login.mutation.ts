@@ -39,8 +39,9 @@ export interface LoginOutcome {
  * The answer is taken apart inside `mutationFn`, and only the outcome comes back out.
  *
  * `POST /auth/login` answers with an `AuthenticatedSession`, access token included. Resolved
- * unchanged, that object is what TanStack Query keeps in the `MutationCache` — for the five minutes
- * of the default `gcTime`, and for as long as an observer stays mounted. The cache is not a private
+ * unchanged, that object is what TanStack Query keeps in the `MutationCache` for as long as an
+ * observer stays mounted — this mutation sets `gcTime: 0`, so the default five minutes after that
+ * never apply, and a mounted observer is the whole of the window. The cache is not a private
  * corner either: the `QueryClient` travels in the router context, and `@tanstack/router-core`
  * assigns `self.__TSR_ROUTER__ = this` for every router built in a document, under no development
  * flag. The walk from there is three property reads, and it ends on the credential that

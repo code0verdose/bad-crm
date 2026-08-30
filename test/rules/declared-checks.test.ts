@@ -150,19 +150,23 @@ const isSatisfied = (check: DeclaredCheck): boolean => {
 const PENDING: Readonly<Record<string, string>> = {
   // ── OpenAPI and HTTP semantics (EPIC-003 in review, idempotency scheduled with M2) ───────────
   'api-contract.mdc · file · test/integration/http/idempotency.test.ts':
-    'There is no idempotency middleware yet — the `Idempotency-Key` handling lands with the first ' +
-    'mutating resource endpoints in M2, and the suite is written against it.',
+    'The middleware exists (`presentation/http/middleware/idempotency-key.middleware.ts`) and the ' +
+    'spec-to-registry parity is gated by `packages/server/test/contract/idempotency-parity.test.ts`; ' +
+    'what is missing is the behavioural suite — replay of the same key, a different body under the ' +
+    'same key, expiry. Reason corrected 2026-08-30: it used to say no middleware existed.',
 
   // ── custom ESLint rules of the repository plugin, none of them written yet ───────────────────
   'design-system.mdc · eslint-rule · bad-crm/classnames-via-clsx':
-    '`eslint/bad-crm.plugin.js` ships three rules and this is not one of them; the design system ' +
-    'itself is EPIC-007 and no component yet composes a className conditionally.',
+    '`eslint/bad-crm.plugin.js` ships three rules and this is not one of them. Reason narrowed ' +
+    '2026-08-30: it used to say nothing composes a className conditionally, which is true of ' +
+    '`packages/client` and false of `packages/landing`, where about ten files do it through `clsx`.',
   'errors-and-toasts.mdc · eslint-rule · bad-crm/no-toast-in-onerror-query':
     'Not implemented in `eslint/bad-crm.plugin.js`. The invariant it would enforce is covered today ' +
     'by `packages/client/test/api/query-client.test.ts`, which asserts a failing query is logged and not toasted.',
   'lists-and-filters.mdc · eslint-rule · bad-crm/no-usestate-for-search-params':
-    'Not implemented in `eslint/bad-crm.plugin.js`; no filtered list exists yet, so the rule has ' +
-    'nothing to run against until the first `validateSearch` route lands.',
+    'Not implemented in `eslint/bad-crm.plugin.js`. Reason corrected 2026-08-30: filtered lists do ' +
+    'exist now — seven route files carry `validateSearch` and the employee directory keeps its ' +
+    'filters in the URL — so the rule has something to run against and simply is not written.',
   'naming-and-structure.mdc · eslint-rule · bad-crm/no-inline-helpers':
     'Not implemented in `eslint/bad-crm.plugin.js`. `bad-crm/require-role-suffix` covers the file ' +
     'naming half of this rule; the helper-inside-a-component half is still reviewed by hand.',
@@ -173,8 +177,9 @@ const PENDING: Readonly<Record<string, string>> = {
     'Not implemented in `eslint/bad-crm.plugin.js`. The query-key factory exists in ' +
     '`packages/client/src/shared/lib/enums`, but nothing yet stops a literal array at a call site.',
   'tanstack-query.mdc · eslint-rule · bad-crm/require-signal-in-queryfn':
-    'Not implemented in `eslint/bad-crm.plugin.js`. The client has one query hook so far and it is ' +
-    'reviewed by hand; the rule belongs with the first list screen that can race.',
+    'Not implemented in `eslint/bad-crm.plugin.js`. Reason corrected 2026-08-30: there are 34 hooks ' +
+    'under `units/*/service/hooks`, not one, and the list screens that can race are shipped — the ' +
+    'signal is threaded by convention and checked by the reviewer.',
   'zod-validation.mdc · eslint-rule · bad-crm/no-interface-next-to-schema':
     'Not implemented in `eslint/bad-crm.plugin.js`. Schema-first is followed by convention today ' +
     'and checked by the reviewer, not by the linter.',
@@ -186,7 +191,8 @@ const PENDING: Readonly<Record<string, string>> = {
     'which walks the real import graph — the plugin would replace that pair, not add to it.',
   // ── commands that belong to the i18n epic ────────────────────────────────────────────────────
   'i18n.mdc · command · i18n:unused':
-    'Same as `i18n:check`: the script is specified against a message catalogue that EPIC-008 introduces.',
+    'Reason corrected 2026-08-30: `i18n:check` is a real script (root `package.json`) and EPIC-008 ' +
+    'shipped; only `i18n:unused` is missing. Orphaned keys are found by nothing today.',
 
   // ── CI steps and jobs the workflows do not have ──────────────────────────────────────────────
   'dependencies.mdc · ci-step · check:forbidden-packages':

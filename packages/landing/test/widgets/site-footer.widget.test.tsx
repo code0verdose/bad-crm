@@ -1,10 +1,11 @@
 import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { EN_COPY } from '@/app/i18n/dictionary-en.constant.js';
 import { RU_COPY } from '@/app/i18n/dictionary-ru.constant.js';
 import { LocaleProvider } from '@/app/i18n/locale.provider.js';
+import { readConsent, writeConsent } from '@/shared/lib/consent.util.js';
 import { FOOTER_COLUMN_TARGETS } from '@/shared/lib/footer-links.util.js';
 import {
   CONTRIBUTING_URL,
@@ -13,6 +14,7 @@ import {
   SECTION_IDS,
   SECURITY_POLICY_URL,
 } from '@/shared/lib/site-links.constant.js';
+import { ROUTES } from '@/shared/lib/use-route.hook.js';
 import { SiteFooter } from '@/widgets/site-footer.widget.js';
 
 /**
@@ -136,5 +138,51 @@ describe('the labels and the targets stay in step', () => {
     expect(copy.footer.columns.map((column) => column.links.length)).toEqual(
       FOOTER_COLUMN_TARGETS.map((targets) => targets.length),
     );
+  });
+});
+
+/**
+ * The two handlers of the legal column, which nothing had ever run.
+ *
+ * Both are the same shape as the back link of a legal page: a real element, and an `onClick` that
+ * does the work. The consent one is the reason this matters beyond coverage — withdrawing consent
+ * has to be as easy as giving it, and the only thing standing between a reader and the banner
+ * coming back is these two lines.
+ */
+describe('the legal column does what its two buttons say', () => {
+  it('navigates in place rather than reloading the site', async () => {
+    const user = userEvent.setup();
+
+    globalThis.history.replaceState(null, '', ROUTES.home);
+    renderFooter();
+
+    await user.click(screen.getByRole('link', { name: EN_COPY.footer.legalLinks.privacy }));
+
+    expect(globalThis.location.pathname).toBe(ROUTES.privacy);
+
+    globalThis.history.replaceState(null, '', ROUTES.home);
+  });
+
+  it('clears the stored consent and reloads, so the banner comes back', async () => {
+    const user = userEvent.setup();
+    const reload = vi.fn();
+
+    // `location.reload` is not implemented in jsdom, and the assertion is that it is called at all:
+    // clearing the answer without a reload leaves the reader on a page that still behaves as if
+    // they had answered.
+    vi.spyOn(globalThis, 'location', 'get').mockReturnValue({
+      ...globalThis.location,
+      reload,
+    } as unknown as Location);
+
+    writeConsent('all');
+    renderFooter();
+
+    await user.click(screen.getByRole('button', { name: EN_COPY.footer.legalLinks.manageCookies }));
+
+    expect(readConsent()).toBeNull();
+    expect(reload).toHaveBeenCalledOnce();
+
+    vi.restoreAllMocks();
   });
 });

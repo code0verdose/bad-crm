@@ -78,7 +78,7 @@ created: 2026-07-26
       `totp_last_counter`, `confirm-totp.use-case.ts:249` (`totp_code_replayed`, 422) и
       `mfa_code_replayed` (401) на шаге входа
       (`packages/shared/src/errors/error-code.enums.ts:289`).
-- [x] Перебор кодов ограничен по частоте и по числу попыток на промежуточный токен — пять политик
+- [x] Перебор кодов ограничен по частоте и по числу попыток на промежуточный токен — шесть политик
       в `infrastructure/rate-limit/rate-limit-policy.constant.ts:107-165` (`mfa_setup_attempt`,
       `mfa_reauth_attempt`, `mfa_verify_attempt` по `jti`, `mfa_verify_account_attempt` по
       `(ip, userId)`, `mfa_recovery_consume_attempt`, `mfa_admin_reset_attempt`); бюджет тратится до
