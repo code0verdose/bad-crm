@@ -26,7 +26,8 @@ estimate: S
 ## Задачи
 
 - [ ] Написать тест `test/ci/licenses.test.ts`: прогоняет проверку лицензий на фикстурном дереве зависимостей и ожидает провал для запрещённых лицензий и успех для разрешённых.
-- [x] Реализовано иначе: гейт лицензий живёт в `.github/workflows/license-check.yml` (allow-list с разбором SPDX-выражений `OR`/`AND`, deny-list имён, сверка `@blocknote/xl-*` с ADR-0012, проверка `pnpm.onlyBuiltDependencies`). Прогнан вживую: 451 пакет, 0 нарушений. Вынести в `scripts/check-licenses.ts` — чтобы гейт был запускаем локально и покрываем тестом — остаётся открытым
+- [ ] Реализовано иначе: гейт лицензий живёт в `.github/workflows/license-check.yml` (allow-list с разбором SPDX-выражений `OR`/`AND`, deny-list имён, сверка `@blocknote/xl-*` с ADR-0012, проверка `pnpm.onlyBuiltDependencies`). Прогнан вживую: 451 пакет, 0 нарушений. Вынести в `scripts/check-licenses.ts` — чтобы гейт был запускаем локально и покрываем тестом — остаётся открытым
+  **Отметка снята 2026-08-30:** сам гейт существует и работает — `.github/workflows/license-check.yml` в дереве есть. Отсутствует названный здесь `scripts/check-licenses.ts`: `git ls-files 'scripts/*'` не печатает ни его, ни другого скрипта проверки лицензий, вся логика — инлайном в workflow. Пункт открыт ровно в этой части, а не целиком
 - [x] Шаг проверки лицензий добавлен отдельным workflow `license-check.yml` (PR + push + еженедельно), Dependabot-PR проходит его наравне с остальными.
 - [x] Создать `.github/workflows/codeql.yml` для языка `javascript-typescript` с запуском на PR и по расписанию.
 - [x] Добавить `dependency-review-action` на pull request с `fail-on-severity: high` и собственным списком запрещённых лицензий (второй, независимый рубеж).

@@ -53,11 +53,11 @@ estimate: S
 
 ## Задачи
 
-- [x] Написать тесты первыми: `application/identity/use-cases/change-password.use-case.test.ts` (успех, неверный текущий, совпадение с текущим, слабый новый), `test/integration/auth/change-password.test.ts` (остальные сессии отозваны, текущая жива).
+- [x] Написать тесты первыми: `test/unit/application/change-password.use-case.test.ts` (успех, неверный текущий, совпадение с текущим, слабый новый), `test/integration/http/change-password.test.ts` (остальные сессии отозваны, текущая жива).
       *Сделано 2026-07-29:* `test/unit/application/change-password.use-case.test.ts` (16),
       `test/integration/http/change-password.test.ts` (14, поверх реальной цепочки middleware),
       и живой срез в `test/integration/db/password-reset.test.ts` («changing a password, end to
-      end»). **Не по пути из формулировки:** каталога `test/integration/auth/` в
+      end»). **Не по пути из первоначальной формулировки:** каталога test/integration/auth/ в
       `packages/server/test` нет намеренно — как только он появляется, `rules/security.mdc`
       начинает обещать в нём `refresh-reuse.spec.ts` и `rate-limit.spec.ts`, чего там нет, и
       `test/rules/declared-checks.test.ts` краснеет (промис перестаёт быть «abstained» и становится

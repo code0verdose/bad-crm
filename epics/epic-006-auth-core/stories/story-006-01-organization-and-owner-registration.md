@@ -25,7 +25,7 @@ estimate: M
 
 ## Задачи
 
-- [x] Написать тесты первыми: `application/identity/use-cases/register-organization.use-case.test.ts` (успех, слабый пароль, занятый slug, откат), `test/integration/auth/register.test.ts` (реальная БД, хеш в БД, нормализация email, идемпотентность), `packages/shared/validation/password.schema.test.ts`.
+- [x] Написать тесты первыми: `test/unit/application/register-organization.use-case.test.ts` (успех, слабый пароль, занятый slug, откат), `test/integration/http/auth-endpoints.test.ts` (реальная БД, хеш в БД, нормализация email, идемпотентность), `packages/shared/test/validation/primitives.test.ts` (блок `passwordSchema`).
       *Сделано 2026-07-29:* `test/unit/application/register-organization.use-case.test.ts` (успех,
       слабый пароль, закрытая регистрация, дефолты локали/таймзоны, «пароль не попал в ответ»),
       `test/unit/crypto/argon2-password-hasher.test.ts` (пол OWASP, перехеш, dummy-хеш),

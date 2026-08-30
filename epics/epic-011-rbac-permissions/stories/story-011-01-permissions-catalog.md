@@ -75,20 +75,21 @@ estimate: M
 
 ## Задачи
 
-- [x] `packages/shared/src/permissions/access-level.ts` — `ACCESS_LEVELS`, `ACCESS_LEVEL_RANK`, `atLeast()`.
+- [x] `packages/shared/src/permissions/access-level.enums.ts` — `ACCESS_LEVELS`, `ACCESS_LEVEL_RANK`, `atLeast()`.
 - [x] `packages/shared/src/permissions/permissions.catalog.ts` — каталог целиком (331 ключ на
       2026-08-12, число живёт в снапшоте), `PERMISSION_META`,
       `PERMISSION_DOMAINS`, `PERMISSION_SET`, `isPermissionKey`, `requiredLevel` (перенос §3 документа).
-- [x] `packages/shared/src/permissions/deny-reason.ts` — `DENY_REASONS`, `DenyReason`.
+- [x] `packages/shared/src/permissions/deny-reason.enums.ts` — `DENY_REASONS`, `DenyReason`.
 - [x] `packages/shared/src/permissions/index.ts` — barrel; экспорт наружу через `@bad-crm/shared`.
-- [x] `packages/shared/src/permissions/permissions.catalog.spec.ts` — формат ключей, уникальность,
+- [x] `packages/shared/test/permissions/catalog.test.ts` — формат ключей, уникальность,
       согласованность `resource`/`action`/`domain`, снапшот `catalogSize`, whitelist `dangerous`.
 - [x] `packages/server/prisma/migrations/*_permission_catalog/migration.sql` — колонка
       `deprecated_at timestamptz NULL` у `permissions` (расхождение №4 §12 документа), индекс
       `idx_permissions_resource (resource, action)`.
-- [x] `packages/server/prisma/seed/permissions.seed.ts` — `upsert` по `key` + `updateMany` для
-      `deprecatedAt`, вызывается из `prisma/seed/index.ts` и из entrypoint контейнера.
-- [x] `packages/server/test/integration/permissions/permissions-seed.spec.ts` — идемпотентность,
+- [x] `packages/server/scripts/seed-permissions.ts` — `upsert` по `key` + `updateMany` для
+      `deprecatedAt`, вызывается отдельной командой `pnpm db:seed:permissions` (шаг установки и
+      обновления, джоба CI) и из setup контейнера интеграционных тестов.
+- [x] `packages/server/test/integration/db/permission-catalog.test.ts` — идемпотентность,
       deprecated-путь, отсутствие каскадного удаления.
 - [ ] `packages/server/src/application/platform/jobs/count-deprecated-permission-usage.job.ts` + тест.
       **Отметка снята 2026-08-30:** каталога `application/platform/jobs` не существует, как и любого

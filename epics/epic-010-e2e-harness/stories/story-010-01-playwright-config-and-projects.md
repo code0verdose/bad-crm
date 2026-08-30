@@ -24,7 +24,7 @@ estimate: M
 
 ## Задачи
 
-- [x] Написать первым «мета-тест» конфигурации: `packages/e2e/test/config.test.ts` — проверяет наличие `webServer`/ожидания готовности, отсутствие `waitForTimeout` в спеках, корректные значения `retries` для CI и локали запуска.
+- [x] Написать первым «мета-тест» конфигурации: `test/e2e/playwright-config.test.ts` — проверяет наличие `webServer`/ожидания готовности, отсутствие `waitForTimeout` в спеках, корректные значения `retries` для CI и локали запуска.
 - [x] Создать `packages/e2e/playwright.config.ts`: `baseURL`, проекты браузеров, `use.trace: 'on-first-retry'`, `screenshot: 'only-on-failure'`, `video: 'retain-on-failure'`, таймауты.
 - [x] Реализовать ожидание готовности приложения через опрос `/ready` перед стартом сценариев.
 - [x] Настроить скрипты `pnpm test:e2e`, `test:e2e:ui`, `test:e2e:debug` и включить задачу в `turbo.json` с `cache: false`.

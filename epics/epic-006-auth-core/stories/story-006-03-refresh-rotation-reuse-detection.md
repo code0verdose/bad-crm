@@ -25,7 +25,7 @@ estimate: M
 
 ## Задачи
 
-- [x] Написать тесты первыми: `application/identity/use-cases/refresh-session.use-case.test.ts` (ротация, reuse → отзыв семейства, истёкший, несуществующий), `test/integration/auth/refresh-race.test.ts` (две параллельные ротации), `test/integration/auth/denylist.test.ts` (access отозванной сессии не проходит).
+- [x] Написать тесты первыми: `test/unit/application/refresh-session.use-case.test.ts` (ротация, reuse → отзыв семейства, истёкший, несуществующий), `test/integration/db/refresh-rotation.test.ts` (две параллельные ротации), `test/unit/application/session-management.test.ts` (access отозванной сессии не проходит).
       *Сделано 2026-07-29:* `test/unit/application/refresh-session.use-case.test.ts` (11 тестов),
       `test/integration/db/refresh-rotation.test.ts` (гонка на живом PostgreSQL — две транзакции,
       обе читают строку **до** записи, обновляет ровно одна), «отозванная сессия → 401 на следующем
@@ -86,8 +86,8 @@ estimate: M
       `Idempotency-Key` на этой операции объявлен игнорируемым: воспроизведение сохранённого ответа —
       ровно то, что ловит reuse detection. Побочный эффект публикации: исключение под raw `fetch` в
       `packages/client/src/shared/api/session-refresh.api.ts` истекло — вызов переведён на
-      типизированный клиент (отдельный экземпляр, без auth-middleware), `test/repo/refresh-exception.test.ts`
-      удалён.)*
+      типизированный клиент (отдельный экземпляр, без auth-middleware), а repo-тест, стороживший
+      это исключение, удалён вместе с ним.)*
 - [ ] Задокументировать модель семейств сессий в `docs/security/` и добавить сценарий разбора инцидента в `docs/runbooks/`.
 
 ## Definition of Done

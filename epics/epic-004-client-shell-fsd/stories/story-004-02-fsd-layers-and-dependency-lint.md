@@ -41,7 +41,7 @@ estimate: M
       Сегменты `api`, `service/queries`, `service/mutations` **не заведены**: HTTP-клиента нет до
       STORY-004-06, а пустой сегмент запрещён (см. выше). Есть `model`, `types`,
       `service/hooks`, `ui` и namespace-barrel. Отдельно: строки `units/session` нет в
-      `docs/product/glossary.md` — её нужно завести до `test/architecture/unit-names`.
+      `docs/product/glossary.md` — её нужно завести до `test/repo/unit-names.test.ts`.
 - [x] Настроить `import/no-restricted-paths` (зоны по слоям) и `no-restricted-imports` (запрет глубоких путей в юниты).
       Проверка на настоящем дереве вскрыла дефект прежней конфигурации: запрет `@units/*/*` был
       навешен и на сами юниты, из-за чего юнит не мог импортировать **собственные** сегменты, а

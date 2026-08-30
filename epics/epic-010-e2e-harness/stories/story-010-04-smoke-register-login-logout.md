@@ -25,8 +25,11 @@ estimate: S
 
 ## Задачи
 
-- [x] Написать сценарии первыми: `packages/e2e/tests/smoke/register-login-logout.spec.ts`, `tests/smoke/a11y.spec.ts`, `tests/smoke/locale-switch.spec.ts`.
-- [x] Реализовать page objects: `pages/login.page.ts`, `pages/register.page.ts`, `pages/app-shell.page.ts` с локаторами по ролям и `data-testid`, а не по текстам.
+- [x] Написать сценарии первыми: `packages/e2e/tests/smoke/sign-in.spec.ts` и `tests/smoke/sign-out.spec.ts` (вход, отказ, выход; регистрация в срез не вошла — разбор ниже), `tests/smoke/accessibility.spec.ts`, `tests/smoke/locale-switch.spec.ts`.
+- [ ] Реализовать page objects: `pages/login.page.ts`, `pages/register.page.ts`, `pages/app-shell.page.ts` с локаторами по ролям и `data-testid`, а не по текстам.
+      **Отметка снята 2026-08-30:** `ls packages/e2e/pages` печатает один файл — `login.page.ts`;
+      объектов регистрации и оболочки нет ни под этими именами, ни под другими. Локаторы по ролям
+      в существующем объекте сделаны, остальные два ждут своих экранов в наборе.
 - [x] Реализовать генерацию уникальных `slug`/email для каждого прогона регистрации, чтобы сценарий был повторяемым.
 - [x] Подключить `@axe-core/playwright` и настроить падение на нарушениях A/AA.
 - [x] Реализовать проверку возврата по истории браузера после выхода.

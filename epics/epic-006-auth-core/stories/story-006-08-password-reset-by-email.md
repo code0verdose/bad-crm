@@ -26,11 +26,11 @@ estimate: M
 
 ## Задачи
 
-- [x] Написать тесты первыми: `application/identity/use-cases/request-password-reset.use-case.test.ts` (неразличимость ответов, отправка письма только для существующего), `confirm-password-reset.use-case.test.ts` (успех, повторное использование, TTL, слабый пароль), `test/integration/auth/password-reset.test.ts` (хеш токена в БД, отзыв всех сессий).
+- [x] Написать тесты первыми: `test/unit/application/request-password-reset.use-case.test.ts` (неразличимость ответов, отправка письма только для существующего), `confirm-password-reset.use-case.test.ts` (успех, повторное использование, TTL, слабый пароль), `test/integration/http/password-reset.test.ts` (хеш токена в БД, отзыв всех сессий).
       *Сделано 2026-07-29:* 16 + 14 юнит-проверок, `test/integration/http/password-reset.test.ts`
       (17, сравнивает два ответа поле за полем — статус, тело, `content-type`), и живая суита на
       настоящем PostgreSQL и настоящем Mailpit. **Путь другой:** `test/integration/db/password-reset.test.ts`,
-      а не `test/integration/auth/…` — каталог `test/integration/auth/` заводить нельзя, пока
+      а не `test/integration/auth/…` — каталог test/integration/auth/ заводить нельзя, пока
       `rules/security.mdc` обещает в нём `refresh-reuse.spec.ts` и `rate-limit.spec.ts`: как только
       каталог существует, обещания из «abstained» становятся «missing» и
       `test/rules/declared-checks.test.ts` краснеет. Лечится записью в `PENDING` того теста или

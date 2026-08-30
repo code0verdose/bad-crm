@@ -24,7 +24,7 @@ estimate: S
 
 ## Задачи
 
-- [x] Написать первым мета-тест конфигурации: `packages/e2e/test/artifacts-config.test.ts` — проверяет режимы `trace`/`screenshot`/`video` и наличие шага очистки секретов.
+- [x] Написать первыми мета-тесты конфигурации: `test/e2e/playwright-config.test.ts` (режимы `trace`/`screenshot`/`video`) и `test/ci/workflow.test.ts` (асимметрия выгрузки, срок хранения, шаг очистки секретов до выгрузки).
 - [x] Настроить в `playwright.config.ts` режимы артефактов (`on-first-retry`, `only-on-failure`, `retain-on-failure`) и путь выгрузки.
 - [x] Добавить в e2e-джобу шаги сбора логов контейнеров (`docker compose logs`) при падении.
 - [x] Реализовать скрипт очистки каталога артефактов от файлов состояния сессий и конфигураций перед выгрузкой.

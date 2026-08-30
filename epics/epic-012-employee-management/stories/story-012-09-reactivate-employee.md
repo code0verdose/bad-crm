@@ -129,8 +129,10 @@ estimate: M
       значило бы править отгруженный чужой экран» отпал. Остаётся вопрос вкуса, а не владения:
       читается ли один объект на два противоположных действия лучше двух. Решать отдельно, кода
       это не блокирует.
-- [x] `widgets/reactivation/reactivation-dialog.widget.tsx` — перечисление того, что вернётся и что
-      нет, роли поимённо, отчёт после успеха.
+- [x] `widgets/reactivation/reactivation.widget.tsx` с `ui/reactivation-dialog.component.tsx` —
+      перечисление того, что вернётся и что нет, роли поимённо
+      (`ui/reactivation-roles.component.tsx`), отчёт после успеха
+      (`ui/reactivation-report.component.tsx`).
 - [x] Плашка состояния на карточке (`pages/employee-profile`), кнопка рядом с офбордингом.
 - [x] i18n: ключи `members.reactivate.*` в `en` и `ru`.
 - [x] Тесты: серверный снапшот сериализатора по уровням (что `status` появился ровно там, где

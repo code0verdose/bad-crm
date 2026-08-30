@@ -49,7 +49,7 @@ estimate: M
       на Mantine 9 (см. [поправку в ADR-0006](../../../docs/architecture/adr/0006-mantine-css-modules-no-tailwind.md)),
       и на нём те же выводы подтверждены в STORY-004-03 / 004-07.*
 
-- [x] Написать тесты первыми: `test/config/aliases.test.ts` (совпадение алиасов в трёх конфигах), `test/config/naming.test.ts` (kebab-case + role-суффиксы по всему `src/**`), `test/config/env-prefix.test.ts` (нет обращений к не-`VITE_` переменным).
+- [x] Написать тесты первыми: `test/config/aliases.test.ts` (совпадение алиасов в трёх конфигах), `test/architecture/structure.test.ts` (kebab-case + role-суффиксы по всему `src/**`), `test/config/env.test.ts` (нет обращений к не-`VITE_` переменным).
       Разложились иначе: алиасы — `test/repo/client-aliases.test.ts` (три конфига как данные) плюс
       `packages/client/test/config/aliases.test.ts` (резолвятся в рантайме); имена — общий тест
       дерева `test/architecture/structure.test.ts` и фикстуры `test/lint`; префикс `VITE_` — уже
@@ -58,7 +58,7 @@ estimate: M
 - [x] Создать `packages/client` с `vite.config.ts` (плагины `@vitejs/plugin-react`, `vite-tsconfig-paths` либо явный `resolve.alias`), `index.html`, `src/app/main.tsx`.
       Явный `resolve.alias`: плагин читал бы `tsconfig` и сделал бы расхождение невозможным, но
       вместе с ним — и непроверяемым, а история требует именно проверки двух объявлений.
-- [x] Настроить единый источник алиасов (`config/aliases.ts`), из которого читают и `vite.config.ts`, и тесты; `tsconfig.json` синхронизируется тестом.
+- [x] Настроить единый источник алиасов (`src/shared/config/fsd-aliases.constant.ts`), из которого читают и `vite.config.ts`, и тесты; `tsconfig.json` синхронизируется тестом.
       Лежит в `src/shared/config/fsd-aliases.constant.ts` — внутри дерева, которое уже покрыто
       ESLint, `inputs` турбо и coverage; список из `test/repo/tsconfig-contract.test.ts` удалён,
       чтобы не было третьего источника правды.

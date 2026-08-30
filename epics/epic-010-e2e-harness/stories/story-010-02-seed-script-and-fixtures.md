@@ -25,8 +25,8 @@ estimate: M
 
 ## Задачи
 
-- [x] Написать тесты первыми: `packages/server/test/integration/seed/idempotency.test.ts` (двойной прогон → одинаковое состояние), `seed/isolation-data.test.ts` (данные организаций не пересекаются), `seed/production-guard.test.ts` (отказ без флага в production).
-- [x] Реализовать `packages/server/prisma/seed.ts`: две организации, роли, пользователи, стабильные UUID, `upsert` по естественным ключам.
+- [x] Написать тесты первыми: `packages/server/test/integration/db/seed.test.ts` (двойной прогон → одинаковое состояние; данные организаций не пересекаются) и `packages/server/test/unit/seed/seed-guard.test.ts` (отказ без флага в production, дизъюнктность двух организаций).
+- [x] Реализовать `packages/server/scripts/seed.ts`: две организации, роли, пользователи, стабильные UUID, `upsert` по естественным ключам.
 - [x] Реализовать защиту от запуска в production без явного подтверждения.
 - [x] Реализовать `pnpm db:reset` (drop → migrate → seed) и использовать его в e2e-подготовке.
 - [x] Реализовать в `packages/e2e/fixtures/seed-data.ts` типизированное описание сид-данных (организации, пользователи, роли) — единый источник для сценариев.

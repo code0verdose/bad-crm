@@ -26,8 +26,8 @@ estimate: M
 
 ## Задачи
 
-- [x] Написать тесты первыми: `test/theme/tokens.test.ts` (наличие обязательных семантических токенов, контраст пар в обеих темах), `test/theme/color-scheme.test.tsx` (переключение и персист), `test/lint/styles.test.ts` (запрет литеральных цветов и пикселей в `*.module.css`).
-- [x] Реализовать `src/app/theme/theme.ts`: палитра `brand`, шкалы spacing/radius/font-size, `defaultRadius`, `headings`, `components` с дефолтными пропсами.
+- [x] Написать тесты первыми: `test/theme/tokens.test.ts` (наличие обязательных семантических токенов, контраст пар в обеих темах), `test/ui/appearance.test.tsx` (переключение и персист), `test/lint/stylelint-rules.test.ts` и `test/styles/at-rule-literals.test.ts` (запрет литеральных цветов и пикселей в `*.module.css`).
+- [x] Реализовать `src/app/theme/app-theme.config.ts`: палитра `brand`, шкалы spacing/radius/font-size, `defaultRadius`, `headings`, `components` с дефолтными пропсами.
       *Уточнение (2026-07-28):* файл называется `src/app/theme/app-theme.config.ts` — role-суффикс
       обязателен по `rules/naming-and-structure.mdc` и проверяется `bad-crm/require-role-suffix`.
       `defaultRadius: 'sm'` задан **явно**: в Mantine 9 дефолт сменился на `md`.

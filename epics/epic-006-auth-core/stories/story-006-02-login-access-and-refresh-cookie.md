@@ -26,17 +26,17 @@ estimate: M
 
 ## Задачи
 
-- [x] Написать тесты первыми: `application/identity/use-cases/login.use-case.test.ts` (успех, неверный пароль, несуществующий пользователь, suspended), `test/integration/auth/login.test.ts` (флаги cookie, содержимое БД, неотличимость ответов), `test/unit/auth/jwt.test.ts` (claims, TTL, подпись).
+- [x] Написать тесты первыми: `test/unit/application/login.use-case.test.ts` (успех, неверный пароль, несуществующий пользователь, suspended), `test/integration/http/auth-endpoints.test.ts` (флаги cookie, содержимое БД, неотличимость ответов), `test/unit/crypto/jwt-access-token.test.ts` (claims, TTL, подпись).
       *Сделано 2026-07-29:* `test/unit/application/login.use-case.test.ts` (16 тестов, включая
       «unknown ≡ wrong» по коду, статусу и **числу вызовов verify»**),
       `test/unit/crypto/jwt-access-token.test.ts` (claims, TTL, `alg: none`, чужая audience,
       подпись, отсутствующие claims), `test/integration/http/auth-endpoints.test.ts` (флаги cookie,
       побайтовое равенство тел 401).
-- [x] Реализовать `infrastructure/crypto/jwt-token-service.adapter.ts` под портом `AccessTokenPort` (HS256, `JWT_SECRET`, TTL из конфигурации).
+- [x] Реализовать `infrastructure/crypto/jwt-access-token.adapter.ts` под портом `AccessTokenPort` (HS256, `JWT_SECRET`, TTL из конфигурации).
       *Сделано 2026-07-29:* `infrastructure/crypto/jwt-access-token.adapter.ts` на `jose` 6.2.4;
       алгоритм, issuer и audience задаёт **проверяющая** сторона, а не заголовок токена, поэтому
       `alg: none` и алгоритмическая подмена отвергаются.
-- [x] Реализовать `infrastructure/crypto/refresh-token.ts`: генерация 32 случайных байт, хеширование SHA-256 для хранения.
+- [x] Реализовать `infrastructure/crypto/refresh-token.adapter.ts`: генерация 32 случайных байт, хеширование SHA-256 для хранения.
       *Сделано 2026-07-29:* `infrastructure/crypto/refresh-token.adapter.ts` (32 байта CSPRNG,
       base64url для cookie, SHA-256 в БД). Рядом — `address-hasher.adapter.ts`: `ip_hash` считается
       **HMAC**-SHA256 под `APP_ENCRYPTION_KEY`, потому что голый SHA-256 от IPv4 обратим перебором

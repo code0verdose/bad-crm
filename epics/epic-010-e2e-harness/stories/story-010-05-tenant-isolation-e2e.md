@@ -25,7 +25,11 @@ estimate: M
 
 ## Задачи
 
-- [x] Написать сценарии первыми: `packages/e2e/tests/tenancy/cross-tenant-ui.spec.ts` (списки, поиск, прямая ссылка), `tests/tenancy/cross-tenant-api.spec.ts` (чтение, изменение, удаление, подмена `organizationId`), `tests/tenancy/positive-control.spec.ts`.
+- [ ] Написать сценарии первыми: `packages/e2e/tests/tenancy/cross-tenant-ui.spec.ts` (списки, поиск, прямая ссылка), `tests/tenancy/cross-tenant-api.spec.ts` (чтение, изменение, удаление, подмена `organizationId`), `tests/tenancy/positive-control.spec.ts`.
+      **Отметка снята 2026-08-30:** `git ls-files 'packages/e2e/tests/tenancy/*'` печатает один файл —
+      `cross-tenant-api.spec.ts`. UI-половины нет вовсе (причина — в разделе «Чего нет и почему»
+      ниже), а положительный контроль существует не отдельным файлом, а сценарием внутри
+      `cross-tenant-api.spec.ts` (пункт 4 записи истории).
 - [x] Использовать сид-данные двух организаций из [STORY-010-02](story-010-02-seed-script-and-fixtures.md) и фикстуры ролей из [STORY-010-03](story-010-03-storage-state-auth-fixtures.md).
 - [x] Реализовать в e2e хелпер прямых API-запросов с текущей сессией (`request` контекст Playwright), чтобы проверять обход UI.
 - [x] Реализовать проверки подмены идентификатора организации в теле, заголовке и query-параметрах.

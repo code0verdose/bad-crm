@@ -27,11 +27,11 @@ estimate: M
 ## Задачи
 
 - [x] Написать тесты первыми: `test/unit/logging/redaction.test.ts` (все чувствительные пути замаскированы), `test/unit/logging/request-context.test.ts` (контекст доступен во вложенных вызовах и не течёт между запросами), `test/integration/http/error-handler.test.ts` (маппинг доменных ошибок и непредвиденных исключений).
-- [x] Реализовать `infrastructure/logging/request-context.ts`: `AsyncLocalStorage<RequestContext>` + `contextMiddleware` (генерация/проброс `requestId`, установка заголовка ответа).
-- [x] Реализовать `infrastructure/logging/pino.adapter.ts`: `mixin` из контекста, `redact` по путям (`req.headers.authorization`, `req.headers.cookie`, `res.headers["set-cookie"]`, `*.password`, `*.token`, `*.refreshToken`, `*.apiKey`, `*.apiKeyEnc`, `*.secret`, `*.otp`, `*.recoveryCode`), сериализатор ошибок без `config.headers`.
+- [x] Реализовать `infrastructure/logging/async-request-context.adapter.ts`: `AsyncLocalStorage<RequestContext>`, и `presentation/http/middleware/request-context.middleware.ts` (генерация/проброс `requestId`, установка заголовка ответа).
+- [x] Реализовать `infrastructure/logging/pino-logger.adapter.ts`: `mixin` из контекста, `redact` по путям из `infrastructure/logging/log-redaction.constant.ts` (`req.headers.authorization`, `req.headers.cookie`, `res.headers["set-cookie"]`, `*.password`, `*.token`, `*.refreshToken`, `*.apiKey`, `*.apiKeyEnc`, `*.secret`, `*.otp`, `*.recoveryCode`), сериализатор ошибок `infrastructure/logging/log-error.serializer.ts` без `config.headers`.
 - [x] Подключить `pino-http` с извлечением шаблона маршрута Express для поля `route`.
-- [x] Реализовать типизированный `AppError` в `domain/shared/errors/` (поля `code`, `status`, `details?`) и маппинг `code → HTTP` из `packages/shared/errors/codes.ts`.
-- [x] Реализовать `presentation/http/error-handler.ts`: доменные ошибки → соответствующий статус, `ZodError` → 422, всё остальное → 500 без утечки деталей; в ответ всегда добавляется `requestId`.
+- [x] Реализовать типизированный `AppError` в `domain/shared/errors/` (поля `code`, `status`, `details?`) и маппинг `code → HTTP` из `packages/shared/src/errors/error-code.enums.ts`.
+- [x] Реализовать `presentation/http/error-handler.middleware.ts`: доменные ошибки → соответствующий статус, `ZodError` → 422, всё остальное → 500 без утечки деталей; в ответ всегда добавляется `requestId`.
 - [x] Добавить объявление `LoggerPort` в `application/platform/ports/` — домен и use-cases логируют через порт, а не через глобальный pino.
 - [x] Зафиксировать в `docs/runbooks/` рецепт «найти всё по requestId».
 

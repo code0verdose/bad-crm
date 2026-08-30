@@ -218,6 +218,14 @@
         // `test/infra/role-canon.test.ts` holds the role names of the restore procedure.
         "docs/runbooks/**",
         "docs/security/rls-design.md",
+        // `test/repo/epic-path-claims.test.ts` reads every epic and story file and holds one
+        // sentence over them: a ticked task (`- [x]`) naming a path in this repository must name a
+        // path that exists. A story is edited by whoever is doing the work and by nobody
+        // afterwards, so the way its task list rots is a rename in some other commit — the same
+        // shape of decay as a runbook, and the same reason the whole directory is hashed rather
+        // than the files that exist today: the story written next month must invalidate this entry
+        // on the day it is added, not on the day somebody remembers to append a line.
+        "epics/**",
         // `test/repo/runbook-claims.test.ts` reads this allow-list as the second declaration of
         // what a service path is. It contributes nothing to the namespace today — the registry
         // declares `/health`, `/ready` and `/metrics` itself, and the one path only this file

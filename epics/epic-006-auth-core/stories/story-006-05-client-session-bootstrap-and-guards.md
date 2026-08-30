@@ -26,17 +26,17 @@ estimate: M
 
 ## Задачи
 
-- [x] Написать тесты первыми: `units/auth/service/hooks/use-bootstrap-session.hook.test.tsx` (успешный и неуспешный bootstrap, отсутствие мигания логина), `units/auth/lib/guards/guards.test.ts` (редирект и возврат, отбрасывание внешнего redirect), `app/router-invalidate.test.tsx` (перепроверка гардов после логина и logout).
+- [x] Написать тесты первыми: `units/auth/service/hooks/use-bootstrap-session.hook.test.tsx` (успешный и неуспешный bootstrap, отсутствие мигания логина), `test/routes/guards.test.ts` (редирект и возврат, отбрасывание внешнего redirect), `test/app/composition.test.ts` (перепроверка гардов после логина и logout).
       *Закрыто 2026-07-29.* Имена файлов отличаются от плана — сами проверки на месте:
       `packages/client/src/units/auth/service/hooks/use-bootstrap-session.hook.test.tsx`,
       `packages/client/test/routes/guards.test.ts` (редирект, возврат, пять форм небезопасного
       `redirect`), `packages/client/test/app/session-bootstrap.test.tsx` («`/login` не рендерится ни
       на один кадр»), `packages/client/test/app/composition.test.ts` (`logged-in` →
       `router.invalidate()`, `logged-out` → навигация и очистка кеша) и
-      `packages/client/test/routes/sign-in-flow.test.tsx` (сквозной путь). Отдельного
-      `app/router-invalidate.test.tsx` нет: перепроверка гардов — это подписка на шину, и её место
+      `packages/client/test/routes/sign-in-flow.test.tsx` (сквозной путь). Отдельного файла
+      app/router-invalidate.test.tsx нет: перепроверка гардов — это подписка на шину, и её место
       рядом с остальной проводкой композиционного корня.
-- [x] Реализовать `units/auth/service/stores/auth.store.ts` (или контекст) с состоянием `unknown | authenticated | anonymous` и данными пользователя.
+- [x] Реализовать `units/auth/service/stores/auth-session.store.ts` (или контекст) с состоянием `unknown | authenticated | anonymous` и данными пользователя.
       *Закрыто 2026-07-29:* `packages/client/src/units/auth/service/stores/auth-session.store.ts`
       (`createAuthSessionStore` + единственный экземпляр `authSession`). Вне React и вне кеша
       TanStack Query: гард читает состояние из `beforeLoad`, до всякого рендера, а
@@ -46,7 +46,7 @@ estimate: M
       `packages/client/src/units/auth/lib/session-refresh.util.ts` — общий шлюз ротации, через
       который ходят и bootstrap, и auth-middleware, поэтому 401 во время восстановления сессии
       присоединяется к уже идущему обмену, а не начинает второй (второй — это reuse detection).
-- [x] Реализовать `units/auth/lib/guards/require-session.ts` и `redirect-if-authed.ts`, подключить к `_authenticated.tsx` и `login.tsx`.
+- [x] Реализовать `units/auth/lib/guards/require-session.guard.ts` и `redirect-if-authed.guard.ts`, подключить к `_authenticated.tsx` и `login.tsx`.
       *Закрыто ревизией 2026-07-28:* сделано в EPIC-004 —
       `packages/client/src/units/auth/lib/guards/require-session.guard.ts` и
       `.../redirect-if-authed.guard.ts` (имена с role-суффиксом по `rules/naming-and-structure.mdc`),

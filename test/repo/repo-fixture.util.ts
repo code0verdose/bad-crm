@@ -75,12 +75,21 @@ export const readRepoFile = (relativePath: string): string => {
  *
  * Listing a directory is not reading a file, so nothing is recorded here — the caller records what
  * it actually opens.
+ *
+ * `skip` prunes by entry name before descending. Callers that walk `packages` need it: without a
+ * prune the walk enters `node_modules` and `dist`, and `epic-path-claims.util.ts` additionally has
+ * to stay out of `.claude/worktrees/<id>`, which is a whole second checkout of this repository.
  */
-export const listRepoFiles = (relativeDir: string): string[] =>
-  readdirSync(join(repoRoot, relativeDir), { withFileTypes: true }).flatMap((entry) => {
-    const path = `${relativeDir}/${entry.name}`;
-    return entry.isDirectory() ? listRepoFiles(path) : [path];
-  });
+export const listRepoFiles = (
+  relativeDir: string,
+  skip: (entryName: string) => boolean = () => false,
+): string[] =>
+  readdirSync(join(repoRoot, relativeDir), { withFileTypes: true })
+    .filter((entry) => !skip(entry.name))
+    .flatMap((entry) => {
+      const path = `${relativeDir}/${entry.name}`;
+      return entry.isDirectory() ? listRepoFiles(path, skip) : [path];
+    });
 
 /** Names directly inside a repository directory, without descending — a cheap existence probe. */
 export const repoEntryNames = (relativeDir: string): string[] =>

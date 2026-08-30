@@ -35,11 +35,11 @@ estimate: S
 
 ## Задачи
 
-- [x] Написать тесты первыми: `test/integration/http/validation.test.ts` (все сценарии выше), `test/unit/http/problem-json.test.ts` (форма ответа), `test/contract/error-codes.test.ts` (каталог ↔ спецификация).
-- [x] Реализовать `presentation/http/middleware/validate.ts`: `validate({ params?, query?, body? })`, который парсит через `safeParse`, при ошибке бросает `ValidationError`, при успехе кладёт типизированные значения в `res.locals.validated`.
+- [x] Написать тесты первыми: `test/integration/http/validation.test.ts` (все сценарии выше), `test/integration/http/bootstrap.test.ts` (форма ответа: `application/problem+json` на 404, 413 и 500), `test/contract/error-codes.test.ts` (каталог ↔ спецификация).
+- [x] Реализовать `presentation/http/middleware/validate.middleware.ts`: `validate({ params?, query?, body? })`, который парсит через `safeParse`, при ошибке бросает `ValidationError`, при успехе кладёт типизированные значения в `res.locals.validated`.
 - [x] Реализовать преобразователь `ZodError → errors[]` с точечными путями и стабильными `code` из Zod-issue.
-- [x] Реализовать `presentation/http/problem.ts` — сборка тела `application/problem+json` (RFC 9457) и установка корректного `Content-Type`.
-- [x] Разместить схемы запросов в `presentation/http/validators/*.validator.ts`, общие примитивы переиспользовать из `packages/shared/validation`.
+- [x] Реализовать `presentation/http/serializers/problem.serializer.ts` — сборка тела `application/problem+json` (RFC 9457) и установка корректного `Content-Type`.
+- [x] Разместить схемы запросов в `presentation/http/validators/*.validator.ts`, общие примитивы переиспользовать из `packages/shared/src/validation`.
 - [ ] Дополнить `packages/shared/errors/codes.ts` таблицей соответствия «ситуация → HTTP → code» из [`stack.md`](../../../docs/architecture/stack.md).
 - [x] Описать формат ошибок в `docs/api/` (раздел или `components.schemas.Problem` в `openapi.yaml`).
 

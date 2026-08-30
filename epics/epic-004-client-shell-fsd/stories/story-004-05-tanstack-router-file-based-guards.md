@@ -26,7 +26,7 @@ estimate: M
 
 ## Задачи
 
-- [x] Написать тесты первыми: `app/routes/guards.test.tsx` (редирект без сессии, возврат по `search.redirect`, `redirectIfAuthed`), `app/routes/search-schema.test.ts` (валидация и приведение параметров, отбрасывание мусора), `app/routes/boundaries.test.tsx` (pending / error / notFound).
+- [x] Написать тесты первыми: `test/routes/guards.test.ts` (редирект без сессии, возврат по `search.redirect`, `redirectIfAuthed`), `test/routes/search-schema.test.ts` (валидация и приведение параметров, отбрасывание мусора), `test/app/boundaries.test.tsx` (pending / error / notFound).
 - [x] Подключить плагин file-based маршрутов TanStack Router к Vite, настроить генерацию `routeTree.gen.ts` и исключить его из линта и покрытия.
 - [x] Реализовать `src/app/router.tsx`: `createRouter` с контекстом (`queryClient`, `auth`), `defaultPreload`, `defaultPendingMs`, глобальные `defaultPendingComponent`/`defaultErrorComponent`/`defaultNotFoundComponent`, блок `declare module`.
 - [x] Создать маршруты каркаса: `routes/__root.tsx`, `routes/_authenticated.tsx`, `routes/_authenticated/index.tsx` (redirect на `/dashboard`), `routes/_authenticated/dashboard.tsx` (заглушка), `routes/login.tsx` (заглушка для [EPIC-006](../../epic-006-auth-core/epic.md)).

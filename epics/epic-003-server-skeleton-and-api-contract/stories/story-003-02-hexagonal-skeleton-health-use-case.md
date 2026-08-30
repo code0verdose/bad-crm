@@ -25,7 +25,7 @@ estimate: M
 
 ## Задачи
 
-- [x] Написать тесты первыми: `test/unit/architecture/layers.test.ts` (запрещённые импорты по слоям через анализ AST/зависимостей), `test/unit/architecture/naming.test.ts` (role-суффиксы `*.use-case.ts`, `*.query.ts`, `*.port.ts`, `*.entity.ts`, `*.policy.ts`, `*.repository.ts`, `*.controller.ts`), `application/platform/use-cases/check-health.use-case.test.ts`.
+- [x] Написать тесты первыми: `test/unit/architecture/layers.test.ts` (запрещённые импорты по слоям через анализ AST/зависимостей), `test/unit/architecture/naming.test.ts` (role-суффиксы `*.use-case.ts`, `*.query.ts`, `*.port.ts`, `*.entity.ts`, `*.policy.ts`, `*.repository.ts`, `*.controller.ts`), `test/unit/application/check-health.use-case.test.ts`.
 - [x] Создать каркас каталогов `packages/server/src/{domain,application,infrastructure,presentation}` с `domain/shared/{errors,ids,result}`.
 - [x] Реализовать `domain/shared/errors/` — `DomainError`, `NotFoundError`, `ForbiddenError`, `ConflictError` с полем `code` из каталога `packages/shared`.
 - [x] Реализовать `application/platform/ports/health-probe.port.ts` и `clock.port.ts`, `id-generator.port.ts` (базовые порты, нужные всем контекстам).

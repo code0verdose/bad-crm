@@ -25,7 +25,7 @@ estimate: M
 
 ## Задачи
 
-- [x] Написать тесты первыми: `application/identity/use-cases/logout.use-case.test.ts`, `list-sessions.query.test.ts`, `revoke-session.use-case.test.ts` (нельзя отозвать чужую сессию другого пользователя — 404), `test/integration/auth/session-revocation.test.ts` (немедленная недействительность access-токена).
+- [x] Написать тесты первыми: `test/unit/application/session-management.test.ts` (выход, список сессий, отзыв — нельзя отозвать чужую сессию другого пользователя, 404), `test/integration/http/auth-endpoints.test.ts` (немедленная недействительность access-токена).
       *Сделано 2026-07-29:* `test/unit/application/session-management.test.ts` (22 теста: выход,
       отзыв своей и чужой, «все прочие», список, аутентификация),
       `test/unit/domain/session-owner-policy.test.ts` (404 и для чужой, и для несуществующей — и
