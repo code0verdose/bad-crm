@@ -151,6 +151,19 @@ services:
   # Meilisearch — optional by design. Absent in the minimal profile, where SearchPort falls back to
   # PostgreSQL FTS (ADR-0011). meili-data is never backed up: the index is replayed from the DB.
   meilisearch:
+    # A bump of this tag over an existing `meili-data` volume is a breaking change for every
+    # installation that already has one, and it fails loudly in the worst place: the container
+    # refuses to start against a database written by an older version, `--wait` in `pnpm docker:up`
+    # never sees it healthy, and the whole script exits non-zero — so an operator upgrading gets
+    # «the stack will not come up», not «the search index needs a migration». Observed 2026-08-30
+    # against a volume written by v1.51.0.
+    #
+    # **No migration path is wired up here, and one is required before the next bump.** Meilisearch
+    # offers both a dump/restore cycle and an in-place upgrade switch; which of the two this product
+    # ships is an EPIC-017 decision, and whichever it is has to land in
+    # `docs/runbooks/upgrade.md` at the same time — the profile `minimal` runs without Meilisearch
+    # at all, so an installation on `default` is the only one that can be broken this way and the
+    # only one that will not notice until it upgrades.
     image: getmeili/meilisearch:v1.52.0
     profiles: ['default', 'full']
     restart: unless-stopped

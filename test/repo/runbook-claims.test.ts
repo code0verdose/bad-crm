@@ -343,6 +343,11 @@ const PENDING: Readonly<Record<string, string>> = {
   'hosting.md · identifier · DocPage':
     'The same table, sizing document storage. The document domain is M3 (BlockNote, ADR-0012).',
   'hosting.md · identifier · SearchPort': 'See `install.md · identifier · SearchPort`.',
+  'upgrade.md · identifier · SearchPort':
+    'Named in the note about the Meilisearch volume, and named there precisely because it does not ' +
+    'exist: the note explains that a version bump breaks an installation on the `default` profile ' +
+    'and that the cost of that is zero today, while nothing fills the index. See ' +
+    '`install.md · identifier · SearchPort`.',
   'install.md · identifier · SearchPort':
     'Named as the seam Meilisearch is plugged into when the search epic degrades to postgres-fts. ' +
     'There is no search adapter in the tree; the port arrives with it.',
