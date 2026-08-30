@@ -31,6 +31,7 @@
     "test:integration:local": "scripts/docker/testcontainers-env.sh turbo run test:integration",
     "test:e2e": "turbo run test:e2e",
     "i18n:check": "pnpm --filter @bad-crm/client exec vitest run test/i18n --coverage.enabled=false && tsx scripts/ci/i18n-summary.ts",
+    "i18n:unused": "tsx scripts/ci/i18n-unused.ts",
     "db:bootstrap": "docker compose run --rm --no-deps -e PGHOST=postgres --entrypoint sh postgres /opt/bad-crm/sql/initdb/00-bootstrap-roles.sh",
     "db:grants": "docker compose exec -T postgres sh -c 'psql -v ON_ERROR_STOP=1 -U app_migrator -d \"$POSTGRES_DB\" -f /opt/bad-crm/sql/01-grants.sql'",
     "db:migrate": "turbo run db:migrate",

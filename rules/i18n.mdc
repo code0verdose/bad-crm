@@ -118,7 +118,7 @@ export const TASK_STATUS_LABEL = { todo: 'К выполнению', done: 'Го�
 | ESLint `i18next/no-literal-string` (`mode: 'jsx-only'`, атрибуты по include-списку: `alt`, `aria-label`, `description`, `label`, `placeholder`, `title`) | хардкод-строки в разметке и в переводимых атрибутах |
 | `packages/client/test/i18n/label-maps.test.ts` | готовый текст в `*.enums.ts` / `*.constant.ts` вместо `labelKey` — то, чего JSX-правило не видит |
 | CI-шаг `pnpm i18n:check` (гейты паритета + сводка в job summary) | ключ, существующий только в одном языке, **и** ключ с пустым значением — присутствующий для любого сравнения множеств и пустой для читателя |
-| CI-шаг `pnpm i18n:unused` | ключи-сироты и ключи, собранные конкатенацией (не находятся статически) |
+| `pnpm i18n:unused` (`scripts/ci/i18n-unused.ts`) | ключи-сироты (включая те, что «использует» только тест), ключи, собранные конкатенацией, и ключ, который экран запрашивает, а каталог не содержит |
 | `test/i18n/plural.test.ts` | пропущенные формы (RU `one/few/many`, EN `one/other`) в каждой `_one`/`_few`/`_many`/`_other`-семье; бесформенный `{{count}}` разрешён только когда он стоит последним в строке сразу после двоеточия (согласовывать нечего) — иначе FAIL |
 | `test/i18n/error-codes-parity.test.ts` | код ошибки (или код проблемы поля) без ключа в `errors.json` любого из языков |
 | ESLint `no-restricted-syntax` на `Intl.*` и `toLocale*` вне `shared/lib/format` | форматирование мимо обёрток: зашитая локаль и новый форматтер на каждую ячейку таблицы |

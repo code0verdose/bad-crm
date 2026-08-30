@@ -189,11 +189,6 @@ const PENDING: Readonly<Record<string, string>> = {
     '`eslint-plugin-boundaries` is not a dependency. The layer directions it would express are ' +
     'enforced today by `no-restricted-imports` groups per `files` block plus `test/architecture/layers.test.ts`, ' +
     'which walks the real import graph — the plugin would replace that pair, not add to it.',
-  // ── commands that belong to the i18n epic ────────────────────────────────────────────────────
-  'i18n.mdc · command · i18n:unused':
-    'Reason corrected 2026-08-30: `i18n:check` is a real script (root `package.json`) and EPIC-008 ' +
-    'shipped; only `i18n:unused` is missing. Orphaned keys are found by nothing today.',
-
   // ── CI steps and jobs the workflows do not have ──────────────────────────────────────────────
   'dependencies.mdc · ci-step · check:forbidden-packages':
     'No step checks the ban list of §11 against the tree. `test/deps/quarantined-versions.test.ts` ' +
