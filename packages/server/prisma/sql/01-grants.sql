@@ -48,7 +48,7 @@
 --       privileges after a restore is the step that leaves the database without any;
 --     * owned by a role app_migrator can `SET ROLE` into, the transfer succeeds — and an unrelated
 --       function is silently re-owned by app_auth_definer and granted `EXECUTE` to app_auth, which
---       widens `DATABASE_AUTH_URL` beyond the three resolvers it is documented to have.
+--       widens `DATABASE_AUTH_URL` beyond the resolvers it is documented to have.
 --   So the project's own resolvers are marked, in the migration that creates them, with
 --   `COMMENT ON FUNCTION … IS 'bad-crm:auth-resolver …'`. A comment is part of a dump and survives
 --   `--no-privileges`, so it is still there in exactly the state this file exists to repair — unlike
@@ -61,7 +61,7 @@
 -- AND WHY THE ABSENCE OF THE MARKER IS AN ERROR, NOT A SKIP
 --   Narrowing the classifier to a comment made the safety of this file depend on a property that
 --   **one `pg_dump` flag erases**: `--no-comments`. Reproduced on PostgreSQL 16.14 — a restore from
---   `pg_dump -Fc --no-owner --no-privileges --no-comments` left the three resolvers owned by
+--   `pg_dump -Fc --no-owner --no-privileges --no-comments` left the resolvers owned by
 --   app_migrator with `proacl = NULL`, i.e. `EXECUTE` for PUBLIC; step 7b matched nothing, this file
 --   printed `0 security definer functions` and exited 0; and `app_user` — the role every request
 --   runs as — could call `auth_lookup_users_by_email` and, under `SET app.maintenance = 'on'`, read
@@ -193,7 +193,8 @@ BEGIN
     EXECUTE format('GRANT SELECT ON TABLE public.%I TO backup_role', rel.relname);
     granted_tables := granted_tables + 1;
 
-    -- 1b. The authentication resolvers read three tables and must keep reading them after a
+    -- 1b. The authentication resolvers read the tables listed in `definer_reads` above and must
+    --     keep reading them after a
     --     restore. REVOKE on everything else, because this role bypasses row-level security: a
     --     table that drifted onto its list would be readable across every organization at once.
     IF rel.relname = ANY (definer_reads) THEN
@@ -314,7 +315,7 @@ BEGIN
   --         `--no-comments` is the obvious-looking shortcut for the same problem.
   --
   --         Reproduced on PostgreSQL 16.14 before this branch existed. A restore from
-  --         `pg_dump -Fc --no-owner --no-privileges --no-comments` leaves all three resolvers owned
+  --         `pg_dump -Fc --no-owner --no-privileges --no-comments` leaves every resolver owned
   --         by app_migrator with `proacl = NULL` — which is `EXECUTE` for PUBLIC. 7b then matched
   --         nothing, this file printed `grants applied: 6 tables, 0 sequences, 0 security definer
   --         functions` and **exited 0**. `app_user` — the role every HTTP request runs as, and the

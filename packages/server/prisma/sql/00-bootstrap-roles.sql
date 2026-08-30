@@ -20,12 +20,16 @@
 -- Prefer feeding those values over stdin (`\set` inside the stream) rather than on the command
 -- line, as initdb/00-bootstrap-roles.sh does: argv is world-readable through `ps`.
 --
--- Four roles, four reasons (docs/security/rls-design.md):
+-- Five roles, five reasons (docs/security/rls-design.md). The counts below are deliberately not
+-- written out: the resolver set and the tables it reads both grow, and a number in a comment beside
+-- a BYPASSRLS role is the last place that should be able to go stale. What exists prints itself —
+-- `grep -rho 'auth_lookup_[a-z_]*' packages/server/prisma/ | sort -u` for the resolvers,
+-- `definer_reads` in `01-grants.sql` for the tables.
 --   app_user     — the application process. Subject to RLS, owns nothing.
 --   app_migrator — owns the schema and every object, runs migrations. Never used at runtime.
---   app_auth     — NO BYPASSRLS, and no table privilege at all: it holds EXECUTE on three
+--   app_auth     — NO BYPASSRLS, and no table privilege at all: it holds EXECUTE on the
 --                  SECURITY DEFINER resolvers and nothing else. This is DATABASE_AUTH_URL.
---   app_auth_definer — NOLOGIN, BYPASSRLS, SELECT on the three tables those resolvers read. It owns
+--   app_auth_definer — NOLOGIN, BYPASSRLS, SELECT on the tables those resolvers read. It owns
 --                  them, so their bodies run with these privileges; nothing can connect as it.
 --   backup_role  — BYPASSRLS, read-only. pg_dump taken as the table owner under FORCE ROW LEVEL
 --                  SECURITY silently produces a partial dump (docs/runbooks/backup-restore.md).
@@ -103,7 +107,7 @@ ALTER ROLE app_user     LOGIN NOINHERIT NOSUPERUSER NOCREATEROLE NOCREATEDB NORE
 -- operator, by a restore that widened the ACL — that grant becomes a read across every organization
 -- on the installation, and no behavioural test can tell the difference. The role table of
 -- `docs/security/rls-design.md` has always said «без `BYPASSRLS`»; this line now says the same, and
--- `test/integration/db/role-catalog.test.ts` reads the catalog to keep the three in step.
+-- `test/integration/db/role-catalog.test.ts` reads the catalog to keep the two in step.
 ALTER ROLE app_auth     LOGIN NOINHERIT NOSUPERUSER NOCREATEROLE NOCREATEDB NOREPLICATION NOBYPASSRLS;
 ALTER ROLE backup_role  LOGIN NOINHERIT NOSUPERUSER NOCREATEROLE NOCREATEDB NOREPLICATION   BYPASSRLS;
 
@@ -119,9 +123,9 @@ ALTER ROLE backup_role  LOGIN NOINHERIT NOSUPERUSER NOCREATEROLE NOCREATEDB NORE
 -- exactly the enumeration the narrow path exists to prevent. Verified against PostgreSQL 16.14.
 --
 -- Split in two, therefore:
---   * `app_auth`         — LOGIN, **NOBYPASSRLS**, **no privilege on any table**, `EXECUTE` on three
---                          functions. This is what `DATABASE_AUTH_URL` holds.
---   * `app_auth_definer` — NOLOGIN, BYPASSRLS, `SELECT` on the three tables those functions read
+--   * `app_auth`         — LOGIN, **NOBYPASSRLS**, **no privilege on any table**, `EXECUTE` on the
+--                          resolver functions. This is what `DATABASE_AUTH_URL` holds.
+--   * `app_auth_definer` — NOLOGIN, BYPASSRLS, `SELECT` on the tables those functions read
 --                          (granted by `01-grants.sql`). Nothing can connect as it, so the
 --                          privileges are reachable only *through* the functions.
 ALTER ROLE app_auth_definer NOLOGIN NOINHERIT NOSUPERUSER NOCREATEROLE NOCREATEDB NOREPLICATION BYPASSRLS;
