@@ -268,6 +268,30 @@ Prisma-моделями своего контекста; кросс-контек
 | delivery | Клиенты, контракты, инвойсы, спринты, вехи приёмки, звонки, риски | `Client`, `ClientContact`, `Contract`, `ContractRate`, `Invoice`, `InvoiceLine`, `InvoiceNumberSequence`, `Payment`, `Budget`, `BudgetPlanPoint`, `Sprint`, `Milestone`, `Call`, `CallParticipant`, `CallSummary`, `ActionItem`, `ProjectRisk`, `Stakeholder` | project, time | EPIC-041, EPIC-042, EPIC-043, EPIC-044 |
 | platform | Outbox, аудит, поисковый индекс и его состояние, observability, планировщик, доступ внешних агентов по MCP | `OutboxEvent`, `AuditLog`, `SearchIndexState`, `ApiToken`, `McpClient`, `McpSession`, `McpConsent`, `McpConfirmation` | — | EPIC-003, EPIC-009, EPIC-016, EPIC-024, EPIC-048 |
 
+> **Как эта таблица ложится на каталоги сервера (сверено 2026-08-30).**
+>
+> Контекст и каталог — не одно и то же, и в двух местах они расходятся заметно. Записано здесь,
+> чтобы читатель, идущий от таблицы к коду, не искал каталогов, которых нет, и не решил, что
+> разбиение поехало.
+>
+> - **`identity-and-access` в коде разрезан надвое.** `application/identity/**` отвечает на «кто это
+>   и чем он это доказал» — вход, сессии и их отзыв, пароль, второй фактор, коды восстановления;
+>   `application/iam/**` отвечает на «что ему можно и кто он в штате» — роли, права, персональные
+>   исключения, приглашения, профиль сотрудника, команды. Общие примитивы решения лежат в
+>   `domain/access/**`, доменные политики — в `domain/**/access/*.policy.ts`. Контекст при этом
+>   остаётся один: шов проходит внутри него и держится тем, что `iam` читает `Actor`, а не
+>   пересобирает его.
+> - **`Team`, `TeamMember` и `EmployeeProfile` отнесены здесь к `organization`, а живут в
+>   `application/iam/**`.** В каталоге `application/organization/` сегодня один сценарий
+>   (`bootstrap-organization.use-case.ts`). Расхождение названо, а не устранено: команда, как
+>   говорит [`../product/glossary.md`](../product/glossary.md), **не** группа доступа, поэтому
+>   перенос строки в таблице был бы решением о модели, а не приведением документа к коду. Решать
+>   это стоит на EPIC-014, когда появится первый ресурсный домен и станет видно, что именно
+>   наследует права.
+>
+> Контексты `project`, `task`, `knowledge`, `file`, `vault`, `time`, `communication`, `analytics`,
+> `integration`, `ai` и `delivery` каталогов не имеют вовсе — они относятся к M3+.
+
 Имена сущностей совпадают с [`data-model.md`](data-model.md) — он источник правды. Прежний пробел
 модели по доменам ТЗ 12/13 (дашборды, drill-down) и 17 (материалы и онбординг) **закрыт**: группа 15
 `data-model.md` описывает `Dashboard`, `DashboardCard`, `DashboardCardState`, `SavedView`,
