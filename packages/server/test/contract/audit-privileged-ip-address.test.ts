@@ -166,6 +166,10 @@ describe('requiresAddressWhenHuman: the rule that keeps the gate from being the 
     actorUserIdExpr: 'input.actor.userId',
     hasBefore: true,
     hasAfter: true,
+    // Written out rather than defaulted: an unresolved site reads as human-origin with no address,
+    // which is exactly the shape these cases assert about, and a default would let a real parse
+    // failure arrive here disguised as this fixture.
+    resolved: true,
   };
 
   it('a CRITICAL action is always required', () => {

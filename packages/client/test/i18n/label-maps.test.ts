@@ -65,6 +65,12 @@ describe('label maps and constants', () => {
    * CONTROL: the detector has to actually fire. Without this the test above passes just as happily
    * when `isProse` is broken, when the file list is empty, or when the comment stripper eats the
    * whole file — three ways to be green while checking nothing.
+   *
+   * The third of those was named here and not covered until 2026-08-30: the cases below exercised
+   * `isProse` and the file list, and `withoutComments` had nothing pointed at it. A stripper that
+   * returns `''` makes every file literal-free and the sweep passes on a codebase full of
+   * sentences. It has its own two cases now, and the sweep has one that says it is reading
+   * something.
    */
   it.each([
     ['an English sentence', 'Not found'],
@@ -83,5 +89,39 @@ describe('label maps and constants', () => {
 
   it('CONTROL: is looking at files that exist', () => {
     expect(filesUnder(SRC).length).toBeGreaterThan(0);
+  });
+
+  it('CONTROL: the stripper removes comments and keeps the code around them', () => {
+    const source = [
+      "const before = 'bc-language';",
+      '/* a block comment with a sentence in it */',
+      "const between = 'top-center';",
+      '// a line comment with another sentence',
+      "const after = 'common.appearance.language.en';",
+    ].join('\n');
+
+    const stripped = withoutComments(source);
+
+    expect(stripped).toContain("'bc-language'");
+    expect(stripped).toContain("'top-center'");
+    expect(stripped).toContain("'common.appearance.language.en'");
+    expect(stripped).not.toContain('a block comment');
+    expect(stripped).not.toContain('a line comment');
+  });
+
+  /**
+   * CONTROL: and the sweep gets literals out of the real tree.
+   *
+   * The pair above is about a string this file wrote. This one is about the files it actually
+   * reads: a stripper that survives the synthetic case and still empties a source with a licence
+   * header, a nested comment, or a comment terminator inside a string would leave the sweep with
+   * nothing to judge, and nothing is what it asserts.
+   */
+  it('CONTROL: finds string literals in the files it sweeps', () => {
+    const literals = filesUnder(SRC).flatMap((path) => [
+      ...withoutComments(readFileSync(path, 'utf8')).matchAll(STRING_LITERAL),
+    ]);
+
+    expect(literals.length).toBeGreaterThan(20);
   });
 });
