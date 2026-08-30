@@ -34,7 +34,8 @@
 name: bad-crm
 
 services:
-  # PostgreSQL 16 with pgvector. Extensions and the app_migrator/app_user/app_auth roles are created
+  # PostgreSQL 16 with pgvector. Extensions and the database roles of
+  # prisma/sql/00-bootstrap-roles.sql are created
   # once, on first initialisation of an empty pgdata volume, from packages/server/prisma/sql/initdb.
   postgres:
     image: pgvector/pgvector:0.8.6-pg16

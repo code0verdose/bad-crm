@@ -156,7 +156,7 @@ const fields = z.object({
   /**
    * The `app_auth` connection: the org-less authentication path, and nothing else.
    *
-   * A separate role because it reaches the three resolvers nobody else may call, and a separate
+   * A separate role because it reaches the `auth_lookup_*` resolvers nobody else may call, and a separate
    * *pool* because the connection that opens the org-less path must not be one an ordinary
    * repository can pick up (`docs/security/rls-design.md`, «Особые пути»). The role itself is
    * `NOBYPASSRLS` — the attribute belongs to `app_auth_definer`, the `NOLOGIN` owner the function

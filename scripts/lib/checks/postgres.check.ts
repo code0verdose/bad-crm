@@ -51,7 +51,7 @@ export const EXPECTED_ROLES: readonly RoleExpectation[] = [
     role: 'app_auth',
     bypassRls: false,
     canLogin: true,
-    why: 'holds EXECUTE on the three resolvers and no privilege on any table',
+    why: 'holds EXECUTE on the auth_lookup_* resolvers and no privilege on any table',
   },
   {
     role: 'app_auth_definer',

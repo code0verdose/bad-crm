@@ -118,7 +118,7 @@ git ls-files 'packages/client/src/**' | grep -iE 'modal|dialog'
   `SECURITY DEFINER` функции `auth_lookup_*` во владении роли `app_auth_definer` без права
   подключения (`auth_lookup_user`, `auth_lookup_users_by_email`, `auth_lookup_session`,
   `auth_lookup_password_reset`, `auth_lookup_invitation`; список растёт вместе с резолверами —
-  актуальный печатает `grep -rho 'auth_lookup_[a-z_]*' packages/server/prisma/ | sort -u`). Ограничитель частоты на Redis, fail-closed. Почта — nodemailer, отправка после
+  актуальный печатает `grep -rhoE 'auth_lookup_[a-z_]+[a-z]' packages/server/prisma/ | sort -u`). Ограничитель частоты на Redis, fail-closed. Почта — nodemailer, отправка после
   коммита транзакции; при `SMTP_URL` без `MAIL_FROM` почта отключается с предупреждением, а не
   роняет старт. `organizations.owner_id` обязателен на уровне схемы: организация и её владелец
   пишутся **одним оператором** (ключ циклический, а FK в PostgreSQL исполняются по завершении
@@ -504,7 +504,7 @@ EPIC-001 и растёт вместе с эпиками: `dev:landing` приш�
 | `pnpm test` | Vitest без Docker во всех пакетах: unit, application, HTTP через supertest, контрактный и permission-набор, repo-тесты |
 | `pnpm test:integration` | Vitest + Testcontainers: то, чему нужен реальный сервис — Postgres (RLS, миграции, репозитории), Redis, Mailpit |
 | `pnpm test:e2e` | Playwright из `packages/e2e` поверх поднятого стека |
-| `pnpm db:migrate` | `prisma migrate dev` (dev) / `deploy` (prod-образ) |
+| `pnpm db:migrate` | `prisma migrate deploy` — одинаково в обоих окружениях; сброс базы это отдельная `pnpm db:reset` |
 | `pnpm db:seed` | Демо-данные, идемпотентно |
 | `pnpm api:gen` | `openapi-typescript docs/api/openapi.yaml` → типы клиента (в CI проверяется пустой diff) |
 | `pnpm docker:up` | Postgres, Redis, MinIO, Meilisearch, Mailpit |

@@ -661,7 +661,7 @@ rolling deploy (старый код всегда писал значение); �
   враньём в тот же день). Актуальный печатает
 
   ```bash
-  grep -rho 'auth_lookup_[a-z_]*' packages/server/prisma/ | sort -u
+  grep -rhoE 'auth_lookup_[a-z_]+[a-z]' packages/server/prisma/ | sort -u
   ```
 - `requestedIpHash` — тот же хеш IP, что и у `Session.ipHash` (полный адрес не хранится); нуллабелен,
   потому что запрос может прийти из окружения, где адрес недоступен.

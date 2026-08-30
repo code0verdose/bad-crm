@@ -66,7 +66,7 @@ tags: [testing, mutation-testing, i18n, rls, postgresql, permissions, openapi]
 4. `docs/security/rls-design.md:52` («Четыре роли и почему именно четыре» над пятью строками),
    `:59-60` («`EXECUTE` на четырёх функциях», «`SELECT` ровно на четыре таблицы»),
    `packages/server/prisma/sql/00-bootstrap-roles.sql:23,26,28,106,122,124`,
-   `01-grants.sql:51,64,196,318`. Факт: `grep -rho 'auth_lookup_[a-z_]*' packages/server/prisma/ | sort -u`
+   `01-grants.sql:51,64,196,318`. Факт: `grep -rhoE 'auth_lookup_[a-z_]+[a-z]' packages/server/prisma/ | sort -u`
    → пять; `definer_reads` (`01-grants.sql:134-136`) → `users, organizations, sessions,
    password_reset_tokens, invitations`, тоже пять.
 

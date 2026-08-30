@@ -23,7 +23,7 @@
 -- Five roles, five reasons (docs/security/rls-design.md). The counts below are deliberately not
 -- written out: the resolver set and the tables it reads both grow, and a number in a comment beside
 -- a BYPASSRLS role is the last place that should be able to go stale. What exists prints itself —
--- `grep -rho 'auth_lookup_[a-z_]*' packages/server/prisma/ | sort -u` for the resolvers,
+-- `grep -rhoE 'auth_lookup_[a-z_]+[a-z]' packages/server/prisma/ | sort -u` for the resolvers,
 -- `definer_reads` in `01-grants.sql` for the tables.
 --   app_user     — the application process. Subject to RLS, owns nothing.
 --   app_migrator — owns the schema and every object, runs migrations. Never used at runtime.

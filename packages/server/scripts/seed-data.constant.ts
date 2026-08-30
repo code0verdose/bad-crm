@@ -12,13 +12,13 @@
  * prove that the comparison ran. The differing locale and currency also make a formatting defect
  * visible in the fixture itself rather than in a screenshot months later.
  *
- * **Roles are absent, and that is the state of the product rather than an omission.** Roles arrive
- * with [EPIC-011](../../../epics/epic-011-rbac-permissions/epic.md); today `users` has no role
- * column and the only distinguishable account is the organization owner, because
- * `organizations.owner_id` is the one relation that exists. Seeding an `admin@` and a `lead@` now
- * would create accounts identical in rights to the owner and name them as if they were not — a
- * fixture that lies is worse than a fixture that is small. They land in STORY-010-03 together with
- * the roles they are supposed to have.
+ * **Roles are absent, and the reason has changed — corrected 2026-08-30.** This said roles «arrive
+ * with EPIC-011»; EPIC-011 shipped (`prisma/migrations/20260805100000_roles`,
+ * `20260805120000_user_roles`, model `UserRole`), so the obstacle is no longer the schema. What is
+ * still missing is the fixture: seeding an `admin@` and a `lead@` means assigning them roles and
+ * keeping those assignments in step with `SYSTEM_ROLE_PERMISSIONS`, which is STORY-010-03's work
+ * and not a line in this file. The original reasoning holds unchanged — a fixture that names
+ * accounts as if they differed in rights, while they do not, is worse than a small one
  */
 
 /** The password every seeded account signs in with; refused outside development and test. */
