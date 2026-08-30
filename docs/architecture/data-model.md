@@ -118,8 +118,15 @@ updated: 2026-08-12
 
 ### Мягкое удаление
 
-`deletedAt DateTime?` — только там, где нужен аудит или восстановление: `User`, `Project`, `Board`,
-`Task`, `DocPage`, `KbNote`, `File`, `Channel`, `Message`, `VaultItem`, `Client`, `Invoice`.
+`deletedAt DateTime?` — только там, где нужен аудит или восстановление: `Organization`, `User`,
+`Team`, `Project`, `Board`, `Task`, `DocPage`, `KbNote`, `File`, `Channel`, `Message`, `VaultItem`,
+`Client`, `Invoice`.
+
+`Organization` и `Team` дописаны в список 2026-08-30 по факту сверки со схемой: обе колонки
+существуют с первой миграции (`20260727120000_init_tenancy_and_rls`, `organizations.deleted_at` и
+`teams.deleted_at`), обе названы в строках сущностей §1, и только этот абзац о них не знал. Список
+именно перечисляет таблицы, а не выводится из строк, поэтому расхождение здесь означало бы
+противоречие внутри одного документа.
 
 Не применяем к: join-таблицам (`TaskLabel`, `UserRole`), логам (`AuditLog`, `VaultAccessLog`),
 событиям (`OutboxEvent`, `ActivityEvent`) — там удаление либо запрещено, либо физическое по TTL.
@@ -788,7 +795,7 @@ salt (`saltB`), а сервер хранит `argon2id(authVerifier, serverSalt)
 | `Role` | [T] | `organizationId`, `key`, `name`, `description`, `isSystem Bool`, `isDefault Bool`, `priority Int` | 1:N `RolePermission`, `UserRole` |
 | `RolePermission` | [T] | `roleId`, `permissionKey` → `Permission.key` | только **ALLOW**, DENY не существует |
 | `UserRole` | [T] | `userId`, `roleId`, `grantedById`, `grantedAt`, `expiresAt?` | join |
-| `UserPermissionOverride` | [T] | `userId`, `permissionKey`, `effect ALLOW\|DENY`, `reason` (обязателен, `ck_user_permission_overrides_reason`: `length(btrim(reason)) >= 10`), `grantedById`, `expiresAt?` | точечное исключение |
+| `UserPermissionOverride` | [T] | `userId`, `permissionKey`, `effect ALLOW\|DENY`, `reason` (обязателен, `ck_user_permission_overrides_reason`: `length(btrim(reason)) >= 10`), `grantedById`, `grantedAt`, `expiresAt?` | точечное исключение |
 | `ResourceAcl` — **таблицы ещё нет** | [T] | `resourceType ORGANIZATION\|PROJECT\|BOARD\|TASK\|DOC_PAGE\|KB_SPACE\|KB_NOTE\|FILE\|FILE_FOLDER\|CHANNEL\|VAULT\|DASHBOARD`, `resourceId`, `subjectType USER\|ROLE\|TEAM`, `subjectId`, `accessLevel`, `grantedById`, `expiresAt?` | полиморфная |
 
 **`ResourceAcl` пока не существует — это единственная строка таблицы в будущем времени.** Остальные

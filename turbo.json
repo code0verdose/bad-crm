@@ -158,6 +158,14 @@
         "packages/*/package.json",
         "packages/*/tsconfig.json",
         "packages/*/src/**",
+        // `test/architecture/negated-optional-chain.test.ts` reads every test file of every
+        // package — the shape it forbids is one a test author writes, so the tree it audits is the
+        // test tree and not the source tree. Both globs are needed: `packages/*/test/**` is a
+        // literal glob and does not match `packages/e2e/tests/**`, which is where the end-to-end
+        // specs live. Omitted here, a newly written `expect(x?.y).not.toBe…` lands on a cache hit
+        // and the gate reports a PASS over a file it never opened.
+        "packages/*/test/**",
+        "packages/*/tests/**",
         // `test/infra/compose.test.ts` reads the bootstrap SQL and asserts the RLS invariants of
         // the database roles — the only automated guard of tenant isolation that exists today.
         // Omitted here, a change dropping NOBYPASSRLS from app_user is served from cache.
@@ -197,19 +205,29 @@
         // `test/repo/tsconfig-contract.test.ts` reads it: dropping `test/**` from its `include`
         // makes every @ts-expect-error in that package vacuous — and would be cached as a pass.
         "packages/*/tsconfig.test.json",
-        // `test/repo/runbook-restore.test.ts` reads both. The restore runbook is an executable
-        // procedure: each of its three past defects ended in an empty or unusable database, and an
-        // edit reintroducing one of them must not be served from cache.
-        "docs/runbooks/backup-restore.md",
+        // `docs/runbooks/**`, not the two files that used to be listed here. Three suites read
+        // this directory and the newest one reads all of it: `test/repo/runbook-claims.test.ts`
+        // resolves every command, compose service, variable, route, metric, audit action and model
+        // a runbook names against the code that has to answer for it. A runbook is the only
+        // document somebody executes by hand on a production host, and the way it rots is somebody
+        // else's commit — so the day a tenth runbook is added it must invalidate this entry, not
+        // the day somebody remembers to append a line. `test/repo/runbook-restore.test.ts` reads
+        // the restore procedure, whose three past defects each ended in an empty or unusable
+        // database, and `test/infra/upgrade-runbook.test.ts` asserts that the role bootstrap runs
+        // before the migrations — P3018 followed by P3009 on every later deploy otherwise.
+        "docs/runbooks/**",
         "docs/security/rls-design.md",
-        // `test/infra/upgrade-runbook.test.ts` reads the upgrade runbook and asserts that the role
-        // bootstrap runs before the migrations. A migration naming a role no installation has fails
-        // with P3018 and then blocks every later one with P3009 — an edit that moves or drops that
-        // step must not be served from cache.
-        "docs/runbooks/upgrade.md",
-        // `test/infra/data-model-indexes.test.ts` holds the index registry of the data model — the
-        // source of truth for names — against the migrations that implement it. A registry naming an
-        // index the schema does not have is what the next author plans queries around.
+        // `test/repo/runbook-claims.test.ts` resolves `/health`, `/ready` and `/metrics` against
+        // this allow-list as well as against the route registry: the probes exist precisely because
+        // they are *not* product operations, so the registry alone would call them undocumented.
+        "packages/server/test/contract/service-route-allow-list.constant.ts",
+        // Three suites read the data model — the source of truth for names — and each reads it in a
+        // different direction: `test/infra/data-model-indexes.test.ts` holds its index registry
+        // against the migrations, `data-model-fields.test.ts` forbids it to name a field no model
+        // has, and `data-model-coverage.test.ts` forbids the schema to persist a model or a column
+        // the document never names. The last one is the direction a document rots in — a table
+        // arrives with an epic and nobody appends its row — so a cached PASS here is precisely the
+        // one that lets the registry fall behind the schema unnoticed.
         "docs/architecture/data-model.md",
         // `test/repo/unit-names.test.ts` holds the client `units/*` tree and the Prisma models
         // against the «Unit / Entity» column of the glossary. Cached over an edited glossary, a
