@@ -12,9 +12,14 @@ import { ROUTES } from '@/shared/lib/use-route.hook.js';
  * always-shown screens.
  *
  * `color-contrast` is off for the reason it is off in `packages/client`: jsdom paints nothing, so
- * axe would be grading the renderer instead of the design. This package has no token-contrast test
- * of its own yet, which is a real gap and not one this suite can close by fabricating one against
- * colours it cannot see.
+ * axe would be grading the renderer instead of the design. That leaves the property to
+ * `test/theme/tokens.test.ts`, which reads the token file and computes every ratio arithmetically —
+ * it was written after this comment said the gap was open, and it found `--bcl-text-faint` at
+ * 3.69:1 (fixed in `7dcae42`). Sentence corrected 2026-08-30; the gap is closed.
+ *
+ * **Every scan carries a `passes` control.** `violations` being empty is also what an empty node
+ * answers, so each case asserts that axe had rules to apply and applied them — without it, a render
+ * that quietly stopped producing markup would read as a clean audit.
  */
 describe('accessibility of the pages a visitor reaches without clicking anything first', () => {
   afterEach(() => {
@@ -25,11 +30,12 @@ describe('accessibility of the pages a visitor reaches without clicking anything
     const { container } = render(<App />);
     await screen.findAllByRole('heading', { level: 1 });
 
-    const { violations } = await axe.run(container, {
+    const { violations, passes } = await axe.run(container, {
       rules: { 'color-contrast': { enabled: false } },
     });
 
     expect(violations.map((violation) => violation.id)).toEqual([]);
+    expect(passes.length).toBeGreaterThan(0);
   });
 
   it('has no axe violations on the /terms legal page', async () => {
@@ -38,10 +44,11 @@ describe('accessibility of the pages a visitor reaches without clicking anything
     const { container } = render(<App />);
     await screen.findByRole('heading', { level: 1 });
 
-    const { violations } = await axe.run(container, {
+    const { violations, passes } = await axe.run(container, {
       rules: { 'color-contrast': { enabled: false } },
     });
 
     expect(violations.map((violation) => violation.id)).toEqual([]);
+    expect(passes.length).toBeGreaterThan(0);
   });
 });
