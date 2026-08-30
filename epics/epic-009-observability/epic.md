@@ -44,7 +44,7 @@ health-эндпоинты и, если он захочет, метрики. Эп
 - [x] `/health` отвечает без обращений к зависимостям; `/ready` проверяет Postgres, Redis, S3, статус миграций и завершение shutdown, а отключённые опциональные сервисы отражаются как `disabled` и не влияют на HTTP-статус.
 - [x] `GET /metrics` отдаёт RED-набор (`http_requests_total`, `http_request_duration_seconds`) c `route` из шаблона Express, а не из URL; endpoint закрыт от анонимного доступа.
 - [x] Трейсы включаются только наличием `OTEL_EXPORTER_OTLP_ENDPOINT`; при выключенных трейсах накладных расходов нет; `traceId` присутствует в логах.
-- [x] Необработанная ошибка React не оставляет белый экран: показывается экран восстановления, а отчёт уходит на сервер с ограничением частоты.
+- [x] Необработанная ошибка React не оставляет белый экран: показывается экран восстановления, а отчёт уходит на сервер с ограничением частоты. *Сверено 2026-08-30: `app/ui/app-error-boundary.component.tsx`, приём — `POST /api/v1/telemetry/client-error` с политикой `client_error_report` (10/мин). Частоту держит **только сервер**: у клиента ни дедупликации, ни собственного лимита нет, см. [STORY-009-05](stories/story-009-05-client-error-boundary-and-reporting.md).*
 - [x] `AuditLoggerPort` вызывается в привилегированных сценариях M1 (регистрация, вход, отзыв сессий, смена пароля, сброс пароля) и покрыт тестами через in-memory реализацию; полнота закрыта гейтом `test/unit/audit/audit-coverage.test.ts`. Обход RLS вызывающего не имеет: явного обхода в коде нет — `guardedClient` отказывает вместо обхода, имя `rls.bypassed` зарезервировано за эпиком, который такой путь введёт.
 
 ## Зависимости / риски
@@ -64,5 +64,5 @@ health-эндпоинты и, если он захочет, метрики. Эп
 - [x] [STORY-009-02 — /health и /ready с проверкой зависимостей](stories/story-009-02-health-and-ready-endpoints.md)
 - [x] [STORY-009-03 — prom-client, /metrics и RED-метрики](stories/story-009-03-prometheus-metrics-red.md)
 - [x] [STORY-009-04 — OpenTelemetry-трейсы](stories/story-009-04-opentelemetry-tracing.md)
-- [x] [STORY-009-05 — Клиентский error boundary и отправка ошибок](stories/story-009-05-client-error-boundary-and-reporting.md)
+- [ ] [STORY-009-05 — Клиентский error boundary и отправка ошибок](stories/story-009-05-client-error-boundary-and-reporting.md) — **отметка снята 2026-08-30**, история возвращена в `in-progress`: клиент не дедуплицирует отчёты и не ограничивает их частоту сам, `window.onerror` не подключён, sourcemap'ы не изъяты из публичной раздачи.
 - [x] [STORY-009-06 — AuditLoggerPort как заготовка под журнал аудита](stories/story-009-06-audit-logger-port-stub.md)

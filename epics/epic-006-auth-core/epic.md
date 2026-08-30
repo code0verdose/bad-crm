@@ -41,15 +41,15 @@ refresh-cookie с ротацией и обнаружением повторно�
 
 ## Acceptance (эпик выполнен, когда)
 
-- [ ] Пользователь регистрирует организацию, входит, видит оболочку приложения и выходит — сквозной e2e-сценарий зелёный.
-- [ ] Пароли хранятся как argon2id с параметрами не ниже рекомендаций OWASP; при изменении параметров старые хеши продолжают проверяться и прозрачно перехешируются при следующем успешном входе.
-- [ ] Access-токен живёт 15 минут и хранится только в памяти клиента; refresh — opaque, в httpOnly cookie, в БД хранится его SHA-256 хеш.
-- [ ] Повторное предъявление уже использованного refresh отзывает всё семейство сессий, пишет событие в аудит и уведомляет пользователя.
-- [ ] Пользователь видит свои активные сессии с устройством, IP и временем и может отозвать любую, кроме текущей (или включая текущую с явным подтверждением).
-- [ ] Смена пароля закрывает все прочие сессии; текущая сохраняется.
-- [ ] 5 неудачных попыток входа за 15 минут по паре IP + email приводят к 429 с `Retry-After`; счётчик общий для всех реплик приложения.
-- [ ] Сброс пароля работает по одноразовой ссылке с TTL; повторное использование токена отклоняется; при отсутствии SMTP операция даёт понятную ошибку, а в dev письмо видно в Mailpit.
-- [ ] Ответ на «пользователь не существует» и «неверный пароль» неотличим по коду, тексту и времени ответа.
+- [ ] Пользователь регистрирует организацию, входит, видит оболочку приложения и выходит — сквозной e2e-сценарий зелёный. *Сверено 2026-08-30: вход, оболочка и выход — зелёные против живого стека (`packages/e2e/tests/smoke/sign-in.spec.ts`, `sign-out.spec.ts`); **регистрации нет ни в сценарии, ни в интерфейсе** — экран регистрации не написан, см. [STORY-006-01](stories/story-006-01-organization-and-owner-registration.md). Организацию сегодня заводит только запрос к `POST /api/v1/auth/register` или сид.*
+- [x] Пароли хранятся как argon2id с параметрами не ниже рекомендаций OWASP; при изменении параметров старые хеши продолжают проверяться и прозрачно перехешируются при следующем успешном входе. *`infrastructure/crypto/argon2-password-hasher.adapter.ts` — конструктор отказывается стартовать ниже пола OWASP, `needsRehash` читает параметры из самого дайджеста; перехеш — `login.use-case.ts:399`, в той же транзакции, что и выдача сессии.*
+- [x] Access-токен живёт 15 минут и хранится только в памяти клиента; refresh — opaque, в httpOnly cookie, в БД хранится его SHA-256 хеш. *`jwt-access-token.adapter.ts:11` (`ACCESS_TOKEN_TTL_SECONDS = 900`), `refresh-token.adapter.ts` (32 байта CSPRNG, SHA-256 в БД), `presentation/http/refresh-cookie.util.ts` — единственное место, куда попадает сам токен; на клиенте — `units/auth/service/stores/auth-session.store.ts`, вне кеша и вне storage.*
+- [ ] Повторное предъявление уже использованного refresh отзывает всё семейство сессий, пишет событие в аудит и уведомляет пользователя. *Две трети: отзыв семейства одним `UPDATE` и запись `session.refresh_reuse_detected` внутри той же транзакции — `refresh-session.use-case.ts:162`, плюс строка лога уровня `warn`. **Уведомления пользователя нет:** `MailPort` в этот use-case не проброшен, и это записано у самого места вызова. Причина «почта ещё пишется» устарела — STORY-006-08 отгружена.*
+- [ ] Пользователь видит свои активные сессии с устройством, IP и временем и может отозвать любую, кроме текущей (или включая текущую с явным подтверждением). *Сверено 2026-08-30: серверная половина есть целиком — `GET /auth/sessions` с устройством, маскированным адресом и временем, `DELETE /auth/sessions/{id}`, `POST /auth/sessions/revoke-others`. **Пользователь этого не видит:** на `/settings/security` только второй фактор, списка сессий в клиенте нет ни в одном виде (`packages/client/src/pages/settings-security/page.tsx`).*
+- [ ] Смена пароля закрывает все прочие сессии; текущая сохраняется. *Серверная половина сделана и покрыта (`change-password.use-case.ts`), формы смены пароля в клиенте нет — см. [STORY-006-06](stories/story-006-06-change-password-and-session-invalidation.md).*
+- [x] 5 неудачных попыток входа за 15 минут по паре IP + email приводят к 429 с `Retry-After`; счётчик общий для всех реплик приложения. *`infrastructure/rate-limit/` поверх Redis (`rate-limiter-flexible`), политика `auth_attempt`, ключ — дайджест адреса и нормализованного email, `reset` на успешном входе, fail-closed при недоступном Redis.*
+- [x] Сброс пароля работает по одноразовой ссылке с TTL; повторное использование токена отклоняется; при отсутствии SMTP операция даёт понятную ошибку, а в dev письмо видно в Mailpit. *`request-password-reset.use-case.ts` / `confirm-password-reset.use-case.ts`, письмо уходит **после** коммита через `MailDispatchPort`; экраны `/forgot-password` и `/reset-password/$token` на клиенте есть.*
+- [x] Ответ на «пользователь не существует» и «неверный пароль» неотличим по коду, тексту и времени ответа. *Один `401 invalid_credentials`, побайтовое равенство тел проверено в `test/integration/http/auth-endpoints.test.ts`, постоянство времени — настоящим `dummyHash` той же стоимости; причина отказа существует только в логе.*
 
 ## Что фундамент эпика уже закрыл (ревизия 2026-07-28)
 
@@ -90,8 +90,8 @@ refresh-cookie с ротацией и обнаружением повторно�
 - **Потеря маркера-классификатора останавливает деплой, а не открывает доступ** (2026-07-29, повторный
   гейт БД). Сужение классификатора `01-grants.sql` до COMMENT-маркера `bad-crm:auth-resolver`
   поставило безопасность в зависимость от свойства, которое стирает один флаг `pg_dump`:
-  `--no-comments`. Замер на PostgreSQL 16.14 — после восстановления из такого дампа все три
-  резолвера остаются во владении `app_migrator` с `proacl = NULL` (то есть `EXECUTE` для `PUBLIC`),
+  `--no-comments`. Замер на PostgreSQL 16.14 — после восстановления из такого дампа все резолверы (тогда их было три; сколько сейчас — печатает
+  `grep -rhoE 'auth_lookup_[a-z_]+[a-z]' packages/server/prisma/ | sort -u`) остаются во владении `app_migrator` с `proacl = NULL` (то есть `EXECUTE` для `PUBLIC`),
   файл печатал `0 security definer functions` и **завершался успешно**, а `app_user` — роль каждого
   HTTP-запроса и любой SQL-инъекции — мог вызвать `auth_lookup_users_by_email` и под
   `SET app.maintenance = 'on'` получить все аккаунты всех организаций вместе с `password_hash`.
@@ -151,12 +151,15 @@ refresh-cookie с ротацией и обнаружением повторно�
 
 ## Истории
 
-- [ ] [STORY-006-01 — Регистрация организации и владельца](stories/story-006-01-organization-and-owner-registration.md)
-- [ ] [STORY-006-02 — Логин: access-токен и refresh в httpOnly cookie](stories/story-006-02-login-access-and-refresh-cookie.md)
-- [ ] [STORY-006-03 — Ротация refresh и обнаружение повторного использования](stories/story-006-03-refresh-rotation-reuse-detection.md)
-- [ ] [STORY-006-04 — Logout и управление активными сессиями](stories/story-006-04-logout-and-active-sessions.md)
-- [ ] [STORY-006-05 — Клиент: bootstrap сессии, гард, redirect](stories/story-006-05-client-session-bootstrap-and-guards.md)
-- [ ] [STORY-006-06 — Смена пароля и инвалидация остальных сессий](stories/story-006-06-change-password-and-session-invalidation.md)
-- [ ] [STORY-006-07 — Rate limiting и lockout на login/refresh/reset](stories/story-006-07-auth-rate-limiting-and-lockout.md)
-- [ ] [STORY-006-08 — Сброс пароля по email с одноразовым токеном](stories/story-006-08-password-reset-by-email.md)
-- [ ] [STORY-006-09 — Владелец организации: contract-шаг и запрет офбординга без передачи владения](stories/story-006-09-owner-integrity-contract-step.md)
+*Отметки расставлены по коду 2026-08-30: восемь историй из девяти стоят в `review` и отгружены, а
+список эпика был пуст целиком.*
+
+- [ ] [STORY-006-01 — Регистрация организации и владельца](stories/story-006-01-organization-and-owner-registration.md) — единственная не закрытая: серверная половина отгружена, клиентского экрана регистрации нет, статус возвращён в `in-progress` 2026-08-30
+- [x] [STORY-006-02 — Логин: access-токен и refresh в httpOnly cookie](stories/story-006-02-login-access-and-refresh-cookie.md)
+- [ ] [STORY-006-03 — Ротация refresh и обнаружение повторного использования](stories/story-006-03-refresh-rotation-reuse-detection.md) — механизм отгружен, **письма-уведомления о подозрительной активности нет** (`MailPort` в use-case не проброшен), и модель семейств не описана в `docs/security/`
+- [ ] [STORY-006-04 — Logout и управление активными сессиями](stories/story-006-04-logout-and-active-sessions.md) — четыре эндпоинта отгружены, **экрана со списком сессий в клиенте нет**; фоновая очистка истёкших строк ждёт очередей
+- [x] [STORY-006-05 — Клиент: bootstrap сессии, гард, redirect](stories/story-006-05-client-session-bootstrap-and-guards.md)
+- [ ] [STORY-006-06 — Смена пароля и инвалидация остальных сессий](stories/story-006-06-change-password-and-session-invalidation.md) — серверная половина отгружена, **формы смены пароля в клиенте нет**
+- [x] [STORY-006-07 — Rate limiting и lockout на login/refresh/reset](stories/story-006-07-auth-rate-limiting-and-lockout.md)
+- [x] [STORY-006-08 — Сброс пароля по email с одноразовым токеном](stories/story-006-08-password-reset-by-email.md)
+- [x] [STORY-006-09 — Владелец организации: contract-шаг и запрет офбординга без передачи владения](stories/story-006-09-owner-integrity-contract-step.md)

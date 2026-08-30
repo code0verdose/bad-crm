@@ -1,13 +1,17 @@
 ---
 id: STORY-009-05
 epic: EPIC-009
-status: review
+status: in-progress
 blocked: false
 priority: should
 estimate: M
 ---
 
-**Закрыта 2026-08-04.**
+**Закрыта 2026-08-04. Статус понижен обратно в `in-progress` 2026-08-30 сверкой с кодом:** запись
+ниже не назвала трёх пробелов, а один из них — прямо в acceptance. Клиент не дедуплицирует отчёты и
+не имеет собственного лимита (критерий 5 — «клиент перестаёт отправлять отчёты» — держится только
+серверными 429); `window.onerror` не подключён, перехватывается лишь `unhandledrejection`;
+sourcemap'ы собираются, но не изымаются из публичной раздачи. Подробности — у соответствующих задач.
 
 Уже было (EPIC-004): маршрутный `errorComponent` с кнопкой повтора. Не было — всего, что выше него.
 
@@ -74,14 +78,37 @@ fail-closed поведение проверено отдельно: при не�
 
 ## Задачи
 
-- [ ] Написать тесты первыми: `app/error-boundary.test.tsx` (перехват, экран восстановления, повтор), `shared/lib/telemetry/report-error.test.ts` (состав отчёта, отсутствие чувствительных данных, ограничение частоты), `test/integration/telemetry/client-error.test.ts` (rate limit, запись в лог).
-- [ ] Реализовать `src/app/error-boundary.component.tsx` (глобальный) и `errorComponent` по умолчанию для маршрутов.
+*Отметки расставлены по коду 2026-08-30: до этого весь список стоял пустым при закрытой истории.*
+
+- [x] Написать тесты первыми: `app/error-boundary.test.tsx` (перехват, экран восстановления, повтор), `shared/lib/telemetry/report-error.test.ts` (состав отчёта, отсутствие чувствительных данных, ограничение частоты), `test/integration/telemetry/client-error.test.ts` (rate limit, запись в лог).
+      *`packages/client/test/app/error-boundary.test.tsx`, `.../report-client-error.test.ts`,
+      и на сервере — `packages/server/test/unit/telemetry/client-error-endpoint.test.ts`,
+      `record-client-error.test.ts`, `route-template-only.test.ts`.*
+- [x] Реализовать `src/app/error-boundary.component.tsx` (глобальный) и `errorComponent` по умолчанию для маршрутов.
+      *`app/ui/app-error-boundary.component.tsx` + `app/ui/app-error-screen.component.tsx`;
+      маршрутный `app/ui/route-error.component.tsx` — с EPIC-004.*
 - [ ] Реализовать `src/shared/lib/telemetry/report-error.ts` — сбор контекста, дедупликация одинаковых ошибок, локальный лимит частоты.
+      *Наполовину: файл есть под другим именем и в другом слое — `app/report-client-error.util.ts`
+      (сбор контекста, отправка, проглатывание отказа). **Дедупликации и локального лимита в нём
+      нет**, поиск по файлу их не находит; частоту держит только сервер (10/мин, политика
+      `client_error_report`). Вкладка в цикле перерисовки будет слать отчёт на каждый кадр и
+      получать 429 — то есть половина критерия «клиент перестаёт отправлять» не выполнена.*
 - [ ] Подключить обработчики `window.onerror` и `unhandledrejection`.
-- [ ] Реализовать серверный endpoint `POST /api/v1/telemetry/client-error` с валидацией Zod, лимитом 10/мин на пользователя и записью в лог; описать в `openapi.yaml`.
+      *Наполовину: `app/global-error-listeners.util.ts:33` подписан только на
+      `unhandledrejection`. Синхронная ошибка вне дерева React (обработчик события, таймер) не
+      доходит ни до границы, ни до отчёта.*
+- [x] Реализовать серверный endpoint `POST /api/v1/telemetry/client-error` с валидацией Zod, лимитом 10/мин на пользователя и записью в лог; описать в `openapi.yaml`.
+      *`presentation/http/controllers/telemetry.controller.ts` + `validators/telemetry.validator.ts`,
+      `application/platform/use-cases/record-client-error.use-case.ts` (уровень `warn`,
+      `source: "client"`), схема `ClientErrorReport` в контракте.*
 - [ ] Настроить генерацию и загрузку sourcemap так, чтобы стек был читаем, но карты не публиковались в открытом доступе.
-- [ ] Обеспечить отсутствие персональных данных в отчёте (фильтрация полей, обрезка длинных строк).
-- [ ] Перевести экраны восстановления на EN и RU.
+      *Сделана только первая половина: `packages/client/vite.config.ts:97` — `sourcemap: true`, то
+      есть карты складываются рядом с бандлом и раздаются тем же статик-сервером. Отдельной загрузки
+      карт и их изъятия из публичной раздачи нет.*
+- [x] Обеспечить отсутствие персональных данных в отчёте (фильтрация полей, обрезка длинных строк).
+      *Форму отчёта задаёт контракт, а клиент типизирован **сгенерированным** типом: поля, которого
+      нет в спеке, не отправить; каждая длина — предел, который принуждает сервер.*
+- [x] Перевести экраны восстановления на EN и RU.
 
 ## Definition of Done
 

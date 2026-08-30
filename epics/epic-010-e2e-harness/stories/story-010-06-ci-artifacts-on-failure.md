@@ -1,7 +1,7 @@
 ---
 id: STORY-010-06
 epic: EPIC-010
-status: review
+status: in-progress
 blocked: false
 priority: should
 estimate: S
@@ -29,7 +29,13 @@ estimate: S
 - [x] Добавить в e2e-джобу шаги сбора логов контейнеров (`docker compose logs`) при падении.
 - [x] Реализовать скрипт очистки каталога артефактов от файлов состояния сессий и конфигураций перед выгрузкой.
 - [x] Настроить `actions/upload-artifact` с условиями (`if: failure()` для тяжёлых, `always()` для отчёта) и сроком хранения.
-- [x] Добавить в job summary перечень упавших и flaky-тестов со ссылками на артефакты.
+- [ ] Добавить в job summary перечень упавших и flaky-тестов со ссылками на артефакты.
+      **Отметка снята 2026-08-30:** в джобе `end-to-end` нет ни одного шага, пишущего в
+      `$GITHUB_STEP_SUMMARY` (`grep -n GITHUB_STEP_SUMMARY .github/workflows/ci.yml` находит только
+      джобы `checks` и `scan`), и `test/ci/workflow.test.ts` такого утверждения не держит. Разбор
+      падения начинается со скачивания архива, а не со сводки — вместе с этим пунктом открыт
+      критерий 6 acceptance (flaky отдельной строкой) и строка «tenant isolation: passed/failed» из
+      [STORY-010-05](story-010-05-tenant-isolation-e2e.md).
 - [x] Дополнить `docs/runbooks/e2e.md` разделом «разбор падения по trace».
 
 ## Definition of Done

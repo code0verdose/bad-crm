@@ -38,9 +38,10 @@ estimate: M
 что спецификация для того эпика существует; поле `causationId` заводится вместе с первым событием,
 которому есть что наследовать.
 
-**Не проверено сквозным запуском:** `pnpm dev` целиком не поднимался — для него нужны Postgres,
-Redis, MinIO и Meilisearch. Проверен сам конвейер и то, что скрипт разбирается; первый запуск на
-поднятом стеке подтвердит остальное.
+**Не проверено сквозным запуском** (на момент закрытия): `pnpm dev` целиком не поднимался — для него
+нужны Postgres, Redis, MinIO и Meilisearch. Проверен сам конвейер и то, что скрипт разбирается.
+*Снято 2026-08-30:* стек с тех пор поднимался целиком — под e2e (EPIC-010) и в джобе `end-to-end`,
+где сервер запускается тем же способом и пишет свои строки в `packages/e2e/test-results/server.log`.
 
 
 # STORY-009-01 — Логи со сквозным контекстом и редактированием секретов
@@ -62,14 +63,36 @@ Redis, MinIO и Meilisearch. Проверен сам конвейер и то, �
 
 ## Задачи
 
-- [ ] Написать тесты первыми: `test/unit/logging/redaction.test.ts` (полный набор чувствительных путей + вложенные объекты), `test/unit/logging/context-propagation.test.ts` (HTTP → job, наследование `requestId`/`causationId`), `test/integration/logging/auth-body.test.ts` (тело auth-запросов не логируется ни на одном уровне).
-- [ ] Расширить `infrastructure/logging/pino.adapter.ts` полным списком `redact`-путей и сериализаторами ошибок и запросов.
-- [ ] Дополнить `RequestContext` полями `organizationId`, `userId`, `causationId` и наполнять их в auth- и tenant-middleware.
+*Отметки расставлены по коду 2026-08-30: до этого весь список стоял пустым при закрытой истории.*
+
+- [x] Написать тесты первыми: `test/unit/logging/redaction.test.ts` (полный набор чувствительных путей + вложенные объекты), `test/unit/logging/context-propagation.test.ts` (HTTP → job, наследование `requestId`/`causationId`), `test/integration/logging/auth-body.test.ts` (тело auth-запросов не логируется ни на одном уровне).
+      *Два из трёх; имена другие.* Есть `packages/server/test/unit/logging/redaction.test.ts` и
+      `.../http-log-line.test.ts` (тело и URL не попадают в лог **ни на каком уровне**, с шаблоном
+      маршрута и положительным контролем) — второй закрывает то, что задача просила от
+      `auth-body.test.ts`. `context-propagation.test.ts` нет: цепочки «HTTP → job» не существует,
+      см. `runJob` ниже.
+- [x] Расширить `infrastructure/logging/pino.adapter.ts` полным списком `redact`-путей и сериализаторами ошибок и запросов.
+      *Файлы — `infrastructure/logging/pino-logger.adapter.ts`, список путей вынесен в
+      `log-redaction.constant.ts`, сериализатор ошибки — `log-error.serializer.ts`.*
+- [x] Дополнить `RequestContext` полями `organizationId`, `userId`, `causationId` и наполнять их в auth- и tenant-middleware.
+      *`organizationId`/`userId` — да: `RequestContextPort.identify` вызывается из
+      `presentation/http/middleware/authenticate.middleware.ts:122`. `causationId` — нет, вместе с
+      `runJob` (наследовать пока нечему).*
 - [ ] Реализовать обёртку `runJob`, восстанавливающую контекст из payload задачи (используется всеми фоновыми обработчиками).
-- [ ] Реализовать `LoggerPort` и его использование в `application`/`domain` вместо прямого обращения к pino.
-- [ ] Настроить `pino-pretty` только для dev; проверить, что в production-сборке он не подключается.
-- [ ] Добавить тест-«канарейку»: набор строк-секретов прогоняется через логгер и проверяется отсутствие в выводе.
-- [ ] Описать в `docs/runbooks/` рецепты: «собрать всё по requestId», «найти путь от запроса до письма».
+      *Открыто и на 2026-08-30: BullMQ в дереве нет (`grep -n '"bullmq"' packages/server/package.json`
+      пуст), обёртывать нечего. Форма описана правилом 3 `rules/observability.mdc`.*
+- [x] Реализовать `LoggerPort` и его использование в `application`/`domain` вместо прямого обращения к pino.
+      *`application/platform/ports/logger.port.ts`; прямого pino вне `infrastructure/logging` нет.*
+- [x] Настроить `pino-pretty` только для dev; проверить, что в production-сборке он не подключается.
+      *Конвейером, а не транспортом: `packages/server/package.json` → `"dev": "tsx watch … | pino-pretty"`;
+      сам пакет остаётся `devDependency`.*
+- [x] Добавить тест-«канарейку»: набор строк-секретов прогоняется через логгер и проверяется отсутствие в выводе.
+      *`test/unit/logging/redaction.test.ts` — проверяются **байты** вывода.*
+- [x] Описать в `docs/runbooks/` рецепты: «собрать всё по requestId», «найти путь от запроса до письма».
+      *[`docs/runbooks/tracing-a-request.md`](../../../docs/runbooks/tracing-a-request.md) — откуда
+      берётся идентификатор, три команды разбора, что делать, если строк нет, и чего в логах нет
+      намеренно. Рецепт «от запроса до письма» отдельным разделом не выделен: писем в журнале нет,
+      релей пишет собственную строку исхода.*
 
 ## Definition of Done
 

@@ -16,6 +16,14 @@ estimate: M
 каталог имён метрик в `rules/observability.mdc`; переменные задокументированы в `.env.example`
 **и** в `docs/runbooks/upgrade.md`.
 
+**Сверка 2026-08-30: метрик в порту заметно больше трёх.** К RED-набору и `auth_rate_limited_total`
+последующие эпики добавили `permission_denied_total{reason}`, `audit_write_failed_total`,
+`audit_unscoped_total` и `mfa_recovery_failed_total` — каждая зарегистрирована здесь же, в
+`prom-client.adapter.ts`, каждая без меток с идентификаторами. Числа в этой истории намеренно
+не приводятся — на день сверки в дереве шла ещё одна: список печатает
+`grep -nE "name: '" packages/server/src/infrastructure/metrics/prom-client.adapter.ts`, а сверку
+имён с описанием держит таблица `rules/observability.mdc`.
+
 **Кардинальность проверена сквозным тестом,** а не только на адаптере: два запроса к двум разным
 идентификаторам дают **один** ряд с меткой `route="/api/v1/tasks/:id"`, и в выводе нет самого
 идентификатора. Отдельный контроль — что несопоставленный путь не становится своей меткой (иначе
@@ -60,13 +68,35 @@ estimate: M
 
 ## Задачи
 
-- [ ] Написать тесты первыми: `test/integration/metrics/http-metrics.test.ts` (счётчик и гистограмма, шаблон маршрута в метке), `test/integration/metrics/access.test.ts` (закрытый доступ), `test/unit/metrics/labels.test.ts` (нет персональных данных и высокой кардинальности).
-- [ ] Реализовать `infrastructure/metrics/prom-client.adapter.ts` под портом `MetricsPort` с реестром и дефолтными метриками.
-- [ ] Реализовать middleware сбора HTTP-метрик с извлечением шаблона маршрута Express.
-- [ ] Реализовать контроллер `GET /metrics` с basic-auth из конфигурации и добавить его в allow-list контрактного теста.
+*Отметки расставлены по коду 2026-08-30: до этого весь список стоял пустым при закрытой истории.*
+
+- [x] Написать тесты первыми: `test/integration/metrics/http-metrics.test.ts` (счётчик и гистограмма, шаблон маршрута в метке), `test/integration/metrics/access.test.ts` (закрытый доступ), `test/unit/metrics/labels.test.ts` (нет персональных данных и высокой кардинальности).
+      *Все три проверки на месте, но в юнит-наборе и под другими именами:
+      `packages/server/test/unit/metrics/prom-client.adapter.test.ts` (счётчик, гистограмма,
+      кардинальность), `metrics-endpoint.test.ts` (закрытый доступ — 404 и `timingSafeEqual`,
+      шаблон маршрута вместо пути), `metrics-wiring.test.ts`. Контейнер здесь ничего не добавляет:
+      реестр `prom-client` живёт в процессе.*
+- [x] Реализовать `infrastructure/metrics/prom-client.adapter.ts` под портом `MetricsPort` с реестром и дефолтными метриками.
+- [x] Реализовать middleware сбора HTTP-метрик с извлечением шаблона маршрута Express.
+      *`infrastructure/metrics/http-metrics.middleware.ts` + общий `logging/route-template.util.ts`.*
+- [x] Реализовать контроллер `GET /metrics` с basic-auth из конфигурации и добавить его в allow-list контрактного теста.
+      *`presentation/http/controllers/metrics.controller.ts`; **не** basic-auth, а bearer-токен
+      (`METRICS_TOKEN`, сравнение `timingSafeEqual`), и отказ — 404, а не 401: вызывающий без токена
+      не подтверждает даже существования эндпоинта. Исключение из контракта — в
+      `test/contract/service-route-allow-list.constant.ts:24`.*
 - [ ] Зарегистрировать метрики пула БД и зарезервировать имена метрик очередей и outbox в общем каталоге `infrastructure/metrics/registry.ts`.
-- [ ] Добавить переменную `METRICS_ENABLED` (и креды) в env-схему и `.env.example`.
+      *Наполовину, и открытая половина — та же, что в «Отступлении 1»: `db_pool_active`/`db_pool_idle`
+      не зарегистрированы (нужна preview-фича `metrics` в `prisma/schema.prisma`). Имена
+      зарезервированы — но в каталоге `rules/observability.mdc`:133–147, а не в
+      `infrastructure/metrics/registry.ts`: такого файла нет и заводить его не за чем, имена метрик
+      будущих подсистем регистрирует не код.*
+- [x] Добавить переменную `METRICS_ENABLED` (и креды) в env-схему и `.env.example`.
+      *`env.schema.ts:256` и `:355` (включено без токена — старт отказывает), `.env.example:215`.*
 - [ ] Задокументировать каталог метрик и пример конфигурации Prometheus в `docs/runbooks/observability.md`.
+      *Каталог задокументирован — таблица в `rules/observability.mdc`, у каждой строки статус; сверять его с кодом надо командой
+      `grep -nE "name: '" packages/server/src/infrastructure/metrics/prom-client.adapter.ts`.
+      Раннбука `observability.md` не существует вовсе, примера конфигурации Prometheus нет нигде —
+      это открытая половина.*
 
 ## Definition of Done
 

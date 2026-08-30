@@ -87,8 +87,12 @@ estimate: M
       `aria-invalid`, фокус после отказа встаёт на поле, весь путь проходится с клавиатуры (проверено
       и в тестах, и в браузере). Перевод фокуса на `h1` после навигации остаётся за
       `widgets/route-announcer` из EPIC-004.
-- [ ] i18n: строки в обоих языках, хардкода нет — в JSX только ключи (`auth.login.*`, `nav.signOut`,
-      `app.loading`, `validation.*`); каталоги EN/RU приходят в EPIC-008
+- [x] i18n: строки в обоих языках, хардкода нет — в JSX только ключи (`auth.login.*`, `nav.signOut`,
+      `app.loading`, `validation.*`); каталоги EN/RU приходят в EPIC-008.
+      **Закрыто 2026-08-30: каталоги приехали.** `packages/client/src/shared/i18n/locales/en` и
+      `.../ru` несут одинаковый набор namespace (`auth.json`, `nav.json`, `validation.json` и
+      далее), паритет и полноту стерегут `pnpm i18n:check` и
+      `packages/client/test/i18n/error-codes-parity.test.ts`.
 
 ## Ссылки
 

@@ -9,7 +9,19 @@ estimate: S
 
 **Сделано 2026-08-04: порт, перечень, адаптер и первый сценарий с доказанным fail-closed.**
 
-- `packages/shared/src/audit/audit-action.enums.ts` — закрытый перечень из шести действий M1.
+> **Сверка 2026-08-30.** Запись ниже описывает состояние на день закрытия, и две её вещи с тех пор
+> перестали быть верными — обе в сторону «сделано больше»:
+> **(1) перечень вырос** с шести действий M1 до нескольких десятков (EPIC-011, EPIC-012, EPIC-013
+> добавили свои; актуальное число печатает
+> `grep -cE "^\s*'[a-z_.]+'," packages/shared/src/audit/audit-action.enums.ts`);
+> **(2) «временная реализация в pino до появления таблицы» больше не основной путь.** Таблица
+> `audit_logs` существует (`prisma/migrations/20260805110000_audit_logs`), и сток по умолчанию —
+> `infrastructure/persistence/prisma/audit-log.adapter.ts`, собранный в `container.factory.ts:285`;
+> `pino-audit.adapter.ts` остался узким путём для действий, у которых нет организации, и каждое
+> такое событие считает `audit_unscoped_total`. Заготовка, которую заводила эта история, стала
+> журналом — раньше, чем EPIC-016, и его силами это и надо перечитывать.
+
+- `packages/shared/src/audit/audit-action.enums.ts` — закрытый перечень действий (на день закрытия — шесть действий M1).
   Свободная строка на месте вызова — это действие, которого никто не проверял, а опечатка открывает
   второе имя для того же события, мимо которого проходит любой фильтр по журналу.
 - `application/platform/ports/audit-logger.port.ts` — событие с актором, целью, «до/после»,
@@ -67,13 +79,31 @@ estimate: S
 
 ## Задачи
 
-- [ ] Написать тесты первыми: `application/platform/ports/audit-logger.port.test.ts` (контракт через in-memory реализацию), `test/audit/coverage.test.ts` (перечень привилегированных сценариев M1 ↔ фактические вызовы), `test/audit/no-secrets.test.ts`.
-- [ ] Реализовать `application/platform/ports/audit-logger.port.ts` и типизированный перечень действий в `packages/shared`.
-- [ ] Реализовать временный адаптер `infrastructure/logging/pino-audit.adapter.ts` с полем `audit: true`.
-- [ ] Реализовать in-memory адаптер для тестов.
-- [ ] Внедрить вызовы порта в существующие use-cases M1 (регистрация, логин, refresh-reuse, logout, отзыв сессии, смена и сброс пароля, `bypassRls`).
-- [ ] Зафиксировать политику fail-closed для привилегированных действий и покрыть её тестом.
-- [ ] Задокументировать перечень аудируемых действий M1 в `docs/security/` как вход для [EPIC-016](../../epic-016-audit-log/epic.md).
+*Отметки расставлены по коду 2026-08-30: до этого весь список стоял пустым при закрытой истории.*
+
+- [x] Написать тесты первыми: `application/platform/ports/audit-logger.port.test.ts` (контракт через in-memory реализацию), `test/audit/coverage.test.ts` (перечень привилегированных сценариев M1 ↔ фактические вызовы), `test/audit/no-secrets.test.ts`.
+      *Каталог другой — `packages/server/test/unit/audit/`: `audit-logger.test.ts` (контракт),
+      `audit-coverage.test.ts` (перечень ↔ вызовы, обе стороны, проверен на падение подсадкой),
+      `audit-redaction.test.ts` и `audit-redaction-corpus.test.ts` (секреты), плюс появившиеся
+      позже `audit-log-adapter.test.ts`, `audit-unscoped-guard.test.ts`, `audit-partitions.test.ts`.*
+- [x] Реализовать `application/platform/ports/audit-logger.port.ts` и типизированный перечень действий в `packages/shared`.
+- [x] Реализовать временный адаптер `infrastructure/logging/pino-audit.adapter.ts` с полем `audit: true`.
+      *Сделан здесь; с приходом таблицы стал узким путём для событий без организации, см. сверку выше.*
+- [x] Реализовать in-memory адаптер для тестов.
+      *`FakeAuditLogger` в тестовой поддержке — пишет события, а не считает вызовы.*
+- [x] Внедрить вызовы порта в существующие use-cases M1 (регистрация, логин, refresh-reuse, logout, отзыв сессии, смена и сброс пароля, `bypassRls`).
+      *Все, кроме `bypassRls`, и это не пропуск: явного обхода RLS в коде нет ни одного, имя
+      зарезервировано за эпиком, который такой путь введёт (см. ниже и STORY-005-03). Точки вызова —
+      `register-organization.use-case.ts:148`, `login.use-case.ts:418` (вход),
+      `refresh-session.use-case.ts:162` (повторное использование), `end-session.use-case.ts:110`,
+      `change-password.use-case.ts:269`, `confirm-password-reset.use-case.ts:249`; полнота закрыта
+      `test/unit/audit/audit-coverage.test.ts`.*
+- [x] Зафиксировать политику fail-closed для привилегированных действий и покрыть её тестом.
+      *Запись идёт внутри транзакции действия: отвергнутая запись уносит действие с собой.*
+- [x] Задокументировать перечень аудируемых действий M1 в `docs/security/` как вход для [EPIC-016](../../epic-016-audit-log/epic.md).
+      *Перечень живёт кодом (`audit-action.enums.ts`, у каждого действия — комментарий о том, что
+      именно оно означает), эксплуатационная часть — в
+      [`docs/runbooks/audit-log.md`](../../../docs/runbooks/audit-log.md).*
 
 ## Definition of Done
 

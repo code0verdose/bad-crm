@@ -57,13 +57,34 @@ shutdown над всем остальным, healthcheck'и в `docker-compose.y
 
 ## Задачи
 
-- [ ] Написать тесты первыми: `test/integration/http/health.test.ts` (нет обращений к зависимостям), `test/integration/http/ready.test.ts` (каждая зависимость по отдельности недоступна → 503 с указанием; отключённый опциональный сервис → 200 `disabled`; shutdown → 503), `test/unit/health/cache.test.ts`.
-- [ ] Реализовать `application/platform/use-cases/check-readiness.use-case.ts` с портами проверок (`DbProbePort`, `CachePort`, `ObjectStorageProbePort`, `SearchProbePort`, `MigrationStatusPort`).
-- [ ] Реализовать адаптеры проверок: `SELECT 1`, Redis `PING`, S3 `HeadBucket`, Meilisearch `GET /health`, чтение статуса миграций.
-- [ ] Реализовать контроллеры `/health` и `/ready` и добавить их в allow-list контрактного теста.
-- [ ] Реализовать кеширование результата проверок и таймауты на каждую зависимость (чтобы медленный сервис не «вешал» пробу).
-- [ ] Связать флаг готовности с graceful shutdown из [STORY-003-01](../../epic-003-server-skeleton-and-api-contract/stories/story-003-01-express-app-composition-root.md).
-- [ ] Настроить healthcheck приложения в `docker-compose.yml` и описать пробы в `docs/runbooks/`.
+*Отметки расставлены по коду 2026-08-30: до этого весь список стоял пустым при закрытой истории.*
+
+- [x] Написать тесты первыми: `test/integration/http/health.test.ts` (нет обращений к зависимостям), `test/integration/http/ready.test.ts` (каждая зависимость по отдельности недоступна → 503 с указанием; отключённый опциональный сервис → 200 `disabled`; shutdown → 503), `test/unit/health/cache.test.ts`.
+      *Разложены иначе: `test/unit/application/check-health.use-case.test.ts` и
+      `check-readiness.use-case.test.ts` (пробы по отдельности, `disabled`, приоритет shutdown, кеш),
+      `test/unit/bootstrap/database-readiness.test.ts` и `migration-readiness.test.ts`,
+      `test/integration/db/readiness-probes.test.ts` — последний прогоняет пробы **тем же
+      соединением, что и процесс**, и появился из-за дефекта, описанного ниже.*
+- [x] Реализовать `application/platform/use-cases/check-readiness.use-case.ts` с портами проверок (`DbProbePort`, `CachePort`, `ObjectStorageProbePort`, `SearchProbePort`, `MigrationStatusPort`).
+      *Файл на месте; порты сведены к `readiness-probe.port.ts` и `health-probe.port.ts`.*
+- [x] Реализовать адаптеры проверок: `SELECT 1`, Redis `PING`, S3 `HeadBucket`, Meilisearch `GET /health`, чтение статуса миграций.
+      *`persistence/prisma/database-readiness.adapter.ts`, `migration-readiness.adapter.ts`,
+      `redis/redis-readiness.adapter.ts`, `platform/optional-service-probes.adapter.ts`.*
+- [x] Реализовать контроллеры `/health` и `/ready` и добавить их в allow-list контрактного теста.
+      *`presentation/http/controllers/health.controller.ts`; исключения — в
+      `test/contract/service-route-allow-list.constant.ts` с причиной у каждой строки.*
+- [x] Реализовать кеширование результата проверок и таймауты на каждую зависимость (чтобы медленный сервис не «вешал» пробу).
+      *Кеш 2 с, shutdown читается мимо кеша, таймаут — на каждую зависимость отдельно (пункты 3 и 4
+      шапки).*
+- [x] Связать флаг готовности с graceful shutdown из [STORY-003-01](../../epic-003-server-skeleton-and-api-contract/stories/story-003-01-express-app-composition-root.md).
+- [x] Настроить healthcheck приложения в `docker-compose.yml` и описать пробы в `docs/runbooks/`.
+      *Наполовину, и вторая половина принадлежит не этому эпику.* Healthcheck'и **сервисов** и
+      `condition: service_healthy` — с EPIC-001 (пять блоков в `docker-compose.yml`); healthcheck
+      **приложения** там отсутствует, потому что приложение не является сервисом этого compose —
+      контейнер продукта заводит [EPIC-017](../../epic-017-self-host-alpha/epic.md), туда и идёт
+      строка с `/health`. Пробы описаны: [`install.md`](../../../docs/runbooks/install.md):521–522 —
+      `curl /health` и `curl /ready`, там же `authentication: disabled`; разбор массовых отказов —
+      [`incident.md`](../../../docs/runbooks/incident.md).
 
 ## Definition of Done
 

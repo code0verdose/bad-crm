@@ -76,13 +76,21 @@ estimate: S
       `rejectIfRedisNotReady: true` (иначе ioredis складывает команду в offline-очередь и логин
       висит вместо отказа), и разбор отказа по типу — `RateLimiterRes` это «превышено», всё
       остальное «хранилище недоступно».
-- [ ] Добавить метрику `auth_rate_limited_total{endpoint}` (подключается к [EPIC-009](../../epic-009-observability/epic.md)).
+- [x] Добавить метрику `auth_rate_limited_total{endpoint}` (подключается к [EPIC-009](../../epic-009-observability/epic.md)).
+      **Закрыто 2026-08-30:** счётчик зарегистрирован в
+      `infrastructure/metrics/prom-client.adapter.ts:52`, порт объявляет `incrementAuthRateLimited`,
+      считается по статусу 429 (почему именно так — «Отступление 2» в
+      [STORY-009-03](../../epic-009-observability/stories/story-009-03-prometheus-metrics-red.md)).
       *(2026-07-29: не сделано — `prom-client` в проекте ещё нет. Точка подключения готова:
       отказ уже логируется одной строкой `rate limit exceeded` с полями `policy` и
       `retryAfterSeconds`, инкремент счётчика встаёт рядом. Лейбл берётся из `policy`, не из
       маршрута и не из субъекта: идентификаторы и адреса в лейблах метрик запрещены,
       `rules/observability.mdc`, п. 9.)*
 - [ ] Отразить лимиты в `docs/api/openapi.yaml` (ответ 429) и в `docs/runbooks/`.
+      *Сверено 2026-08-30: половина в спеке на месте (429 объявлен у шести операций), в раннбуках —
+      только строка про массовые 429 и прокси в [`incident.md`](../../../docs/runbooks/incident.md):295
+      и предупреждение о лимите на подготовке данных в [`e2e.md`](../../../docs/runbooks/e2e.md):140.
+      Раздела «какие лимиты действуют и как их менять» нет ни в одном раннбуке — пункт открыт.*
       *(2026-07-28: **половина в спеке сделана** — 429 с обязательным `Retry-After` объявлен на
       `login`, `refresh`, `register`, `forgot-password`, `reset-password` и `change-password`.
       Отдельно добавлен ответ 503 `service_unavailable` на `login` и `refresh`: при недоступном

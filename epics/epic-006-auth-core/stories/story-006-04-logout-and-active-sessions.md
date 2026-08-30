@@ -31,7 +31,8 @@ estimate: M
       `test/unit/domain/session-owner-policy.test.ts` (404 и для чужой, и для несуществующей — и
       **побайтово одинаково**), `test/integration/http/auth-endpoints.test.ts` (немедленный 401
       после logout).
-- [ ] Реализовать `POST /api/v1/auth/logout`, `GET /api/v1/auth/sessions`, `DELETE /api/v1/auth/sessions/{id}`, `POST /api/v1/auth/sessions/revoke-others`; описать в `openapi.yaml`.
+- [x] Реализовать `POST /api/v1/auth/logout`, `GET /api/v1/auth/sessions`, `DELETE /api/v1/auth/sessions/{id}`, `POST /api/v1/auth/sessions/revoke-others`; описать в `openapi.yaml`.
+      **Отметка поставлена 2026-08-30:** пункт закрыт собственной припиской «Дозакрыто 2026-07-29», квадрат оставался пустым. Проверено: `docs/api/openapi.yaml`:323, :355, :409, :449; `presentation/http/controllers/session.controller.ts` и `auth.controller.ts`.
       *(2026-07-28: **все четыре описаны** в спеке с маркером `x-implemented-by: STORY-006-04`.
       Чужая или несуществующая сессия — 404 `session_not_found` (новый ресурс в каталоге кодов), не
       403. Отзыв своей текущей сессии разрешён и очищает cookie; подтверждение — диалог клиента, а
@@ -64,10 +65,11 @@ estimate: M
       формой реестра **в обе стороны** (`authorizationFormOf` ↔ `specAuthorizationForm`), словарь
       маркеров один на оба теста. Само объявление маршрута появится вместе с контроллером этой
       истории.
-- [ ] **Остаток той же задачи, в чужих файлах** (по-прежнему открыт — файлы вне дельты EPIC-006): снять запись «третья форма — работа EPIC-011» из
-      `docs/api/README.md` («Что EPIC-006 оставил открытым», п. 2 — утверждение теперь ложно) и
-      описать форму в `docs/security/permission-model.md` §3.20 рядом с собственной ключевой парой
-      пользователя, откуда она и взята. Оба файла — вне дельты, закрывшей код.
+- [x] **Остаток той же задачи, в чужих файлах** — **закрыто, сверено 2026-08-30.** `docs/api/README.md`:273
+      теперь говорит «форма записи „действие над собой“ — заведена здесь, а не в EPIC-011», а
+      `docs/security/permission-model.md` §3.20 описывает `SelfServiceRoute` с обязательным
+      `ownershipCheckedIn` (и второй строкой — тот же приём для MCP-сессий). Оба утверждения, ради
+      которых пункт заводился, исправлены.
 - [x] Реализовать парсер user-agent в человекочитаемое описание устройства (без внешних сервисов).
       *Сделано 2026-07-29:* `domain/identity/session-device.util.ts` — «Firefox on macOS». Порядок
       проверок нагружен: любой Chromium представляется `Safari`, Edge — `Chrome`, Android — ещё и
@@ -106,7 +108,17 @@ estimate: M
       `test/unit/persistence/identity-repositories.test.ts` («computes each family's start per live
       row»).
 - [ ] Реализовать клиентский экран `/settings/security`: список сессий, действия, `ConfirmDialog` для разрушающих операций, полная очистка кеша при logout.
-- [ ] Добавить события в аудит-журнал (заготовка порта — [EPIC-009](../../epic-009-observability/epic.md)).
+      *Сверено 2026-08-30: маршрут и страница существуют (`app/routes/_authenticated/settings/security.tsx`,
+      `pages/settings-security/page.tsx`), но приехали с EPIC-013 и несут **только второй фактор** —
+      ни списка сессий, ни отзыва, ни диалога подтверждения на них нет, и в `units/auth/service`
+      нет ни одного хука, читающего `GET /auth/sessions`. Очистка кеша при выходе сделана
+      (STORY-006-05, подписчик `logged-out`). Пункт открыт: серверная половина ждёт экрана дольше
+      всех остальных в этом эпике.*
+- [x] Добавить события в аудит-журнал (заготовка порта — [EPIC-009](../../epic-009-observability/epic.md)).
+      **Закрыто 2026-08-30:** `EndSessionUseCase` пишет `session.revoked` через `AuditLoggerPort`
+      **внутри** транзакции отзыва (`end-session.use-case.ts:110`), и запись идёт уже в таблицу
+      `audit_logs`, а не только в лог; полнота закрыта гейтом `test/unit/audit/audit-coverage.test.ts`.
+      Приписка ниже — состояние того дня, когда таблицы ещё не было.
       *Частично закрыто в логе 2026-07-29 (гейт продакшен-готовности).* Таблицы `AuditLog` ещё нет,
       но выход и отзыв сессий больше не бесследны: `EndSessionUseCase` пишет
       `info` с полем `event: sessions_revoked` — `reason` (та же метка

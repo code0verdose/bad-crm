@@ -61,7 +61,10 @@ estimate: M
 - [x] Реализовать резолв пользователя до определения организации через `app_auth` и `SECURITY DEFINER`-функцию по [`rls-design.md`](../../../docs/security/rls-design.md).
       *Сделано 2026-07-29:* три функции в миграции
       `20260729120000_auth_owner_and_lookup_functions` — `auth_lookup_user(citext, text)`,
-      `auth_lookup_users_by_email(citext)`, `auth_lookup_session(bytea)`; адаптер
+      `auth_lookup_users_by_email(citext)`, `auth_lookup_session(bytea)`; **на 2026-08-30 их пять** —
+      к ним добавились `auth_lookup_password_reset` и `auth_lookup_invitation` (сброс пароля и
+      принятие приглашения — те же два случая «организация ещё неизвестна»); список печатает
+      `grep -rhoE 'auth_lookup_[a-z_]+[a-z]' packages/server/prisma/ | sort -u`. Адаптер
       `infrastructure/persistence/prisma/auth-lookup.adapter.ts` на отдельном пуле
       (`DATABASE_AUTH_URL`), и это **единственный** модуль, который его видит.
       **Два отступления от текста `rls-design.md`, оба осознанные и оба нужно подтвердить:**
@@ -71,7 +74,9 @@ estimate: M
          Выдать этот `SELECT` роли, которой подключается приложение, значит сделать
          `DATABASE_AUTH_URL` кредом, дампящим все учётки всех организаций. Поэтому: `app_auth`
          (LOGIN, нулевые табличные привилегии, только `EXECUTE`) и `app_auth_definer` (NOLOGIN,
-         `BYPASSRLS`, `SELECT` ровно на три таблицы) — владелец функций.
+         `BYPASSRLS`, `SELECT` ровно на перечисленные в `definer_reads`) — владелец функций. *На 2026-08-30
+         таблиц в этом списке пять (`prisma/sql/01-grants.sql:134`): `users`, `organizations`,
+         `sessions`, `password_reset_tokens`, `invitations`; «ровно на три» — счёт того дня.*
       2. **`auth_lookup_users_by_email` возвращает все совпадения (LIMIT 8), а не «ничего при
          n<>1».** Договор (`OrganizationSelectionRequired`) требует показывать список организаций
          **только после** успешной проверки пароля, что без хешей невозможно. Наружу множественность
@@ -89,7 +94,8 @@ estimate: M
       `test/integration/db/auth-lookup-path.test.ts` («is put back by 01-grants.sql after a restore
       has widened it»), он же ломает состояние суперюзером, потому что ни одна прикладная роль так
       не может.
-- [ ] Реализовать контроллер `POST /api/v1/auth/login`, описать операцию в `openapi.yaml`, настроить установку cookie.
+- [x] Реализовать контроллер `POST /api/v1/auth/login`, описать операцию в `openapi.yaml`, настроить установку cookie.
+      **Отметка поставлена 2026-08-30:** пункт был закрыт собственной припиской «Дозакрыто 2026-07-29» ниже, а квадрат остался пустым. Проверено по коду: `docs/api/openapi.yaml:159`, `presentation/http/controllers/auth.controller.ts:100`, `refresh-cookie.util.ts`.
       *(2026-07-28: **описание в спеке сделано**, маркер `x-implemented-by: STORY-006-02`.
       Access-токен в теле, refresh только в `Set-Cookie` (`HttpOnly`, `Secure`, `SameSite=Lax`,
       `Path=/api/v1/auth`, 30 дней) — в схемах тела refresh не появляется нигде. Неверный пароль и
@@ -139,7 +145,12 @@ estimate: M
       `invalid_credentials` / `account_suspended` / `rate_limited`) и `info` на успех; адрес —
       только маскированный (`domain/identity/mask-ip-address.util.ts`), email не пишется вовсе.
       Причина отказа существует **только в логе**: ответ по-прежнему один на все три случая.
-- [ ] Реализовать клиентский экран `/login`: форма, обработка ошибок по коду, сохранение токена в памяти, публикация события `logged-in`.
+- [x] Реализовать клиентский экран `/login`: форма, обработка ошибок по коду, сохранение токена в памяти, публикация события `logged-in`.
+      **Отметка поставлена 2026-08-30 по коду:** `packages/client/src/app/routes/login.tsx`,
+      `pages/login/page.tsx`, `units/auth/ui/login-form.component.tsx` (+ его тест), токен — в
+      `units/auth/service/stores/auth-session.store.ts` (в памяти, не в storage), событие
+      `logged-in` разбирает `app/auth-events.util.ts`. Экран прокликивается e2e-сценарием
+      `packages/e2e/tests/smoke/sign-in.spec.ts` против живого стека.
 
 ## Definition of Done
 

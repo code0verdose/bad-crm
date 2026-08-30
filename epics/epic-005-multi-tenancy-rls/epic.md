@@ -28,6 +28,9 @@ created: 2026-07-26
 - База tenant-scoped репозитория и предохранитель `guardedClient`; ESLint-запрет прямых `prisma.*` вне `infrastructure/persistence`.
 - Полный набор тестов изоляции — чтение, запись, обновление, удаление, список, счётчик — плюс положительный контроль «своя строка видна».
 - Роли БД `app_user` / `app_migrator` / `app_auth`, bootstrap-скрипт, проверка роли при старте.
+  *Уточнено 2026-08-30: ролей в `prisma/sql/00-bootstrap-roles.sql` пять — к трём названным здесь
+  добавились `app_auth_definer` (владелец `SECURITY DEFINER`-резолверов, NOLOGIN) и `backup_role`;
+  обе завёл тот же скрипт, см. [STORY-005-05](stories/story-005-05-database-roles-separation.md).*
 - Bootstrap организации: создание организации и первого владельца в одной транзакции.
 
 ### Вне скоупа
@@ -45,7 +48,7 @@ created: 2026-07-26
 - [x] Приложение подключается ролью `app_user` без `BYPASSRLS`, не является владельцем таблиц и не может выполнить `SET ROLE app_migrator`; несоответствие валит старт.
 - [x] Запрос к данным арендатора вне `withTenant` падает на предохранителе, а не возвращает чужие строки.
 - [x] Прямой вызов `prisma.*` вне `infrastructure/persistence` падает на линте.
-- [x] Создание организации и её первого владельца выполняется одной транзакцией; при сбое на любом шаге не остаётся ни организации без владельца, ни владельца без организации. *Владелец создаётся через `UserRepositoryPort`; его Prisma-адаптер приезжает вместе с таблицей `users` в [STORY-006-01](../epic-006-auth-core/stories/story-006-01-organization-and-owner-registration.md).*
+- [x] Создание организации и её первого владельца выполняется одной транзакцией; при сбое на любом шаге не остаётся ни организации без владельца, ни владельца без организации. *Владелец создаётся через `UserRepositoryPort`; его Prisma-адаптер приехал вместе с таблицей `users` в [STORY-006-01](../epic-006-auth-core/stories/story-006-01-organization-and-owner-registration.md) — закрыто, сверено 2026-08-30.*
 - [x] Чек-лист «новая таблица» задокументирован и включён в шаблон миграции и в ревью `db-reviewer`. *Чек-лист в [`rls-design.md`](../../docs/security/rls-design.md) дополнен пунктами 9a и 10; ревьюер внутри репозитория — проектный агент `tenancy-rls-auditor`. Пункт для общего агента `db-reviewer` не добавлен: он живёт вне репозитория, см. [STORY-005-05](stories/story-005-05-database-roles-separation.md).*
 
 ## Зависимости / риски
@@ -76,9 +79,12 @@ created: 2026-07-26
 > [STORY-016-01](../epic-016-audit-log/stories/story-016-01-append-only-table.md) (нет таблиц);
 > `DATABASE_AUTH_URL` и клиент `app_auth` —
 > [STORY-006-02](../epic-006-auth-core/stories/story-006-02-login-access-and-refresh-cookie.md)
-> (нет `SECURITY DEFINER`-функций, ради которых роль существует); `Idempotency-Key`, контроллер и
-> Prisma-адаптеры `users`/`roles` —
-> [STORY-006-01](../epic-006-auth-core/stories/story-006-01-organization-and-owner-registration.md);
+> (нет `SECURITY DEFINER`-функций, ради которых роль существует) — **приехало, закрыто 2026-08-30:**
+> `env.schema.ts:185`, `.env.example:134`, пул `infrastructure/persistence/prisma/auth-lookup.client.ts`,
+> резолверов пять (`grep -rhoE 'auth_lookup_[a-z_]+[a-z]' packages/server/prisma/ | sort -u`);
+> `Idempotency-Key`, контроллер и Prisma-адаптеры `users`/`roles` —
+> [STORY-006-01](../epic-006-auth-core/stories/story-006-01-organization-and-owner-registration.md)
+> (контроллер и адаптеры приехали; воспроизведение сохранённого ответа по ключу — нет, см. историю);
 > isolation-тест для таблицы с наследуемым `organization_id` — до появления первой такой таблицы.
 > Ни один перенос не про «не успели»: во всех случаях предмет проверки ещё не существует, а
 > заглушка ради галочки — это тест, который проходит на отсутствии кода.
