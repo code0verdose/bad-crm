@@ -36,8 +36,13 @@ export interface SessionListParams {
 }
 
 /**
- * The registry. A group is added here by the epic that adds the operations behind it — today that is
- * the client session (`units/session`), the reference unit of the tree.
+ * The registry. A group is added here by the epic that adds the operations behind it.
+ *
+ * Restated 2026-08-30. This said the registry held one group, «the client session
+ * (`units/session`), the reference unit of the tree». There is no `units/session` — it was absorbed
+ * into `units/auth` by EPIC-006, which `units/auth/index.ts` records — and the registry has grown
+ * past one group several epics ago. What is in it is the object below; `ls packages/client/src/units`
+ * lists the units that own those groups.
  */
 /**
  * The caller's own permissions — one address, because the question takes no parameters.

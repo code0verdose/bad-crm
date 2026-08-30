@@ -23,9 +23,13 @@ export interface TopbarProps {
  * `hiddenFrom="sm"` and the collapse control `visibleFrom="sm"`, because they do different things:
  * one opens a drawer over the content, the other narrows a rail beside it.
  *
- * The sign-out control is the third: it is the only way out of the shell until the avatar menu of
- * EPIC-007 exists, and a workspace with no way to leave it is not a workspace anybody should open
- * on a shared machine.
+ * The sign-out control is the only way out of the shell, and a workspace with no way to leave it is
+ * not a workspace anybody should open on a shared machine.
+ *
+ * This said «until the avatar menu of EPIC-007 exists» (corrected 2026-08-30). EPIC-007 shipped and
+ * delivered no avatar menu — there is no avatar anywhere in the client, and the avatar itself waits
+ * on EPIC-015 (file storage), which is what `epics/epic-012-employee-management/epic.md` records as
+ * its blocker. So sign-out is not a placeholder for a menu that is about to land.
  *
  * The language switch sits beside the colour scheme because they answer the same kind of question —
  * how this workspace should look and read — and because the public screens carry the same control

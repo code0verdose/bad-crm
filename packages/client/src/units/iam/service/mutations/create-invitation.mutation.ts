@@ -37,8 +37,10 @@ export const useCreateInvitation = (): UseMutationResult<
     // The answer carries `inviteUrl` — the single-use link that is the *whole* credential for
     // creating an account in this organization, and the only time it is ever shown. Without this it
     // stays in the `MutationCache` for the default five minutes after the screen unmounts, reachable
-    // from `self.__TSR_ROUTER__` by anything running on the page. The three other mutations that
-    // carry a secret set it for the same reason.
+    // from `self.__TSR_ROUTER__` by anything running on the page. Every other mutation that carries
+    // a secret — in its answer or in its arguments — sets it for the same reason; this said «the
+    // three other mutations», which was right at `349a10b` and is not now (2026-08-30). What they
+    // are: `grep -rln 'gcTime: 0' packages/client/src/units/*/service/mutations/*.ts`.
     gcTime: 0,
   });
 };

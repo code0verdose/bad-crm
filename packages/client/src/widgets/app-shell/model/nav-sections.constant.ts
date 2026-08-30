@@ -47,9 +47,15 @@ export const NAV_SECTIONS: readonly NavSection[] = [
       { to: '/dashboard', labelKey: 'nav.dashboard', icon: IconLayoutDashboard },
       /**
        * No `permission`, and that is the point rather than an omission: every operation behind
-       * `/settings/security` is self-service — the route registry marks all four `selfService:
-       * true`, because nobody could be denied the right to protect their own sign-in. An entry
-       * everybody sees is the correct entry here.
+       * `/settings/security` is self-service — the route registry marks each of them
+       * `selfService: true`, because nobody could be denied the right to protect their own sign-in.
+       * An entry everybody sees is the correct entry here.
+       *
+       * The count that used to stand here — «all four» — was written when there were four and went
+       * stale when STORY-013-04 added `POST /auth/2fa/disable` (2026-08-30). A number is not worth
+       * keeping when a command prints it:
+       * `grep -c 'auth/2fa' packages/server/src/presentation/http/route-registry.factory.ts`
+       * (subtract `2fa/verify`, which belongs to the login screen, not to this one).
        */
       { to: '/settings/security', labelKey: 'nav.settingsSecurity', icon: IconKey },
     ],

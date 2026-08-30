@@ -18,8 +18,13 @@ import { ROUTES, useRoute } from '@/shared/lib/use-route.hook.js';
 
 /**
  * The page, in reading order: what it is, what it looks like, what it replaces, what is inside it,
- * how it holds together, what it refuses to compromise on, proof of the last of those, the numbers,
- * it moving, how you run it, what it is made of, and the ask.
+ * how it holds together, what it refuses to compromise on, proof of the last of those, what the
+ * assistant may and may not see, the numbers, it moving, how you run it, what it is made of, and
+ * the ask.
+ *
+ * The `Ai` section was missing from that list until 2026-08-30: the sentence described twelve
+ * sections while `main` rendered thirteen. The list is prose, not a count — the sections themselves
+ * are the ones below, in the order they are written.
  *
  * **`key={locale}` remounts everything when the language changes, and that is load-bearing.** Half
  * the page reveals itself with `whileInView` and `once: true`, which detaches its observer after

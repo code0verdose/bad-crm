@@ -24,10 +24,15 @@ export interface ApiErrorInit {
    *
    * **The client translates by `code` and explains by `reason`**
    * (`docs/security/permission-model.md` §«Слой 5», `problem.serializer.ts`). The two are not
-   * interchangeable and neither replaces the other: the fifteen refusal reasons collapse into a
-   * handful of codes on the way out — `permission_not_granted` and `insufficient_acl_level` are
+   * interchangeable and neither replaces the other: the refusal reasons collapse into a handful of
+   * codes on the way out — `permission_not_granted` and `insufficient_acl_level` are
    * both `user_forbidden` to a client choosing a sentence — so a screen that has a better sentence
-   * for one particular refusal can only find it here. `errorMessage()` deliberately does not read
+   * for one particular refusal can only find it here. The count that used to stand here — «the
+   * fifteen refusal reasons» — was already wrong when `d29d0ae` wrote it: `DENY_REASONS` held
+   * twenty-two then and holds whatever this prints now (dropped 2026-08-30):
+   * `awk '/DENY_REASONS = \[/,/\] as const/' packages/shared/src/permissions/deny-reason.enums.ts
+   * | grep -cE "^\s+'"`. The sentence never needed the number.
+   * `errorMessage()` deliberately does not read
    * it: a generic mapping over reasons would change the wording of every existing toast, and the
    * caller that wants the precise sentence is the caller that knows what its operation was
    * (`rules/errors-and-toasts.mdc` §10).

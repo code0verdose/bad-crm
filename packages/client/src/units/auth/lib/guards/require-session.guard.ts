@@ -11,8 +11,12 @@ import { type GuardArgs } from './guard-args.types.js';
  *
  * **`unknown` is allowed through, and that is the point.** Between the first paint and the answer
  * of the session endpoint the client does not know who this is; treating that as «anonymous» would
- * bounce a signed-in user to the login screen on every reload — the flash `GUARD_SESSION_STATUSES`
- * documents. The authority is the server, which answers 401 to a request without a session
+ * bounce a signed-in user to the login screen on every reload — the flash
+ * `model/enums/session-status.enums.ts` documents, in the paragraph above `SESSION_STATUSES`.
+ * (This named `GUARD_SESSION_STATUSES` until 2026-08-30. Nothing declares that name: it was the
+ * guards' private copy of the list, and EPIC-006 merged it into `SESSION_STATUSES` when
+ * `units/session` was folded into this unit — `grep -rn GUARD_SESSION_STATUSES packages/client`
+ * now finds prose and no export.) The authority is the server, which answers 401 without a session
  * (invariant 2 in CLAUDE.md); this guard is UI, and its job is to not lie during the gap.
  *
  * The destination is carried in `search.redirect` so that signing in returns the user to the link

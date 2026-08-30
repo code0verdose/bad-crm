@@ -25,11 +25,18 @@
   --bcl-border-strong: #333a50;
   --bcl-text: #e9ecf5;
   --bcl-text-muted: #99a1ba;
-  /* Raised from #656d85 on 2026-08-16: that value measured 3.89:1 on --bcl-bg and 3.69:1 on
-     --bcl-surface, under the 4.5:1 WCAG 2.1 AA asks for text below 24px. It is used in fifty-odd
-     declarations and always at --bcl-text-xs (13px), so the 3:1 large-text exemption applied
-     nowhere — including the inactive half of the language switch and the disclaimer saying this is
-     a prototype. The value is set by the *lightest* surface it can land on, --bcl-surface-raised,
+  /* Raised from #656d85 on 2026-08-30: that value measured 3.89:1 on --bcl-bg and 3.69:1 on
+     --bcl-surface, under the 4.5:1 WCAG 2.1 AA asks for text below 24px. (The commit that made the
+     raise wrote "2026-08-16" here; it landed on 2026-08-30 — `git log --date=short -- this file`
+     prints the two dates this file has ever had. Corrected 2026-08-30.)
+     Every declaration using it is small text, so the 3:1 large-text exemption applies nowhere —
+     including the inactive half of the language switch and the disclaimer saying this is a
+     prototype. This used to say the token was used "in fifty-odd declarations and always at
+     --bcl-text-xs (13px)"; the count is right and the "always" was not — two rules set
+     --bcl-text-sm (15px) and six set a literal 0.65rem/0.6rem, all still well under 24px, so the
+     conclusion stands and the reason for it does not depend on one size. What uses it:
+     `grep -rn bcl-text-faint packages/landing/src --include='*.css' | grep -v tokens.css`.
+     The value is set by the *lightest* surface it can land on, --bcl-surface-raised,
      where it measures 4.73:1; on the page background it has 5.45:1. Held by
      test/theme/tokens.test.ts, which reads this file and checks every text colour against every
      surface rather than against one. */
@@ -89,9 +96,13 @@
   --bcl-text-xl: clamp(1.5rem, 1.2rem + 1.4vi, 2.25rem);
   --bcl-display-sm: clamp(2rem, 1.4rem + 3vi, 3.5rem);
   --bcl-display-md: clamp(2.5rem, 1.6rem + 4.6vi, 5rem);
-  /* Measured against the hero rather than chosen: three lines plus the eyebrow, the subtitle and
-     two buttons have to fit one 100svh screen at 1280×800, which is where the upper bound comes
-     from. A headline that needs the reader to scroll to find the button is a headline that lost. */
+  /* Measured against the hero rather than chosen: three title lines, the subtitle and two buttons
+     have to fit one 100svh screen at 1280×800, which is where the upper bound comes from. A
+     headline that needs the reader to scroll to find the button is a headline that lost.
+     This counted "three lines plus the eyebrow" until 2026-08-30, and was wrong from the first
+     commit: `8e36066` added this line and `shared/ui/section-heading.component.tsx`'s "There is no
+     eyebrow" in the same change. `grep -rni eyebrow packages/landing/src` finds only prose about
+     its absence. */
   --bcl-display-lg: clamp(2.25rem, 1.2rem + 3.6vi, 5rem);
   --bcl-leading-tight: 1.04;
   --bcl-leading-snug: 1.2;

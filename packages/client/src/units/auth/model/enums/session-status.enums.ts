@@ -19,9 +19,11 @@ export const SESSION_STATUSES = ['unknown', 'anonymous', 'authenticated'] as con
 export type SessionStatus = (typeof SESSION_STATUSES)[number];
 
 /**
- * Translation keys, never text. The catalogue itself lands with i18next (ADR-0019); what belongs
- * to the unit is the mapping from its own union to the key, so a new status cannot be added
- * without someone noticing that it has no label.
+ * Translation keys, never text. The catalogue itself is i18next's (ADR-0019) — it landed with
+ * EPIC-008, and all three sentences are in `shared/i18n/locales/{en,ru}/auth.json` under
+ * `session.status`; this said the catalogue «lands» until 2026-08-30. What belongs to the unit is
+ * the mapping from its own union to the key, so a new status cannot be added without someone
+ * noticing that it has no label.
  */
 export const SESSION_STATUS_LABEL_KEY: Record<SessionStatus, string> = {
   unknown: 'auth.session.status.unknown',

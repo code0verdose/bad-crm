@@ -19,7 +19,9 @@ const route = getRouteApi('/_authenticated/dashboard');
  * Composition only (`rules/frontend-fsd.mdc` rule 7): the header, and the widgets that fill the
  * page. No query, no mapping, no conditional beyond which widget appears.
  *
- * The real dashboard — one code path for all three roles — is EPIC-024. What has to survive from
+ * The real dashboard — one code path for all three roles — is EPIC-031
+ * (`epics/epic-031-dashboards/`, M6). This named EPIC-024 until 2026-08-30, which is
+ * `epic-024-search-meilisearch`: a wrong number, not a moved epic. What has to survive from
  * here is the shape: search parameters read from the URL, a single `h1` in `PageHeader`, widgets
  * doing the work.
  */

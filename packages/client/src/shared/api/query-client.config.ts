@@ -30,14 +30,23 @@ const isRetryable = (error: unknown): boolean => {
 };
 
 export interface AppQueryClientDeps {
-  /** Where a user-visible failure goes. `SharedLib.silentNotifications` until EPIC-007. */
+  /**
+   * Where a user-visible failure goes. This said «`SharedLib.silentNotifications` until EPIC-007»;
+   * EPIC-007 shipped and the application passes `SharedUi.notify`
+   * (`app/app-query-client.constant.ts`), so the silent port is now a test and headless-host
+   * implementation only (corrected 2026-08-30).
+   */
   readonly notify: NotificationPort;
   /** Where a failure goes that the user is not shown — every one of them. */
   readonly logError: (error: unknown) => void;
 }
 
 /**
- * The single `QueryClient` of the application, built by `app/providers.tsx`.
+ * The single `QueryClient` of the application, built by `app/app-query-client.constant.ts`.
+ *
+ * This named `app/providers.tsx` as the builder until 2026-08-30. `Providers` never built it — it
+ * takes a `QueryClient` prop and hands it to `QueryClientProvider`, which is the whole point of the
+ * factory below. `grep -rn createAppQueryClient packages/client/src` names the one caller.
  *
  * A factory rather than a module singleton because both of its dependencies belong to layers above
  * this one: the toaster is a component, and the log sink is decided by the shell. A singleton here

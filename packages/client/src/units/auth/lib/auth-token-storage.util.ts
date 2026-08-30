@@ -12,7 +12,9 @@
  * and this bundle cannot read.
  *
  * A module variable rather than a store: nothing renders from it. The UI renders from the session
- * state (`units/session`); this value exists for one middleware, on one code path.
+ * state in `service/stores/auth-session.store.ts`; this value exists for one middleware, on one
+ * code path. That pointer said `units/session` until 2026-08-30 — there is no such unit, and there
+ * has not been since EPIC-006 folded it into this one (`units/auth/index.ts`).
  */
 let accessToken: string | null = null;
 

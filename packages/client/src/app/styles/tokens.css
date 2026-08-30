@@ -54,7 +54,10 @@
     --bc-border: var(--mantine-color-dark-4);
     --bc-border-strong: var(--mantine-color-dark-2);
     --bc-text: var(--mantine-color-dark-0);
-    /* `dark-2` is 4.04:1 on `dark-7` — close, and still a fail. */
+    /* `dark-2` is 4.03:1 on `dark-7` — close, and still a fail. (Said 4.04 until 2026-08-30: the
+       pair measures 4.0393, and every ratio written in this repository is truncated to two places,
+       as `roundRatio` in `test/theme/contrast.util.ts` does. `app/theme/app-theme.config.ts`
+       already said 4.03 about the same pair.) */
     --bc-text-muted: var(--mantine-color-dark-1);
     --bc-danger-surface: var(--mantine-color-danger-9);
     --bc-danger-text: var(--mantine-color-danger-0);

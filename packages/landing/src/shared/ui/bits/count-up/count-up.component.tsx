@@ -25,7 +25,10 @@ export const CountUp = ({ to, locale, duration = 1.8, className }: CountUpProps)
   const value = useMotionValue(0);
   // Upstream's mapping from a wanted duration onto spring constants: a longer count is a softer,
   // less stiff spring. It is not an exact duration and does not need to be — what matters is that
-  // six tiles counting at once feel like one gesture.
+  // the tiles counting at once feel like one gesture. This said "six tiles" until 2026-08-30; the
+  // metrics grid has six tiles but only the four whose item is `kind: 'number'` reach this
+  // component — the other two are phrases, as `metrics.component.tsx` and `metric.types.ts` both
+  // already said. `grep -c "kind: 'number'"` over the metrics block of a dictionary prints it.
   const spring = useSpring(value, { damping: 20 + 40 / duration, stiffness: 100 / duration });
 
   const inView = useInView(ref, { once: true });

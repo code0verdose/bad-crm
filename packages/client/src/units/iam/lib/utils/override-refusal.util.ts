@@ -11,8 +11,11 @@ import { type NotificationRequest } from '@shared/lib';
  * DENY aimed at the owner is `owner_immutable` and a self-lockout is `self_lockout`, both codes of
  * their own with sentences of their own. The other two collapse: `permission_not_granted` and
  * `self_assignment_forbidden` are both answered `user_forbidden`
- * (`server/src/domain/access/access.errors.ts`), because the fifteen refusal reasons of the
- * permission model are deliberately not fifteen error codes. Translated by `code` alone they read
+ * (`server/src/domain/access/access.errors.ts`), because the refusal reasons of the permission
+ * model are deliberately not one error code each. («The fifteen refusal reasons … not fifteen
+ * error codes» stood here until 2026-08-30; `DENY_REASONS` in
+ * `packages/shared/src/permissions/deny-reason.enums.ts` holds twenty-two, and the point was never
+ * the number.) Translated by `code` alone they read
  * «you do not have access to this person» — true of neither: the caller may edit this person, and
  * what they may not do is hand out something they do not hold, or lift a DENY from themselves.
  *

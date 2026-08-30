@@ -5,8 +5,10 @@
  * (`rules/errors-and-toasts.mdc` §3), and it lives in `shared/api` — which must not import a
  * component, a theme or a vendor toast library. So it announces through this interface instead, and
  * whoever owns the screen provides the implementation: `shared/ui/toaster` over
- * `@mantine/notifications` once the design system lands (EPIC-007), and
- * `SharedLib.silentNotifications` until then.
+ * `@mantine/notifications`. Until 2026-08-30 this said the toaster arrived «once the design system
+ * lands (EPIC-007), and `SharedLib.silentNotifications` until then» — EPIC-007 shipped, and the
+ * application's implementation is the toaster (`app/app-query-client.constant.ts`).
+ * `SharedLib.silentNotifications` is now only for a host with no screen, and for tests.
  *
  * The shape is deliberately narrow. A notification carries a **key**, never text: the catalogue is
  * `errors.json` in both languages and the text is chosen at render time (`rules/i18n.mdc`). It

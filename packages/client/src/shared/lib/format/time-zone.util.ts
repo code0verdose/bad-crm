@@ -12,7 +12,13 @@ import { type Language } from '@shared/i18n';
  * always does in a browser; the fallback is for a runtime without full ICU, where rendering a
  * deadline in UTC and saying so is better than rendering nothing.
  *
- * `profile` is a parameter and always `undefined` today — the user profile arrives with EPIC-012.
+ * `profile` is a parameter and is still passed by nobody — every call site in `src` reads
+ * `SharedLib.resolveTimeZone()` with no argument (`grep -rn 'resolveTimeZone(' packages/client/src`).
+ *
+ * The reason given for that has expired (2026-08-30). This line said the profile «arrives with
+ * EPIC-012»; it has arrived — `EmployeeProfile.timezone` is edited on the profile form and
+ * `SessionUser.timezone` has been in the contract since EPIC-006. Wiring either into this call is
+ * open work, not a wait.
  */
 export const resolveTimeZone = (profile?: string): string => {
   if (profile !== undefined && profile !== '') return profile;

@@ -182,11 +182,16 @@ export const fetchInvitations = async (signal: AbortSignal): Promise<readonly In
 /**
  * Mints a new link for an invitation that already exists, and kills the previous one.
  *
- * No `idempotencyParams()`, and it is not an omission — the same reasoning as
- * `writePermissionOverride` above: this operation declares no `Idempotency-Key` parameter
- * (`header?: never` in the generated operation), so a call site claiming one would be claiming a
- * parameter the contract does not have. The middleware still attaches the header to every unsafe
- * request.
+ * It calls `idempotencyParams()`, because the contract requires the header here: the generated
+ * `operations['resendInvitation']` declares `header: { 'Idempotency-Key': … }`, not optional, for
+ * the same reason creation has always had it — minting a link twice hands out two credentials.
+ *
+ * This docstring said the opposite until 2026-08-30: «No `idempotencyParams()`, and it is not an
+ * omission … this operation declares no `Idempotency-Key` parameter (`header?: never`)». That was
+ * true until `869ee32` («fix(iam): make a resend idempotent by key») added the header to the spec
+ * and the call to the function below, and left the paragraph above them alone.
+ * `writePermissionOverride` really is `header?: never`, which is why it was cited — the two
+ * operations stopped being alike in that commit.
  *
  * No `signal`: it is issued by confirming a dialog, not by a changing query key.
  */

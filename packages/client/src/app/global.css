@@ -1,7 +1,13 @@
 /*
  * The only global stylesheet in the client (rules/design-system.mdc, rule 2): a reset, and nothing
- * that belongs to a component. Design tokens, the Mantine theme and `light-dark()` colours arrive
- * with STORY-004-03 — every value here is structural, so none of them is a token in disguise.
+ * that belongs to a component. Every value here is structural, so none of them is a token in
+ * disguise; the design tokens live in `app/styles/tokens.css` and the Mantine theme in
+ * `app/theme/app-theme.config.ts`.
+ *
+ * Corrected 2026-08-30. This said those two «arrive with STORY-004-03»; the story is `review` and
+ * both files have existed alongside this one since. It also promised `light-dark()` colours, and
+ * the product went the other way — `tokens.css` sets out at length why the two schemes are
+ * `@mixin light-root` / `@mixin dark-root` at the root instead.
  */
 
 *,

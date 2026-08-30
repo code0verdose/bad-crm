@@ -10,9 +10,13 @@ import { SettingsSecurityPage } from '@pages/settings-security';
  * `/settings/security` — wiring only (`rules/frontend-fsd.mdc` rule 10).
  *
  * **No permission guard, and none is possible.** Every operation behind this screen is
- * self-service: the route registry marks all four `selfService: true`, and the reason is written
- * there — nobody could be denied the right to protect their own sign-in. The session guard on
- * `_authenticated` is the whole gate.
+ * self-service: the route registry marks each of them `selfService: true`, and the reason is
+ * written there — nobody could be denied the right to protect their own sign-in. The session guard
+ * on `_authenticated` is the whole gate.
+ *
+ * This said «all four» (corrected 2026-08-30). It was four until STORY-013-04 added
+ * `POST /auth/2fa/disable`; the screen now stands on five —
+ * `grep -n 'auth/2fa' packages/client/src/units/auth/api/mfa.api.ts` lists the calls it makes.
  *
  * **No loader either**, so the route inherits the router's pending and error boundaries rather than
  * declaring its own. The screen reads one counter and it reads it from the component, because the

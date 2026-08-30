@@ -26,8 +26,12 @@ export const FSD_ALIASES = {
   '@shared/*': './src/shared/*',
   // No catch-all `@/*` on purpose. It existed, and it was a second spelling for every path the
   // layer aliases restrict: `@/units/session/service/hooks/...` reached straight into another
-  // unit's internals while ESLint stayed silent and all twenty architecture tests stayed green,
-  // because every guard matches the literal `@units/`. A catch-all next to layer aliases has no
+  // unit's internals while ESLint stayed silent and every architecture test stayed green, because
+  // every guard matches the literal `@units/`. («All twenty» stood here until 2026-08-30; no count
+  // of architecture tests matches it — at `ade50a3`, which wrote the sentence, there were seven
+  // files and fifty-five cases, and there are more of both now. `ls test/architecture/*.test.ts
+  // packages/client/test/architecture/*.test.ts` is the honest answer.) A catch-all next to layer
+  // aliases has no
   // use except to route around them.
 } as const satisfies Record<string, string>;
 

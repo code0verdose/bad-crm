@@ -25,8 +25,11 @@ export type ResetPasswordRequest = components['schemas']['ResetPasswordRequest']
  * Pure calls, one per operation — no cache, no state, no notification
  * (`rules/frontend-fsd.mdc` rule 9). Everything above them is `service/`.
  *
- * Both go through the one typed client, so they carry the access token, the idempotency key and the
- * 401-refresh-replay of `app/api-middleware.util.ts`. Sign-in is a public operation and needs none
+ * Every one of them goes through the one typed client, so they carry the access token, the
+ * idempotency key and the 401-refresh-replay of `app/api-middleware.util.ts`. («Both» stood here
+ * while the file held two calls; it holds six as of 2026-08-30 —
+ * `grep -c '^export const' packages/client/src/units/auth/api/auth.api.ts`.) Sign-in is a public
+ * operation and needs none
  * of that on the way out; it goes through the same door anyway, because a second client is a second
  * place for a rule to be forgotten. The one call that genuinely must **not** take that door is the
  * refresh itself — a 401 is what starts a refresh — and it has its own instance in
@@ -36,7 +39,8 @@ export type ResetPasswordRequest = components['schemas']['ResetPasswordRequest']
  * back as a value, while TanStack Query decides everything — the error state, the retry, the one
  * toast — on whether the function rejected.
  *
- * Neither takes an `AbortSignal`. `rules/tanstack-query.mdc` §4 asks for one in every `queryFn`,
+ * None of them takes an `AbortSignal` — «Neither» for the same reason as above.
+ * `rules/tanstack-query.mdc` §4 asks for one in every `queryFn`,
  * because a query is re-issued when its key changes and the previous answer must not overwrite the
  * fresh one; a mutation has no key and is not re-issued, and a signal parameter nothing passes is a
  * branch nothing covers. It arrives with the first caller that has something to cancel.

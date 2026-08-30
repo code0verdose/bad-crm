@@ -50,8 +50,13 @@ const fromNavigator = (): Language | undefined => {
  * visitor gets English from a product that has Russian; and something rather than nothing at the end,
  * because i18next answers a missing catalogue with raw keys.
  *
- * `profile` is a parameter and always `undefined` today — the user profile arrives with EPIC-012.
- * Taking it as an argument now makes that a call site instead of a rewrite.
+ * `profile` is a parameter and is still passed by nobody: `useLanguage` calls `resolveLanguage()`
+ * with no argument. Taking it as an argument makes wiring it a call site instead of a rewrite.
+ *
+ * The reason given for the gap has expired (2026-08-30). This line said the profile «arrives with
+ * EPIC-012»; the language has been stored server-side since EPIC-006's migration
+ * `20260728120000_auth_core_identity_and_sessions`, and `SessionUser.locale` carries it in the
+ * contract today. Reading it here is open work, not a wait.
  */
 export const resolveLanguage = (profile?: string): Language =>
   (isLanguage(profile) ? profile : undefined) ?? fromNavigator() ?? 'en';
