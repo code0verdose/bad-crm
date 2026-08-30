@@ -283,8 +283,16 @@ const measure = async (): Promise<Record<string, Record<string, string>>> => {
 
 interface Snapshot {
   readonly catalogSize: number;
+  /** Every key flagged `dangerous`, sorted — see the case at the bottom of this file. */
+  readonly dangerous: readonly string[];
   readonly matrix: Record<string, Record<string, string>>;
 }
+
+/** Every key the catalogue flags `dangerous`, sorted so the snapshot diff is stable. */
+const dangerousKeys = (): string[] =>
+  [...SharedPermissions.PERMISSIONS]
+    .filter((key) => SharedPermissions.PERMISSION_META[key].dangerous)
+    .sort();
 
 const readSnapshot = (): Snapshot => JSON.parse(readFileSync(SNAPSHOT, 'utf8')) as Snapshot;
 
@@ -344,7 +352,15 @@ describe('the permission matrix of the system roles', () => {
     if (changes.length > 0 && process.env['UPDATE_PERMISSION_MATRIX'] === '1') {
       writeFileSync(
         SNAPSHOT,
-        `${JSON.stringify({ catalogSize: SharedPermissions.PERMISSIONS.length, matrix: measured }, null, 2)}\n`,
+        `${JSON.stringify(
+          {
+            catalogSize: SharedPermissions.PERMISSIONS.length,
+            dangerous: dangerousKeys(),
+            matrix: measured,
+          },
+          null,
+          2,
+        )}\n`,
       );
     }
 
@@ -362,5 +378,24 @@ describe('the permission matrix of the system roles', () => {
    */
   it('was taken against the catalogue as it is today', () => {
     expect(readSnapshot().catalogSize).toBe(SharedPermissions.PERMISSIONS.length);
+  });
+
+  /**
+   * The `dangerous` set travels with the matrix for the same reason its size does, and for one more.
+   *
+   * The flag is not decoration: it is what makes an endpoint demand `X-Confirm-Dangerous` and what
+   * raises the severity of the trail entry. Losing it on a key is therefore a widening of access
+   * that the matrix above cannot see — the cell still says `allow`, because the caller still holds
+   * the permission; what changed is the ceremony around using it.
+   *
+   * `packages/shared/test/permissions/catalog.test.ts` states the rule for the bypass verbs
+   * (`override`, `unlock`, `reopen`) over the whole catalogue, and pins `organization:delete` by
+   * name. Everything else — `user:suspend`, `vault_item:export`, the rest — rests on this list: not
+   * a rule about which keys deserve the flag, but a record of which ones carry it, so that adding,
+   * removing or **moving** it between two keys is a diff a reviewer is shown. A count alone would
+   * survive the move.
+   */
+  it('was taken against the same set of dangerous keys', () => {
+    expect(readSnapshot().dangerous).toEqual(dangerousKeys());
   });
 });
