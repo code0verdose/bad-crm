@@ -16,7 +16,7 @@ import {
   truncateAll,
   type HarnessPools,
 } from './db-harness.util.js';
-import { ROW_FACTORIES } from './row-factories.util.js';
+import { insertRowBare, ROW_FACTORIES, TENANT_ROW_FACTORIES } from './row-factories.util.js';
 
 /**
  * Tenant isolation, table by table, against a real PostgreSQL.
@@ -29,6 +29,19 @@ import { ROW_FACTORIES } from './row-factories.util.js';
  * *nothing* is there — a connection under the wrong role, a fixture that failed to insert, a
  * `TRUNCATE` that ran late. The control is the assertion that fails in that case
  * (invariant 1 of CLAUDE.md; rules/tenancy-rls.mdc, 15).
+ *
+ * WHAT THIS FILE STILL DOES NOT SEE, and what does see it. The text of every policy is guarded
+ * separately, by `migrations.test.ts` and by `rls-catalog-check.test.ts`, so a policy shipped without
+ * `WITH CHECK` is caught there even where behaviour here would be ambiguous. What neither layer
+ * covers is a defect that leaves the policy text canonical and changes the row instead: a
+ * `BEFORE INSERT` trigger that rewrites `organization_id`, because `WITH CHECK` is evaluated **after**
+ * BEFORE-triggers have had their say and would then be checking a value the caller never sent. No
+ * catalog test looks at `pg_trigger` at all today — the tenant tables carry only `BEFORE UPDATE`
+ * `updated_at` triggers and one `ck_upo_not_owner` guard, so there is nothing to catch yet. OPEN;
+ * closed by an assertion over `pg_trigger` that pins the `BEFORE INSERT`/`BEFORE UPDATE` row triggers
+ * of the registry's tables to a named allow-list, in the file that already reads the catalog
+ * (`rls-catalog-check.test.ts`). The other shape — a lost `GRANT INSERT` — is already covered, by
+ * the `CONTROL: the tenant may insert its own row` case below.
  */
 
 const ORG_A = randomUUID();
@@ -255,10 +268,68 @@ describe.each(entries)('RLS · $table', ({ table, spec }) => {
     expect(visible).toBeLessThan(total);
   });
 
+  /**
+   * The one case that may not use the combined factory, and the one that twice looked like it was
+   * testing a policy while testing something else entirely.
+   *
+   * `asTenant` wraps its callback in a single transaction pinned to organization A, so a factory
+   * that created its own foreign-key parents inside it sent **the parent** across the boundary
+   * first: for `sessions` the `users` insert raised `42501` and the assertion below was satisfied
+   * before the `sessions` policy was ever consulted. Nine of the fourteen tables were in that
+   * position — `sessions`, `user_roles`, `team_members`, `invitations`, `password_reset_tokens`,
+   * `employee_profiles`, `mfa_recovery_codes`, `user_permission_overrides`, `role_permissions` — so
+   * for them the assertion said nothing at all about the table it named. The remaining five were
+   * masked by the second defect below, so between the two, `WITH CHECK (true)` was undetectable on
+   * every table in the registry.
+   *
+   * So the parents are seeded outside the boundary, as maintenance, and **in the foreign tenant**:
+   * the row that crosses is a fully valid row of organization B, which is what a cross-tenant write
+   * actually looks like. Seeding them in organization A instead would make the composite foreign key
+   * the thing that refuses, which is a different mechanism reported with a different SQLSTATE.
+   *
+   * And the statement is sent **without `RETURNING`**, which is the second trap this case fell into
+   * and the one worth remembering. `RETURNING` makes PostgreSQL read the new row back, and the read
+   * is checked against the policy through the same `ExecWithCheckOptions` path, raising `42501` with
+   * a message character-for-character identical to a `WITH CHECK` refusal — `new row violates
+   * row-level security policy for table "sessions"`. Measured, not reasoned: with
+   * `WITH CHECK (true)` shipped on `sessions`, `pg_policies` reported `with_check = true` and the
+   * insert was still refused, in exactly those words. The row had really been written; only the
+   * returning of it failed, and an application that inserts without `RETURNING` would have written
+   * into the other tenant unopposed. No assertion on the text can separate the two, so the text is
+   * not what changed — the statement is.
+   *
+   * The message is still asserted to name **this** table, because `42501` is raised by whichever
+   * relation the statement touched and a refusal coming from somewhere else is not this policy doing
+   * its job. Containment rather than equality, because a partitioned table may be reported through
+   * the leaf it routed to and that name starts with the parent's. `permission denied for table` stays
+   * acceptable, deliberately, for the reason the control above spells out.
+   */
   it('INSERT: a row belonging to another tenant is rejected by WITH CHECK', async () => {
-    const attempt = asTenant(pools.app, ORG_A, (client) => ROW_FACTORIES[table](client, ORG_B));
+    // The tenant root is its own tenant: the foreign row is an organization that is not the one in
+    // scope, and it must not be `ORG_B` either — that one already exists, and a duplicate key would
+    // refuse the write before the policy could (the mirror of the control above).
+    const foreignId = table === 'organizations' ? randomUUID() : ORG_B;
+
+    // And the tenant root cannot be written alone: `owner_id` is NOT NULL and points at a user of
+    // that same organization, so the bootstrap statement writes two rows. Left as it stands both of
+    // them would be foreign and `users` would be what refused — measured, not assumed: this case
+    // failed with `new row violates row-level security policy for table "users"` while the tenant
+    // root's own `WITH CHECK` went untested. Placing the owner in the organization already in scope
+    // leaves the organization row as the only one crossing. If its policy admitted the row, the
+    // composite foreign key would refuse it next, under a different SQLSTATE — red, as it should be.
+    const parents =
+      table === 'organizations'
+        ? { ownerOrganizationId: ORG_A }
+        : await asMaintenance(pools.owner, (client) =>
+            TENANT_ROW_FACTORIES[table].seed(client, foreignId),
+          );
+
+    const attempt = asTenant(pools.app, ORG_A, (client) =>
+      insertRowBare(client, TENANT_ROW_FACTORIES[table], foreignId, parents),
+    );
 
     await expect(attempt).rejects.toMatchObject({ code: RLS_VIOLATION });
+    await expect(attempt).rejects.toThrow(table);
   });
 
   it.runIf(spec.appUserPrivileges.includes('UPDATE'))(
