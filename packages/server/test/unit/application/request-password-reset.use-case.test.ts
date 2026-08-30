@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 
-import { describe, expect, it } from 'vitest';
+import { assert, describe, expect, it } from 'vitest';
 
 import { RequestPasswordResetUseCase } from '@/application/identity/use-cases/request-password-reset.use-case.js';
 import { SECURITY_EVENTS } from '@/domain/identity/security-event.constant.js';
@@ -140,11 +140,13 @@ describe('asking for a reset link', () => {
     await ask(harness, KNOWN);
 
     const token = harness.resetTokens.minted[0] ?? '';
-    const dispatched = harness.dispatcher.dispatched[0];
+    const [dispatched] = harness.dispatcher.dispatched;
 
-    expect(dispatched?.mail.text).toContain(`${APP_URL}/reset-password/${token}`);
-    expect(dispatched?.mail.html).toContain(`${APP_URL}/reset-password/${token}`);
-    expect(dispatched?.mail.subject).not.toContain(token);
+    assert(dispatched !== undefined, 'the message was handed to the dispatcher');
+
+    expect(dispatched.mail.text).toContain(`${APP_URL}/reset-password/${token}`);
+    expect(dispatched.mail.html).toContain(`${APP_URL}/reset-password/${token}`);
+    expect(dispatched.mail.subject).not.toContain(token);
   });
 
   /**

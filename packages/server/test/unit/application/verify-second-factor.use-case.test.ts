@@ -682,7 +682,7 @@ describe('a recovery code instead of an authenticator', () => {
     });
 
     expect(result.status).toBe('authenticated');
-    expect(test.codes.rows.get(id)?.usedAt).not.toBeNull();
+    expect(test.codes.rows.get(id)).toMatchObject({ usedAt: expect.any(Date) });
     expect(test.sessions.rows.size).toBe(1);
   });
 

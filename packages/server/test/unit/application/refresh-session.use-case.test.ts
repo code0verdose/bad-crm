@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { assert, describe, expect, it } from 'vitest';
 
 import { IssueSessionUseCase } from '@/application/identity/use-cases/issue-session.use-case.js';
 import {
@@ -147,13 +147,15 @@ describe('rotating a refresh token', () => {
 
     const rows = [...test.sessions.rows.values()];
 
+    assert(result !== null, 'the rotation was granted');
+
     expect(rows).toHaveLength(2);
-    expect(rows[0]?.revokedAt).not.toBeNull();
+    expect(rows[0]).toMatchObject({ revokedAt: expect.any(Date) });
     expect(rows[1]).toMatchObject({ familyId: FAMILY_ID, rotatedFromId: rows[0]?.id });
-    expect(result?.session.familyId).toBe(FAMILY_ID);
-    expect(result?.session.refreshToken).not.toBe(token);
-    expect(result?.user.email).toBe('ada@example.com');
-    expect(result?.organization.slug).toBe('bad-company');
+    expect(result.session.familyId).toBe(FAMILY_ID);
+    expect(result.session.refreshToken).not.toBe(token);
+    expect(result.user.email).toBe('ada@example.com');
+    expect(result.organization.slug).toBe('bad-company');
   });
 
   it('records the reason as a rotation rather than as a revocation', async () => {
@@ -223,9 +225,11 @@ describe('rotating a refresh token', () => {
 
       const [event] = reuseEvents(test.logger);
 
-      expect(event?.fields['event']).toBe('refresh_reuse_detected');
+      assert(event !== undefined, 'the reuse was written as a line');
+
+      expect(event.fields['event']).toBe('refresh_reuse_detected');
       // The prose is free to change; nothing may depend on it, including this suite.
-      expect(event?.message).not.toBe(SECURITY_EVENTS.refreshReuseDetected);
+      expect(event.message).not.toBe(SECURITY_EVENTS.refreshReuseDetected);
     });
 
     /**

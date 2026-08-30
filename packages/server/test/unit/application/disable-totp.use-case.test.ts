@@ -243,7 +243,10 @@ describe('refusing a wrong password — acceptance 3, a session is not the secon
 
     const state = await harness.enrollment.find(USER_ID);
 
-    expect(state?.enabledAt).not.toBeNull();
+    // The container, not the field: `find` answers `null` when the account has no enrolment left at
+    // all, `state?.enabledAt` was then `undefined`, and `expect(undefined).not.toBeNull()` passed on
+    // exactly the outcome this case forbids — a refusal that disabled the second factor anyway.
+    expect(state).toMatchObject({ enabledAt: expect.any(Date) });
     expect(harness.recoveryCodeRows.rows.size).toBe(1);
   });
 });
@@ -266,7 +269,7 @@ describe('refusing a missing or wrong code — acceptance 2', () => {
 
     const state = await harness.enrollment.find(USER_ID);
 
-    expect(state?.enabledAt).not.toBeNull();
+    expect(state).toMatchObject({ enabledAt: expect.any(Date) });
   });
 
   it('answers reauthentication_required for an unknown recovery code', async () => {
@@ -302,7 +305,7 @@ describe('refusing a missing or wrong code — acceptance 2', () => {
 
     const state = await harness.enrollment.find(USER_ID);
 
-    expect(state?.enabledAt).not.toBeNull();
+    expect(state).toMatchObject({ enabledAt: expect.any(Date) });
   });
 });
 
@@ -416,7 +419,7 @@ describe('a concurrent request racing the TOTP counter', () => {
 
     const state = await harness.enrollment.find(USER_ID);
 
-    expect(state?.enabledAt).not.toBeNull();
+    expect(state).toMatchObject({ enabledAt: expect.any(Date) });
   });
 });
 

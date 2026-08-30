@@ -68,11 +68,19 @@ describe('the seeded organizations are two, and disjoint', () => {
     }
   });
 
-  /** Two languages and two currencies, so a formatting defect is visible in the fixture itself. */
+  /**
+   * Two languages and two currencies, so a formatting defect is visible in the fixture itself.
+   *
+   * Counted over the whole fixture rather than compared pairwise. `first?.x !== second?.x` was
+   * satisfied by a fixture holding a single organization — `second` is then `undefined`, which
+   * differs from anything — so the claim «the two differ» passed on a fixture that had no two.
+   */
   it('differs in locale and currency between the two', () => {
-    const [first, second] = SEED_ORGANIZATIONS;
+    const currencies = SEED_ORGANIZATIONS.map((organization) => organization.defaultCurrency);
+    const locales = SEED_ORGANIZATIONS.map((organization) => organization.owner.locale);
 
-    expect(first?.defaultCurrency).not.toBe(second?.defaultCurrency);
-    expect(first?.owner.locale).not.toBe(second?.owner.locale);
+    expect(SEED_ORGANIZATIONS).toHaveLength(2);
+    expect(new Set(currencies).size).toBe(2);
+    expect(new Set(locales).size).toBe(2);
   });
 });

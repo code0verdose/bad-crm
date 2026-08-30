@@ -1,5 +1,5 @@
 import { type PrismaClient } from '@prisma/client';
-import { afterAll, beforeAll, beforeEach, describe, expect, inject, it } from 'vitest';
+import { afterAll, assert, beforeAll, beforeEach, describe, expect, inject, it } from 'vitest';
 
 import { SharedPermissions } from '@bad-crm/shared';
 
@@ -126,8 +126,9 @@ describe('seeding the permission catalogue', () => {
 
     const legacy = await asMigrator.permission.findUnique({ where: { key: 'legacy:thing' } });
 
-    expect(legacy).not.toBeNull();
-    expect(legacy?.deprecatedAt).not.toBeNull();
+    assert(legacy !== null, 'the key that left the code stayed in the catalogue');
+
+    expect(legacy.deprecatedAt).not.toBeNull();
     expect(SharedPermissions.isPermissionKey('legacy:thing')).toBe(false);
   });
 

@@ -1,7 +1,7 @@
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 
 import { GenericContainer, Wait, type StartedTestContainer } from 'testcontainers';
-import { afterAll, beforeAll, beforeEach, describe, expect, inject, it } from 'vitest';
+import { afterAll, assert, beforeAll, beforeEach, describe, expect, inject, it } from 'vitest';
 
 import { type LoggerPort } from '@/application/platform/ports/logger.port.js';
 import { ChangePasswordUseCase } from '@/application/identity/use-cases/change-password.use-case.js';
@@ -338,11 +338,15 @@ describe('asking for a reset link, end to end', () => {
       ),
     );
 
+    const [row] = stored.rows;
+
+    assert(row !== undefined, 'the request stored a reset token for this user');
+
     expect(token).not.toBe('');
-    expect(stored.rows[0]?.token_hash.toString('hex')).toBe(
+    expect(row.token_hash.toString('hex')).toBe(
       createHash('sha256').update(token, 'utf8').digest('hex'),
     );
-    expect(stored.rows[0]?.token_hash.toString('utf8')).not.toContain(token);
+    expect(row.token_hash.toString('utf8')).not.toContain(token);
 
     await harness.close();
   });
@@ -398,15 +402,17 @@ describe('spending the link, end to end', () => {
       ),
     );
 
-    expect(after.rows[0]?.used_at).not.toBeNull();
-    expect(after.rows[0]?.revoked_reason).toBe('PASSWORD_CHANGED');
+    const [consumed] = after.rows;
+
+    assert(consumed !== undefined, 'the consumed token and its owner are still there');
+
+    expect(consumed.used_at).not.toBeNull();
+    expect(consumed.revoked_reason).toBe('PASSWORD_CHANGED');
 
     const hasher = new Argon2PasswordHasher(ARGON2);
 
-    await expect(hasher.verify(after.rows[0]?.password_hash ?? '', NEW_PASSWORD)).resolves.toBe(
-      true,
-    );
-    await expect(hasher.verify(after.rows[0]?.password_hash ?? '', PASSWORD)).resolves.toBe(false);
+    await expect(hasher.verify(consumed.password_hash, NEW_PASSWORD)).resolves.toBe(true);
+    await expect(hasher.verify(consumed.password_hash, PASSWORD)).resolves.toBe(false);
 
     await harness.close();
   });

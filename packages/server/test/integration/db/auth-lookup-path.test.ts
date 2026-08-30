@@ -1,6 +1,6 @@
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, assert, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
 import {
   appUserPrivileges,
@@ -363,11 +363,16 @@ describe('who may call the resolvers', () => {
         WHERE p.oid = 'auth_lookup_session(bytea)'::regprocedure`,
     );
 
-    expect(rows[0]?.owner).toBe('app_auth_definer');
+    const [resolver] = rows;
+
+    assert(resolver !== undefined, 'the resolver is still in pg_proc');
+    // A repaired function is owned by `app_auth_definer` and carries the grant to `app_auth`, so a
+    // null ACL here would mean the repair granted nothing at all.
+    assert(resolver.acl !== null, 'the repaired resolver carries an ACL');
+
+    expect(resolver.owner).toBe('app_auth_definer');
     // An entry that *starts* with `=` is the grant to PUBLIC; `app_auth=X/…` also contains `=X/`.
-    expect((rows[0]?.acl ?? '').replace(/[{}]/g, '').split(',')).not.toContain(
-      '=X/app_auth_definer',
-    );
+    expect(resolver.acl.replace(/[{}]/g, '').split(',')).not.toContain('=X/app_auth_definer');
     await expect(
       pools.app.query('SELECT * FROM auth_lookup_session($1)', [fixture.refreshHash]),
     ).rejects.toThrow(/permission denied/i);
@@ -508,12 +513,18 @@ describe('a SECURITY DEFINER function this project does not own', () => {
           WHERE p.oid = 'unrelated_helper()'::regprocedure`,
       );
 
+      const [helper] = rows;
+
+      assert(helper !== undefined, 'the untouched function is still in pg_proc');
+
       // It still refuses to *act* on it: the run stops, the object is left exactly as found.
-      expect(rows[0]?.owner, 'ownership was taken over').toBe('app_migrator');
+      expect(helper.owner, 'ownership was taken over').toBe('app_migrator');
+      // `proacl` is null on a function nobody has granted anything on — the state this function was
+      // created in, and itself the claim being made. Only a non-null ACL has entries to read.
       expect(
-        rows[0]?.acl ?? '',
+        helper.acl === null ? [] : helper.acl.replace(/[{}]/g, '').split(','),
         'app_auth was given EXECUTE on a function that is not a resolver',
-      ).not.toContain('app_auth=');
+      ).not.toContainEqual(expect.stringContaining('app_auth='));
     } finally {
       await pools.owner.query('DROP FUNCTION unrelated_helper()');
       await reapplyGrants(pools.owner);

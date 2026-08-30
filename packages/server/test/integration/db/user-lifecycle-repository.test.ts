@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 
 import { PrismaClient } from '@prisma/client';
-import { afterAll, beforeAll, beforeEach, describe, expect, inject, it } from 'vitest';
+import { afterAll, assert, beforeAll, beforeEach, describe, expect, inject, it } from 'vitest';
 
 import { PrismaUserLifecycleRepository } from '@/infrastructure/persistence/prisma/user-lifecycle.repository.js';
 import { withTenant } from '@/infrastructure/persistence/prisma/tenant.context.js';
@@ -193,12 +193,15 @@ describe('switching the account off', () => {
 
     const after = await accountState(seeded.userId);
 
+    assert(before !== undefined, 'the account exists before the switch');
+    assert(after !== undefined, 'the account exists after the switch');
+
     expect(before).toMatchObject({ status: 'ACTIVE', terminated_at: null });
     // The composite key `organizationId_id` matched a row — a spelling PostgreSQL would refuse
     // resolves to zero rows and a `P2025`, not to a quiet no-op.
-    expect(after?.status).toBe('SUSPENDED');
-    expect(after?.permissions_version).toBe((before?.permissions_version ?? 0) + 1);
-    expect(after?.terminated_at).not.toBeNull();
+    expect(after.status).toBe('SUSPENDED');
+    expect(after.permissions_version).toBe(before.permissions_version + 1);
+    expect(after.terminated_at).not.toBeNull();
   });
 
   it('returns the memberships it removed, with the role that disappears with the row', async () => {

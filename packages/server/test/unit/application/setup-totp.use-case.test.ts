@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { assert, describe, expect, it } from 'vitest';
 
 import { SetupTotpUseCase } from '@/application/identity/use-cases/setup-totp.use-case.js';
 import {
@@ -76,8 +76,7 @@ describe('drafting a TOTP secret', () => {
 
     const state = await harness.enrollment.find(USER_ID);
 
-    expect(state?.enabledAt).toBeNull();
-    expect(state?.draftExpiresAt).not.toBeNull();
+    expect(state).toMatchObject({ enabledAt: null, draftExpiresAt: expect.any(Date) });
   });
 
   it('encrypts the secret before writing it — the stored value is never the plaintext', async () => {
@@ -86,8 +85,10 @@ describe('drafting a TOTP secret', () => {
     const result = await harness.useCase.execute({ actor: ACTOR });
     const state = await harness.enrollment.find(USER_ID);
 
-    expect(state?.secretEnc).not.toBe(result.base32Secret);
-    expect(harness.fields.decrypt(state?.secretEnc ?? null)).toBe(result.base32Secret);
+    assert(state !== null, 'the draft was written');
+
+    expect(state.secretEnc).not.toBe(result.base32Secret);
+    expect(harness.fields.decrypt(state.secretEnc)).toBe(result.base32Secret);
   });
 
   it('renders the otpauth URI as a QR code and returns the manual-entry text too', async () => {

@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { assert, describe, expect, it } from 'vitest';
 
 import { type SessionRevokedReason } from '@/application/identity/ports/session-repository.port.js';
 import { ConfirmPasswordResetUseCase } from '@/application/identity/use-cases/confirm-password-reset.use-case.js';
@@ -178,7 +178,7 @@ describe('spending a reset token', () => {
     expect(harness.users.rehashed).toEqual([
       { userId: USER_ID, passwordHash: `$argon2id$hashed:${NEW_PASSWORD}` },
     ]);
-    expect([...harness.tokens.rows.values()][0]?.usedAt).not.toBeNull();
+    expect([...harness.tokens.rows.values()]).toMatchObject([{ usedAt: expect.any(Date) }]);
   });
 
   /**
@@ -288,9 +288,10 @@ describe('a token that cannot be spent', () => {
       (entry) => entry.fields['event'] === SECURITY_EVENTS.passwordResetRefused,
     );
 
-    expect(line).toBeDefined();
-    expect(Object.keys(line?.fields ?? {})).not.toContain('reason');
-    expect(Object.keys(line?.fields ?? {})).not.toContain('outcome');
+    assert(line !== undefined, 'the refusal was logged');
+
+    expect(Object.keys(line.fields)).not.toContain('reason');
+    expect(Object.keys(line.fields)).not.toContain('outcome');
   });
 });
 
@@ -415,7 +416,7 @@ describe('the cost of a token that cannot be spent', () => {
       'reset-token:consume',
       'password:hash',
     ]);
-    expect([...harness.tokens.rows.values()][0]?.usedAt).not.toBeNull();
+    expect([...harness.tokens.rows.values()]).toMatchObject([{ usedAt: expect.any(Date) }]);
   });
 });
 

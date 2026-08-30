@@ -45,11 +45,16 @@ describe('the legal pages', () => {
     expect(globalThis.location.pathname).toBe(ROUTES.home);
   });
 
-  /** CONTROL: the three documents are three documents, not one rendered thrice. */
+  /**
+   * CONTROL: the three documents are three documents, not one rendered thrice.
+   *
+   * The heading is asserted to exist and to carry text. `expect(heading?.textContent).not.toBe('')`
+   * was satisfied by a page that rendered no `h1` at all — `null?.textContent` is `undefined`, and
+   * `undefined` is not `''` — so the control passed on exactly the outcome it exists to catch.
+   */
   it.each(['terms', 'privacy', 'cookies'] as const)('renders the %s document', (document) => {
     const { container } = mount(document);
-    const heading = container.querySelector('h1');
 
-    expect(heading?.textContent).not.toBe('');
+    expect(container.querySelector('h1')).toHaveTextContent(/\S/);
   });
 });

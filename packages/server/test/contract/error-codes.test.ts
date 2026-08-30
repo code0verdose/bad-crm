@@ -1,6 +1,6 @@
 import { DENY_REASONS } from '@bad-crm/shared/permissions';
 import { ERROR_CODES, VALIDATION_ISSUE_CODES } from '@bad-crm/shared/errors';
-import { describe, expect, it } from 'vitest';
+import { assert, describe, expect, it } from 'vitest';
 
 import { readOpenApiDocument, schemaEnum } from './openapi-document.util.js';
 
@@ -51,9 +51,11 @@ describe('the error catalog and the published enum are the same list', () => {
     const problem = readOpenApiDocument().components?.schemas?.['Problem'] as
       { required?: string[]; properties?: Record<string, unknown> } | undefined;
 
-    expect(problem?.required?.sort()).toEqual(['code', 'requestId', 'status', 'title', 'type']);
-    expect(Object.keys(problem?.properties ?? {})).toContain('errors');
-    expect(Object.keys(problem?.properties ?? {})).toContain('reason');
-    expect(problem?.properties).not.toHaveProperty('instance');
+    assert(problem !== undefined, 'the published contract defines the Problem schema');
+
+    expect(problem.required?.sort()).toEqual(['code', 'requestId', 'status', 'title', 'type']);
+    expect(Object.keys(problem.properties ?? {})).toContain('errors');
+    expect(Object.keys(problem.properties ?? {})).toContain('reason');
+    expect(problem.properties).not.toHaveProperty('instance');
   });
 });

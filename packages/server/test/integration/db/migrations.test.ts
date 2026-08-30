@@ -81,9 +81,11 @@ describe('prisma migrate deploy', () => {
     );
 
     expect(rows.length).toBeGreaterThan(0);
-    expect(rows[0]?.migration_name).toMatch(/init_tenancy_and_rls$/);
-    expect(rows[0]?.finished_at).not.toBeNull();
-    expect(rows[0]?.rolled_back_at).toBeNull();
+    expect(rows[0]).toMatchObject({
+      migration_name: expect.stringMatching(/init_tenancy_and_rls$/),
+      finished_at: expect.any(Date),
+      rolled_back_at: null,
+    });
   });
 
   it('is a no-op when run a second time', async () => {

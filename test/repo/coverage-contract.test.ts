@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { assert, describe, expect, it } from 'vitest';
 
 import clientConfig from '../../packages/client/vitest.config.js';
 import landingConfig from '../../packages/landing/vitest.config.js';
@@ -126,7 +126,13 @@ describe('thresholds match rules/testing.mdc §7', () => {
 
   it('never lets a threshold be rewritten by a passing run', () => {
     for (const name of Object.keys(CONFIGS)) {
-      expect(coverageOf(CONFIGS[name]).thresholds?.autoUpdate, name).not.toBe(true);
+      // The thresholds block is asserted present before `autoUpdate` is read: a config that lost
+      // its thresholds entirely has no `autoUpdate` either, and «autoUpdate is not true» was
+      // satisfied by the config having no thresholds to rewrite in the first place.
+      const thresholds = coverageOf(CONFIGS[name]).thresholds;
+
+      assert(thresholds !== undefined, `${name} declares coverage thresholds`);
+      expect(thresholds.autoUpdate, name).not.toBe(true);
     }
   });
 });

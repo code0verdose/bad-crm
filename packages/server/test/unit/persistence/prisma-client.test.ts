@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { assert, describe, expect, it } from 'vitest';
 
 import {
   SLOW_QUERY_THRESHOLD_MS,
@@ -65,6 +65,11 @@ describe('slow query logging', () => {
    * The statement text is diagnosable and safe — its values are `$1` placeholders. `event.params`
    * is the opposite: it carries the bound values, which include password hashes, token hashes and
    * encrypted blobs. It must never reach a log line (CLAUDE.md, «Что нельзя логировать никогда»).
+   *
+   * The line is asserted present before its fields are read. `Object.keys(lines[0]?.fields ?? {})`
+   * was an empty list whenever nothing was logged at all, and «the keys do not include `params`»
+   * held over it — the assertion guarding the parameters was satisfied by a logger that had
+   * stopped writing.
    */
   it('logs the statement but never its bound parameters', () => {
     const { lines, logger } = recordingLogger();
@@ -72,11 +77,15 @@ describe('slow query logging', () => {
 
     createSlowQueryLogger(logger, 100)(event);
 
-    const serialised = JSON.stringify(lines[0]);
+    const [line] = lines;
+
+    assert(line !== undefined, 'the slow query produced a line');
+
+    const serialised = JSON.stringify(line);
 
     expect(serialised).toContain('organization_id = $1');
     expect(serialised).not.toContain('018f4a3b-0000-7000-8000-000000000001');
-    expect(Object.keys(lines[0]?.fields ?? {})).not.toContain('params');
+    expect(Object.keys(line.fields)).not.toContain('params');
   });
 
   it('defaults the threshold instead of leaving it to each call site', () => {

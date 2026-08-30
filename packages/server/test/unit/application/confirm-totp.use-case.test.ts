@@ -134,8 +134,7 @@ describe('confirming a correct code', () => {
 
     const state = await harness.enrollment.find(USER_ID);
 
-    expect(state?.enabledAt).not.toBeNull();
-    expect(state?.lastCounter).toBe(5);
+    expect(state).toMatchObject({ enabledAt: expect.any(Date), lastCounter: 5 });
   });
 
   it('records user.mfa_enabled in the audit trail, with the caller’s address, inside the transaction', async () => {

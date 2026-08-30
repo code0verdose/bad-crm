@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { assert, describe, expect, it } from 'vitest';
 
 import { type SessionRevokedReason } from '@/application/identity/ports/session-repository.port.js';
 import { ChangePasswordUseCase } from '@/application/identity/use-cases/change-password.use-case.js';
@@ -234,9 +234,14 @@ describe('changing a password', () => {
 
     expect(harness.mail.sent).toEqual([]);
     expect(harness.dispatcher.dispatched).toHaveLength(1);
-    expect(harness.dispatcher.dispatched[0]?.mail.to).toBe('ada@example.com');
-    expect(harness.dispatcher.dispatched[0]?.mail.text).not.toContain(NEW_PASSWORD);
-    expect(harness.dispatcher.dispatched[0]?.mail.text).not.toContain(CURRENT_PASSWORD);
+
+    const [notice] = harness.dispatcher.dispatched;
+
+    assert(notice !== undefined, 'the notice was handed to the dispatcher');
+
+    expect(notice.mail.to).toBe('ada@example.com');
+    expect(notice.mail.text).not.toContain(NEW_PASSWORD);
+    expect(notice.mail.text).not.toContain(CURRENT_PASSWORD);
   });
 
   it('clears the attempt budget once the password has changed', async () => {

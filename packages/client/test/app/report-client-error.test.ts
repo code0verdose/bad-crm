@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, assert, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { SharedApi } from '@shared';
 
@@ -63,7 +63,10 @@ describe('the route in the report', () => {
       routeTemplate: () => '/reset-password/$token',
     });
 
-    expect(JSON.stringify(send.mock.calls[0]?.[0])).not.toContain(inTheAddressBar);
+    const report = send.mock.calls[0]?.[0];
+
+    assert(report !== undefined, 'a report was sent');
+    expect(JSON.stringify(report)).not.toContain(inTheAddressBar);
   });
 
   it('falls back to a placeholder, never to the pathname, when no route is matched', () => {
@@ -101,8 +104,11 @@ describe('reporting a failure', () => {
 
     reportClientError('just a string', 'abc12345');
 
-    expect(send.mock.calls[0]?.[0]).toMatchObject({ message: 'just a string' });
-    expect(send.mock.calls[0]?.[0]).not.toHaveProperty('stack');
+    const report = send.mock.calls[0]?.[0];
+
+    assert(report !== undefined, 'a report was sent');
+    expect(report).toMatchObject({ message: 'just a string' });
+    expect(report).not.toHaveProperty('stack');
   });
 
   /**

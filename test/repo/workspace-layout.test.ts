@@ -1,7 +1,7 @@
 import { join } from 'node:path';
 
 import { parse as parseYaml } from 'yaml';
-import { describe, expect, it } from 'vitest';
+import { assert, describe, expect, it } from 'vitest';
 
 import rootVitestConfig from '../../vitest.config.js';
 import { importedRepoFiles, matchesGlob, unhashedReads } from './hashed-inputs.util.js';
@@ -157,8 +157,14 @@ describe('turbo pipeline', () => {
   it('keeps typecheck and build as separate tasks', () => {
     const tasks = turbo().tasks;
 
+    // `tasks.typecheck?.outputs ?? []` said nothing when the task was gone: the fallback made the
+    // assertion pass over an empty list rather than over the task's declared outputs.
+    const typecheck = tasks.typecheck;
+
+    assert(typecheck?.outputs !== undefined, 'turbo declares outputs for typecheck');
+
     expect(tasks.build?.outputs).toContain('dist/**');
-    expect(tasks.typecheck?.outputs ?? []).not.toContain('dist/**');
+    expect(typecheck.outputs).not.toContain('dist/**');
   });
 
   it.each(['build', 'typecheck', 'test'])('builds upstream packages before %s', (task) => {

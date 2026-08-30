@@ -596,7 +596,14 @@ describe('POST /api/v1/auth/logout', () => {
       .set('Cookie', session.cookie)
       .expect(204);
 
-    expect(test.sessions.rows.get(session.sessionId)?.revokedAt).not.toBeNull();
+    // The row is asserted present, not just non-null in one field: a logout that deleted the
+    // session instead of revoking it leaves `rows.get(...)` undefined, and the older
+    // `?.revokedAt` read then satisfied `not.toBeNull()` with the very outcome forbidden here —
+    // sign-out has to leave a revoked row behind, because the family is what refresh reuse is
+    // detected against.
+    expect(test.sessions.rows.get(session.sessionId)).toMatchObject({
+      revokedAt: expect.any(Date),
+    });
   });
 
   it('accepts the cookie when the bearer token no longer verifies', async () => {

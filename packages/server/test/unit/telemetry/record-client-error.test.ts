@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { assert, describe, expect, it, vi } from 'vitest';
 
 import { RateLimitedError } from '../../../src/domain/shared/errors/app.errors.js';
 import {
@@ -17,11 +17,13 @@ const REPORT = {
   requestId: 'req-7',
 };
 
-const recordingLogger = (): {
-  logger: LoggerPort;
-  warnings: { fields: LogFields; message: string }[];
-} => {
-  const warnings: { fields: LogFields; message: string }[] = [];
+interface Warning {
+  readonly fields: LogFields;
+  readonly message: string;
+}
+
+const recordingLogger = (): { logger: LoggerPort; warnings: Warning[] } => {
+  const warnings: Warning[] = [];
   const logger: LoggerPort = {
     debug: () => undefined,
     info: () => undefined,
@@ -31,6 +33,20 @@ const recordingLogger = (): {
   };
 
   return { logger, warnings };
+};
+
+/**
+ * The one warning the use case wrote, as a value rather than as an `| undefined` read.
+ *
+ * `warnings[0]?.fields` reads `undefined` when nothing was logged, and a claim about a field the
+ * line must not carry is then satisfied by there being no line.
+ */
+const onlyWarning = (warnings: Warning[]): Warning => {
+  const [warning, ...rest] = warnings;
+
+  assert(warning !== undefined && rest.length === 0, 'the use case wrote exactly one warning');
+
+  return warning;
 };
 
 const limiterAllowing = (allowed: boolean): RateLimitPort =>
@@ -92,8 +108,8 @@ describe('recording a browser failure', () => {
       { userId: undefined, ipAddress: undefined },
     );
 
-    expect(warnings[0]?.fields).not.toHaveProperty('clientStack');
-    expect(warnings[0]?.fields).not.toHaveProperty('clientRequestId');
+    expect(onlyWarning(warnings).fields).not.toHaveProperty('clientStack');
+    expect(onlyWarning(warnings).fields).not.toHaveProperty('clientRequestId');
   });
 
   /**

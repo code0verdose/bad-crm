@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 
-import { describe, expect, it } from 'vitest';
+import { assert, describe, expect, it } from 'vitest';
 
 import { ConsumeRecoveryCodeUseCase } from '@/application/identity/use-cases/consume-recovery-code.use-case.js';
 import { RecoveryCodeMatcher } from '@/application/identity/use-cases/recovery-code-matcher.use-case.js';
@@ -108,7 +108,7 @@ describe('consuming a valid code', () => {
     });
 
     expect(spentId).toBe(id);
-    expect(harness.codes.rows.get(id)?.usedAt).not.toBeNull();
+    expect(harness.codes.rows.get(id)).toMatchObject({ usedAt: expect.any(Date) });
   });
 
   it('normalizes the presented code (dashes, case, whitespace) before matching', async () => {
@@ -122,7 +122,10 @@ describe('consuming a valid code', () => {
       ipAddress: IP_ADDRESS,
     });
 
-    expect(harness.codes.rows.get(spentId)?.usedAt).not.toBeNull();
+    // The row, not its field: a use-case that answered an id it never spent made
+    // `rows.get(spentId)` `undefined`, and `expect(undefined).not.toBeNull()` passed — the case
+    // about matching a normalized code proved nothing about the row it claims was matched.
+    expect(harness.codes.rows.get(spentId)).toMatchObject({ usedAt: expect.any(Date) });
   });
 
   it('records user.mfa_recovery_code_used, with the caller’s address', async () => {
@@ -311,14 +314,16 @@ describe('the notice to the account owner', () => {
     harness.seedCode(VALID_CODE);
     await harness.useCase.execute({ actor: ACTOR, code: VALID_CODE, ipAddress: IP_ADDRESS });
 
-    const mail = harness.dispatcher.dispatched[0]?.mail;
+    const [notice] = harness.dispatcher.dispatched;
 
-    expect(mail?.subject).toContain('резервный код');
-    expect(mail?.text).toContain(`${APP_URL}/settings/security`);
+    assert(notice !== undefined, 'the notice was handed to the dispatcher');
+
+    const { mail } = notice;
+
+    expect(mail.subject).toContain('резервный код');
+    expect(mail.text).toContain(`${APP_URL}/settings/security`);
     // A notice, never the secret it is about — the restraint `renderMfaChangedMail` documents.
-    expect(`${mail?.subject ?? ''}${mail?.text ?? ''}${mail?.html ?? ''}`).not.toContain(
-      VALID_CODE,
-    );
+    expect([mail.subject, mail.text, mail.html].join('')).not.toContain(VALID_CODE);
   });
 
   it('sends nothing when the code was refused', async () => {
@@ -348,7 +353,7 @@ describe('the notice to the account owner', () => {
     await expect(
       harness.useCase.execute({ actor: ACTOR, code: VALID_CODE, ipAddress: IP_ADDRESS }),
     ).resolves.toBe(id);
-    expect(harness.codes.rows.get(id)?.usedAt).not.toBeNull();
+    expect(harness.codes.rows.get(id)).toMatchObject({ usedAt: expect.any(Date) });
     expect(harness.dispatcher.dispatched).toEqual([]);
   });
 });

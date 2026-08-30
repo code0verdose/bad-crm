@@ -1,6 +1,7 @@
 import {
   afterAll,
   afterEach,
+  assert,
   beforeAll,
   describe,
   expect,
@@ -51,6 +52,18 @@ describe('handing the file over', () => {
   let clicked: HTMLAnchorElement | undefined;
   let click: MockInstance<() => void>;
 
+  /**
+   * The anchor the utility clicked, asserted present before any of its fields are read: a utility
+   * that clicked nothing has to fail here rather than hand `undefined` to the assertions below.
+   */
+  const clickedAnchor = (): HTMLAnchorElement => {
+    const anchor = clicked;
+
+    assert(anchor !== undefined, 'the utility clicked an anchor');
+
+    return anchor;
+  };
+
   beforeAll(() => {
     URL.createObjectURL = createObjectURL;
     URL.revokeObjectURL = revokeObjectURL;
@@ -84,8 +97,8 @@ describe('handing the file over', () => {
   it('puts the codes in a blob and names the file after the product', async () => {
     downloadRecoveryCodes(CODES, HEADER);
 
-    expect(clicked?.download).toBe(RECOVERY_CODES_FILE_NAME);
-    expect(clicked?.getAttribute('href')).toBe('blob:bad-crm/recovery');
+    expect(clickedAnchor().download).toBe(RECOVERY_CODES_FILE_NAME);
+    expect(clickedAnchor().getAttribute('href')).toBe('blob:bad-crm/recovery');
 
     const blob = createObjectURL.mock.calls[0]?.[0] as unknown as Blob;
 
@@ -103,8 +116,10 @@ describe('handing the file over', () => {
   it('never puts a code inside the URL, and lets the handle go', () => {
     downloadRecoveryCodes(CODES, HEADER);
 
-    expect(clicked?.getAttribute('href')).not.toMatch(/^data:/);
-    for (const code of CODES) expect(clicked?.getAttribute('href')).not.toContain(code);
+    const href = clickedAnchor().getAttribute('href');
+
+    expect(href).not.toMatch(/^data:/);
+    for (const code of CODES) expect(href).not.toContain(code);
 
     expect(revokeObjectURL).toHaveBeenCalledWith('blob:bad-crm/recovery');
   });
@@ -117,7 +132,7 @@ describe('handing the file over', () => {
   it('leaves no anchor behind in the document', () => {
     downloadRecoveryCodes(CODES, HEADER);
 
-    expect(clicked?.isConnected).toBe(false);
+    expect(clickedAnchor().isConnected).toBe(false);
     expect(document.querySelectorAll('a[download]')).toHaveLength(0);
   });
 });

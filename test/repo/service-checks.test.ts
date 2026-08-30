@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { assert, describe, expect, it } from 'vitest';
 
 import {
   createS3Check,
@@ -768,9 +768,11 @@ describe('check factories wire the right target, requirement and transport', () 
     expect(check.service).toBe('minio');
     expect(check.target).toBe('http://localhost:9000/bad-crm');
     expect((await check.run()).status).toBe('ok');
-    expect(seen?.url.pathname).toBe('/bad-crm');
-    expect(seen?.headers['authorization']).toContain('AWS4-HMAC-SHA256');
-    expect(JSON.stringify(seen?.headers)).not.toContain('password');
+    assert(seen !== undefined, 'the transport was handed a request');
+
+    expect(seen.url.pathname).toBe('/bad-crm');
+    expect(seen.headers['authorization']).toContain('AWS4-HMAC-SHA256');
+    expect(JSON.stringify(seen.headers)).not.toContain('password');
   });
 
   it('asks Meilisearch for /health and stays optional', async () => {

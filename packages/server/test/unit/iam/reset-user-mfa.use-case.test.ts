@@ -412,7 +412,12 @@ describe('HIGH-1: an administrator may not reach further than their own standing
     // Nothing about the owner's account moved: the secret is intact, the session is live.
     const state = await harness.enrollment.find(OWNER_ID);
 
-    expect(state?.enabledAt).not.toBeNull();
+    // Stated positively, and about the enrolment rather than about one field of it. The finder
+    // answers `null` when there is no enrolment at all, `state?.enabledAt` was then `undefined`,
+    // and `not.toBeNull()` passed — a use case that wiped the owner's second factor before
+    // refusing satisfied the very assertion written to forbid it.
+    expect(state).toMatchObject({ enabledAt: expect.any(Date) });
+
     const ownerSession = [...harness.sessions.rows.values()].find(
       (session) => session.userId === OWNER_ID,
     );

@@ -1,6 +1,6 @@
 import { type SharedPermissions } from '@bad-crm/shared';
 import request from 'supertest';
-import { describe, expect, it } from 'vitest';
+import { assert, describe, expect, it } from 'vitest';
 
 import {
   APP_URL,
@@ -240,7 +240,8 @@ describe('POST /api/v1/users/{userId}/reset-mfa', () => {
     const state = await test.enrollment.find(COLLEAGUE);
 
     expect(state).not.toBeNull();
-    expect(state?.enabledAt).not.toBeNull();
+    assert(state !== null, "the owner's enrolment is still there");
+    expect(state.enabledAt).not.toBeNull();
     expect(test.dispatcher.dispatched).toEqual([]);
     expect(test.audit.events.map((event) => event.action)).not.toContain('user.mfa_reset_by_admin');
 

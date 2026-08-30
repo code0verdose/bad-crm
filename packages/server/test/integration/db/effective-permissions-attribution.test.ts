@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 
 import { PrismaClient } from '@prisma/client';
 import { type PoolClient } from 'pg';
-import { afterAll, beforeAll, beforeEach, describe, expect, inject, it } from 'vitest';
+import { afterAll, assert, beforeAll, beforeEach, describe, expect, inject, it } from 'vitest';
 
 import { PrismaEffectivePermissionsReader } from '@/infrastructure/persistence/prisma/effective-permissions-reader.adapter.js';
 import { withTenant } from '@/infrastructure/persistence/prisma/tenant.context.js';
@@ -252,13 +252,27 @@ const inTenant = <T>(
     work(new PrismaEffectivePermissionsReader()),
   );
 
-const attributedIvan = (): ReturnType<
-  PrismaEffectivePermissionsReader['attributedCapabilitiesOf']
-> => inTenant(ORG, (reader) => reader.attributedCapabilitiesOf(seeded.ivanId));
+type AttributedCapabilities = NonNullable<
+  Awaited<ReturnType<PrismaEffectivePermissionsReader['attributedCapabilitiesOf']>>
+>;
 
-const attributedTeammate = (): ReturnType<
-  PrismaEffectivePermissionsReader['attributedCapabilitiesOf']
-> => inTenant(ORG, (reader) => reader.attributedCapabilitiesOf(seeded.teammateId));
+/**
+ * The reader answers `null` for a subject the open tenant cannot see, and nearly every case in this
+ * file then reads a field off the answer. The absence is settled once, here, so those reads are
+ * plain and the negative assertions among them are about the field rather than about the answer
+ * having disappeared. The case that is *about* the null answer asks the reader directly.
+ */
+const attributedOf = async (userId: string): Promise<AttributedCapabilities> => {
+  const attributed = await inTenant(ORG, (reader) => reader.attributedCapabilitiesOf(userId));
+
+  assert(attributed !== null, `the reader answered for ${userId}`);
+
+  return attributed;
+};
+
+const attributedIvan = (): Promise<AttributedCapabilities> => attributedOf(seeded.ivanId);
+
+const attributedTeammate = (): Promise<AttributedCapabilities> => attributedOf(seeded.teammateId);
 
 beforeAll(() => {
   pools = createPools();
@@ -284,22 +298,21 @@ describe('attribution', () => {
   it('CONTROL: reads the subject, their roles and their unexpired exceptions', async () => {
     const attributed = await attributedIvan();
 
-    expect(attributed).not.toBeNull();
-    expect(attributed?.facts.permissionsVersion).toBe(7);
-    expect([...(attributed?.roles ?? [])].map((role) => role.name).toSorted()).toEqual([
+    expect(attributed.facts.permissionsVersion).toBe(7);
+    expect([...attributed.roles].map((role) => role.name).toSorted()).toEqual([
       'Manager',
       'Reviewer',
     ]);
-    expect([...(attributed?.facts.granted ?? [])].toSorted()).toContain('task:read');
+    expect([...attributed.facts.granted].toSorted()).toContain('task:read');
   });
 
   it('names every role that grants a key, not just the first', async () => {
     const attributed = await attributedIvan();
 
-    expect([...(attributed?.grantedByRole.get('task:read') ?? [])].toSorted()).toEqual(
+    expect([...(attributed.grantedByRole.get('task:read') ?? [])].toSorted()).toEqual(
       [seeded.managerRoleId, seeded.reviewerRoleId].toSorted(),
     );
-    expect(attributed?.grantedByRole.get('task:update')).toEqual([seeded.managerRoleId]);
+    expect(attributed.grantedByRole.get('task:update')).toEqual([seeded.managerRoleId]);
   });
 
   /**
@@ -309,24 +322,24 @@ describe('attribution', () => {
   it('reports the role behind a key an exception has taken away', async () => {
     const attributed = await attributedIvan();
 
-    expect(attributed?.facts.denied).toContain('task:delete');
-    expect(attributed?.grantedByRole.get('task:delete')).toEqual([seeded.managerRoleId]);
-    expect(attributed?.overrides.get('task:delete')).toMatchObject({
+    expect(attributed.facts.denied).toContain('task:delete');
+    expect(attributed.grantedByRole.get('task:delete')).toEqual([seeded.managerRoleId]);
+    expect(attributed.overrides.get('task:delete')).toMatchObject({
       effect: 'DENY',
       reason: 'deletions frozen until the audit closes',
       grantedById: seeded.adminId,
     });
-    expect(attributed?.overrides.get('task:delete')?.grantedAt).toBeInstanceOf(Date);
+    expect(attributed.overrides.get('task:delete')?.grantedAt).toBeInstanceOf(Date);
   });
 
   it('carries an open-ended ALLOW with a null expiry rather than a guessed one', async () => {
     const attributed = await attributedIvan();
 
-    expect(attributed?.overrides.get('invoice:issue')).toMatchObject({
+    expect(attributed.overrides.get('invoice:issue')).toMatchObject({
       effect: 'ALLOW',
       expiresAt: null,
     });
-    expect(attributed?.facts.granted).toContain('invoice:issue');
+    expect(attributed.facts.granted).toContain('invoice:issue');
   });
 });
 
@@ -334,29 +347,29 @@ describe('expiry is a predicate', () => {
   it('ignores an ALLOW that has expired — and keeps the one that has not', async () => {
     const attributed = await attributedIvan();
 
-    expect(attributed?.overrides.has('vault_item:export')).toBe(false);
-    expect(attributed?.facts.granted).not.toContain('vault_item:export');
+    expect(attributed.overrides.has('vault_item:export')).toBe(false);
+    expect(attributed.facts.granted).not.toContain('vault_item:export');
     // The positive control on the neighbouring key: the reader is reading exceptions, and only the
     // expired one is missing.
-    expect(attributed?.overrides.has('invoice:issue')).toBe(true);
+    expect(attributed.overrides.has('invoice:issue')).toBe(true);
   });
 
   it('ignores a DENY that has expired, so the role grants again', async () => {
     const attributed = await attributedIvan();
 
-    expect(attributed?.overrides.has('task:read')).toBe(false);
-    expect(attributed?.facts.denied).not.toContain('task:read');
+    expect(attributed.overrides.has('task:read')).toBe(false);
+    expect(attributed.facts.denied).not.toContain('task:read');
     // The point of the row, not just its absence: with the exception gone the roles decide again.
-    expect(attributed?.facts.granted).toContain('task:read');
-    expect(attributed?.facts.denied).toContain('task:delete');
+    expect(attributed.facts.granted).toContain('task:read');
+    expect(attributed.facts.denied).toContain('task:delete');
   });
 
   it('applies the same predicate to an expired role assignment', async () => {
     const attributed = await attributedIvan();
 
-    expect(attributed?.facts.granted).not.toContain('audit:export');
-    expect(attributed?.roles.map((role) => role.roleId)).not.toContain(seeded.retiredRoleId);
-    expect(attributed?.roles).toHaveLength(2);
+    expect(attributed.facts.granted).not.toContain('audit:export');
+    expect(attributed.roles.map((role) => role.roleId)).not.toContain(seeded.retiredRoleId);
+    expect(attributed.roles).toHaveLength(2);
   });
 });
 
@@ -398,8 +411,8 @@ describe('tenancy', () => {
   it('does not leak the other tenant’s exception into this one’s answer', async () => {
     const attributed = await attributedIvan();
 
-    expect(attributed?.overrides.get('task:read')).toBeUndefined();
-    expect(attributed?.facts.granted).toContain('task:read');
+    expect(attributed.overrides.get('task:read')).toBeUndefined();
+    expect(attributed.facts.granted).toContain('task:read');
   });
 });
 
@@ -421,10 +434,9 @@ describe('tenancy inside one organization', () => {
   it('CONTROL: reads the neighbour’s own role and exception when asked for them directly', async () => {
     const attributed = await attributedTeammate();
 
-    expect(attributed).not.toBeNull();
-    expect([...(attributed?.roles ?? [])].map((role) => role.name)).toEqual(['Contributor']);
-    expect(attributed?.facts.granted).toContain('doc:read');
-    expect(attributed?.overrides.get('doc:create')).toMatchObject({
+    expect([...attributed.roles].map((role) => role.name)).toEqual(['Contributor']);
+    expect(attributed.facts.granted).toContain('doc:read');
+    expect(attributed.overrides.get('doc:create')).toMatchObject({
       effect: 'ALLOW',
       reason: "helping the teammate's own onboarding docs along, reviewed weekly",
     });
@@ -433,24 +445,24 @@ describe('tenancy inside one organization', () => {
   it('does not attribute the neighbour’s role to ivan', async () => {
     const attributed = await attributedIvan();
 
-    expect(attributed?.roles.map((role) => role.roleId)).not.toContain(seeded.contributorRoleId);
-    expect(attributed?.roles.map((role) => role.name)).not.toContain('Contributor');
+    expect(attributed.roles.map((role) => role.roleId)).not.toContain(seeded.contributorRoleId);
+    expect(attributed.roles.map((role) => role.name)).not.toContain('Contributor');
     // Not merely absent from `roles`: a subject predicate dropped from `userRole.findMany` would
     // union the neighbour's grant into `granted` too, through the very fold `attribution` above
     // relies on.
-    expect(attributed?.facts.granted).not.toContain('kb_note:read');
+    expect(attributed.facts.granted).not.toContain('kb_note:read');
   });
 
   it('does not attribute the neighbour’s personal exception — reason included — to ivan', async () => {
     const attributed = await attributedIvan();
 
-    expect(attributed?.overrides.has('doc:create')).toBe(false);
-    expect(attributed?.facts.granted).not.toContain('doc:create');
+    expect(attributed.overrides.has('doc:create')).toBe(false);
+    expect(attributed.facts.granted).not.toContain('doc:create');
 
     // The reason is somebody else's sentence about a colleague, and this is what a subject predicate
     // actually protects: not the key, which is public information about the catalogue, but the
     // administrator's free-text explanation of a decision about a *named person*.
-    const reasons = [...(attributed?.overrides.values() ?? [])].map((entry) => entry.reason);
+    const reasons = [...attributed.overrides.values()].map((entry) => entry.reason);
 
     expect(reasons).not.toContain(
       "helping the teammate's own onboarding docs along, reviewed weekly",

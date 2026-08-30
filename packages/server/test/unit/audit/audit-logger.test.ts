@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { assert, describe, expect, it } from 'vitest';
 
 import { SharedAudit } from '@bad-crm/shared';
 
@@ -8,11 +8,13 @@ import { AUDIT_MARKER, pinoAuditLogger } from '@/infrastructure/logging/pino-aud
 const OCCURRED_AT = new Date('2026-08-04T10:00:00.000Z');
 const fixedClock = { now: () => OCCURRED_AT };
 
-const recordingLogger = (): {
-  logger: LoggerPort;
-  lines: { fields: LogFields; message: string }[];
-} => {
-  const lines: { fields: LogFields; message: string }[] = [];
+interface Line {
+  readonly fields: LogFields;
+  readonly message: string;
+}
+
+const recordingLogger = (): { logger: LoggerPort; lines: Line[] } => {
+  const lines: Line[] = [];
   const logger: LoggerPort = {
     debug: () => undefined,
     info: (fields, message) => lines.push({ fields, message }),
@@ -22,6 +24,20 @@ const recordingLogger = (): {
   };
 
   return { logger, lines };
+};
+
+/**
+ * The one line the adapter wrote, as a value rather than as an `| undefined` read.
+ *
+ * `lines[0]?.fields` reads `undefined` when nothing was recorded at all, and a claim about a field
+ * the line must not carry is then satisfied by there being no line.
+ */
+const onlyLine = (lines: Line[]): Line => {
+  const [line, ...rest] = lines;
+
+  assert(line !== undefined && rest.length === 0, 'the adapter wrote exactly one line');
+
+  return line;
 };
 
 describe('the audit trail as log lines', () => {
@@ -72,8 +88,8 @@ describe('the audit trail as log lines', () => {
       requestId: 'req-3',
     });
 
-    expect(lines[0]?.fields).not.toHaveProperty('actorIpAddress');
-    expect(JSON.stringify(lines[0])).not.toContain('203.0.113.4');
+    expect(onlyLine(lines).fields).not.toHaveProperty('actorIpAddress');
+    expect(JSON.stringify(onlyLine(lines))).not.toContain('203.0.113.4');
   });
 
   /**
@@ -90,8 +106,8 @@ describe('the audit trail as log lines', () => {
       requestId: undefined,
     });
 
-    expect(lines[0]?.message).toBe('audit');
-    expect(lines[0]?.fields).not.toHaveProperty('requestId');
+    expect(onlyLine(lines).message).toBe('audit');
+    expect(onlyLine(lines).fields).not.toHaveProperty('requestId');
   });
 
   it('carries the before and after state when there is one', async () => {
@@ -105,8 +121,8 @@ describe('the audit trail as log lines', () => {
       requestId: undefined,
     });
 
-    expect(lines[0]?.fields).toMatchObject({ after: { slug: 'acme', status: 'active' } });
-    expect(lines[0]?.fields).not.toHaveProperty('before');
+    expect(onlyLine(lines).fields).toMatchObject({ after: { slug: 'acme', status: 'active' } });
+    expect(onlyLine(lines).fields).not.toHaveProperty('before');
   });
 });
 

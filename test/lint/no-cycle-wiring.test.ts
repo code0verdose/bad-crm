@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { assert, describe, expect, it } from 'vitest';
 
 import eslintConfig from '../../eslint.config.js';
 
@@ -43,11 +43,14 @@ const clientBlock = (eslintConfig as readonly ConfigBlock[]).find(
 
 describe('import/no-cycle wiring', () => {
   it('is enabled on the client source, which is where the barrels are', () => {
-    expect(
-      clientBlock,
+    assert(
+      clientBlock !== undefined,
       `no block matching ${CLIENT_SOURCE_GLOB} enables import/no-cycle`,
-    ).toBeDefined();
-    expect(clientBlock?.rules?.['import/no-cycle']).not.toBe('off');
+    );
+
+    const rule = clientBlock.rules?.['import/no-cycle'];
+
+    expect(rule).not.toBe('off');
   });
 
   it('carries the resolver without which the rule reports nothing', () => {

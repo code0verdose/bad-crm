@@ -74,9 +74,14 @@ describe('unsafe methods', () => {
     await client.POST('/things', { body: { title: 'x' } });
     await client.POST('/things', { body: { title: 'y' } });
 
-    expect(attempts[0]?.headers.get(IDEMPOTENCY_KEY_HEADER)).not.toBe(
-      attempts[1]?.headers.get(IDEMPOTENCY_KEY_HEADER),
-    );
+    // Read as a list, not as two indexes: `attempts[1]?.headers.get(…)` is `undefined` when the
+    // second request never left, and «a generated key is not undefined» is a sentence a middleware
+    // that dropped the second call would satisfy. The list says both requests happened and both
+    // carried a key before the two keys are compared.
+    const keys = attempts.map((attempt) => attempt.headers.get(IDEMPOTENCY_KEY_HEADER));
+
+    expect(keys).toEqual([expect.stringMatching(UUID_V4), expect.stringMatching(UUID_V4)]);
+    expect(keys[0]).not.toBe(keys[1]);
   });
 
   /**

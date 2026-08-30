@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { assert, describe, expect, it } from 'vitest';
 
 import { PrismaTeamRepository } from '@/infrastructure/persistence/prisma/team.repository.js';
 import { withTenant } from '@/infrastructure/persistence/prisma/tenant.context.js';
@@ -110,6 +110,20 @@ const argsOf = (recorder: Recorder, name: string): Record<string, unknown> =>
 const whereOf = (recorder: Recorder, name: string): Record<string, unknown> =>
   argsOf(recorder, name)['where'] as Record<string, unknown>;
 
+/**
+ * The `index`-th raw statement, as a value rather than as an `| undefined` read.
+ *
+ * A claim about what a statement must *not* contain has to fail when the repository issued no
+ * statement at all, and `recorder.raw[index]?.sql` cannot say that.
+ */
+const statementAt = (recorder: Recorder, index: number): { sql: string; values: unknown[] } => {
+  const statement = recorder.raw[index];
+
+  assert(statement !== undefined, `the repository issued statement #${index}`);
+
+  return statement;
+};
+
 describe('listing the teams of the tenant', () => {
   it('reads the rows and the member count in one statement, ordered by name', async () => {
     const recorder = recordingClient({
@@ -156,12 +170,14 @@ describe('reading one team', () => {
     // `FOR SHARE`, not a plain read — the gate's M-1. Without this lock, this read and `disband()`'s
     // `UPDATE` can interleave under `ReadCommitted` so that a write later in the same transaction —
     // `addMember` above all — lands on a fact a concurrent `disband` had already overturned.
-    expect(recorder.raw[0]?.sql).toContain('FOR SHARE');
+    const read = statementAt(recorder, 0);
+
+    expect(read.sql).toContain('FOR SHARE');
     // No `deleted_at IS NULL` in the predicate. With one, `teamAddressable`'s disbanded branch could
     // never run and the 404 it produces would be untested — the row would simply be absent.
-    expect(recorder.raw[0]?.sql).not.toContain('deleted_at IS NULL');
+    expect(read.sql).not.toContain('deleted_at IS NULL');
     // The tenant predicate and the id are both bound values, not only one of them.
-    expect(recorder.raw[0]?.values).toEqual(expect.arrayContaining([ORG, TEAM]));
+    expect(read.values).toEqual(expect.arrayContaining([ORG, TEAM]));
   });
 
   it('answers null when the tenant policy returns no row', async () => {
@@ -355,16 +371,18 @@ describe('membership', () => {
 
     await inScope(recorder, (repository) => repository.addMember(TEAM, IVAN, 'LEAD'));
 
+    const write = statementAt(recorder, 1);
+
     // `uq_team_members` is a unique *index*, which `pg_constraint` does not carry, so
     // `ON CONFLICT ON CONSTRAINT` would fail at parse time on every call rather than only on a
     // conflict. Column inference matches the index instead.
-    expect(recorder.raw[1]?.sql).toContain('ON CONFLICT (team_id, user_id) DO UPDATE');
-    expect(recorder.raw[1]?.sql).not.toContain('ON CONSTRAINT');
+    expect(write.sql).toContain('ON CONFLICT (team_id, user_id) DO UPDATE');
+    expect(write.sql).not.toContain('ON CONSTRAINT');
     // Full binding, not one field: `toContain(ORG)` alone would still pass if `TEAM` or `IVAN` fell
     // out of the statement, and a tenant predicate that lost the team or the person is exactly the
     // defect `rules/testing.mdc` («Тест, который не видели красным», п. 2) singles out — the pin
     // has to name every bound value the write actually depends on.
-    expect(recorder.raw[1]?.values).toEqual(expect.arrayContaining([ORG, TEAM, IVAN, 'LEAD']));
+    expect(write.values).toEqual(expect.arrayContaining([ORG, TEAM, IVAN, 'LEAD']));
   });
 
   it('reports unchanged, and writes nothing, when the pair already holds this exact role', async () => {

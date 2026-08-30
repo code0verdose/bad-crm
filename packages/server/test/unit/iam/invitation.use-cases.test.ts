@@ -1,5 +1,5 @@
 import { SharedPermissions } from '@bad-crm/shared';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { assert, beforeEach, describe, expect, it } from 'vitest';
 
 import {
   type InvitationDraftRow,
@@ -258,15 +258,17 @@ describe('inviting somebody', () => {
     const minted = await invite(invitations, { locale: 'ru' });
     const [letter] = dispatcher.dispatched;
 
-    expect(letter?.mail.to).toBe('ivan@example.test');
-    expect(letter?.mail.text).toContain(minted.inviteUrl);
+    assert(letter !== undefined, 'a letter was dispatched');
+
+    expect(letter.mail.to).toBe('ivan@example.test');
+    expect(letter.mail.text).toContain(minted.inviteUrl);
     // Russian, because that is what the inviter was reading — the recipient has no account to take
     // a language from.
-    expect(letter?.mail.text).toMatch(/[а-яё]/i);
+    expect(letter.mail.text).toMatch(/[а-яё]/i);
     // The context names the inviter, never the recipient: the address is what a dispatch log may
     // not carry.
-    expect(letter?.context).toMatchObject({ organizationId: ORG, userId: 'admin' });
-    expect(JSON.stringify(letter?.context)).not.toContain('ivan@example.test');
+    expect(letter.context).toMatchObject({ organizationId: ORG, userId: 'admin' });
+    expect(JSON.stringify(letter.context)).not.toContain('ivan@example.test');
   });
 
   it('creates the invitation anyway when the installation cannot send mail', async () => {
