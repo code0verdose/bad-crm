@@ -75,7 +75,55 @@ const classOf = (reference: string): string => reference.split('.')[0] ?? refere
  * `denyAccess` is in the list because refusing is the same decision as allowing: a use-case that
  * only ever denies (`tenant_mismatch` → 404) has made the call this field is about.
  */
-const AUTHORISES = /assertAllowed|authorizeCapability|authorizeWith|authorizeResource|denyAccess/;
+/**
+ * The helpers that *enforce* a decision, wherever they are imported from.
+ *
+ * `denyAccess` stood in this list until 2026-08-30 and made the check below unfalsifiable. It lives
+ * in `domain/shared/errors` and shapes the **refusal** on the branch where the row belonged to
+ * another organization — every parameterised use-case has one, so naming it as evidence of
+ * authorisation meant every named class passed by construction. Four did, holding no other call
+ * from this list at all: `TransferOwnershipUseCase`, `DeactivateUserUseCase`,
+ * `ReactivateUserUseCase`, `ResetUserMfaUseCase` — each of which does in fact authorise, through a
+ * policy this file could not see.
+ */
+const ENFORCERS = ['assertAllowed', 'authorizeCapability', 'authorizeWith', 'authorizeResource'];
+
+/** A policy module: `domain/**\/access/<name>.policy.ts`, which is where decisions are written. */
+const POLICY_IMPORT =
+  /import\s*\{([^}]*)\}\s*from\s*'@\/domain\/(?:[a-z-]+\/)*access\/[a-z-]+\.policy\.js'/g;
+
+/**
+ * The authorisation calls a source actually makes: an enforcement helper, or a function it imported
+ * from a policy module and then called. Importing a policy is not enough — a dangling import is
+ * exactly the residue a refactor leaves behind — so the name has to appear as a call as well.
+ */
+const authorisationCallsIn = (source: string): string[] => {
+  const candidates = new Set(ENFORCERS);
+
+  for (const match of source.matchAll(POLICY_IMPORT)) {
+    for (const binding of (match[1] ?? '').split(',')) {
+      const name = binding
+        .replace(/^\s*type\s+/, '')
+        .split(/\s+as\s+/)
+        .pop()
+        ?.trim();
+
+      // Types are imported from policy modules too, and a type is never called.
+      if (name !== undefined && name !== '' && !/^[A-Z]/.test(name)) candidates.add(name);
+    }
+  }
+
+  return [...candidates].filter((name) => {
+    const call = new RegExp(`\\b${name}\\s*\\(([\\s\\S]{0,200})`);
+
+    // The actor has to be in the arguments. Without that clause the check accepts
+    // `assertTeamAddressable(scope)` — a policy-module export that takes the row and no subject, so
+    // it answers «does this team exist in this tenant», which is the 404 branch again under a name
+    // that reads like a decision. Every real authorisation call in this codebase carries
+    // `input.actor`, because a decision about nobody in particular is not a decision.
+    return /\bactor\b/i.test(call.exec(source)?.[1] ?? '');
+  });
+};
 
 /** The source of a class named in a declaration, found once and cached for the whole file. */
 const sources = new Map<string, string | undefined>();
@@ -169,8 +217,9 @@ describe('routes that address one object', () => {
 
         if (reference === undefined || !known.has(classOf(reference))) return [];
 
-        return sourceOf(classOf(reference)) === undefined ||
-          AUTHORISES.test(sourceOf(classOf(reference)) ?? '')
+        const source = sourceOf(classOf(reference));
+
+        return source === undefined || authorisationCallsIn(source).length > 0
           ? []
           : [`${route.method.toUpperCase()} ${route.path} → ${reference}`];
       });
@@ -179,6 +228,49 @@ describe('routes that address one object', () => {
       silent,
       'the class named in `aclCheckedIn` contains no authorisation call — invariant 2 puts the authoritative decision in the use-case, not in the middleware',
     ).toEqual([]);
+  });
+
+  /**
+   * CONTROL: the detector above, handed sources it must accept and sources it must refuse.
+   *
+   * The sweep it feeds asserts an empty list, so nothing in it fails when the detector stops
+   * detecting — which is how the previous version survived for two days accepting `denyAccess`, a
+   * call present in every parameterised use-case, as proof of authorisation. These cases are the
+   * only thing that turns red when that happens again.
+   */
+  it.each([
+    [
+      'an enforcement helper carrying the actor',
+      "assertAllowed(canDeleteTeam(input.actor), 'team');",
+      true,
+    ],
+    [
+      'a policy imported and called with the actor',
+      "import { assertTransferable } from '@/domain/iam/access/ownership-transfer.policy.js';\n" +
+        'assertTransferable(input.actor, fromUserId, recipient);',
+      true,
+    ],
+    [
+      'the refusal helper alone — the 2026-08-30 regression',
+      "import { denyAccess } from '@/domain/shared/errors/access-denial.util.js';\n" +
+        "if (row === null) throw denyAccess('team', 'other_organization');",
+      false,
+    ],
+    [
+      'a policy call about a row rather than a subject',
+      "import { assertTeamAddressable } from '@/domain/iam/access/team-access.policy.js';\n" +
+        'assertTeamAddressable(scope);',
+      false,
+    ],
+    [
+      'a policy imported and never called',
+      "import { canDeleteTeam } from '@/domain/iam/access/team-access.policy.js';\n" +
+        'const actor = input.actor;',
+      false,
+    ],
+    ['a use-case that authorises nothing', 'return this.teams.delete(input.teamId);', false],
+  ])('CONTROL: %s', (_case, source, expected) => {
+    expect(authorisationCallsIn(source).length > 0).toBe(expected);
   });
 
   it('name something that exists in the source', () => {
