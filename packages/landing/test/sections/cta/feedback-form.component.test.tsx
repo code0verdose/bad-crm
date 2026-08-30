@@ -125,17 +125,6 @@ describe('the feedback form leans on native validation for required fields', () 
     expect(screen.queryByText(EN_COPY.cta.form.sent)).not.toBeInTheDocument();
   });
 
-  it('rejects an email that does not look like one, via type="email"', () => {
-    render(
-      <LocaleProvider>
-        <FeedbackForm />
-      </LocaleProvider>,
-    );
-
-    const email = screen.getByLabelText(EN_COPY.cta.form.emailLabel) as HTMLInputElement;
-    expect(email.type).toBe('email');
-  });
-
   it('does not require a name', async () => {
     render(
       <LocaleProvider>
@@ -145,5 +134,54 @@ describe('the feedback form leans on native validation for required fields', () 
 
     const name = screen.getByLabelText(EN_COPY.cta.form.nameLabel) as HTMLInputElement;
     expect(name.required).toBe(false);
+  });
+});
+
+/**
+ * A rejected address has to be observed the same way an accepted one is — by what lands in
+ * `location.href`. The previous version of this case only read `input.type`, which is a statement
+ * about the markup, not about what happens when somebody types `nina@` and presses the button:
+ * putting `noValidate` on the form kept it green while the garbage address went straight into the
+ * `mailto:`.
+ */
+describe('the feedback form does not compose a mailto for an address that is not one', () => {
+  const originalLocation = globalThis.location;
+
+  beforeEach(() => {
+    Object.defineProperty(globalThis, 'location', {
+      value: { ...originalLocation, href: '' },
+      writable: true,
+      configurable: true,
+    });
+  });
+
+  afterEach(() => {
+    Object.defineProperty(globalThis, 'location', {
+      value: originalLocation,
+      writable: true,
+      configurable: true,
+    });
+  });
+
+  it('leaves the mail link uncomposed when the email is malformed', async () => {
+    render(
+      <LocaleProvider>
+        <FeedbackForm />
+      </LocaleProvider>,
+    );
+
+    await userEvent.type(screen.getByLabelText(EN_COPY.cta.form.emailLabel), 'nina@');
+    await userEvent.type(screen.getByLabelText(EN_COPY.cta.form.messageLabel), 'Hello.');
+    await userEvent.click(screen.getByRole('button', { name: EN_COPY.cta.form.submit }));
+
+    expect(globalThis.location.href).toBe('');
+    expect(screen.queryByText(EN_COPY.cta.form.sent)).not.toBeInTheDocument();
+
+    // Positive control: the very same form, with a real address, does compose the link — otherwise
+    // this case would pass on a form that is simply broken and never submits anything.
+    await userEvent.type(screen.getByLabelText(EN_COPY.cta.form.emailLabel), 'example.com');
+    await userEvent.click(screen.getByRole('button', { name: EN_COPY.cta.form.submit }));
+
+    expect(globalThis.location.href).toMatch(/^mailto:hello@badcrm\.dev\?/);
   });
 });
