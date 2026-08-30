@@ -42,6 +42,24 @@ const appThrowing = (handler: RequestHandler): { app: Express; logLines: () => s
 const entriesOf = (lines: string[]): Record<string, unknown>[] =>
   lines.map((line) => JSON.parse(line) as Record<string, unknown>);
 
+/** A V8 stack frame: `    at fn (/path/file.ts:12:34)`, wherever in the entry it was filed. */
+const STACK_FRAME = /^\s+at .+:\d+:\d+\)?$/m;
+
+/**
+ * Every string in a log entry that looks like a stack trace, at any depth and under any key.
+ *
+ * The property is «this line carries no trace», and a trace is recognisable by its frames. Searching
+ * the serialized entry for the substring `stack` asks a different question — what pino named the
+ * field — which the next author answers differently by writing `trace:` or `err:`.
+ */
+const framesIn = (value: unknown): string[] => {
+  if (typeof value === 'string') return STACK_FRAME.test(value) ? [value] : [];
+  if (Array.isArray(value)) return value.flatMap(framesIn);
+  if (typeof value === 'object' && value !== null) return Object.values(value).flatMap(framesIn);
+
+  return [];
+};
+
 describe('domain errors', () => {
   it('answers an AppError with its own status, code and a problem document', async () => {
     const { app } = appThrowing(() => {
@@ -109,8 +127,11 @@ describe('domain errors', () => {
     const entry = entriesOf(logLines()).find((line) => line['code'] === 'task_not_found');
 
     expect(entry?.['level']).toBe(40);
-    expect(JSON.stringify(entry)).not.toContain('stack');
     expect(entry?.['requestId']).toBe('01J8Z2F5Q3K9V6N0R4T7YB3XQD');
+    // A stack is recognised by its frames, not by the seven letters of the field pino happens to
+    // call it: `not.toContain('stack')` is satisfied by the whole trace filed under `trace`, `err`
+    // or anything else somebody reaches for next.
+    expect(framesIn(entry)).toEqual([]);
   });
 });
 
@@ -140,6 +161,9 @@ describe('unexpected exceptions', () => {
     expect(entry?.['level']).toBe(50);
     expect(entry?.['requestId']).toBe('01J8Z2F5Q3K9V6N0R4T7YB3XQD');
     expect(JSON.stringify(entry)).toContain('organization_id');
+    // CONTROL for the detector the warn case asserts empty: handed a line that does carry a trace,
+    // it finds one. Without this, a detector that recognises nothing would report every line clean.
+    expect(framesIn(entry).length).toBeGreaterThan(0);
   });
 
   /**
@@ -210,15 +234,36 @@ describe('a response that already started', () => {
    * the error handler, where there is nothing left to catch it, and the original error is lost with
    * it. The handler therefore delegates to Express, which destroys the socket: the client sees an
    * aborted response, which is the truth, and the process stays up.
+   *
+   * **The abort is not the evidence.** Both halves of the branch end in a destroyed socket: without
+   * the guard the second write throws, Express catches it and `finalhandler` destroys the connection
+   * just the same — measured, not reasoned. `rejects.toThrow(/aborted/)` therefore states a fact
+   * that holds whether or not the guard exists, and the case that carried only it survived
+   * `if (response.headersSent)` becoming `if (false)`.
+   *
+   * What does separate the two is what the handler *did*: `next(error)` stands before every
+   * `logger.*` call, so a delegated request leaves no line of ours at all — while the same request
+   * with the guard removed leaves one `unhandled error` at level 50, written moments before the
+   * throw that loses the response. Emptiness of our own log is the delegation, so that is what is
+   * asserted.
    */
   it('delegates a partially sent response instead of writing a second one', async () => {
-    const { app, logLines } = appThrowing((_request, response) => {
+    const { app, logLines } = appThrowing((incoming, response) => {
+      if (incoming.query['partial'] === undefined) throw new NotFoundError('task_not_found');
+
       response.status(200).write('{"partial":');
 
       throw new Error('failed halfway through streaming');
     });
 
-    await expect(request(app).get('/boom')).rejects.toThrow(/aborted/);
-    expect(logLines().join('\n')).not.toContain('ERR_HTTP_HEADERS_SENT');
+    await expect(request(app).get('/boom?partial=1')).rejects.toThrow(/aborted/);
+    expect(entriesOf(logLines())).toEqual([]);
+
+    // CONTROL: the same application and the same sink, on a request whose response had not started
+    // — a line arrives. Without it the emptiness above is satisfied by a logger that records nothing
+    // at all, which is how an assertion on a log this branch never reaches came to pass.
+    await request(app).get('/boom');
+
+    expect(entriesOf(logLines()).map((line) => line['code'])).toEqual(['task_not_found']);
   });
 });

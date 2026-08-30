@@ -20,6 +20,22 @@ const PASSWORD = 'correct-horse-battery';
 const OWNER = 'ada@example.com';
 const COLLEAGUE = '018f4a3b-2c1d-7a41-9f00-2b7c1d0e5ae1';
 
+/**
+ * Every key of a document, at every depth.
+ *
+ * `Object.keys(body)` answers about one level, so a claim about «any level» made with it is true
+ * only while the shape stays flat — and the day a field arrives under an object, the assertion goes
+ * on passing while the value it forbids travels on the wire.
+ */
+const deepKeysOf = (value: unknown): string[] => {
+  if (Array.isArray(value)) return value.flatMap(deepKeysOf);
+  if (typeof value === 'object' && value !== null) {
+    return Object.entries(value).flatMap(([key, nested]) => [key, ...deepKeysOf(nested)]);
+  }
+
+  return [];
+};
+
 const capabilities = (
   granted: readonly SharedPermissions.PermissionKey[],
 ): NonNullable<AuthAppOptions['capabilities']> => ({
@@ -447,12 +463,14 @@ describe('GET /api/v1/employees/{userId}', () => {
 
     employeeProfiles.accounts.add(userId);
     const response = await read(test, token, userId).expect(200);
+    const keys = deepKeysOf(response.body);
 
-    expect(
-      Object.keys(response.body as Record<string, unknown>).filter((key) =>
-        key.toLowerCase().startsWith('cost'),
-      ),
-    ).toEqual([]);
+    // CONTROL: the walk reached the keys of the answer at all. `Object.keys(...)` of the top level
+    // returns `[]` for a nested rate by construction, which is how «at any level» came to mean «at
+    // the level the serializer happens to be flat at today».
+    expect(keys).toContain('firstName');
+
+    expect(keys.filter((key) => key.toLowerCase().startsWith('cost'))).toEqual([]);
   });
 
   it('refuses somebody else’s record without employee:read', async () => {

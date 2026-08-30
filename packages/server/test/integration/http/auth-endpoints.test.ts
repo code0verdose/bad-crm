@@ -39,6 +39,24 @@ const refreshCookie = (response: { headers: Record<string, unknown> }): string =
 const cookieHeader = (response: { headers: Record<string, unknown> }): string =>
   refreshCookie(response).split(';')[0] ?? '';
 
+/**
+ * Every string a log entry carries, however deeply the field is nested.
+ *
+ * A structural walk rather than `JSON.stringify(...).not.toContain(...)`: the serialized blob is one
+ * string, so an assertion over it says nothing about *where* a value could hide, and it reads only
+ * the object it was handed — which is how a case about what the HTTP layer writes came to read the
+ * use-case double instead.
+ */
+const stringValuesOf = (value: unknown): string[] => {
+  if (typeof value === 'string') return [value];
+  if (Array.isArray(value)) return value.flatMap(stringValuesOf);
+  if (typeof value === 'object' && value !== null) {
+    return Object.values(value).flatMap(stringValuesOf);
+  }
+
+  return [];
+};
+
 const signIn = async (
   test: AuthApp,
 ): Promise<{ accessToken: string; cookie: string; sessionId: string }> => {
@@ -683,10 +701,39 @@ describe('what the authentication surface writes to the log', () => {
       .set('Origin', ORIGIN)
       .expect(200);
 
-    const written = JSON.stringify(test.logger.lines);
+    const httpLines = test.logLines().map((line) => JSON.parse(line) as Record<string, unknown>);
 
-    expect(written).not.toContain(session.cookie);
-    expect(written).not.toContain(session.accessToken);
-    expect(written).not.toContain('ada@example.com');
+    // CONTROL: the refresh request reached the HTTP logger at all. Read from `test.logger` alone —
+    // the `LoggerPort` double, which is wired only into the use-cases — this whole case passed over
+    // a serializer that wrote the URL and the whole header set, because the bytes that would have
+    // carried them are written by the real pino behind `logLines()` and were never opened.
+    expect(httpLines.map((line) => line['route'])).toContain('/api/v1/auth/refresh');
+
+    const values = [...httpLines, ...test.logger.lines].flatMap(stringValuesOf);
+
+    // CONTROL: the sweep found strings to look through, so the emptiness asserted below is about
+    // the absence of the secrets and not about a walker that returns nothing.
+    expect(values.length).toBeGreaterThan(0);
+
+    const refreshToken = session.cookie.slice('bad_crm_refresh='.length);
+
+    for (const secret of [session.cookie, refreshToken, 'ada@example.com']) {
+      expect(values.filter((value) => value.includes(secret))).toEqual([]);
+    }
+
+    // The access token, by its prefix rather than by its whole value. `FakeAccessTokens` mints
+    // `access.<sessionId>`, and the session id is a field the trail is *meant* to carry — so
+    // `not.toContain(accessToken)` alone is satisfied by a line that logged everything except seven
+    // characters. The prefix is the part that is only ever in a credential.
+    expect(values.filter((value) => value.includes('access.'))).toEqual([]);
+  });
+
+  /** CONTROL: the sweep the case above depends on, handed a value it must find. */
+  it('CONTROL: finds a planted secret in a nested log field', () => {
+    expect(
+      stringValuesOf({ msg: 'x', req: { headers: { cookie: 'bad_crm_refresh=planted' } } }).filter(
+        (value) => value.includes('bad_crm_refresh=planted'),
+      ),
+    ).toEqual(['bad_crm_refresh=planted']);
   });
 });

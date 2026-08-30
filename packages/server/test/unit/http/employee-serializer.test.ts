@@ -31,6 +31,21 @@ const row: EmployeeProfileRow = {
   emergencyContactEnc: 'v1:iv:tag:ciphertext',
 };
 
+/**
+ * Every key of the answer, at every depth.
+ *
+ * `Object.keys(answer)` answers about one level, so «no audience emits money» held only while the
+ * shape stayed flat: a rate nested under an object would satisfy it while travelling on the wire.
+ */
+const deepKeysOf = (value: unknown): string[] => {
+  if (Array.isArray(value)) return value.flatMap(deepKeysOf);
+  if (typeof value === 'object' && value !== null) {
+    return Object.entries(value).flatMap(([key, nested]) => [key, ...deepKeysOf(nested)]);
+  }
+
+  return [];
+};
+
 const HR_KEYS = [
   'employmentType',
   'hiredAt',
@@ -113,7 +128,13 @@ describe('no audience of this serializer emits money', () => {
       accountStatus: 'ACTIVE',
     });
 
-    expect(Object.keys(answer).filter((key) => key.toLowerCase().startsWith('cost'))).toEqual([]);
+    const keys = deepKeysOf(answer);
+
+    // CONTROL: the walk reached the keys of the answer at all — an empty list would satisfy the
+    // assertion below for every audience and every future field.
+    expect(keys).toContain('firstName');
+
+    expect(keys.filter((key) => key.toLowerCase().startsWith('cost'))).toEqual([]);
   });
 });
 

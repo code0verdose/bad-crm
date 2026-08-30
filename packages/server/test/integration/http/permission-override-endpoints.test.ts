@@ -321,7 +321,18 @@ describe('DELETE /api/v1/users/{userId}/permission-overrides/{permission}', () =
       .set('Authorization', `Bearer ${token}`)
       .expect(204);
 
-    // The caller asked for a state and the state is there; nothing happened, so no version bump.
+    // CONTROL: this trail is the one the application actually writes to — signing in put its own
+    // entries there. Without it the emptiness below is satisfied by a handle nothing ever reaches,
+    // and every mutation of what the route files passes.
+    expect(test.audit.events.map((event) => event.action)).toContain('session.signed_in');
+
+    // The caller asked for a state and the state is there; nothing happened, so no version bump —
+    // and, above all, nothing about an exception in the trail. An idempotent no-op that files a
+    // deletion puts an exception that never existed into the record an auditor reads, and the
+    // version bump does not see it: the two writes are independent statements in the use-case.
     expect(test.userRoles.versionBumps).toEqual([]);
+    expect(
+      test.audit.events.filter((event) => event.action.startsWith('permission.override.')),
+    ).toEqual([]);
   });
 });
