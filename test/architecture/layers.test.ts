@@ -38,6 +38,16 @@ const aliasEdges = (): Edge[] =>
     });
   });
 
+/**
+ * An import that walks out of its own folder, which the layer aliases exist to make unnecessary.
+ *
+ * Named for the same reason as `isDeepUnitImport` in `barrels.test.ts`: the assertion built on it
+ * compares against an empty list, and a predicate that matches nothing is indistinguishable from a
+ * clean tree. Measured: writing the prefix as `'..\\/'` — a shape no specifier has — left the check
+ * green. The CONTROL cases feed this function directly, so they die with it.
+ */
+const isOutwardRelative = (specifier: string): boolean => specifier.startsWith('../');
+
 describe('FSD dependency direction', () => {
   it('finds imports to check, so an empty tree cannot pass this file', () => {
     expect(aliasEdges().length).toBeGreaterThan(0);
@@ -67,11 +77,40 @@ describe('FSD dependency direction', () => {
   it('uses the layer aliases, never a relative path out of the current folder', () => {
     const relative = applicationSources().flatMap((path) =>
       importsOf(path)
-        .filter((specifier) => specifier.startsWith('../'))
+        .filter(isOutwardRelative)
         .map((specifier) => `${path} → ${specifier}`),
     );
 
     expect(relative).toEqual([]);
+  });
+
+  /** CONTROL: the detector fires on the shape it is looking for — it dies with the predicate. */
+  it.each(['../shared/ui', '../../units/auth', '../page.js'])(
+    'CONTROL: %s counts as leaving the current folder',
+    (specifier) => {
+      expect(isOutwardRelative(specifier)).toBe(true);
+    },
+  );
+
+  /** CONTROL: and not on the forms that are legal, so this is not a ban on relative imports. */
+  it.each(['./page.js', './ui/index.js', '@shared/ui', 'react'])(
+    'CONTROL: %s does not count as leaving the current folder',
+    (specifier) => {
+      expect(isOutwardRelative(specifier)).toBe(false);
+    },
+  );
+
+  /**
+   * CONTROL: `importsOf` really does return relative specifiers, so an empty result above means
+   * «none point outwards», not «relative imports are invisible to the walk». The alias-edge count
+   * cannot say this: it only ever looks at specifiers that start with `@`.
+   */
+  it('CONTROL: the walk sees relative specifiers, of the inward kind a unit is written with', () => {
+    const inward = applicationSources().flatMap((path) =>
+      importsOf(path).filter((specifier) => specifier.startsWith('./')),
+    );
+
+    expect(inward.length).toBeGreaterThan(0);
   });
 });
 

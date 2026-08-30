@@ -50,7 +50,8 @@ describe('system roles', () => {
 
   it('list each key once per role', () => {
     const duplicated = SYSTEM_ROLE_KEYS.filter(
-      (role) => new Set(SYSTEM_ROLE_PERMISSIONS[role]).size !== SYSTEM_ROLE_PERMISSIONS[role].length,
+      (role) =>
+        new Set(SYSTEM_ROLE_PERMISSIONS[role]).size !== SYSTEM_ROLE_PERMISSIONS[role].length,
     );
 
     expect(duplicated).toEqual([]);
@@ -103,7 +104,9 @@ describe('the delivery manager does not administer the installation', () => {
   );
 
   it('manager holds no installation setting at all', () => {
-    expect(SYSTEM_ROLE_PERMISSIONS.manager.filter((key) => key.startsWith('settings:'))).toEqual([]);
+    expect(SYSTEM_ROLE_PERMISSIONS.manager.filter((key) => key.startsWith('settings:'))).toEqual(
+      [],
+    );
   });
 
   /** CONTROL: the administrator does, which is what makes the split a split. */
@@ -115,16 +118,59 @@ describe('the delivery manager does not administer the installation', () => {
   );
 });
 
+interface Rung {
+  readonly role: string;
+  readonly size: number;
+}
+
+/** Every step of the ladder that fails to be *smaller* than the one above it, described. */
+const rungsThatDoNotNarrow = (ladder: readonly Rung[]): string[] =>
+  ladder.flatMap((rung, index) => {
+    const above = ladder[index - 1];
+
+    return above === undefined || rung.size < above.size
+      ? []
+      : [`${rung.role} holds ${rung.size}, ${above.role} above it holds ${above.size}`];
+  });
+
 describe('the ladder of roles', () => {
   /**
-   * Each role from admin down holds fewer keys than the one above it. Not a law of the model — a
-   * property of this particular matrix, and a cheap way to notice a row that was ticked in the wrong
-   * column: a `viewer` with more keys than a `lead` is a typo nobody would see by reading.
+   * Each role from admin down holds *strictly* fewer keys than the one above it. Not a law of the
+   * model — a property of this particular matrix, and a cheap way to notice a row that was ticked in
+   * the wrong column: a `viewer` the size of a `lead` is a typo nobody would see by reading.
+   *
+   * Measured on 2026-08-30: owner 331, admin 258, manager 241, lead 183, developer 119, viewer 68,
+   * guest 20 — seven distinct sizes, every step a drop. So strict narrowing is the property that
+   * actually holds, and it is the one asserted. A sorted-order comparison is not: it accepts two
+   * roles of equal size, which is precisely what a mis-ticked row looks like.
    */
-  it('narrows from owner to guest', () => {
-    const sizes = SYSTEM_ROLE_KEYS.map((role) => SYSTEM_ROLE_PERMISSIONS[role].length);
+  it('narrows strictly from owner to guest', () => {
+    const ladder = SYSTEM_ROLE_KEYS.map((role) => ({
+      role,
+      size: SYSTEM_ROLE_PERMISSIONS[role].length,
+    }));
 
-    expect(sizes).toEqual([...sizes].sort((left, right) => right - left));
+    expect(rungsThatDoNotNarrow(ladder)).toEqual([]);
+  });
+
+  /** CONTROL: the check rejects the equality a sorted-order comparison used to let through. */
+  it('CONTROL: two roles of the same size are a violation', () => {
+    expect(
+      rungsThatDoNotNarrow([
+        { role: 'lead', size: 183 },
+        { role: 'developer', size: 183 },
+      ]),
+    ).toEqual(['developer holds 183, lead above it holds 183']);
+  });
+
+  /** CONTROL: and accepts a ladder that does narrow, so it is not simply failing everything. */
+  it('CONTROL: a strictly narrowing ladder is clean', () => {
+    expect(
+      rungsThatDoNotNarrow([
+        { role: 'lead', size: 183 },
+        { role: 'developer', size: 119 },
+      ]),
+    ).toEqual([]);
   });
 
   it('leaves no permission granted by no role', () => {

@@ -67,17 +67,55 @@ describe('the shared layer barrel', () => {
   });
 });
 
+/**
+ * A specifier that reaches *inside* a unit (`@units/session/model`) rather than at its barrel
+ * (`@units/session`).
+ *
+ * Named, because the assertion built on it compares against an empty list: a predicate that matches
+ * nothing produces exactly the same empty list as a tree with no violations. Measured: dropping the
+ * `s` from `@units` left the check below green while the barrier it guards was unguarded. Only the
+ * CONTROL cases, which feed this function a specifier of each shape directly, tell the two apart.
+ */
+const isDeepUnitImport = (specifier: string): boolean => /^@units\/[^/]+\/.+/.test(specifier);
+
 describe('consumers see units through the barrel only', () => {
   it('no page, widget, app or shared file imports a path inside a unit', () => {
     const deep = applicationSources()
       .filter((path) => layerOf(path) !== 'units')
       .flatMap((path) =>
         importsOf(path)
-          .filter((specifier) => /^@units\/[^/]+\/.+/.test(specifier))
+          .filter(isDeepUnitImport)
           .map((specifier) => `${path} → ${specifier}`),
       );
 
     expect(deep).toEqual([]);
+  });
+
+  /** CONTROL: the detector recognises a path inside a unit — it dies with the regex above. */
+  it.each(['@units/session/model', '@units/iam/service/hooks/use-can.hook.js'])(
+    'CONTROL: %s counts as reaching inside a unit',
+    (specifier) => {
+      expect(isDeepUnitImport(specifier)).toBe(true);
+    },
+  );
+
+  /** CONTROL: and does not fire on the legal shapes, so the check above is not a blanket ban. */
+  it.each(['@units/session', '@shared/ui', './model/index.js', 'react'])(
+    'CONTROL: %s does not count as reaching inside a unit',
+    (specifier) => {
+      expect(isDeepUnitImport(specifier)).toBe(false);
+    },
+  );
+
+  /** CONTROL: those files do import units, so the filter above runs over candidates, not nothing. */
+  it('CONTROL: pages, widgets, app and shared do import units, through the barrel', () => {
+    const barrelImports = applicationSources()
+      .filter((path) => layerOf(path) !== 'units')
+      .flatMap((path) =>
+        importsOf(path).filter((specifier) => unitOfSpecifier(specifier) !== undefined),
+      );
+
+    expect(barrelImports.length).toBeGreaterThan(0);
   });
 
   /**

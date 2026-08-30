@@ -41,6 +41,21 @@ const viteAliases = (): ViteAliasEntry[] => {
 /** `@shared/*` and `@shared` are one alias for a prefix matcher; the table keys keep the tsconfig form. */
 const withoutWildcard = (alias: string): string => alias.replace(/\/\*$/, '');
 
+/**
+ * Whether the dev server would proxy a request for `path`, by the rule Vite applies: a key is a
+ * path prefix unless it starts with `^`, when it is a regular expression.
+ *
+ * Asked as a question about a request rather than as a substring of the serialised config. The
+ * substring form passed on any object that merely mentions `/api` somewhere: measured by renaming
+ * the key to `/apidocs`, which leaves `/api/v1/...` unproxied — the browser then talks to a second
+ * origin, the session cookie stops being first-party, and the check that exists for exactly that
+ * regression stayed green.
+ */
+const isProxied = (path: string): boolean =>
+  Object.keys(clientViteConfig.server?.proxy ?? {}).some((rule) =>
+    rule.startsWith('^') ? new RegExp(rule).test(path) : path.startsWith(rule),
+  );
+
 describe('client path aliases', () => {
   it('declares the layers the FSD architecture is made of', () => {
     // Not a copy of the object under test: the layer names come from `rules/frontend-fsd.mdc`, and
@@ -110,7 +125,15 @@ describe('client path aliases', () => {
   it('proxies the API prefix instead of teaching the browser a second origin', () => {
     // Same origin in development means the session cookie is first-party there too — no CORS
     // exception and no `SameSite=None` anywhere (rules/security.mdc).
-    expect(JSON.stringify(clientViteConfig.server?.proxy ?? {})).toContain('/api');
+    expect(isProxied('/api/v1/meta')).toBe(true);
+  });
+
+  /**
+   * CONTROL: the matcher answers «no» for a path no rule covers, so the assertion above is about
+   * this table and not about a function that says «yes» to everything.
+   */
+  it('CONTROL: does not proxy what the SPA serves itself', () => {
+    expect(isProxied('/assets/index.js')).toBe(false);
   });
 
   it('emits sourcemaps, without which a client error report is a stack of minified names', () => {
