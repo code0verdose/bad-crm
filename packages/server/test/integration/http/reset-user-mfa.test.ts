@@ -230,8 +230,16 @@ describe('POST /api/v1/users/{userId}/reset-mfa', () => {
     expect((response.body as { code: string; reason: string }).reason).toBe('not_the_owner');
 
     // Nothing about the owner's account moved.
+    //
+    // `state` is asserted present before `enabledAt` is read, and that is the whole point: the
+    // finder answers `null` when there is no enrolment at all, `state?.enabledAt` is then
+    // `undefined`, and `expect(undefined).not.toBeNull()` **passes** — the assertion was satisfied
+    // by exactly the outcome it exists to forbid. Proven 2026-08-30 by hoisting
+    // `enrollment.disable(subject.id)` above the policy call in `reset-user-mfa.use-case.ts`: the
+    // owner's second factor was wiped, a 403 came back, and this case stayed green.
     const state = await test.enrollment.find(COLLEAGUE);
 
+    expect(state).not.toBeNull();
     expect(state?.enabledAt).not.toBeNull();
     expect(test.dispatcher.dispatched).toEqual([]);
     expect(test.audit.events.map((event) => event.action)).not.toContain('user.mfa_reset_by_admin');
