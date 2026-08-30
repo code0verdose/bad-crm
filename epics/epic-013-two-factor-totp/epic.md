@@ -53,22 +53,58 @@ created: 2026-07-26
 
 ## Acceptance (эпик выполнен, когда)
 
-- [ ] Пользователь включает TOTP по QR-коду, подтверждая владение первым корректным кодом; до
-      подтверждения 2FA не считается включённой.
-- [ ] Секрет TOTP в БД зашифрован, никогда не логируется и не отдаётся клиенту повторно.
-- [ ] При включении выдаётся набор кодов восстановления, показанный один раз; в БД — только хеши.
-- [ ] Код восстановления срабатывает ровно один раз даже при параллельных попытках.
-- [ ] Вход с включённой 2FA невозможен без второго фактора: промежуточный токен отвергается **всеми**
-      остальными эндпоинтами (табличный тест по всему реестру маршрутов).
-- [ ] Повторное использование одного и того же TOTP-кода в пределах окна отклоняется.
-- [ ] Перебор кодов ограничен по частоте и по числу попыток на промежуточный токен.
-- [ ] Отключение 2FA требует пароля и действующего кода; администратор может сбросить чужую 2FA
-      правом `user:reset_mfa` с записью в `AuditLog` и уведомлением владельца учётки.
+Отметки проставлены сверкой с кодом 2026-08-30; каждая — с местом, по которому её можно перепроверить.
+
+- [x] Пользователь включает TOTP по QR-коду, подтверждая владение первым корректным кодом; до
+      подтверждения 2FA не считается включённой —
+      `packages/server/src/application/identity/use-cases/setup-totp.use-case.ts`,
+      `confirm-totp.use-case.ts`, экран `packages/client/src/widgets/totp-setup/`.
+- [x] Секрет TOTP в БД зашифрован, никогда не логируется и не отдаётся клиенту повторно —
+      `packages/server/src/infrastructure/crypto/field-encryption.adapter.ts:23` (`v1:<iv>:<tag>:<ciphertext>`,
+      AES-256-GCM под `APP_ENCRYPTION_KEY`), структурный тест
+      `packages/server/test/unit/persistence/mfa-recovery-code-structure.test.ts`.
+- [x] При включении выдаётся набор кодов восстановления, показанный один раз; в БД — только хеши —
+      `generate-recovery-codes.use-case.ts`, `packages/server/prisma/schema.prisma:353`
+      (`MfaRecoveryCode.codeHash`, argon2id тем же `PasswordHasherPort`).
+- [x] Код восстановления срабатывает ровно один раз даже при параллельных попытках —
+      `packages/server/src/infrastructure/persistence/prisma/mfa-recovery-code.repository.ts:73`
+      (`UPDATE … WHERE used_at IS NULL RETURNING`), гонка на реальном Postgres —
+      `test/integration/db/mfa-recovery-code-race.test.ts`.
+- [x] Вход с включённой 2FA невозможен без второго фактора: промежуточный токен отвергается **всеми**
+      остальными эндпоинтами (табличный тест по всему реестру маршрутов) —
+      `login.use-case.ts:292`, `verify-second-factor.use-case.ts`,
+      `test/.../mfa-pending-token-rejected-everywhere.test.ts`.
+- [x] Повторное использование одного и того же TOTP-кода в пределах окна отклоняется —
+      `totp_last_counter`, `confirm-totp.use-case.ts:249` (`totp_code_replayed`, 422) и
+      `mfa_code_replayed` (401) на шаге входа
+      (`packages/shared/src/errors/error-code.enums.ts:289`).
+- [x] Перебор кодов ограничен по частоте и по числу попыток на промежуточный токен — пять политик
+      в `infrastructure/rate-limit/rate-limit-policy.constant.ts:107-165` (`mfa_setup_attempt`,
+      `mfa_reauth_attempt`, `mfa_verify_attempt` по `jti`, `mfa_verify_account_attempt` по
+      `(ip, userId)`, `mfa_recovery_consume_attempt`, `mfa_admin_reset_attempt`); бюджет тратится до
+      Argon2 (`verify-second-factor.use-case.ts:159,181`).
+- [x] Отключение 2FA требует пароля и действующего кода; администратор может сбросить чужую 2FA
+      правом `user:reset_mfa` с записью в `AuditLog` и уведомлением владельца учётки —
+      `disable-totp.use-case.ts:141,183,305`,
+      `packages/server/src/application/iam/use-cases/reset-user-mfa.use-case.ts:237,248,268`,
+      право — `packages/shared/src/permissions/permissions.catalog.ts:653`.
 - [ ] Организация включает обязательную 2FA для выбранных ролей; при следующем входе такой
-      пользователь попадает в мастер настройки и не имеет доступа к остальным маршрутам.
+      пользователь попадает в мастер настройки и не имеет доступа к остальным маршрутам — **не
+      начато**, вся работа в [STORY-013-05](stories/story-013-05-org-2fa-policy.md) (`backlog`):
+      ни схемы политики, ни `scope = mfa_enrollment`, ни маршрута
+      `PATCH /organization/security-policy` в коде нет (`grep -rn 'mfaRequiredForRoles\|mfa_enrollment'
+      packages/server/src packages/shared/src` — пусто).
 - [ ] Все события 2FA (включение, отключение, использование recovery-кода, сброс администратором,
-      серия неудач) попадают в `AuditLog` с корректной `severity`.
-- [ ] Экраны 2FA соответствуют WCAG 2.1 AA и полностью локализованы EN/RU.
+      серия неудач) попадают в `AuditLog` с корректной `severity` — **почти**: шесть действий заведены
+      и пишутся (`packages/shared/src/audit/audit-action.enums.ts:45-95`,
+      `audit-severity.enums.ts:44-65`), открыта только **агрегированная запись серии неудач** и метрика
+      `mfa_recovery_failed_total` — см. [STORY-013-02](stories/story-013-02-recovery-codes.md), раздел
+      «Что отложено».
+- [x] Экраны 2FA соответствуют WCAG 2.1 AA и полностью локализованы EN/RU — axe в
+      `packages/e2e/tests/auth/{enable-2fa,login-with-2fa}.spec.ts` и в
+      `packages/client/test/widgets/{totp-setup,recovery-codes,disable-totp,reset-mfa}.test.tsx`,
+      ловушки фокуса в реестре `test/architecture/modal-focus-coverage.test.ts:58,60,65`, namespace
+      `security.json` заведён в `en` и `ru`.
 
 ## Блокирующая зависимость внутри эпика
 
@@ -215,10 +251,20 @@ HTTP-интеграционный тест настоящего отзыва с�
 
 ## Истории
 
+Статусы ниже сверены с frontmatter историй и с кодом 2026-08-30. Раньше здесь стояло `in-progress`
+у трёх историй, которые к тому дню уже были в `review`, и «клиентская половина отложена» у двух,
+клиент которых отгружен, — обе формулировки исправлены.
+
 - [ ] [STORY-013-01 — Включение TOTP по QR-коду](stories/story-013-01-enable-totp.md) —
-      `in-progress`: серверная половина отгружена, клиентская (критерий 10) отложена
+      `review`: сервер и клиент отгружены целиком (критерий 10 закрыт `430457e`, e2e `487383e`).
+      Открыт один хвост — джоба подчистки просроченных черновиков из критерия 3: планировщика в
+      сборке нет, черновик отвергается на чтении, в таблице копится мусор
 - [ ] [STORY-013-02 — Коды восстановления](stories/story-013-02-recovery-codes.md) —
-      `in-progress`: серверная половина отгружена, клиентская (критерии 2 и 6) отложена
+      `review`: сервер и клиент отгружены (критерии 2 и 6 закрыты `430457e`). Открыты две вещи из
+      критериев 4 и 10: уведомление владельцу учётки при трате кода (`consume-recovery-code.use-case.ts`
+      не зовёт `MailDispatchPort`, in-app-канала в продукте нет) и метрика `mfa_recovery_failed_total`
+      с агрегированной записью серии неудач (`application/platform/ports/metrics.port.ts` под неё не
+      расширен)
 - [x] [STORY-013-03 — Вход со вторым фактором](stories/story-013-03-login-second-factor.md) —
       `review`: закрыта целиком 2026-08-13. Сервер — `c5a50b6` (`mfaToken` вместо сессии,
       `POST /auth/2fa/verify`, отказ промежуточного токена по всему реестру), клиентский шаг входа
@@ -227,10 +273,10 @@ HTTP-интеграционный тест настоящего отзыва с�
       был ограничен по аккаунту (`924411b`) и шаг runbook'а не существовал как команда — подробности
       в разделе «Находки гейта» самой истории
 - [ ] [STORY-013-04 — Отключение и сброс 2FA](stories/story-013-04-disable-totp.md) —
-      `in-progress`: отгружены серверная половина (самостоятельное отключение, административный
+      `review`: отгружены серверная половина (самостоятельное отключение, административный
       сброс), клиентский экран отключения и **экран административного сброса (критерий 10) —
       `a5bf8b3`, `widgets/reset-mfa/` на карточке сотрудника**; отложена только политика
-      организации (критерии 4, 8 — требуют STORY-013-05)
+      организации (критерии 4, 8 — требуют STORY-013-05), заглушек под неё нет
 - [ ] [STORY-013-05 — Политика организации «2FA обязательна»](stories/story-013-05-org-2fa-policy.md)
 - [ ] [STORY-013-06 — Семафор конкурентности Argon2](stories/story-013-06-argon2-concurrency-guard.md) —
       `backlog`: выделена 2026-08-12 из критерия 9 STORY-013-03 (семафор и `argon2_inflight`

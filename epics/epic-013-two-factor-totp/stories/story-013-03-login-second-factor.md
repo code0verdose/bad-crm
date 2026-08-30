@@ -181,13 +181,21 @@ STORY-013-04, и только она.
 
 ## Задачи
 
-**Статус `in-progress`, а не `review`.** Серверная половина отгружена коммитом `c5a50b6`
-(«feat(auth): read the second factor at sign-in»): пароль на учётке с 2FA покупает пятиминутный
-`mfaToken` вместо сессии, код меняется на сессию на `POST /auth/2fa/verify`, промежуточный токен
-отвергается всем остальным реестром. Открыт критерий 11 — экран второго шага входа с полем
-`autocomplete="one-time-code"`, таймером жизни токена и ссылкой на код восстановления, а вместе с ним
-e2e `login-with-2fa.spec.ts` с axe. `review` означал бы «вся история на гейте», и борд соврал бы на
-целую половину работы; `ready` означал бы «ещё не начинали», и соврал бы на другую.
+> **Поправка 2026-08-30.** Здесь стояло «**Статус `in-progress`, а не `review`**… открыт критерий 11
+> — экран второго шага входа… а вместе с ним e2e `login-with-2fa.spec.ts` с axe». Обе половины
+> устарели: критерий 11 отгружен (`2e19c53`) — форма кода
+> `packages/client/src/units/auth/ui/two-factor-form.component.tsx`, мутация
+> `units/auth/service/mutations/verify-second-factor.mutation.ts`, хранение токена
+> `units/auth/lib/mfa-token-storage.util.ts`, — а спек `packages/e2e/tests/auth/login-with-2fa.spec.ts`
+> закоммичен (`git ls-files packages/e2e | grep 2fa`), то есть попадает в джобу `end-to-end`.
+> Статус во frontmatter — `review`, и он соответствует коду.
+
+Серверная половина отгружена коммитом `c5a50b6` («feat(auth): read the second factor at sign-in»):
+пароль на учётке с 2FA покупает пятиминутный `mfaToken` вместо сессии
+(`packages/server/src/application/identity/use-cases/login.use-case.ts:292`), код меняется на сессию
+на `POST /auth/2fa/verify` (`packages/server/src/presentation/http/route-registry.factory.ts:459`),
+промежуточный токен отвергается всем остальным реестром. Клиентский шаг входа отгружен следом.
+Открытых критериев у истории нет.
 
 - [x] `packages/server/src/application/identity/use-cases/login.use-case.ts` — ветка «2FA включена» →
       выдача `mfaToken` вместо сессии (`login.use-case.ts:292-311`, третья ветка `LoginResult`).
