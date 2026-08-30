@@ -312,6 +312,38 @@ const fields = z.object({
   ARGON2_MEMORY_COST: argon2Cost('ARGON2_MEMORY_COST', 19_456),
   ARGON2_TIME_COST: argon2Cost('ARGON2_TIME_COST', 2),
   ARGON2_PARALLELISM: argon2Cost('ARGON2_PARALLELISM', 1),
+
+  /**
+   * How many argon2id computations may run at once (STORY-013-06).
+   *
+   * **The default is arithmetic, not taste.** One computation holds `ARGON2_MEMORY_COST` KiB for
+   * its whole duration — 19 456 KiB by default — so the ceiling *is* the peak memory of password
+   * hashing: 4 × 19 456 KiB ≈ **76 MiB**. The smallest supported deployment is the `minimal`
+   * profile of `docs/architecture/stack.md`: 2 GB for app, PostgreSQL, Redis and MinIO together,
+   * of which `docs/runbooks/hosting.md` §2.5 budgets 0.4–0.6 GB for the API process. 76 MiB fits
+   * inside that with the heap; 8 would be 152 MiB and would spend most of the process's budget on
+   * hashing alone, on the profile least able to afford it.
+   *
+   * Four is also the width of the default libuv threadpool, where `@node-rs/argon2` runs the async
+   * form — so the ceiling does not leave admitted work queued behind threads that do not exist.
+   * That coincidence is a convenience, never the control: `UV_THREADPOOL_SIZE` is an operator's
+   * variable, the pool is shared with every `fs` and `dns` call, and nothing in the port promises
+   * any of it.
+   *
+   * Raise it on a host with memory to spare; the arithmetic above is how to decide by how much.
+   */
+  AUTH_ARGON2_MAX_CONCURRENCY: argon2Cost('AUTH_ARGON2_MAX_CONCURRENCY', 4),
+
+  /**
+   * How long a request may wait for one of those slots before it is refused 503.
+   *
+   * A queue without a deadline is the same exhausted memory one layer up — every waiter still holds
+   * a socket, a parsed body and a promise chain. Two seconds is chosen against the wait, not against
+   * the work: a sign-in costs 50–80 ms, so two seconds is room for a burst several times the
+   * ceiling, and it is still short enough that the browser on the other end has not given up and
+   * retried — which would put a second request into the queue the first one is stuck in.
+   */
+  AUTH_ARGON2_QUEUE_TIMEOUT_MS: argon2Cost('AUTH_ARGON2_QUEUE_TIMEOUT_MS', 2_000),
 });
 
 type EnvFields = z.infer<typeof fields>;

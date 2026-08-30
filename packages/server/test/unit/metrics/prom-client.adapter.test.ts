@@ -83,6 +83,35 @@ describe('the prom-client adapter', () => {
   });
 
   /**
+   * A gauge, not a counter: the question `argon2_inflight` answers is «how many 19 MiB allocations
+   * exist right now», and a monotonic total cannot answer it. Saturation held at the ceiling is the
+   * shape of a credential-stuffing run, and it is the warning an operator gets before the OOM
+   * killer picks a process (STORY-013-06, acceptance 4).
+   */
+  it('publishes the number of argon2 computations in flight, and lets it fall', async () => {
+    const metrics = createPromMetrics();
+
+    metrics.setArgon2InFlight(3);
+
+    await expect(metrics.render()).resolves.toContain('argon2_inflight 3');
+
+    metrics.setArgon2InFlight(0);
+
+    await expect(metrics.render()).resolves.toContain('argon2_inflight 0');
+  });
+
+  it('declares the gauge without labels, so it cannot grow a series per caller', async () => {
+    const metrics = createPromMetrics();
+
+    metrics.setArgon2InFlight(1);
+
+    const rendered = await metrics.render();
+
+    expect(rendered).toContain('# TYPE argon2_inflight gauge');
+    expect(rendered).not.toMatch(/argon2_inflight\{/);
+  });
+
+  /**
    * CONTROL: two adapters must not share a registry. The default `prom-client` registry is global,
    * and using it would make every count depend on which test ran first — the order-dependent
    * failure that gets debugged by rerunning rather than by reading.
@@ -112,6 +141,7 @@ describe('metrics switched off', () => {
     noopMetrics.incrementAuthRateLimited('/api/v1/auth/login');
     noopMetrics.incrementPermissionDenied('permission_not_granted');
     noopMetrics.incrementAuditWriteFailed();
+    noopMetrics.setArgon2InFlight(4);
 
     await expect(noopMetrics.render()).resolves.toBe('');
   });

@@ -105,6 +105,8 @@ import { ProcessLifecycleAdapter } from '@/infrastructure/platform/process-lifec
 import { SystemClockAdapter } from '@/infrastructure/platform/system-clock.adapter.js';
 import { SystemIdGeneratorAdapter } from '@/infrastructure/platform/system-id-generator.adapter.js';
 import { Argon2PasswordHasher } from '@/infrastructure/crypto/argon2-password-hasher.adapter.js';
+import { createHashSemaphore } from '@/infrastructure/crypto/argon2-semaphore.util.js';
+import { LimitedPasswordHasher } from '@/infrastructure/crypto/limited-password-hasher.adapter.js';
 import { HmacAddressHasher } from '@/infrastructure/crypto/address-hasher.adapter.js';
 import { JwtAccessTokenAdapter } from '@/infrastructure/crypto/jwt-access-token.adapter.js';
 import { Sha256RefreshTokenAdapter } from '@/infrastructure/crypto/refresh-token.adapter.js';
@@ -663,11 +665,27 @@ const buildIdentity = (input: {
   const totpEnrollment = new PrismaTotpEnrollmentRepository();
   const recoveryCodeRows = new PrismaMfaRecoveryCodeRepository();
 
-  const hasher = new Argon2PasswordHasher({
-    memoryCost: input.env.ARGON2_MEMORY_COST,
-    timeCost: input.env.ARGON2_TIME_COST,
-    parallelism: input.env.ARGON2_PARALLELISM,
-  });
+  /**
+   * One hasher for the whole process, and the ceiling is around it rather than around a use-case.
+   *
+   * Every argon2id computation an installation performs passes through this object — sign-in,
+   * registration, the password change, the reset, the ten verifications a recovery code costs — so
+   * wrapping it here is what makes `AUTH_ARGON2_MAX_CONCURRENCY` a property of the process instead
+   * of a property of one endpoint (STORY-013-06). It is also what keeps the sign-in's dummy
+   * verification inside the queue: a place in line is taken before the account is known to exist.
+   */
+  const hasher = new LimitedPasswordHasher(
+    new Argon2PasswordHasher({
+      memoryCost: input.env.ARGON2_MEMORY_COST,
+      timeCost: input.env.ARGON2_TIME_COST,
+      parallelism: input.env.ARGON2_PARALLELISM,
+    }),
+    createHashSemaphore({
+      maxConcurrency: input.env.AUTH_ARGON2_MAX_CONCURRENCY,
+      queueTimeoutMs: input.env.AUTH_ARGON2_QUEUE_TIMEOUT_MS,
+      onInFlightChange: (inFlight) => input.metrics.setArgon2InFlight(inFlight),
+    }),
+  );
   const refreshTokens = new Sha256RefreshTokenAdapter();
   const resetTokens = new Sha256ResetTokenAdapter();
 

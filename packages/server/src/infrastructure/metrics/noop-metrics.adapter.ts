@@ -15,6 +15,7 @@ export const noopMetrics: MetricsPort = {
   incrementAuditWriteFailed: () => undefined,
   incrementAuditUnscoped: () => undefined,
   incrementMfaRecoveryFailed: () => undefined,
+  setArgon2InFlight: () => undefined,
   render: () => Promise.resolve(''),
   contentType: 'text/plain; charset=utf-8',
 };

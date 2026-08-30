@@ -5,7 +5,12 @@ import { z } from 'zod';
 
 import { AsyncRequestContextAdapter } from '../../../src/infrastructure/logging/async-request-context.adapter.js';
 import { accessErrorFor } from '../../../src/domain/access/access.errors.js';
-import { NotFoundError, ValidationError } from '../../../src/domain/shared/errors/app.errors.js';
+import {
+  NotFoundError,
+  RateLimitedError,
+  ServiceUnavailableError,
+  ValidationError,
+} from '../../../src/domain/shared/errors/app.errors.js';
 import { createErrorHandler } from '../../../src/presentation/http/error-handler.middleware.js';
 import { createRequestContextMiddleware } from '../../../src/presentation/http/middleware/request-context.middleware.js';
 import {
@@ -265,5 +270,47 @@ describe('a response that already started', () => {
     await request(app).get('/boom');
 
     expect(entriesOf(logLines()).map((line) => line['code'])).toEqual(['task_not_found']);
+  });
+});
+
+/**
+ * `Retry-After` is set from one place for every error that carries a number of seconds — the 429 of
+ * the rate limiter and the 503 of the argon2 queue alike (STORY-013-06, acceptance 2). A second
+ * mechanism for the same header is how one of the two ends up shipping without it.
+ */
+describe('Retry-After', () => {
+  it('carries the seconds of a rate-limited refusal', async () => {
+    const { app } = appThrowing(() => {
+      throw new RateLimitedError(42);
+    });
+
+    const response = await request(app).get('/boom');
+
+    expect(response.status).toBe(429);
+    expect(response.headers['retry-after']).toBe('42');
+  });
+
+  it('carries the seconds of an overloaded dependency that named one', async () => {
+    const { app } = appThrowing(() => {
+      throw new ServiceUnavailableError({ dependency: 'password-hashing' }, undefined, 2);
+    });
+
+    const response = await request(app).get('/boom');
+
+    expect(response.status).toBe(503);
+    expect(response.body.code).toBe('service_unavailable');
+    expect(response.headers['retry-after']).toBe('2');
+  });
+
+  /** CONTROL: a dependency failure with no answer to «when» must not invent one. */
+  it('CONTROL: sends no header when the error names no delay', async () => {
+    const { app } = appThrowing(() => {
+      throw new ServiceUnavailableError({ dependency: 'redis' });
+    });
+
+    const response = await request(app).get('/boom');
+
+    expect(response.status).toBe(503);
+    expect(response.headers['retry-after']).toBeUndefined();
   });
 });

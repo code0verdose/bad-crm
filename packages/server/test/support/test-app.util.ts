@@ -43,6 +43,8 @@ export const testEnv = (overrides: Partial<ServerEnv> = {}): ServerEnv =>
     ARGON2_MEMORY_COST: 19_456,
     ARGON2_TIME_COST: 2,
     ARGON2_PARALLELISM: 1,
+    AUTH_ARGON2_MAX_CONCURRENCY: 4,
+    AUTH_ARGON2_QUEUE_TIMEOUT_MS: 2_000,
     ...overrides,
   }) as ServerEnv;
 

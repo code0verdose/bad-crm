@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 
 import { LoginUseCase } from '@/application/identity/use-cases/login.use-case.js';
 import { IssueSessionUseCase } from '@/application/identity/use-cases/issue-session.use-case.js';
+import { createHashSemaphore } from '@/infrastructure/crypto/argon2-semaphore.util.js';
+import { LimitedPasswordHasher } from '@/infrastructure/crypto/limited-password-hasher.adapter.js';
 import { type LogFields } from '@/application/platform/ports/logger.port.js';
 import { SECURITY_EVENTS } from '@/domain/identity/security-event.constant.js';
 import { type AppError } from '@/domain/shared/errors/app.errors.js';
@@ -44,6 +46,8 @@ interface Harness {
   readonly logger: RecordingLogger;
   readonly enrollment: JournalingTotpEnrollment;
   readonly mfaTokens: FakeMfaPendingTokens;
+  /** Exposed so a test can rebuild the use-case with the hasher wrapped in the argon2 ceiling. */
+  readonly issueSession: IssueSessionUseCase;
   /** What the hasher, the limiter and the enrolment read did, in the order they did it. */
   readonly journal: string[];
 }
@@ -102,6 +106,7 @@ const harness = (
     logger,
     enrollment,
     mfaTokens,
+    issueSession: issue,
     journal,
   };
 };
@@ -221,6 +226,57 @@ describe('signing in', () => {
       expect(unknown.hasher.verified).toHaveLength(1);
       expect(unknown.hasher.verified).toHaveLength(wrong.hasher.verified.length);
       expect(unknown.hasher.verified[0]?.digest).toBe(unknown.hasher.dummyHash);
+    });
+
+    /**
+     * STORY-013-06, acceptance 3. The concurrency ceiling must not undo what the dummy digest above
+     * buys: a place in the queue is taken **before** it is known whether the account exists.
+     *
+     * It is structural rather than a matter of ordering lines, and that is what this asserts.
+     * `LimitedPasswordHasher` wraps the *port*, so both branches of `verifyAll` — the dummy
+     * verification for an address nobody has, and the real one for a wrong password — pass through
+     * the same queue by construction. A ceiling placed instead inside the `candidates.length > 0`
+     * branch would let an unknown address skip the queue entirely, and under load "answers
+     * immediately" would mean "no such account" far more loudly than any timing difference the
+     * dummy digest was built to hide.
+     */
+    it('takes a place in the argon2 queue whether or not the account exists', async () => {
+      const admissions: number[] = [];
+      const semaphore = createHashSemaphore({
+        maxConcurrency: 1,
+        queueTimeoutMs: 5_000,
+        onInFlightChange: (inFlight) => admissions.push(inFlight),
+      });
+
+      const attempt = async (email: string, password: string): Promise<number> => {
+        const test = harness();
+        const limited = new LimitedPasswordHasher(test.hasher, semaphore);
+        const login = new LoginUseCase(
+          test.lookup,
+          limited,
+          test.users,
+          test.enrollment,
+          test.unitOfWork,
+          test.issueSession,
+          test.mfaTokens,
+          test.rateLimit,
+          test.logger,
+          test.audit,
+        );
+
+        const before = admissions.length;
+
+        await refusal(() => login.execute({ email, password, client: CLIENT }));
+
+        return admissions.length - before;
+      };
+
+      const unknown = await attempt('nobody@example.com', PASSWORD);
+      const wrong = await attempt('ada@example.com', 'wrong-password');
+
+      // Two readings per attempt — the count going to one and back to zero — for both branches.
+      expect(unknown).toBe(2);
+      expect(unknown).toBe(wrong);
     });
 
     it('writes no session and opens no tenant scope', async () => {

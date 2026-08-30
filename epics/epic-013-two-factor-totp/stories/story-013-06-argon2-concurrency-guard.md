@@ -1,7 +1,7 @@
 ---
 id: STORY-013-06
 epic: EPIC-013
-status: backlog
+status: in-progress
 blocked: false
 priority: should
 estimate: S
@@ -35,6 +35,14 @@ estimate: S
 
 Оба факта установлены чтением дерева 2026-08-12; проверить перед началом работы — не по этому
 абзацу, а по коду.
+
+> **Проверено и закрыто 2026-08-30.** Оба факта подтвердились командой перед началом работы —
+> `grep -rniE 'semaphore|inflight|argon2_inflight|concurrency' packages/server/src packages/shared/src .env.example`
+> не находил ни ограничителя, ни метрики. Оба теперь есть:
+> `packages/server/src/infrastructure/crypto/argon2-semaphore.util.ts`,
+> `packages/server/src/infrastructure/crypto/limited-password-hasher.adapter.ts`, gauge
+> `argon2_inflight` в `prom-client.adapter.ts` и строка в каталоге `rules/observability.mdc`.
+> Абзац выше оставлен как запись исходного состояния, а не как утверждение о текущем.
 
 ## Acceptance (Given/When/Then)
 
@@ -77,12 +85,12 @@ estimate: S
 
 ## Задачи
 
-- [ ] Семафор в `infrastructure/crypto/` рядом с адаптером хешера; предел из провалидированной
-      env-схемы, не константой в коде.
-- [ ] Ограничение времени ожидания и ответ 503 с `Retry-After`.
-- [ ] Gauge `argon2_inflight` + запись в каталоге метрик.
-- [ ] `.env.example`, `docs/runbooks/upgrade.md`, `docs/runbooks/install.md` — новая переменная.
-- [ ] Нагрузочный тест `login-flood-memory` с доказательством красного.
+- [x] Семафор в `infrastructure/crypto/` рядом с адаптером хешера; предел из провалидированной
+      env-схемы, не константой в коде (`AUTH_ARGON2_MAX_CONCURRENCY`).
+- [x] Ограничение времени ожидания (`AUTH_ARGON2_QUEUE_TIMEOUT_MS`) и ответ 503 с `Retry-After`.
+- [x] Gauge `argon2_inflight` + запись в каталоге метрик.
+- [x] `.env.example`, `docs/runbooks/upgrade.md`, `docs/runbooks/install.md` — новые переменные.
+- [x] Нагрузочный тест `login-flood-memory` с доказательством красного.
 
 ## Ссылки
 
@@ -93,7 +101,7 @@ estimate: S
 
 ## Definition of Done
 
-- [ ] Тесты написаны первыми (TDD), проходят, изменённый код покрыт
+- [x] Тесты написаны первыми (TDD), проходят, изменённый код покрыт
 - [ ] Commit-гейт зелёный (test-coverage, security-auditor, production-readiness, commit-hygiene)
-- [ ] Документация обновлена (docs/ + запись в `docs/brain/`)
-- [ ] Новая обязательная env объявлена в `.env.example` **и** в runbook'е обновления
+- [x] Документация обновлена (docs/ + запись в `docs/brain/`)
+- [x] Новая обязательная env объявлена в `.env.example` **и** в runbook'е обновления

@@ -227,6 +227,59 @@ describe('password hashing parameters', () => {
 });
 
 /**
+ * The ceiling on concurrent argon2id computations (STORY-013-06, acceptance 5).
+ *
+ * The default is a memory budget, not a taste: `ARGON2_MEMORY_COST` is 19 MiB per computation, the
+ * `minimal` profile of `docs/architecture/stack.md` starts on **2 GB total** shared with PostgreSQL,
+ * Redis and MinIO, and `docs/runbooks/hosting.md` §2 budgets the API process at 0.4–0.6 GB of it.
+ * Four computations is 4 × 19 456 KiB ≈ 76 MiB — inside that share with room for the heap — while
+ * eight would be 152 MiB and would spend most of the process's budget on password hashing alone.
+ */
+describe('AUTH_ARGON2_MAX_CONCURRENCY', () => {
+  it('defaults to a ceiling the minimal profile can afford', () => {
+    const env = loadEnv(VALID_ENV);
+
+    expect(env.AUTH_ARGON2_MAX_CONCURRENCY).toBe(4);
+    expect(env.AUTH_ARGON2_MAX_CONCURRENCY * env.ARGON2_MEMORY_COST * 1024).toBeLessThan(
+      100 * 1024 * 1024,
+    );
+  });
+
+  it('takes a raised ceiling from a host with memory to spare', () => {
+    expect(
+      loadEnv(withEnv({ AUTH_ARGON2_MAX_CONCURRENCY: '16' })).AUTH_ARGON2_MAX_CONCURRENCY,
+    ).toBe(16);
+  });
+
+  it.each(['0', '-1', '2.5', 'many'])(
+    'rejects %o rather than admitting nothing or everything',
+    (value) => {
+      expect(issuePathsOf(withEnv({ AUTH_ARGON2_MAX_CONCURRENCY: value }))).toContain(
+        'AUTH_ARGON2_MAX_CONCURRENCY',
+      );
+    },
+  );
+});
+
+/**
+ * How long a sign-in may wait for a slot before it is refused.
+ *
+ * A queue without a deadline is the same exhausted memory one layer up: every waiter still holds a
+ * socket, a parsed body and a promise chain, and the client that gave up long ago is never told.
+ */
+describe('AUTH_ARGON2_QUEUE_TIMEOUT_MS', () => {
+  it('defaults to a wait a browser will still be there for', () => {
+    expect(loadEnv(VALID_ENV).AUTH_ARGON2_QUEUE_TIMEOUT_MS).toBe(2_000);
+  });
+
+  it.each(['0', '-1', 'soon'])('rejects %o instead of waiting forever', (value) => {
+    expect(issuePathsOf(withEnv({ AUTH_ARGON2_QUEUE_TIMEOUT_MS: value }))).toContain(
+      'AUTH_ARGON2_QUEUE_TIMEOUT_MS',
+    );
+  });
+});
+
+/**
  * How many `X-Forwarded-For` hops the process believes.
  *
  * A default of `0` and not `1`: the shipped `docker-compose.yml` has no reverse proxy in it, so on

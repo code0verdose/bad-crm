@@ -27,14 +27,33 @@ export abstract class AppError extends Error {
   readonly code: ErrorCode;
   readonly status: number;
   readonly details?: ErrorDetails;
+  /**
+   * Seconds after which retrying is worth the caller's time — the `Retry-After` header, and the
+   * only thing a client can act on when the answer is "not now".
+   *
+   * Declared on the base rather than on each subclass so that the header is set in **one** place
+   * (`error-handler.middleware.ts`), for the 429 of the rate limiter and the 503 of a saturated
+   * dependency alike. The alternative — a second `instanceof` in the handler per error that has a
+   * delay — is how one of them ends up shipping without the header nobody thought to add.
+   *
+   * `undefined` means "we do not know when", which is an honest answer and not one to invent.
+   */
+  readonly retryAfterSeconds?: number;
 
-  protected constructor(code: ErrorCode, message: string, details?: ErrorDetails, cause?: unknown) {
+  protected constructor(
+    code: ErrorCode,
+    message: string,
+    details?: ErrorDetails,
+    cause?: unknown,
+    retryAfterSeconds?: number,
+  ) {
     super(message, cause === undefined ? undefined : { cause });
 
     this.code = code;
     this.status = errorCodeStatus(code);
     this.name = new.target.name;
     if (details !== undefined) this.details = details;
+    if (retryAfterSeconds !== undefined) this.retryAfterSeconds = retryAfterSeconds;
   }
 }
 
@@ -147,12 +166,11 @@ export class ValidationError extends AppError {
  * the error it will raise, and the header is wired in the handler so it cannot be forgotten there.
  */
 export class RateLimitedError extends AppError {
-  readonly retryAfterSeconds: number;
+  /** Always present here, unlike on the base — a 429 that cannot say «when» is the one to avoid. */
+  declare readonly retryAfterSeconds: number;
 
   constructor(retryAfterSeconds: number, details?: ErrorDetails) {
-    super('rate_limited', 'Too many requests', details);
-
-    this.retryAfterSeconds = retryAfterSeconds;
+    super('rate_limited', 'Too many requests', details, undefined, retryAfterSeconds);
   }
 }
 
@@ -351,7 +369,13 @@ export class ConfirmationRequiredError extends AppError {
  * connection strings quote passwords.
  */
 export class ServiceUnavailableError extends AppError {
-  constructor(details?: ErrorDetails, cause?: unknown) {
-    super('service_unavailable', 'A dependency is unavailable', details, cause);
+  /**
+   * `retryAfterSeconds` is optional because most dependencies cannot say when they will be back:
+   * Redis being unreachable has no deadline, and a number invented for it would be a promise the
+   * process cannot keep. The one caller that *does* know is the argon2 queue — the wait it just
+   * exhausted is the answer — and it passes it (`argon2-semaphore.util.ts`, STORY-013-06).
+   */
+  constructor(details?: ErrorDetails, cause?: unknown, retryAfterSeconds?: number) {
+    super('service_unavailable', 'A dependency is unavailable', details, cause, retryAfterSeconds);
   }
 }

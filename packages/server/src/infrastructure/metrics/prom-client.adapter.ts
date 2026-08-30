@@ -1,5 +1,5 @@
 import { type SharedPermissions } from '@bad-crm/shared';
-import { Counter, Histogram, Registry, collectDefaultMetrics } from 'prom-client';
+import { Counter, Gauge, Histogram, Registry, collectDefaultMetrics } from 'prom-client';
 
 import {
   type HttpRequestObservation,
@@ -80,6 +80,12 @@ export const createPromMetrics = (): MetricsPort => {
     registers: [registry],
   });
 
+  const argon2InFlight = new Gauge({
+    name: 'argon2_inflight',
+    help: 'Argon2id computations running right now, against the configured ceiling.',
+    registers: [registry],
+  });
+
   return {
     observeHttpRequest: ({
       method,
@@ -104,6 +110,9 @@ export const createPromMetrics = (): MetricsPort => {
     },
     incrementMfaRecoveryFailed: (): void => {
       mfaRecoveryFailed.inc();
+    },
+    setArgon2InFlight: (inFlight: number): void => {
+      argon2InFlight.set(inFlight);
     },
     render: () => registry.metrics(),
     contentType: registry.contentType,

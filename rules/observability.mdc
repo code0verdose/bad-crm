@@ -163,6 +163,7 @@ await this.audit.record({ ... });   // вне withTransaction
 | `audit_write_failed_total` | counter | — | STORY-016-02 — есть счётчик; деградация `info`-событий не сделана, сбой по-прежнему роняет транзакцию |
 | `audit_unscoped_total` | counter | — | есть — привилегированное действие, записанное строкой лога вместо строки таблицы. Путь закрыт списком `application/platform/audit/unscoped-audit-actions.constant.ts`; всё, чего в списке нет, отвергается и считается счётчиком выше |
 | `mfa_recovery_failed_total` | counter | — | STORY-013-02 — есть. Резервный код предъявлен на шаге второго фактора и отвергнут. Без меток: исход (нет такого, уже потрачен, малформед) — ровно то различие, которое ответ прячет фиксированной стоимостью сверки, и метка публиковала бы его на `/metrics` |
+| `argon2_inflight` | gauge | — | STORY-013-06 — есть. Сколько вычислений argon2id идёт прямо сейчас, против потолка `AUTH_ARGON2_MAX_CONCURRENCY`. Gauge, а не счётчик: вопрос — «сколько живых аллокаций по 19 MiB», и монотонный итог на него не отвечает, как не отвечает и среднее (среднее 4 при всплеске 200 — это 3.8 GiB резидентной памяти на длину всплеска, и именно среднее его прячет). Без меток: напрашивающаяся метка — операция (hash, verify), а вопросу она не нужна |
 | `db_pool_active` / `db_pool_idle` | gauge | — | требует preview-фичу `metrics` в `prisma/schema.prisma`; правка схемы со своим гейтом (`db-reviewer`) |
 | `bullmq_jobs_total` | counter | `queue`, `status` | эпик очередей |
 | `bullmq_job_duration_seconds` | histogram | `queue` | эпик очередей |

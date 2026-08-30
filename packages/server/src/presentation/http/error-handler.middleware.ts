@@ -8,7 +8,6 @@ import { AccessRefusedError } from '@/domain/access/access.errors.js';
 import {
   AppError,
   PayloadTooLargeError,
-  RateLimitedError,
   ValidationError,
 } from '@/domain/shared/errors/app.errors.js';
 import {
@@ -130,7 +129,10 @@ export const createErrorHandler = (dependencies: ErrorHandlerDependencies): Erro
       dependencies.metrics?.incrementPermissionDenied(appError.reason);
     }
 
-    if (appError instanceof RateLimitedError) {
+    // One place for the header, whatever raised it: the 429 of the rate limiter and the 503 of a
+    // saturated dependency both carry `retryAfterSeconds` on `AppError` (STORY-013-06). A second
+    // `instanceof` per error with a delay is how one of them ships without the header.
+    if (appError?.retryAfterSeconds !== undefined) {
       response.setHeader('Retry-After', String(appError.retryAfterSeconds));
     }
 

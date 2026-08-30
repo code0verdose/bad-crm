@@ -91,6 +91,23 @@ export interface MetricsPort {
    * verifications to hide.
    */
   incrementMfaRecoveryFailed(): void;
+  /**
+   * How many argon2id computations exist **right now** (STORY-013-06, acceptance 4).
+   *
+   * A gauge, not a counter, and the distinction is the whole value: the question is «how many
+   * 19 MiB allocations are live», which a monotonic total cannot answer, and an average cannot
+   * either — an average of four with a spike of two hundred is 3.8 GiB resident for the length of
+   * the spike, and the average is the one statistic that hides it.
+   *
+   * It exists so saturation is visible **before** the OOM killer acts. The ceiling
+   * (`AUTH_ARGON2_MAX_CONCURRENCY`) turns memory exhaustion into refusals, which is the right
+   * failure — but a refusal is silent, and this series sitting flat at the ceiling for minutes is
+   * the shape of a credential-stuffing run and the only trace of it that survives a restart.
+   *
+   * Unlabelled, for the reason the audit counters are: the tempting label is the operation (hash,
+   * verify) and the question needs neither, while `/metrics` is read by whatever reaches the port.
+   */
+  setArgon2InFlight(inFlight: number): void;
   /** The exposition format, rendered on demand. */
   render(): Promise<string>;
   readonly contentType: string;
