@@ -111,8 +111,14 @@ export const compareToBaseline = (
       }
 
       const delta = round(actual - expected[metric]);
+      // A baseline of 100 admits no tolerance. Below it the allowance is doing real work — a package
+      // at 84 % moves by fractions as files arrive, and failing on that would make the gate noise —
+      // but at exactly 100 there is nothing to absorb: every tenth of a point is a line somebody can
+      // name. Half a point of the client is about a dozen of them, and a drop of 0.08 pp lived
+      // unnoticed until the two lines behind it turned out to be a path covered only by accident.
+      const allowed = expected[metric] === 100 ? 0 : baseline.tolerance;
       const status: ComparisonStatus =
-        delta < -baseline.tolerance ? 'regressed' : delta > 0 ? 'improved' : 'ok';
+        delta < -allowed ? 'regressed' : delta > 0 ? 'improved' : 'ok';
 
       return { project, metric, baseline: expected[metric], measured: actual, delta, status };
     }),
@@ -139,7 +145,8 @@ export const renderReport = (rows: readonly Comparison[], tolerance: number): st
   const lines = [
     '### Coverage against the baseline',
     '',
-    `Tolerance: ${tolerance} percentage points below \`coverage-baseline.json\`.`,
+    `Tolerance: ${tolerance} percentage points below \`coverage-baseline.json\` — except where the ` +
+      'baseline is 100, which admits none: there every tenth of a point is a line somebody can name.',
     '',
     '| Project | Metric | Baseline | Measured | Delta |',
     '| --- | --- | ---: | ---: | --- |',

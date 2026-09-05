@@ -64,6 +64,46 @@ describe('comparing a run against the baseline', () => {
     expect(verdictOf(rows)).toBe(0);
   });
 
+  /**
+   * A baseline of 100 admits no tolerance, and the reason is arithmetic rather than strictness.
+   *
+   * Half a percentage point of the client is about a dozen lines: a drop of 0.08 pp — two lines and
+   * two branches — lived unnoticed for weeks under this rule, and the two lines turned out to be a
+   * path covered only by accident, by a test in another file clicking a button that belonged to a
+   * broken widget. Below 100 the tolerance is doing real work: coverage of a package that is 84 %
+   * moves by fractions as files arrive, and failing on that would make the gate noise. At exactly
+   * 100 there is nothing for it to absorb — every tenth of a point is a line somebody can name, and
+   * «no uncovered lines» is a property a package either has or has lost.
+   */
+  it('admits no tolerance where the baseline is a hundred', () => {
+    const perfect: CoverageBaseline = {
+      tolerance: 0.5,
+      projects: { 'packages/client': { lines: 100, branches: 100 } },
+    };
+
+    const rows = compareToBaseline(perfect, {
+      'packages/client': { lines: 99.92, branches: 100 },
+    });
+
+    expect(verdictOf(rows)).toBe(1);
+    expect(rows.find((row) => row.status === 'regressed')).toMatchObject({
+      project: 'packages/client',
+      metric: 'lines',
+      measured: 99.92,
+    });
+  });
+
+  it('CONTROL: still accepts a hundred that stayed a hundred', () => {
+    const perfect: CoverageBaseline = {
+      tolerance: 0.5,
+      projects: { 'packages/client': { lines: 100, branches: 100 } },
+    };
+
+    expect(
+      verdictOf(compareToBaseline(perfect, { 'packages/client': { lines: 100, branches: 100 } })),
+    ).toBe(0);
+  });
+
   it('fails a drop past the tolerance, naming project, metric and both numbers', () => {
     const rows = compareToBaseline(baseline, measured({ '.': { lines: 79.4, branches: 70 } }));
     const regression = rows.find((row) => row.status === 'regressed');
