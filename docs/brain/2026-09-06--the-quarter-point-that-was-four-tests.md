@@ -58,7 +58,8 @@ tags: [vitest, coverage, testing, mutation-testing, mfa]
      Покрывает `:301-304`. Утверждение — не «строка исполнилась», а наблюдаемое: в
      `hasher.verified` лежит пара с `dummyHash`, то есть временнáя планка уплачена.
    - `test/unit/application/regenerate-recovery-codes.use-case.test.ts`, «a TOTP secret this key
-     cannot decrypt»: подменённый `fields.decrypt` бросает. Покрывает `:242,251`
+     cannot decrypt»: подменённый `fields.decrypt` бросает. Покрывает `:245,254` — номера
+     после комментария, который добавила эта же дельта
      (`totp_secret_undecryptable` на `error` + `ServiceUnavailableError`). Этот случай дословно
      назван в комментарии кода как «то же самое, что в `ConfirmTotpUseCase`» — и там он был
      покрыт, а здесь нет.
@@ -77,8 +78,8 @@ tags: [vitest, coverage, testing, mutation-testing, mfa]
    | убрать `refuse('race_lost')` | `confirm-totp:267` | 1 failed |
    | `InvalidTotpCodeError` → `RateLimitedError` | `confirm-totp:269` | 1 failed |
    | убрать проверку против `dummyHash` | `confirm-totp:302` | 1 failed |
-   | `ServiceUnavailableError` → `throw cause` | `regenerate:251` | 1 failed |
-   | убрать `logger.error(totp_secret_undecryptable)` | `regenerate:242` | 1 failed |
+   | `ServiceUnavailableError` → `throw cause` | `regenerate:254` | 1 failed |
+   | убрать `logger.error(totp_secret_undecryptable)` | `regenerate:245` | 1 failed |
    | убрать проверку против `dummyHash` | `regenerate:191` | 1 failed |
    | удалить строку `setHeader('Cache-Control')` | `mfa.controller:120` | 1 failed |
    | `json(serialize(...))` → `json({})` | `mfa.controller:121` | 1 failed |
