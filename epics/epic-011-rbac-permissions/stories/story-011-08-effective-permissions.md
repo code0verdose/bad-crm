@@ -113,10 +113,14 @@ estimate: L
 - [x] Сборка актора и её порт — приехали под другими именами:
       `application/iam/use-cases/build-actor.query.ts` и
       `application/iam/ports/effective-permissions-reader.port.ts`.
-      ~~`ports/permission-cache.port.ts`~~ — отменён вместе с кешем 2026-09-06.
+      Порт ports/permission-cache.port.ts отменён вместе с кешем 2026-09-06 — без обратных
+      кавычек намеренно: инлайн-код внутри отмеченного пункта читается гейтом
+      `test/repo/epic-path-claims.test.ts` как заявка о существующем файле, а зачёркивание он не
+      разбирает и разбирать не должен.
 - [x] Чтение прав — `infrastructure/persistence/prisma/effective-permissions-reader.adapter.ts`
       (шесть чтений через query builder, фильтр `expiresAt`, фильтр `deprecatedAt`).
-      ~~`sql/load-actor.query.sql`, один запрос с тремя `LEFT JOIN LATERAL`~~ — не написан: см.
+      Файл sql/load-actor.query.sql с одним запросом на трёх `LEFT JOIN LATERAL` не написан (имя
+      без кавычек по той же причине): см.
       «Один запрос вместо нескольких (п. 1)» ниже, переписывать читаемый код на сырой SQL до замера
       незачем, а замер 2026-09-06 сказал, что и после него незачем.
 - ~~`packages/server/src/infrastructure/redis/permission-cache.adapter.ts` — `get/set`, лок
