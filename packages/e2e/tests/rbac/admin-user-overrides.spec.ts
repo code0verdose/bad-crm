@@ -6,6 +6,7 @@ import {
   SEED_ORGANIZATION_B,
   SEED_PASSWORD,
 } from '../../fixtures/seed-data.js';
+import { explainProvisioningRefusal, testAccountEmail } from '../../fixtures/test-account.js';
 import { test } from '../../fixtures/session.fixture.js';
 import { audit } from '../support/audit.util.js';
 
@@ -124,14 +125,14 @@ const provisionDeveloperColleague = async (
   owner: ApiSession,
   roleId: string,
 ): Promise<{ userId: string; email: string }> => {
-  const email = `override-target-${randomUUID()}@org-a.local`;
+  const email = testAccountEmail('override-target');
 
   const invited = await owner.context.post('/api/v1/invitations', {
     headers: { ...owner.headers, 'Idempotency-Key': randomUUID() },
     data: { email, roleId, locale: 'en' },
   });
 
-  expect(invited.ok(), await invited.text()).toBe(true);
+  expect(invited.ok(), await explainProvisioningRefusal(invited, 'create')).toBe(true);
 
   const { inviteUrl } = (await invited.json()) as { inviteUrl: string };
   // The token is the last path segment of `/invite/$token`
@@ -153,7 +154,7 @@ const provisionDeveloperColleague = async (
       data: { token, password: SEED_PASSWORD, locale: 'en' },
     });
 
-    expect(accepted.ok(), await accepted.text()).toBe(true);
+    expect(accepted.ok(), await explainProvisioningRefusal(accepted, 'accept')).toBe(true);
 
     const { user } = (await accepted.json()) as { user: { id: string } };
 

@@ -29,7 +29,9 @@ const apiURL = (): string => process.env['E2E_API_URL'] ?? 'http://localhost:300
 const browserOrigin = (): string =>
   new URL(process.env['E2E_BASE_URL'] ?? 'http://localhost:5173').origin;
 
-type StorageState = Awaited<ReturnType<Awaited<ReturnType<typeof request.newContext>>['storageState']>>;
+type StorageState = Awaited<
+  ReturnType<Awaited<ReturnType<typeof request.newContext>>['storageState']>
+>;
 
 /** Signs in over the API and returns the cookie jar a browser context can start from. */
 const mintSession = async (organization: SeedOrganization): Promise<StorageState> => {

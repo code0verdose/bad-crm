@@ -1,6 +1,11 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 
-import { configForRepoFile, lintFixture, warmUpFixtureLint } from './eslint-fixture.util.js';
+import {
+  configForRepoFile,
+  lintFixture,
+  lintRepoFile,
+  warmUpFixtureLint,
+} from './eslint-fixture.util.js';
 
 /**
  * Every case is a file in `test/lint/fixtures/` that violates one architectural invariant, plus the
@@ -826,10 +831,37 @@ describe('the end-to-end harness is covered outside src and tests', () => {
     ['packages/e2e/playwright.config.ts', 'no-restricted-syntax'],
     ['packages/e2e/global-setup.ts', 'no-restricted-imports'],
     ['packages/e2e/global-setup.ts', '@typescript-eslint/no-floating-promises'],
+    ['packages/e2e/global-teardown.ts', 'no-restricted-imports'],
+    ['packages/e2e/global-teardown.ts', '@typescript-eslint/no-floating-promises'],
   ])('%s has %s enabled', async (path, rule) => {
     const { rules } = await configForRepoFile(path);
 
     expect(severity(rules, rule), `${rule} is not applied to ${path}`).toBe(2);
+  });
+
+  /**
+   * `global-teardown.ts` is a fixed name, exactly as `global-setup.ts` is.
+   *
+   * Playwright resolves `globalTeardown` by path and the name is its vocabulary; renaming it to
+   * `something.util.ts` to satisfy the suffix dictionary would hide the file from everyone who
+   * knows the tool. Asserted here rather than left to the plugin's own list, because the pair is
+   * the point: an exemption granted to the setup and withheld from the teardown is an oversight,
+   * not a decision.
+   */
+  it('exempts both Playwright lifecycle files from the role-suffix dictionary', async () => {
+    const offences = await Promise.all(
+      ['packages/e2e/global-setup.ts', 'packages/e2e/global-teardown.ts'].map(async (path) => ({
+        path,
+        ruleIds: (await lintRepoFile(path)).ruleIds.filter(
+          (id) => id === 'bad-crm/require-role-suffix',
+        ),
+      })),
+    );
+
+    expect(offences).toEqual([
+      { path: 'packages/e2e/global-setup.ts', ruleIds: [] },
+      { path: 'packages/e2e/global-teardown.ts', ruleIds: [] },
+    ]);
   });
 });
 

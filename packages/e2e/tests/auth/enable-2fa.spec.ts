@@ -2,6 +2,7 @@ import { expect, request, test, type APIRequestContext } from '@playwright/test'
 import { randomUUID } from 'node:crypto';
 
 import { SEED_ORGANIZATION_A, SEED_PASSWORD } from '../../fixtures/seed-data.js';
+import { explainProvisioningRefusal, testAccountEmail } from '../../fixtures/test-account.js';
 import { currentTotpCode } from '../../fixtures/totp.util.js';
 import { audit } from '../support/audit.util.js';
 
@@ -99,14 +100,14 @@ const provisionColleague = async (
   owner: ApiSession,
   roleId: string,
 ): Promise<{ email: string }> => {
-  const email = `enable-2fa-${randomUUID()}@org-a.local`;
+  const email = testAccountEmail('enable-2fa');
 
   const invited = await owner.context.post('/api/v1/invitations', {
     headers: { ...owner.headers, 'Idempotency-Key': randomUUID() },
     data: { email, roleId, locale: 'en' },
   });
 
-  expect(invited.ok(), await invited.text()).toBe(true);
+  expect(invited.ok(), await explainProvisioningRefusal(invited, 'create')).toBe(true);
 
   const { inviteUrl } = (await invited.json()) as { inviteUrl: string };
   const token = new URL(inviteUrl).pathname.split('/').pop();
@@ -126,7 +127,7 @@ const provisionColleague = async (
       data: { token, password: SEED_PASSWORD, locale: 'en' },
     });
 
-    expect(accepted.ok(), await accepted.text()).toBe(true);
+    expect(accepted.ok(), await explainProvisioningRefusal(accepted, 'accept')).toBe(true);
 
     return { email };
   } finally {

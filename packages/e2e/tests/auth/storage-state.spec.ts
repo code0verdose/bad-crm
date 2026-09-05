@@ -30,9 +30,12 @@ anonymous.describe('no session', () => {
    * CONTROL: without this the case above proves only that `/dashboard` renders — which it would
    * also do if the guard were gone. The pair is the assertion.
    */
-  anonymous('CONTROL: is sent to the sign-in form and told where it was going', async ({ page }) => {
-    await page.goto('/dashboard');
+  anonymous(
+    'CONTROL: is sent to the sign-in form and told where it was going',
+    async ({ page }) => {
+      await page.goto('/dashboard');
 
-    await expect(page).toHaveURL(/\/login\?redirect=/);
-  });
+      await expect(page).toHaveURL(/\/login\?redirect=/);
+    },
+  );
 });

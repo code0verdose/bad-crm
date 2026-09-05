@@ -76,6 +76,16 @@ export default defineConfig({
   /** Readiness of the stack is proven before the first scenario, not waited for inside one. */
   globalSetup: './global-setup.ts',
 
+  /**
+   * The accounts the run created leave the directory again, whether the run went green or red.
+   *
+   * Not a `globalSetup` that resets the database instead: that is the only mechanism that could
+   * remove the rows outright, and it would cost every `playwright test -g something` a full
+   * `migrate reset` and reseed, on a stack the developer may well be sharing with a browser window.
+   * Cleaning up after oneself is the cheaper half of the same promise.
+   */
+  globalTeardown: './global-teardown.ts',
+
   timeout: numberFrom(process.env['E2E_TEST_TIMEOUT_MS'], 30_000),
   expect: { timeout: numberFrom(process.env['E2E_EXPECT_TIMEOUT_MS'], 5_000) },
 

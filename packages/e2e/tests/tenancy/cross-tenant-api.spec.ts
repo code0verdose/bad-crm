@@ -1,6 +1,10 @@
 import { expect, request, test } from '@playwright/test';
 
-import { SEED_ORGANIZATION_A, SEED_ORGANIZATION_B, SEED_PASSWORD } from '../../fixtures/seed-data.js';
+import {
+  SEED_ORGANIZATION_A,
+  SEED_ORGANIZATION_B,
+  SEED_PASSWORD,
+} from '../../fixtures/seed-data.js';
 
 /**
  * The promise the whole product rests on, asked of the running system rather than of the SQL.

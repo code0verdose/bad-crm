@@ -82,6 +82,29 @@ export const warmUpFixtureLint = async (): Promise<void> => {
   await eslintForFixtures().lintFiles([fixturesRoot]);
 };
 
+/**
+ * Lints a file of the **real** tree, addressed by its path relative to the repository root.
+ *
+ * `configForRepoFile` above answers which rules are switched on for a path; that is the right
+ * question for "is this file guarded at all" and the wrong one for "is this file exempt". An
+ * exemption granted by a rule's own allow-list — the fixed names `main`, `providers`,
+ * `global-setup` — leaves the rule enabled and reports nothing, and only running it says so.
+ */
+export const lintRepoFile = async (relativePath: string): Promise<LintOutcome> => {
+  repoEslint ??= new ESLint({ cwd: repoRoot });
+
+  const [result] = await repoEslint.lintFiles([join(repoRoot, relativePath)]);
+
+  if (result === undefined) {
+    throw new Error(`ESLint produced no result for ${relativePath}`);
+  }
+
+  return {
+    ruleIds: result.messages.map((message) => message.ruleId),
+    messages: result.messages.map((message) => message.message),
+  };
+};
+
 /** Lints a single fixture file, addressed by its path relative to the fixture root. */
 export const lintFixture = async (relativePath: string): Promise<LintOutcome> => {
   const [result] = await eslintForFixtures().lintFiles([join(fixturesRoot, relativePath)]);

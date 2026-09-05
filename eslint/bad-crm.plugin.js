@@ -61,10 +61,13 @@ const FIXED_NAMES = new Set([
   'router',
   'global',
   'vite-env',
-  // Playwright resolves `globalSetup` by path, and the name is its vocabulary for «runs once,
-  // before everything» — the same category as `main` and `providers`. Renaming it to satisfy the
-  // suffix dictionary would hide what the file is from everyone who knows the tool.
+  // Playwright resolves `globalSetup` and `globalTeardown` by path, and the names are its
+  // vocabulary for «runs once, before everything» and «runs once, after everything» — the same
+  // category as `main` and `providers`. Renaming either to satisfy the suffix dictionary would hide
+  // what the file is from everyone who knows the tool. The pair is listed together deliberately: an
+  // exemption granted to one and withheld from the other is an oversight rather than a decision.
   'global-setup',
+  'global-teardown',
 ]);
 
 /** Generated artefacts are explicitly exempt (see "Исключения" in the naming rule). */
