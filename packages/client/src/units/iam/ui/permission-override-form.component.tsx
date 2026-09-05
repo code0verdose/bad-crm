@@ -2,6 +2,8 @@ import { Button, Checkbox, Group, Stack, Text, TextInput, Textarea } from '@mant
 import { schemaResolver, useForm } from '@mantine/form';
 import { useTranslation } from 'react-i18next';
 
+import { SharedLib } from '@shared';
+
 import {
   REASON_MAX_LENGTH,
   permissionOverrideFormSchema,
@@ -60,11 +62,16 @@ export function PermissionOverrideForm({
   const form = useForm<PermissionOverrideFormValues>({
     mode: 'controlled',
     initialValues,
-    validate: schemaResolver(permissionOverrideFormSchema, { sync: true }),
+    // This form translated its own two messages by hand before `translateFormIssues` existed —
+    // `error={t(form.errors.reason)}` per field, with the spread ordered around it. One step for the
+    // whole record says the same thing once, and removes an ordering nobody can see is load-bearing.
+    validate: (values) =>
+      SharedLib.translateFormIssues(
+        schemaResolver(permissionOverrideFormSchema, { sync: true })(values),
+        t,
+      ),
   });
 
-  const reasonError = form.errors['reason'];
-  const expiryError = form.errors['expiresOn'];
   const neverExpires = form.getValues().neverExpires;
 
   return (
@@ -81,13 +88,9 @@ export function PermissionOverrideForm({
             : t('permissions.form.denyIntro', { permission })}
         </Text>
 
-        {/* The spread comes first on both fields, so the translated `error` below it wins over the
-            raw key `getInputProps` carries. Spread last — the order the neighbouring forms use —
-            would put `permissions.field.reasonTooShort` under the input. */}
         <Textarea
           {...form.getInputProps('reason')}
           description={t('permissions.form.reasonHint')}
-          error={typeof reasonError === 'string' ? t(reasonError) : reasonError}
           label={t('permissions.form.reasonLabel')}
           maxLength={REASON_MAX_LENGTH}
           required
@@ -103,7 +106,6 @@ export function PermissionOverrideForm({
           // Readable but not editable while «until somebody removes it» is ticked: the value stays
           // on screen, so unticking puts back what was there rather than an empty field.
           disabled={neverExpires}
-          error={typeof expiryError === 'string' ? t(expiryError) : expiryError}
           label={t('permissions.form.expiresLabel')}
           type="date"
         />

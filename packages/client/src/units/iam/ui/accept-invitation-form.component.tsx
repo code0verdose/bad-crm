@@ -2,6 +2,8 @@ import { Button, PasswordInput, Stack } from '@mantine/core';
 import { schemaResolver, useForm } from '@mantine/form';
 import { useTranslation } from 'react-i18next';
 
+import { SharedLib } from '@shared';
+
 import { acceptInvitationFormSchema, type AcceptInvitationFormValues } from '@units/iam/model';
 
 export interface AcceptInvitationFormProps {
@@ -34,7 +36,14 @@ export function AcceptInvitationForm({
   const form = useForm<AcceptInvitationFormValues>({
     mode: 'uncontrolled',
     initialValues: { password: '', confirmPassword: '', locale: defaultLocale },
-    validate: schemaResolver(acceptInvitationFormSchema, { sync: true }),
+    // The resolver answers with i18n **keys** — every schema here does (`rules/i18n.mdc` §1) — and
+    // Mantine renders what it is handed, so without this the field would read
+    // `validation.password.too_short` itself.
+    validate: (values) =>
+      SharedLib.translateFormIssues(
+        schemaResolver(acceptInvitationFormSchema, { sync: true })(values),
+        t,
+      ),
   });
 
   return (

@@ -69,7 +69,11 @@ export function TwoFactorForm({
   const form = useForm<TwoFactorFormValues>({
     mode: 'uncontrolled',
     initialValues: { code: '' },
-    validate: schemaResolver(twoFactorFormSchema, { sync: true }),
+    // The resolver answers with i18n **keys** — every schema here does (`rules/i18n.mdc` §1) — and
+    // Mantine renders what it is handed, so without this the field would read
+    // `validation.second_factor.required` itself.
+    validate: (values) =>
+      SharedLib.translateFormIssues(schemaResolver(twoFactorFormSchema, { sync: true })(values), t),
   });
 
   /**

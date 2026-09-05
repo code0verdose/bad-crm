@@ -2,6 +2,8 @@ import { Button, Stack, TextInput } from '@mantine/core';
 import { useTranslation } from 'react-i18next';
 import { schemaResolver, useForm } from '@mantine/form';
 
+import { SharedLib } from '@shared';
+
 import { firstInvalidField } from '@units/auth/lib';
 import { forgotPasswordFormSchema, type ForgotPasswordFormValues } from '@units/auth/model';
 
@@ -36,7 +38,14 @@ export function ForgotPasswordForm({ isPending, onSubmit }: ForgotPasswordFormPr
   const form = useForm<ForgotPasswordFormValues>({
     mode: 'uncontrolled',
     initialValues: { email: '' },
-    validate: schemaResolver(forgotPasswordFormSchema, { sync: true }),
+    // The resolver answers with i18n **keys** — every schema here does (`rules/i18n.mdc` §1) — and
+    // Mantine renders what it is handed, so without this the field would read
+    // `validation.email.invalid` itself.
+    validate: (values) =>
+      SharedLib.translateFormIssues(
+        schemaResolver(forgotPasswordFormSchema, { sync: true })(values),
+        t,
+      ),
   });
 
   return (

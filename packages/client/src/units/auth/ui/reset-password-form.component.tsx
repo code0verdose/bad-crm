@@ -2,6 +2,8 @@ import { Button, PasswordInput, Stack } from '@mantine/core';
 import { useTranslation } from 'react-i18next';
 import { schemaResolver, useForm } from '@mantine/form';
 
+import { SharedLib } from '@shared';
+
 import { firstInvalidField } from '@units/auth/lib';
 import { resetPasswordFormSchema, type ResetPasswordFormValues } from '@units/auth/model';
 
@@ -36,7 +38,14 @@ export function ResetPasswordForm({ isPending, onSubmit }: ResetPasswordFormProp
   const form = useForm<ResetPasswordFormValues>({
     mode: 'uncontrolled',
     initialValues: { newPassword: '', confirmPassword: '' },
-    validate: schemaResolver(resetPasswordFormSchema, { sync: true }),
+    // The resolver answers with i18n **keys** — every schema here does (`rules/i18n.mdc` §1) — and
+    // Mantine renders what it is handed, so without this the field would read
+    // `validation.password.too_short` itself.
+    validate: (values) =>
+      SharedLib.translateFormIssues(
+        schemaResolver(resetPasswordFormSchema, { sync: true })(values),
+        t,
+      ),
   });
 
   return (

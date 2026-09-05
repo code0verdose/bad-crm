@@ -2,6 +2,8 @@ import { Button, NativeSelect, Stack, TextInput } from '@mantine/core';
 import { schemaResolver, useForm } from '@mantine/form';
 import { useTranslation } from 'react-i18next';
 
+import { SharedLib } from '@shared';
+
 import {
   employeeProfileFormSchema,
   EMPLOYMENT_TYPE_LABEL,
@@ -53,7 +55,14 @@ export function EmployeeProfileForm({
   const form = useForm<EmployeeProfileFormValues>({
     mode: 'uncontrolled',
     initialValues,
-    validate: schemaResolver(employeeProfileFormSchema, { sync: true }),
+    // The resolver answers with i18n **keys** — every schema here does (`rules/i18n.mdc` §1) — and
+    // Mantine renders what it is handed, so without this the field would read
+    // `validation.required` itself.
+    validate: (values) =>
+      SharedLib.translateFormIssues(
+        schemaResolver(employeeProfileFormSchema, { sync: true })(values),
+        t,
+      ),
   });
 
   return (

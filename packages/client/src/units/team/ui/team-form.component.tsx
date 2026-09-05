@@ -2,6 +2,8 @@ import { Button, Stack, TextInput, Textarea } from '@mantine/core';
 import { schemaResolver, useForm } from '@mantine/form';
 import { useTranslation } from 'react-i18next';
 
+import { SharedLib } from '@shared';
+
 import {
   MAX_DESCRIPTION,
   MAX_NAME,
@@ -40,7 +42,11 @@ export function TeamForm({ initialValues, isPending, submitLabelKey, onSubmit }:
   const form = useForm<TeamFormValues>({
     mode: 'uncontrolled',
     initialValues,
-    validate: schemaResolver(teamFormSchema, { sync: true }),
+    // The resolver answers with i18n **keys** — every schema here does (`rules/i18n.mdc` §1) — and
+    // Mantine renders what it is handed, so without this the field would read
+    // `validation.required` itself.
+    validate: (values) =>
+      SharedLib.translateFormIssues(schemaResolver(teamFormSchema, { sync: true })(values), t),
   });
 
   return (

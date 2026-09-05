@@ -2,6 +2,8 @@ import { Button, NativeSelect, Stack, TextInput } from '@mantine/core';
 import { schemaResolver, useForm } from '@mantine/form';
 import { useTranslation } from 'react-i18next';
 
+import { SharedLib } from '@shared';
+
 import {
   INVITATION_LOCALE_LABEL,
   INVITATION_LOCALES,
@@ -35,7 +37,14 @@ export function InviteForm({ roles, defaultLocale, isPending, onSubmit }: Invite
   const form = useForm<InvitationForm>({
     mode: 'uncontrolled',
     initialValues: { email: '', roleId: '', locale: defaultLocale },
-    validate: schemaResolver(invitationFormSchema, { sync: true }),
+    // The resolver answers with i18n **keys** — every schema here does (`rules/i18n.mdc` §1) — and
+    // Mantine renders what it is handed, so without this the field would read
+    // `validation.email.invalid` itself.
+    validate: (values) =>
+      SharedLib.translateFormIssues(
+        schemaResolver(invitationFormSchema, { sync: true })(values),
+        t,
+      ),
   });
 
   return (

@@ -2,6 +2,8 @@ import { Alert, Button, Group, PasswordInput, Stack, Text } from '@mantine/core'
 import { schemaResolver, useForm } from '@mantine/form';
 import { useTranslation } from 'react-i18next';
 
+import { SharedLib } from '@shared';
+
 import { firstInvalidField } from '@units/auth/lib';
 import { totpConfirmFormSchema, type TotpConfirmFormValues } from '@units/auth/model';
 
@@ -44,7 +46,14 @@ export function TotpConfirmForm({
   const form = useForm<TotpConfirmFormValues>({
     mode: 'uncontrolled',
     initialValues: { code: '', currentPassword: '' },
-    validate: schemaResolver(totpConfirmFormSchema, { sync: true }),
+    // The resolver answers with i18n **keys** — every schema here does (`rules/i18n.mdc` §1) — and
+    // Mantine renders what it is handed, so without this the field would read
+    // `validation.totp_code.invalid` itself.
+    validate: (values) =>
+      SharedLib.translateFormIssues(
+        schemaResolver(totpConfirmFormSchema, { sync: true })(values),
+        t,
+      ),
   });
 
   return (

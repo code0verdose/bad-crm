@@ -2,6 +2,8 @@ import { Alert, Button, PasswordInput, Stack, TextInput } from '@mantine/core';
 import { useTranslation } from 'react-i18next';
 import { schemaResolver, useForm } from '@mantine/form';
 
+import { SharedLib } from '@shared';
+
 import { firstInvalidField } from '@units/auth/lib';
 import { loginFormSchema, type LoginFormValues } from '@units/auth/model';
 
@@ -44,7 +46,11 @@ export function LoginForm({ isPending, noticeKey, onSubmit }: LoginFormProps) {
   const form = useForm<LoginFormValues>({
     mode: 'uncontrolled',
     initialValues: { email: '', password: '' },
-    validate: schemaResolver(loginFormSchema, { sync: true }),
+    // The resolver answers with i18n **keys** — every schema here does (`rules/i18n.mdc` §1) — and
+    // Mantine renders what it is handed, so without this the field would read
+    // `validation.password.required` itself.
+    validate: (values) =>
+      SharedLib.translateFormIssues(schemaResolver(loginFormSchema, { sync: true })(values), t),
   });
 
   return (

@@ -14,6 +14,7 @@
  * truncated by the component that renders it.
  */
 import { MantineProvider } from '@mantine/core';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -24,6 +25,12 @@ import { I18nextProvider, initReactI18next } from 'react-i18next';
 import { SharedUi } from '@shared';
 
 import { AuthUi } from '@units/auth';
+import { EmployeeUi } from '@units/employee';
+import { IamUi } from '@units/iam';
+import { TeamUi } from '@units/team';
+
+// The dialog rather than the widget that owns it — see the row it serves below.
+import { DisableTotpDialog } from '@widgets/disable-totp/ui/disable-totp-dialog.component.js';
 
 import {
   isPseudoLocalised,
@@ -565,5 +572,185 @@ describe('the password-reset confirmation in a pseudo locale', () => {
 
     expect(status).not.toBeNull();
     expect(isPseudoLocalised(status?.textContent ?? '')).toBe(true);
+  });
+});
+
+/**
+ * Every other form in the product, asked the one question `cimode` cannot answer: is the message
+ * under the field a sentence?
+ *
+ * The registration case above is the same assertion for one form. This block is the rest of them,
+ * and there is no shorter way to write it: the defect is per-component — `validate:
+ * schemaResolver(schema, { sync: true })` hands `@mantine/form` a record of i18n **keys**, and
+ * Mantine renders what it is handed. Thirteen forms shipped that way, so thirteen fields read
+ * `validation.password.required` in both languages, and no test in the tree could tell — under
+ * `cimode` `t(key)` *is* the key, so an assertion naming the key passes whether or not anything
+ * translated it. Only a locale that transforms its values separates the two.
+ *
+ * Each row breaks the form in the cheapest way that reaches a **keyed** message: an empty required
+ * field, or an empty one among otherwise valid values where the form starts filled in. Rows are not
+ * asked «is nothing on screen unmarked» — a few bounds in these schemas (`max(120)` on a name,
+ * `min(1)` on a timezone) carry no key and fall back to Zod's own English, which is a separate
+ * defect and not this one. The question asked is narrower and exactly the class: *the message this
+ * schema produced* arrived translated.
+ *
+ * `test/architecture/form-issue-translation.test.ts` is what keeps the next form from arriving
+ * without a row here.
+ */
+describe('the field messages of every form in a pseudo locale', () => {
+  const LOCALE = 'en' as const;
+
+  const TEAM_VALUES = { name: '', slug: '', description: '' };
+
+  const OVERRIDE_VALUES = { reason: '', neverExpires: true, expiresOn: '' };
+
+  /** A profile that is valid everywhere except the field the row is about. */
+  const PROFILE_VALUES = {
+    firstName: '',
+    lastName: 'Lovelace',
+    jobTitle: '',
+    department: '',
+    employmentType: 'FULL_TIME' as const,
+    weeklyCapacityHours: '40',
+    timezone: 'UTC',
+    skills: '',
+    emergencyContact: '',
+  };
+
+  const noop = () => undefined;
+
+  const FORMS: readonly (readonly [string, React.ReactNode])[] = [
+    ['the sign-in form', <AuthUi.LoginForm isPending={false} onSubmit={noop} />],
+    ['the password-recovery form', <AuthUi.ForgotPasswordForm isPending={false} onSubmit={noop} />],
+    ['the password-reset form', <AuthUi.ResetPasswordForm isPending={false} onSubmit={noop} />],
+    [
+      'the second-factor step',
+      <AuthUi.TwoFactorForm
+        failureKey={undefined}
+        isPending={false}
+        onSubmit={noop}
+        secondsLeft={287}
+      />,
+    ],
+    [
+      'the second-factor enrolment',
+      <AuthUi.TotpConfirmForm
+        failureKey={undefined}
+        isPending={false}
+        onCancel={noop}
+        onSubmit={noop}
+      />,
+    ],
+    [
+      'the recovery-code replacement',
+      <AuthUi.RegenerateRecoveryCodesForm
+        failureKey={undefined}
+        isPending={false}
+        onSubmit={noop}
+      />,
+    ],
+    [
+      'the invitation acceptance',
+      <IamUi.AcceptInvitationForm defaultLocale={LOCALE} isPending={false} onSubmit={noop} />,
+    ],
+    [
+      'the invitation form',
+      <IamUi.InviteForm
+        defaultLocale={LOCALE}
+        isPending={false}
+        onSubmit={noop}
+        roles={[{ value: 'r-1', label: 'Member' }]}
+      />,
+    ],
+    [
+      'the permission exception',
+      <IamUi.PermissionOverrideForm
+        effect="ALLOW"
+        initialValues={OVERRIDE_VALUES}
+        isPending={false}
+        onCancel={noop}
+        onSubmit={noop}
+        permission="task:create"
+      />,
+    ],
+    [
+      'the team form',
+      <TeamUi.TeamForm
+        initialValues={TEAM_VALUES}
+        isPending={false}
+        onSubmit={noop}
+        submitLabelKey="teams.create.submit"
+      />,
+    ],
+    [
+      'the employee profile',
+      <EmployeeUi.EmployeeProfileForm
+        canEditEmployment
+        carriesEmergencyContact
+        initialValues={PROFILE_VALUES}
+        isPending={false}
+        onSubmit={noop}
+      />,
+    ],
+    [
+      'the change-password form',
+      <AuthUi.ChangePasswordForm
+        failure={{ fieldErrors: {}, alertKey: undefined }}
+        isPending={false}
+        onSubmit={noop}
+      />,
+    ],
+    [
+      'the second-factor removal dialog',
+      // Mounted from inside the widget rather than through it: the widget's public face is the
+      // section on `/settings/security`, and reaching the dialog through it means a route, a
+      // session and the counter request that decides whether the trigger is drawn at all — all of
+      // which `test/widgets/disable-totp.test.tsx` already owns. The form is what this row is about.
+      <QueryClientProvider
+        client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
+      >
+        <DisableTotpDialog onCancel={noop} onDisabled={noop} />
+      </QueryClientProvider>,
+    ],
+  ];
+
+  const mount = async (element: React.ReactNode): Promise<void> => {
+    const instance = await pseudoInstance();
+
+    render(
+      <I18nextProvider i18n={instance}>
+        <MantineProvider>{element}</MantineProvider>
+      </I18nextProvider>,
+    );
+  };
+
+  /**
+   * Mantine puts a field's message in the element it points `aria-describedby` at, so the messages
+   * are read from the document rather than from a container: a dialog renders into a portal, and a
+   * container query would find an empty div and call it a pass.
+   */
+  const fieldMessages = (): string[] =>
+    [...document.body.querySelectorAll('[class*="InputWrapper-error"]')]
+      .map((element) => element.textContent?.trim() ?? '')
+      .filter((text) => text !== '');
+
+  const submit = async (): Promise<void> => {
+    const user = userEvent.setup();
+    const button = document.body.querySelector<HTMLButtonElement>('button[type="submit"]');
+
+    await user.click(button as HTMLButtonElement);
+  };
+
+  it.each(FORMS)('%s translates the messages its own schema produced', async (_case, element) => {
+    await mount(element);
+    await submit();
+
+    const messages = fieldMessages();
+
+    // CONTROL: the submit was refused and something was drawn under a field. A form that submitted
+    // cleanly, or one whose button was never found, leaves nothing to look at — and «every message
+    // is translated» is true of no messages at all.
+    expect(messages).not.toEqual([]);
+    expect(messages.filter((text) => !isPseudoLocalised(text))).toEqual([]);
   });
 });

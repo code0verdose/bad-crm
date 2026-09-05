@@ -3,6 +3,8 @@ import { schemaResolver, useForm } from '@mantine/form';
 import { useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 
+import { SharedLib } from '@shared';
+
 import { firstInvalidField, type PasswordChangeFailure } from '@units/auth/lib';
 import { changePasswordFormSchema, type ChangePasswordFormValues } from '@units/auth/model';
 
@@ -50,7 +52,14 @@ export function ChangePasswordForm({ isPending, failure, onSubmit }: ChangePassw
   const form = useForm<ChangePasswordFormValues>({
     mode: 'controlled',
     initialValues: EMPTY,
-    validate: schemaResolver(changePasswordFormSchema, { sync: true }),
+    // The resolver answers with i18n **keys** — every schema here does (`rules/i18n.mdc` §1) — and
+    // Mantine renders what it is handed, so without this the field would read
+    // `validation.password.required` itself.
+    validate: (values) =>
+      SharedLib.translateFormIssues(
+        schemaResolver(changePasswordFormSchema, { sync: true })(values),
+        t,
+      ),
   });
 
   const { fieldErrors } = failure;
