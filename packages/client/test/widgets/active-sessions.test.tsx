@@ -140,23 +140,10 @@ const startAt = async ({
     return json({ status: 'ok' });
   });
 
-  const [{ renderApp }, { SharedUi }, { AuthLib, AuthService }] = await Promise.all([
+  const [{ renderApp }, { AuthLib, AuthService }] = await Promise.all([
     import('../support/render-app.util.js'),
-    import('@shared'),
     import('@units/auth'),
   ]);
-
-  /**
-   * The toaster, emptied before the tree is mounted — and this is not tidiness.
-   *
-   * `notify` keeps the ids that are currently on screen, because Mantine has no «show or update»
-   * call and `update` on an unknown id is a no-op. `cleanup()` unmounts the tree without closing the
-   * toasts, so an id from the previous case survives into this one and the next signal carrying it
-   * updates a notification that is no longer there: nothing renders, and the case fails saying the
-   * message was never shown. Measured here — the two outcomes of «close the rest» share one id by
-   * design (one action, one signal), and the second of them was invisible until this line.
-   */
-  SharedUi.notify.clear();
 
   authSession = AuthService.authSession;
   readAccessToken = AuthLib.readAccessToken;

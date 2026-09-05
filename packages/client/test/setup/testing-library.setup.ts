@@ -6,17 +6,32 @@ import '@testing-library/jest-dom/vitest';
 import { cleanup } from '@testing-library/react';
 import { afterEach, vi } from 'vitest';
 
+import { SharedUi } from '@shared';
 import { NAMESPACES } from '@shared/i18n/i18n.config.js';
 
 /**
- * One mounted tree per test.
+ * One mounted tree per test, and one empty toast stack.
  *
- * Without this, `render` leaves the previous tree in the document and `getByRole` starts matching
- * two elements — a failure that reads as a bug in the component under test rather than as leaked
- * state from the test before it.
+ * Without `cleanup`, `render` leaves the previous tree in the document and `getByRole` starts
+ * matching two elements — a failure that reads as a bug in the component under test rather than as
+ * leaked state from the test before it.
+ *
+ * `notify.clear()` is here for the same reason and is less obvious. Toasts do not live in the tree:
+ * `notify` keeps the ids currently on screen in a module-level set, because Mantine has no «show or
+ * update» and the port has to choose between the two. `cleanup` unmounts the DOM and leaves that set
+ * alone — so a second case emitting an id the first case used takes the *update* path, against a
+ * notification nothing is rendering any more, and nothing appears. The assertion then says «this
+ * toast is missing», which is true and about the wrong thing.
+ *
+ * Two of the product's own signals share one id by design (the two outcomes of «close the other
+ * sessions» are one action with two answers), so this is not hypothetical: it cost one debugging
+ * session in `test/widgets/active-sessions.test.tsx`, and removing this line still turns that suite
+ * red today. It belongs here rather than in the four suites that had learnt to call it themselves —
+ * a trap every future suite would fall into once is a property of the harness.
  */
 afterEach(() => {
   cleanup();
+  SharedUi.notify.clear();
 });
 
 /**

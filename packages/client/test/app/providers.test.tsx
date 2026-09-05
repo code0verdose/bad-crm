@@ -34,10 +34,6 @@ const FailingButton = ({ onError }: { readonly onError?: () => void }) => {
   );
 };
 
-afterEach(() => {
-  SharedUi.notify.clear();
-});
-
 describe('a mutation that fails inside the provider tree', () => {
   it('shows exactly one toast', async () => {
     const user = userEvent.setup();
