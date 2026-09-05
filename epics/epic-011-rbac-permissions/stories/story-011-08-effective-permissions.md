@@ -132,11 +132,15 @@ estimate: L
       `service/queries`, `service/hooks/use-can.hook.ts`, `<Can>`,
       `service/guards/require-permission.guard.ts`.
 - [x] Ключ запроса — `QueryKeys.Permissions.mine()` (не `QueryKeys.Auth.permissions()`).
-- [ ] Тесты: `effective-permissions.service.spec.ts` (п. 1, 4, 6, 7), интеграционный
-      `permission-invalidation.spec.ts` (изменение роли → новые права без перелогина),
-      `me-permissions.contract.spec.ts` (ETag, 304, п. 10), клиентские
-      `use-can.hook.spec.ts`, `require-permission.guard.spec.ts`, общий набор кейсов `can.spec.ts`
-      в `shared` (прогоняется в обоих пакетах).
+- [x] Тесты — приехали под другими именами, чем задумывал этот список:
+      `packages/server/test/integration/http/me-permissions.test.ts` (ETag, 304, п. 10),
+      `packages/shared/test/permissions/can.test.ts` (общий набор случаев),
+      `packages/client/src/units/iam/service/hooks/use-can.hook.test.tsx`,
+      `packages/client/test/routes/permission-guard.test.tsx`, и добавленный 2026-09-06
+      `packages/server/test/integration/db/effective-permissions-cost.test.ts` (стоимость сборки).
+- [ ] Не написан один: `permission-invalidation.spec.ts` — изменение роли даёт новые права без
+      перелогина сквозным прогоном. Свойство сегодня держится по построению (актор пересобирается
+      на запрос, версия читается из БД) и точечно покрыто, но сквозного теста на него нет.
 
 ## Статус понижен `review` → `in-progress` (2026-08-30)
 
@@ -219,8 +223,8 @@ estimate: L
 
 - **(а)** устойчиво держится 25 и больше сборок в полёте (p95 одной сборки — уже треть бюджета).
   Сигнал сегодня нечем снять: gauge сборок актора в `MetricsPort` нет, наблюдаемый заменитель —
-  p95 `http_request_duration` на маршрутах с capability; заводить сам сигнал следует gauge по
-  образцу `argon2_inflight`;
+  p95 гистограммы `http_request_duration_seconds` (метки `method` и `route`) по маршрутам с
+  capability; заводить сам сигнал следует gauge по образцу `argon2_inflight`;
 - **(б)** падает **первое** утверждение
   `packages/server/test/integration/db/effective-permissions-cost.test.ts` — «столько же операторов
   на двух ролях и на восьми», то есть единственное свойство, на котором стоит весь замер. Второе

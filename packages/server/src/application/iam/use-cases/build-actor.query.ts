@@ -26,8 +26,10 @@ export interface BuildActorInput {
  * for (200 simultaneous rebuilds) passing without one. That is 4 % of the 150 ms NFR-2 gives a
  * single-entity read, so the cache was refused rather than deferred: a lock, a degradation path and
  * a "the version moved while we were building" race are three new ways to be wrong about access,
- * and the saving is six milliseconds. The numbers, and the numeric conditions that would reverse
- * the decision, are in §8 and in STORY-011-08; the property they rest on is guarded by
+ * and the saving is under six milliseconds — the version has to be read from the database on every
+ * request either way, and today it arrives inside these same eleven statements. The numbers, and
+ * the numeric conditions that would reverse the decision, are in §8 and in STORY-011-08; the
+ * property they rest on is guarded by
  * `test/integration/db/effective-permissions-cost.test.ts`.
  *
  * A caller whose account has disappeared between the token and this read is refused as **404** —
