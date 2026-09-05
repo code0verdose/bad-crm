@@ -80,11 +80,18 @@ fail-closed поведение проверено отдельно: при не�
 
 *Отметки расставлены по коду 2026-08-30: до этого весь список стоял пустым при закрытой истории.*
 
-- [x] Написать тесты первыми: `app/error-boundary.test.tsx` (перехват, экран восстановления, повтор), `shared/lib/telemetry/report-error.test.ts` (состав отчёта, отсутствие чувствительных данных, ограничение частоты), `test/integration/telemetry/client-error.test.ts` (rate limit, запись в лог).
+- [x] Написать тесты первыми: `packages/client/test/app/error-boundary.test.tsx` (перехват, экран
+      восстановления, повтор), `packages/client/test/app/report-client-error.test.ts` (состав отчёта,
+      отсутствие чувствительных данных), `packages/server/test/unit/telemetry/client-error-endpoint.test.ts`,
+      `record-client-error.test.ts` и `route-template-only.test.ts` (ограничитель, запись в лог,
+      шаблон маршрута вместо пути).
       *`packages/client/test/app/error-boundary.test.tsx`, `.../report-client-error.test.ts`,
       и на сервере — `packages/server/test/unit/telemetry/client-error-endpoint.test.ts`,
       `record-client-error.test.ts`, `route-template-only.test.ts`.*
-- [x] Реализовать `src/app/error-boundary.component.tsx` (глобальный) и `errorComponent` по умолчанию для маршрутов.
+- [x] Реализовать `packages/client/src/app/ui/app-error-boundary.component.tsx` (глобальный) и
+      `errorComponent` по умолчанию для маршрутов.
+      *В пункте стояло src/app/error-boundary.component.tsx — файла с таким именем не было;
+      имена приведены к существующим 2026-08-30.*
       *`app/ui/app-error-boundary.component.tsx` + `app/ui/app-error-screen.component.tsx`;
       маршрутный `app/ui/route-error.component.tsx` — с EPIC-004.*
 - [ ] Реализовать `src/shared/lib/telemetry/report-error.ts` — сбор контекста, дедупликация одинаковых ошибок, локальный лимит частоты.

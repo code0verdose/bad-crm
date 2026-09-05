@@ -65,15 +65,19 @@ estimate: M
 
 *Отметки расставлены по коду 2026-08-30: до этого весь список стоял пустым при закрытой истории.*
 
-- [x] Написать тесты первыми: `test/unit/logging/redaction.test.ts` (полный набор чувствительных путей + вложенные объекты), `test/unit/logging/context-propagation.test.ts` (HTTP → job, наследование `requestId`/`causationId`), `test/integration/logging/auth-body.test.ts` (тело auth-запросов не логируется ни на одном уровне).
-      *Два из трёх; имена другие.* Есть `packages/server/test/unit/logging/redaction.test.ts` и
-      `.../http-log-line.test.ts` (тело и URL не попадают в лог **ни на каком уровне**, с шаблоном
-      маршрута и положительным контролем) — второй закрывает то, что задача просила от
-      `auth-body.test.ts`. `context-propagation.test.ts` нет: цепочки «HTTP → job» не существует,
+- [x] Написать тесты первыми: `packages/server/test/unit/logging/redaction.test.ts` (полный набор
+      чувствительных путей + вложенные объекты) и `packages/server/test/unit/logging/http-log-line.test.ts`
+      (тело и URL не попадают в лог ни на каком уровне, с шаблоном маршрута и положительным контролем).
+      *Два из трёх, и имена в пункте заменены на существующие 2026-08-30.* Планировались
+      test/unit/logging/context-propagation.test.ts и test/integration/logging/auth-body.test.ts —
+      без обратных кавычек намеренно: инлайн-код внутри отмеченного пункта и есть форма утверждения,
+      а этих двух файлов нет. Второй не нужен под своим именем: `http-log-line.test.ts` закрывает
+      ровно то, что от него просили. Первого нет по существу — цепочки «HTTP → job» не существует,
       см. `runJob` ниже.
-- [x] Расширить `infrastructure/logging/pino.adapter.ts` полным списком `redact`-путей и сериализаторами ошибок и запросов.
-      *Файлы — `infrastructure/logging/pino-logger.adapter.ts`, список путей вынесен в
-      `log-redaction.constant.ts`, сериализатор ошибки — `log-error.serializer.ts`.*
+- [x] Расширить `packages/server/src/infrastructure/logging/pino-logger.adapter.ts` полным списком
+      `redact`-путей и сериализаторами ошибок и запросов.
+      *Список путей вынесен в `log-redaction.constant.ts`, сериализатор ошибки — в
+      `log-error.serializer.ts`. В пункте стояло имя pino.adapter.ts, которого никогда не было.*
 - [x] Дополнить `RequestContext` полями `organizationId`, `userId`, `causationId` и наполнять их в auth- и tenant-middleware.
       *`organizationId`/`userId` — да: `RequestContextPort.identify` вызывается из
       `presentation/http/middleware/authenticate.middleware.ts:122`. `causationId` — нет, вместе с

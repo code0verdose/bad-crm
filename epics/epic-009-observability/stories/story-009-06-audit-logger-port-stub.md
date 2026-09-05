@@ -81,8 +81,13 @@ estimate: S
 
 *Отметки расставлены по коду 2026-08-30: до этого весь список стоял пустым при закрытой истории.*
 
-- [x] Написать тесты первыми: `application/platform/ports/audit-logger.port.test.ts` (контракт через in-memory реализацию), `test/audit/coverage.test.ts` (перечень привилегированных сценариев M1 ↔ фактические вызовы), `test/audit/no-secrets.test.ts`.
-      *Каталог другой — `packages/server/test/unit/audit/`: `audit-logger.test.ts` (контракт),
+- [x] Написать тесты первыми: `packages/server/test/unit/audit/audit-logger.test.ts` (контракт через
+      in-memory реализацию), `packages/server/test/unit/audit/audit-coverage.test.ts` (перечень
+      привилегированных сценариев M1 ↔ фактические вызовы),
+      `packages/server/test/unit/audit/audit-redaction.test.ts` (секреты).
+      *Планировались application/platform/ports/audit-logger.port.test.ts, test/audit/coverage.test.ts
+      и test/audit/no-secrets.test.ts — без обратных кавычек намеренно, этих имён нет; заменены на
+      существующие 2026-08-30. В каталоге `packages/server/test/unit/audit/`: `audit-logger.test.ts` (контракт),
       `audit-coverage.test.ts` (перечень ↔ вызовы, обе стороны, проверен на падение подсадкой),
       `audit-redaction.test.ts` и `audit-redaction-corpus.test.ts` (секреты), плюс появившиеся
       позже `audit-log-adapter.test.ts`, `audit-unscoped-guard.test.ts`, `audit-partitions.test.ts`.*

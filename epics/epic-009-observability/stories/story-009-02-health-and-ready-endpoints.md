@@ -59,12 +59,19 @@ shutdown над всем остальным, healthcheck'и в `docker-compose.y
 
 *Отметки расставлены по коду 2026-08-30: до этого весь список стоял пустым при закрытой истории.*
 
-- [x] Написать тесты первыми: `test/integration/http/health.test.ts` (нет обращений к зависимостям), `test/integration/http/ready.test.ts` (каждая зависимость по отдельности недоступна → 503 с указанием; отключённый опциональный сервис → 200 `disabled`; shutdown → 503), `test/unit/health/cache.test.ts`.
-      *Разложены иначе: `test/unit/application/check-health.use-case.test.ts` и
-      `check-readiness.use-case.test.ts` (пробы по отдельности, `disabled`, приоритет shutdown, кеш),
+- [x] Написать тесты первыми: `test/unit/application/check-health.use-case.test.ts` (нет обращений к
+      зависимостям) и `check-readiness.use-case.test.ts` (каждая проба по отдельности, отключённый
+      опциональный сервис → `disabled`, приоритет shutdown, кеш вердикта),
       `test/unit/bootstrap/database-readiness.test.ts` и `migration-readiness.test.ts`,
       `test/integration/db/readiness-probes.test.ts` — последний прогоняет пробы **тем же
-      соединением, что и процесс**, и появился из-за дефекта, описанного ниже.*
+      соединением, что и процесс**, и появился из-за дефекта, описанного ниже.
+      *Планировались test/integration/http/{health,ready}.test.ts и test/unit/health/cache.test.ts —
+      без обратных кавычек намеренно, по приёму, принятому сегодня для раннбуков: инлайн-код внутри
+      отмеченного пункта и есть форма утверждения, а эти три файла не написаны;
+      разложились иначе, и кеш проверяется внутри сценария, а не отдельным файлом — проверять его
+      отдельно от того, что он кеширует, значило бы завести двойник самого кеша. Имена в пункте
+      заменены на существующие 2026-08-30: отмеченная задача, называющая ненаписанный файл, — это
+      утверждение о работе, которой нет, даже когда работа на самом деле сделана под другим именем.*
 - [x] Реализовать `application/platform/use-cases/check-readiness.use-case.ts` с портами проверок (`DbProbePort`, `CachePort`, `ObjectStorageProbePort`, `SearchProbePort`, `MigrationStatusPort`).
       *Файл на месте; порты сведены к `readiness-probe.port.ts` и `health-probe.port.ts`.*
 - [x] Реализовать адаптеры проверок: `SELECT 1`, Redis `PING`, S3 `HeadBucket`, Meilisearch `GET /health`, чтение статуса миграций.

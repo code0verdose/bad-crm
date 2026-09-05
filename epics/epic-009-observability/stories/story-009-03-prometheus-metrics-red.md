@@ -70,12 +70,14 @@ estimate: M
 
 *Отметки расставлены по коду 2026-08-30: до этого весь список стоял пустым при закрытой истории.*
 
-- [x] Написать тесты первыми: `test/integration/metrics/http-metrics.test.ts` (счётчик и гистограмма, шаблон маршрута в метке), `test/integration/metrics/access.test.ts` (закрытый доступ), `test/unit/metrics/labels.test.ts` (нет персональных данных и высокой кардинальности).
-      *Все три проверки на месте, но в юнит-наборе и под другими именами:
-      `packages/server/test/unit/metrics/prom-client.adapter.test.ts` (счётчик, гистограмма,
-      кардинальность), `metrics-endpoint.test.ts` (закрытый доступ — 404 и `timingSafeEqual`,
-      шаблон маршрута вместо пути), `metrics-wiring.test.ts`. Контейнер здесь ничего не добавляет:
-      реестр `prom-client` живёт в процессе.*
+- [x] Написать тесты первыми: `packages/server/test/unit/metrics/prom-client.adapter.test.ts`
+      (счётчик, гистограмма, кардинальность), `packages/server/test/unit/metrics/metrics-endpoint.test.ts`
+      (закрытый доступ — 404 и `timingSafeEqual`, шаблон маршрута вместо пути),
+      `packages/server/test/unit/metrics/metrics-wiring.test.ts`.
+      *Все три проверки на месте, но в юнит-наборе: контейнер здесь ничего не добавляет, реестр
+      `prom-client` живёт в процессе. Планировались test/integration/metrics/http-metrics.test.ts,
+      test/integration/metrics/access.test.ts и test/unit/metrics/labels.test.ts — без обратных
+      кавычек намеренно, этих файлов нет; имена в пункте заменены на существующие 2026-08-30.*
 - [x] Реализовать `infrastructure/metrics/prom-client.adapter.ts` под портом `MetricsPort` с реестром и дефолтными метриками.
 - [x] Реализовать middleware сбора HTTP-метрик с извлечением шаблона маршрута Express.
       *`infrastructure/metrics/http-metrics.middleware.ts` + общий `logging/route-template.util.ts`.*

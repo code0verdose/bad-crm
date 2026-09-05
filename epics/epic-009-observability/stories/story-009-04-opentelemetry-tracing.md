@@ -62,13 +62,17 @@ estimate: M
 
 *Отметки расставлены по коду 2026-08-30: до этого весь список стоял пустым при закрытой истории.*
 
-- [x] Написать тесты первыми: `test/unit/tracing/disabled-by-default.test.ts` (без переменной SDK не стартует), `test/integration/tracing/spans.test.ts` (структура spans через in-memory экспортёр), `test/unit/tracing/attributes.test.ts` (нет параметров запросов и персональных данных).
-      *Один файл вместо трёх — `packages/server/test/unit/tracing/tracing.test.ts` (включение,
-      выключение, сэмплирование, корреляция лога и трейса). Структуру spans он не проверяет: это
-      честно записано в «Границах» выше — без коллектора её проверить нечем.*
-- [x] Реализовать `infrastructure/tracing/otel.ts` — инициализация Node SDK с автоинструментацией `http`, `express`, `@prisma/instrumentation`, `ioredis`, выполняемая до создания клиентов.
-      *Файл — `infrastructure/tracing/tracing.factory.ts` (суффикс из закрытого словаря
-      `rules/naming-and-structure.mdc`); инструментирование перечислено поимённо, а не через
+- [x] Написать тесты первыми: `packages/server/test/unit/tracing/tracing.test.ts` — включение,
+      выключение без переменной, сэмплирование, корреляция лога и трейса.
+      *Один файл вместо трёх. Планировались test/unit/tracing/disabled-by-default.test.ts,
+      test/integration/tracing/spans.test.ts и test/unit/tracing/attributes.test.ts — без обратных
+      кавычек намеренно, этих файлов нет; имена в пункте заменены на существующее 2026-08-30.
+      Структуру spans набор не проверяет: это записано в «Границах» выше — без коллектора её
+      проверить нечем.*
+- [x] Реализовать `packages/server/src/infrastructure/tracing/tracing.factory.ts` — инициализация Node SDK с автоинструментацией `http`, `express`, `@prisma/instrumentation`, `ioredis`, выполняемая до создания клиентов.
+      *В пункте стояло имя otel.ts, которого не было: суффикс взят из закрытого словаря
+      `rules/naming-and-structure.mdc` (исправлено 2026-08-30).*
+      *Инструментирование перечислено поимённо, а не через
       `auto-instrumentations-node`. Порядок «до создания клиентов» держит `main.ts`: окружение →
       `startTracing` → динамический импорт приложения.*
 - [x] Реализовать условную инициализацию по наличию `OTEL_EXPORTER_OTLP_ENDPOINT` и настройку сэмплера через env.
