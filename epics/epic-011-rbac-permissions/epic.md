@@ -43,7 +43,8 @@ created: 2026-07-26
 - **Слой 4.** `ResourceAcl` с упорядоченной шкалой `NONE < VIEWER < COMMENTER < EDITOR < MANAGER`,
   цепочки наследования, `implicitLevel`, субъекты `USER | ROLE | TEAM`.
 - **Слой 5.** `domain/<context>/access/*.policy.ts` c `Decision { allowed, reason }`,
-  `*-access-reader.port.ts`, `EffectivePermissionsService` + кеш Redis по `permissionsVersion`,
+  `*-access-reader.port.ts`, `EffectivePermissionsService` (~~+ кеш Redis по `permissionsVersion`~~
+  — кеш исключён из состава 2026-09-06 отказом по замеру, см. STORY-011-08),
   `requirePermission` как fail-fast middleware, `GET /api/v1/me/permissions`.
 - **Клиент.** `useCan()`, `<Can>`, гарды `beforeLoad`, признаки `permissions` в DTO ресурсов.
 - **Проверяемость.** `permission-matrix` snapshot-тест на реальном HTTP-стеке, CI-правило «нет
@@ -110,7 +111,10 @@ created: 2026-07-26
 - **Инвалидация «Redis недоступен — работает медленнее»** — кеша прав не существует вовсе, поэтому
   первая половина критерия выполняется по построению (актор пересобирается на каждый запрос), а
   вторая беспредметна. Разбор — [STORY-011-08](stories/story-011-08-effective-permissions.md),
-  статус которой понижен `review` → `in-progress` этой же сверкой.
+  статус которой понижен `review` → `in-progress` этой же сверкой. **Дополнено 2026-09-06:** кеш
+  измерен и решением закрыт отказом, а не отсрочкой (5.4 мс на сборку, 11 операторов, штамп из 200
+  пересборок проходит без лока) — числа и условия пересмотра в истории и в
+  [`permission-model.md` §8](../../docs/security/permission-model.md).
 - **`AuditLog` на каждое изменение прав** — выполняется для изменений, сделанных человеком, и с
   2026-08-30 для пересида системных ролей при обновлении продукта (`actorType = SYSTEM`, критерий 7
   STORY-011-02 закрыт: запись пишется в транзакции изменения, внутри организации, чьи права
@@ -184,7 +188,7 @@ created: 2026-07-26
 - [ ] [STORY-011-05 — Персональные исключения прав по пользователю](stories/story-011-05-user-permission-overrides.md)
 - [ ] [STORY-011-06 — ACL на ресурс и наследование по цепочке](stories/story-011-06-resource-acl.md)
 - [ ] [STORY-011-07 — Policy-слой, порты доступа и реестр маршрутов](stories/story-011-07-policy-layer.md)
-- [ ] [STORY-011-08 — Эффективные права, кеш и `GET /me/permissions`](stories/story-011-08-effective-permissions.md)
+- [ ] [STORY-011-08 — Эффективные права и `GET /me/permissions`](stories/story-011-08-effective-permissions.md)
 - [ ] [STORY-011-09 — permission-matrix snapshot test и CI-гейт каталога](stories/story-011-09-permission-matrix-test.md)
 - [ ] [STORY-011-10 — Админ-UI: матрица ролей с batch-применением](stories/story-011-10-admin-role-matrix-ui.md)
 - [ ] [STORY-011-11 — Админ-UI: персональные исключения и объяснение доступа](stories/story-011-11-admin-overrides-ui.md)

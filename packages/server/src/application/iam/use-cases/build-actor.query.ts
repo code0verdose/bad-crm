@@ -19,11 +19,16 @@ export interface BuildActorInput {
  * runs with the new rights, without a re-login. That is only possible if the capability view is read
  * per request rather than carried in the token.
  *
- * **The cost is one indexed read, and it is not cached yet.** §8 of the permission model describes a
- * 60-second cache keyed by `permissionsVersion`; it is an optimisation with a correctness condition
- * (the version has to be bumped in the same transaction as every change, which it now is), and it
- * arrives with the first screen that makes the read hot. Caching before that would be a cache nobody
- * has measured the need for and everybody has to reason about.
+ * **The cost is measured, and it is not cached.** §8 of the permission model designs a 60-second
+ * Redis cache keyed by `permissionsVersion`; on 2026-09-06 the read was measured instead of guessed
+ * at — 5.4 ms mean and 6.0 ms p95 for a subject with 317 effective keys, eleven statements that do
+ * not grow with the number of roles, 700+ builds a second, and the cache stampede the lock exists
+ * for (200 simultaneous rebuilds) passing without one. That is 4 % of the 150 ms NFR-2 gives a
+ * single-entity read, so the cache was refused rather than deferred: a lock, a degradation path and
+ * a "the version moved while we were building" race are three new ways to be wrong about access,
+ * and the saving is six milliseconds. The numbers, and the numeric conditions that would reverse
+ * the decision, are in §8 and in STORY-011-08; the property they rest on is guarded by
+ * `test/integration/db/effective-permissions-cost.test.ts`.
  *
  * A caller whose account has disappeared between the token and this read is refused as **404** —
  * `denyAccess` with the scope that means «not yours, or not there», because those two must stay
