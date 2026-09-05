@@ -1,5 +1,5 @@
 import { Button, Checkbox, Group, Stack, Text, TextInput, Textarea } from '@mantine/core';
-import { schemaResolver, useForm } from '@mantine/form';
+import { useForm } from '@mantine/form';
 import { useTranslation } from 'react-i18next';
 
 import { SharedLib } from '@shared';
@@ -67,7 +67,7 @@ export function PermissionOverrideForm({
     // whole record says the same thing once, and removes an ordering nobody can see is load-bearing.
     validate: (values) =>
       SharedLib.translateFormIssues(
-        schemaResolver(permissionOverrideFormSchema, { sync: true })(values),
+        SharedLib.zodFormResolver(permissionOverrideFormSchema)(values),
         t,
       ),
   });

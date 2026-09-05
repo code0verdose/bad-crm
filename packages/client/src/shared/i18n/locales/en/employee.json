@@ -12,7 +12,7 @@
     "INTERN": "Intern"
   },
   "capacity": "Hours a week",
-  "capacityHint": "What planning counts on. 0 to 80.",
+  "capacityHint": "What planning counts on. {{min}} to {{max}}.",
   "timezone": "Timezone",
   "skills": "Skills",
   "skillsHint": "Used to answer «who knows postgres». Press Enter after each one.",
@@ -28,5 +28,15 @@
     "title": "This account is switched off",
     "description": "The person cannot sign in. Their tasks, hours and history are untouched, and an administrator can bring the account back.",
     "since": "Left on {{date}}."
+  },
+  "field": {
+    "capacityTooSmall_one": "Too low — at least {{count}} hour a week",
+    "capacityTooSmall_other": "Too low — at least {{count}} hours a week",
+    "capacityTooLarge_one": "Too high — at most {{count}} hour a week",
+    "capacityTooLarge_other": "Too high — at most {{count}} hours a week",
+    "tooManySkills_one": "Too many — at most {{count}} skill",
+    "tooManySkills_other": "Too many — at most {{count}} skills",
+    "skillTooLong_one": "Each skill is at most {{count}} character",
+    "skillTooLong_other": "Each skill is at most {{count}} characters"
   }
 }

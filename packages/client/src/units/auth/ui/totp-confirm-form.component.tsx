@@ -1,5 +1,5 @@
 import { Alert, Button, Group, PasswordInput, Stack, Text } from '@mantine/core';
-import { schemaResolver, useForm } from '@mantine/form';
+import { useForm } from '@mantine/form';
 import { useTranslation } from 'react-i18next';
 
 import { SharedLib } from '@shared';
@@ -21,8 +21,8 @@ export interface TotpConfirmFormProps {
 /**
  * The last step of enrolment: the code from the authenticator and the account's own password.
  *
- * The form stack is the product's one form stack — `@mantine/form` with the built-in
- * `schemaResolver`, so the schema decides what is well-formed and Mantine wires `aria-invalid` and
+ * The form stack is the product's one form stack — `@mantine/form` with the shared
+ * `zodFormResolver`, so the schema decides what is well-formed and Mantine wires `aria-invalid` and
  * `aria-describedby` to the message (`rules/design-system.mdc` §11, `rules/a11y.mdc` §18). Whether
  * the *values* are right is decided by the server, and its refusal arrives as `failureKey`.
  *
@@ -46,14 +46,11 @@ export function TotpConfirmForm({
   const form = useForm<TotpConfirmFormValues>({
     mode: 'uncontrolled',
     initialValues: { code: '', currentPassword: '' },
-    // The resolver answers with i18n **keys** — every schema here does (`rules/i18n.mdc` §1) — and
-    // Mantine renders what it is handed, so without this the field would read
-    // `validation.totp_code.invalid` itself.
+    // The resolver answers with an issue per field — an i18n **key** and the bound that refused
+    // (`rules/i18n.mdc` §1), not a sentence. Without this step React is handed an object as a child
+    // and the render throws; the form would not ship untranslated, it would not ship at all.
     validate: (values) =>
-      SharedLib.translateFormIssues(
-        schemaResolver(totpConfirmFormSchema, { sync: true })(values),
-        t,
-      ),
+      SharedLib.translateFormIssues(SharedLib.zodFormResolver(totpConfirmFormSchema)(values), t),
   });
 
   return (

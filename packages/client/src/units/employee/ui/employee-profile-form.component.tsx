@@ -1,10 +1,12 @@
 import { Button, NativeSelect, Stack, TextInput } from '@mantine/core';
-import { schemaResolver, useForm } from '@mantine/form';
+import { useForm } from '@mantine/form';
 import { useTranslation } from 'react-i18next';
 
 import { SharedLib } from '@shared';
 
 import {
+  CAPACITY_MAX,
+  CAPACITY_MIN,
   employeeProfileFormSchema,
   EMPLOYMENT_TYPE_LABEL,
   EMPLOYMENT_TYPES,
@@ -55,12 +57,12 @@ export function EmployeeProfileForm({
   const form = useForm<EmployeeProfileFormValues>({
     mode: 'uncontrolled',
     initialValues,
-    // The resolver answers with i18n **keys** — every schema here does (`rules/i18n.mdc` §1) — and
-    // Mantine renders what it is handed, so without this the field would read
-    // `validation.required` itself.
+    // The resolver answers with an issue per field — an i18n **key** and the bound that refused
+    // (`rules/i18n.mdc` §1), not a sentence. Without this step React is handed an object as a child
+    // and the render throws; the form would not ship untranslated, it would not ship at all.
     validate: (values) =>
       SharedLib.translateFormIssues(
-        schemaResolver(employeeProfileFormSchema, { sync: true })(values),
+        SharedLib.zodFormResolver(employeeProfileFormSchema)(values),
         t,
       ),
   });
@@ -119,7 +121,7 @@ export function EmployeeProfileForm({
         */}
         <TextInput
           disabled={!canEditEmployment}
-          description={t('employee.capacityHint')}
+          description={t('employee.capacityHint', { min: CAPACITY_MIN, max: CAPACITY_MAX })}
           inputMode="numeric"
           key={form.key('weeklyCapacityHours')}
           label={t('employee.capacity')}

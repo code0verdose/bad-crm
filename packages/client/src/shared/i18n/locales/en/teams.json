@@ -26,10 +26,13 @@
     "slug": "Address",
     "slugHint": "Lower-case Latin letters, digits and hyphens — this is how the team appears in a link.",
     "slugInvalid": "Only lower-case Latin letters, digits and single hyphens",
-    "slugTooLong": "Too long — at most 64 characters",
-    "nameTooLong": "Too long — at most 120 characters",
     "description": "What this team does",
-    "descriptionTooLong": "Too long — at most 500 characters"
+    "nameTooLong_one": "Too long — at most {{count}} character",
+    "nameTooLong_other": "Too long — at most {{count}} characters",
+    "slugTooLong_one": "Too long — at most {{count}} character",
+    "slugTooLong_other": "Too long — at most {{count}} characters",
+    "descriptionTooLong_one": "Too long — at most {{count}} character",
+    "descriptionTooLong_other": "Too long — at most {{count}} characters"
   },
   "empty": {
     "title": "No teams here",

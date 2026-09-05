@@ -1,5 +1,5 @@
 import { Button, NativeSelect, Stack, TextInput } from '@mantine/core';
-import { schemaResolver, useForm } from '@mantine/form';
+import { useForm } from '@mantine/form';
 import { useTranslation } from 'react-i18next';
 
 import { SharedLib } from '@shared';
@@ -37,14 +37,11 @@ export function InviteForm({ roles, defaultLocale, isPending, onSubmit }: Invite
   const form = useForm<InvitationForm>({
     mode: 'uncontrolled',
     initialValues: { email: '', roleId: '', locale: defaultLocale },
-    // The resolver answers with i18n **keys** — every schema here does (`rules/i18n.mdc` §1) — and
-    // Mantine renders what it is handed, so without this the field would read
-    // `validation.email.invalid` itself.
+    // The resolver answers with an issue per field — an i18n **key** and the bound that refused
+    // (`rules/i18n.mdc` §1), not a sentence. Without this step React is handed an object as a child
+    // and the render throws; the form would not ship untranslated, it would not ship at all.
     validate: (values) =>
-      SharedLib.translateFormIssues(
-        schemaResolver(invitationFormSchema, { sync: true })(values),
-        t,
-      ),
+      SharedLib.translateFormIssues(SharedLib.zodFormResolver(invitationFormSchema)(values), t),
   });
 
   return (

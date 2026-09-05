@@ -1,6 +1,6 @@
 import { Alert, Button, PasswordInput, Stack, TextInput } from '@mantine/core';
 import { useTranslation } from 'react-i18next';
-import { schemaResolver, useForm } from '@mantine/form';
+import { useForm } from '@mantine/form';
 
 import { SharedLib } from '@shared';
 
@@ -23,14 +23,14 @@ export interface LoginFormProps {
  * `POST /auth/login`; whether they are *well formed* is decided by `loginFormSchema`, here, before
  * a request is made.
  *
- * `@mantine/form` with the built-in `schemaResolver` is the one form stack of this product
+ * `@mantine/form` with the shared `zodFormResolver` is the one form stack of this product
  * (ADR-0006 §4): the schema is the source of truth and the resolver turns its issues into the
  * `error` prop of the field they belong to. Mantine then wires `aria-invalid` and the
  * `aria-describedby` that points at the message — which is what `rules/a11y.mdc` §18 asks for and
  * what a screen reader needs to say *which* field is wrong.
  *
- * `sync: true` because the schema has no async refinement and a synchronous resolver keeps the
- * error and the render in the same frame.
+ * The resolver is synchronous: no schema in this product has an async refinement, and answering in
+ * the same frame keeps the error and the render together.
  *
  * Focus moves to the first field that failed. Without it, a submit that fails validation announces
  * nothing and leaves the caret where it was — a sighted user sees red, and nobody else learns
@@ -46,11 +46,11 @@ export function LoginForm({ isPending, noticeKey, onSubmit }: LoginFormProps) {
   const form = useForm<LoginFormValues>({
     mode: 'uncontrolled',
     initialValues: { email: '', password: '' },
-    // The resolver answers with i18n **keys** — every schema here does (`rules/i18n.mdc` §1) — and
-    // Mantine renders what it is handed, so without this the field would read
-    // `validation.password.required` itself.
+    // The resolver answers with an issue per field — an i18n **key** and the bound that refused
+    // (`rules/i18n.mdc` §1), not a sentence. Without this step React is handed an object as a child
+    // and the render throws; the form would not ship untranslated, it would not ship at all.
     validate: (values) =>
-      SharedLib.translateFormIssues(schemaResolver(loginFormSchema, { sync: true })(values), t),
+      SharedLib.translateFormIssues(SharedLib.zodFormResolver(loginFormSchema)(values), t),
   });
 
   return (

@@ -62,9 +62,9 @@ alwaysApply: false
    `shared/ui` не знает о доменах и не ходит в сеть.
 10. **Состояния экрана — только через `shared/ui`:** `DataState`, `EmptyState`, `ErrorState`,
     skeleton-набор. Свой спиннер, своя «Ничего не найдено», свой текст ошибки — нарушение.
-11. **Формы — `@mantine/form` со встроенным `schemaResolver`** (Mantine 9 поддерживает Standard
-    Schema): `import { useForm, schemaResolver } from '@mantine/form'`,
-    `validate: schemaResolver(schema, { sync: true })`. Отдельный пакет `mantine-form-zod-resolver`
+11. **Формы — `@mantine/form` с общим `SharedLib.zodFormResolver`** (правило 12
+    `rules/zod-validation.mdc`; встроенный `schemaResolver` пакета — запрещён, он теряет предел,
+    который подставляется в сообщение). Отдельный пакет `mantine-form-zod-resolver`
     не ставится. Оверлеи — `useDisclosure`, кроме
     случаев, где открытость должна быть в URL (тогда её определяет search-параметр).
 12. **Таблицы:** модель — TanStack Table v8 (колонки, сортировка, выделение, виртуализация),

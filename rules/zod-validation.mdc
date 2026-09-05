@@ -44,11 +44,15 @@ job'ов, формы, search-параметры URL, `localStorage`, перем�
     ответов внешних API — рядом с адаптером; схема `env` — `infrastructure/bootstrap/env.schema.ts`
     (до 2026-08-30 здесь стоял `env.ts` — файла с таким именем в дереве нет и не было).
     Файл — `<name>.schema.ts`, схема `camelCaseSchema`, тип `PascalCase` через `z.infer`.
-12. **Формы — `@mantine/form` со встроенным `schemaResolver`.** Mantine 9 поддерживает Standard
-    Schema, поэтому схема подключается пакетом формы, а не отдельным резолвером:
-    `import { useForm, schemaResolver } from '@mantine/form'`,
-    `validate: schemaResolver(schema, { sync: true })` (`sync: true` — для синхронных схем, к
-    которым относится Zod). `mantine-form-zod-resolver` не ставится. Второй формовой библиотеки в
+12. **Формы — `@mantine/form` с общим `SharedLib.zodFormResolver`.**
+    `validate: (values) => SharedLib.translateFormIssues(SharedLib.zodFormResolver(schema)(values), t)`.
+    Встроенный `schemaResolver` пакета **запрещён** (изменено 2026-09-06, до этого предписывался
+    он): он читает схему через Standard Schema, где у issue остаются только `message` и `path`, а
+    предел — `maximum`/`minimum` — теряется. Тогда сообщение «не длиннее 120 символов» вынуждено
+    называть число второй раз, в каталоге, в двух языках, и расходиться со схемой молча. Общий
+    резолвер отдаёт `{ key, values }`, и `{{count}}` подставляется из самой проверки. Запрет держит
+    `packages/client/test/architecture/form-issue-translation.test.ts`.
+    `mantine-form-zod-resolver` не ставится. Второй формовой библиотеки в
     проекте нет; ручных проверок в компоненте нет.
 13. **Ответы API прогоняются через схему в `api`-слое** там, где нужен рантайм-гейт: сгенерированные
     типы из OpenAPI гарантируют форму на этапе компиляции, но не защищают от дрейфа бэкенда.

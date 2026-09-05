@@ -5,17 +5,26 @@
   "password": {
     "mismatch": "The two passwords are different",
     "required": "Enter a password",
-    "too_short": "Too short — at least 12 characters",
-    "unchanged": "The new password is the same as the current one"
+    "unchanged": "The new password is the same as the current one",
+    "too_short_one": "Too short — at least {{count}} character",
+    "too_short_other": "Too short — at least {{count}} characters"
   },
   "required": "This field cannot be empty",
   "second_factor": {
     "required": "Enter a code from your authenticator app, or one of your recovery codes"
   },
   "number": {
-    "invalid": "Enter a number"
+    "invalid": "Enter a number",
+    "notInteger": "Enter a whole number"
   },
   "totp_code": {
     "invalid": "Enter the six digits from your authenticator app"
+  },
+  "text": {
+    "tooLong_one": "Too long — at most {{count}} character",
+    "tooLong_other": "Too long — at most {{count}} characters"
+  },
+  "choice": {
+    "invalid": "Choose one of the options"
   }
 }

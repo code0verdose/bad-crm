@@ -1,6 +1,6 @@
 import { Button, Stack, TextInput } from '@mantine/core';
 import { useTranslation } from 'react-i18next';
-import { schemaResolver, useForm } from '@mantine/form';
+import { useForm } from '@mantine/form';
 
 import { SharedLib } from '@shared';
 
@@ -20,7 +20,7 @@ export interface ForgotPasswordFormProps {
  *
  * Whether the address belongs to an account is not decided here and is not decided anywhere the user
  * can see: `POST /auth/forgot-password` answers 202 either way. What this form decides is whether
- * what was typed is an address at all — the same `schemaResolver` stack as the sign-in form
+ * what was typed is an address at all — the same `zodFormResolver` stack as the sign-in form
  * (ADR-0006 §4), so Mantine wires `aria-invalid` and the `aria-describedby` that points at the
  * message, and the message lands under the field rather than in a toast
  * (`rules/errors-and-toasts.mdc` §4).
@@ -38,14 +38,11 @@ export function ForgotPasswordForm({ isPending, onSubmit }: ForgotPasswordFormPr
   const form = useForm<ForgotPasswordFormValues>({
     mode: 'uncontrolled',
     initialValues: { email: '' },
-    // The resolver answers with i18n **keys** — every schema here does (`rules/i18n.mdc` §1) — and
-    // Mantine renders what it is handed, so without this the field would read
-    // `validation.email.invalid` itself.
+    // The resolver answers with an issue per field — an i18n **key** and the bound that refused
+    // (`rules/i18n.mdc` §1), not a sentence. Without this step React is handed an object as a child
+    // and the render throws; the form would not ship untranslated, it would not ship at all.
     validate: (values) =>
-      SharedLib.translateFormIssues(
-        schemaResolver(forgotPasswordFormSchema, { sync: true })(values),
-        t,
-      ),
+      SharedLib.translateFormIssues(SharedLib.zodFormResolver(forgotPasswordFormSchema)(values), t),
   });
 
   return (

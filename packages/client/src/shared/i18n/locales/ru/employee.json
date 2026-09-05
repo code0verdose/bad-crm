@@ -12,7 +12,7 @@
     "INTERN": "Стажёр"
   },
   "capacity": "Часов в неделю",
-  "capacityHint": "На это опирается планирование. От 0 до 80.",
+  "capacityHint": "На это опирается планирование. От {{min}} до {{max}}.",
   "timezone": "Часовой пояс",
   "skills": "Навыки",
   "skillsHint": "По ним отвечают на вопрос «кто умеет postgres». Каждый — по Enter.",
@@ -28,5 +28,23 @@
     "title": "Учётная запись отключена",
     "description": "Человек не может войти. Задачи, часы и история на месте, а учётную запись можно вернуть.",
     "since": "Дата увольнения — {{date}}."
+  },
+  "field": {
+    "capacityTooSmall_one": "Слишком мало — не меньше {{count}} часа в неделю",
+    "capacityTooSmall_few": "Слишком мало — не меньше {{count}} часов в неделю",
+    "capacityTooSmall_many": "Слишком мало — не меньше {{count}} часов в неделю",
+    "capacityTooSmall_other": "Слишком мало — не меньше {{count}} часов в неделю",
+    "capacityTooLarge_one": "Слишком много — не больше {{count}} часа в неделю",
+    "capacityTooLarge_few": "Слишком много — не больше {{count}} часов в неделю",
+    "capacityTooLarge_many": "Слишком много — не больше {{count}} часов в неделю",
+    "capacityTooLarge_other": "Слишком много — не больше {{count}} часов в неделю",
+    "tooManySkills_one": "Слишком много — не больше {{count}} навыка",
+    "tooManySkills_few": "Слишком много — не больше {{count}} навыков",
+    "tooManySkills_many": "Слишком много — не больше {{count}} навыков",
+    "tooManySkills_other": "Слишком много — не больше {{count}} навыков",
+    "skillTooLong_one": "Каждый навык — не длиннее {{count}} символа",
+    "skillTooLong_few": "Каждый навык — не длиннее {{count}} символов",
+    "skillTooLong_many": "Каждый навык — не длиннее {{count}} символов",
+    "skillTooLong_other": "Каждый навык — не длиннее {{count}} символов"
   }
 }

@@ -1,5 +1,5 @@
 import { Alert, Button, PasswordInput, Stack, TextInput } from '@mantine/core';
-import { schemaResolver, useForm } from '@mantine/form';
+import { useForm } from '@mantine/form';
 import { useTranslation } from 'react-i18next';
 
 import { SharedLib } from '@shared';
@@ -32,11 +32,11 @@ export interface RegisterFormProps {
  * The first door of an installation: an organization, its owner, and no idea what happens next
  * (`rules/frontend-fsd.mdc` rule 7).
  *
- * `@mantine/form` with the built-in `schemaResolver` is the one form stack of this product
+ * `@mantine/form` with the shared `zodFormResolver` is the one form stack of this product
  * (ADR-0006 §4): `registerFormSchema` is the source of truth and the resolver turns its issues into
  * the `error` prop of the field they belong to, which is what makes Mantine wire `aria-invalid` and
- * the `aria-describedby` a screen reader needs (`rules/a11y.mdc` §18). `sync: true` because the
- * schema has no async refinement.
+ * the `aria-describedby` a screen reader needs (`rules/a11y.mdc` §18). The resolver answers
+ * synchronously; no schema in this product has an async refinement.
  *
  * **The two server-side refusals arrive as props rather than as toasts**, and they are rendered in
  * two different places on purpose. A taken slug is a statement about one field and joins that
@@ -63,12 +63,11 @@ export function RegisterForm({ isPending, noticeKey, slugErrorKey, onSubmit }: R
       password: '',
       confirmPassword: '',
     },
-    // The resolver's answers are i18n **keys** — that is what every schema in this repository
-    // returns (`rules/i18n.mdc` §1) — and Mantine renders what it is handed. Without this step the
-    // field would read `validation.email.invalid` in both languages, and no test in the tree could
-    // tell: the suite runs in `cimode`, where `t(key)` is the key.
+    // The resolver answers with an issue per field — an i18n **key** and the bound that refused
+    // (`rules/i18n.mdc` §1), not a sentence. Without this step React is handed an object as a child
+    // and the render throws; the form would not ship untranslated, it would not ship at all.
     validate: (values) =>
-      SharedLib.translateFormIssues(schemaResolver(registerFormSchema, { sync: true })(values), t),
+      SharedLib.translateFormIssues(SharedLib.zodFormResolver(registerFormSchema)(values), t),
   });
 
   return (

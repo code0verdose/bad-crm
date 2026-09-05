@@ -1,5 +1,5 @@
 import { Alert, Anchor, Button, Stack, Text, TextInput } from '@mantine/core';
-import { schemaResolver, useForm } from '@mantine/form';
+import { useForm } from '@mantine/form';
 import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
@@ -28,8 +28,8 @@ export interface TwoFactorFormProps {
 /**
  * The second step of the sign-in: one code, and the two ways of producing one.
  *
- * The form stack is the product's one form stack — `@mantine/form` with the built-in
- * `schemaResolver`, so the schema decides what is well-formed and Mantine wires `aria-invalid` and
+ * The form stack is the product's one form stack — `@mantine/form` with the shared
+ * `zodFormResolver`, so the schema decides what is well-formed and Mantine wires `aria-invalid` and
  * the `aria-describedby` that points at the message (`rules/design-system.mdc` §11,
  * `rules/a11y.mdc` §18). Whether the code is *right* is decided by `POST /auth/2fa/verify`, and its
  * refusal arrives as `failureKey`.
@@ -69,11 +69,11 @@ export function TwoFactorForm({
   const form = useForm<TwoFactorFormValues>({
     mode: 'uncontrolled',
     initialValues: { code: '' },
-    // The resolver answers with i18n **keys** — every schema here does (`rules/i18n.mdc` §1) — and
-    // Mantine renders what it is handed, so without this the field would read
-    // `validation.second_factor.required` itself.
+    // The resolver answers with an issue per field — an i18n **key** and the bound that refused
+    // (`rules/i18n.mdc` §1), not a sentence. Without this step React is handed an object as a child
+    // and the render throws; the form would not ship untranslated, it would not ship at all.
     validate: (values) =>
-      SharedLib.translateFormIssues(schemaResolver(twoFactorFormSchema, { sync: true })(values), t),
+      SharedLib.translateFormIssues(SharedLib.zodFormResolver(twoFactorFormSchema)(values), t),
   });
 
   /**

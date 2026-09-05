@@ -59,10 +59,12 @@
     "refused": "Not written — nothing was changed"
   },
   "field": {
-    "reasonTooShort": "Write at least ten characters — this is what somebody reads in six months.",
-    "reasonTooLong": "Too long for a note. Keep it under five hundred characters.",
     "expiryRequired": "Pick a date, or tick «until somebody removes it».",
-    "expiryInPast": "That day has passed. An exception that has already expired grants nothing."
+    "expiryInPast": "That day has passed. An exception that has already expired grants nothing.",
+    "reasonTooShort_one": "Write at least {{count}} character — this is what somebody reads in six months.",
+    "reasonTooShort_other": "Write at least {{count}} characters — this is what somebody reads in six months.",
+    "reasonTooLong_one": "Too long for a note. Keep it under {{count}} character.",
+    "reasonTooLong_other": "Too long for a note. Keep it under {{count}} characters."
   },
   "refusal": {
     "permissionNotGranted": "You cannot hand out a permission you do not hold yourself.",

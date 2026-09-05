@@ -1283,10 +1283,11 @@ git ls-files 'packages/client/src/shared/ui/*/index.ts'
    инлайны. Ad-hoc `style={{ marginTop: 12 }}` — ошибка ревью, вместо этого `Stack`/`Group`
    с токеном отступа.
 4. **Формы — только `@mantine/form`.** Второй формовой библиотеки в проекте нет. Схема Zod
-   подключается **встроенным** `schemaResolver` того же пакета (Mantine 9 поддерживает Standard
-   Schema): `import { useForm, schemaResolver } from '@mantine/form'`,
-   `validate: schemaResolver(schema, { sync: true })`. Отдельный пакет `mantine-form-zod-resolver`
-   не ставится — см. [ADR-0006](adr/0006-mantine-css-modules-no-tailwind.md#поправка-2026-07-28--мажорная-версия-mantine).
+   подключается общим `SharedLib.zodFormResolver` из `shared/lib/validation`; встроенный
+   `schemaResolver` пакета запрещён с 2026-09-06 — он теряет предел (`maximum`/`minimum`), из-за
+   чего число в сообщении приходится дублировать в каталоге. Отдельный пакет
+   `mantine-form-zod-resolver` не ставится — см.
+   [ADR-0006](adr/0006-mantine-css-modules-no-tailwind.md#поправка-2026-07-28--мажорная-версия-mantine).
 5. **Оверлеи — только через `useDisclosure`**, кроме случаев, где открытость должна быть в URL
    (тогда открытость определяется search-параметром, а `useDisclosure` не нужен).
 6. **Таблицы.** `TanStack Table v8` отвечает за модель (колонки, сортировка, выделение,
@@ -1350,8 +1351,8 @@ git ls-files 'packages/client/src/shared/ui/*/index.ts'
 
 ### Формы
 
-- Схема Zod в `units/<unit>/model/validation`, тип через `z.infer`, подключение — встроенный
-  `schemaResolver` из `@mantine/form`: `validate: schemaResolver(schema, { sync: true })`.
+- Схема Zod в `units/<unit>/model/validation`, тип через `z.infer`, подключение — общий
+  `SharedLib.zodFormResolver`, ответ которого переводит `SharedLib.translateFormIssues`.
   Ни одной ручной проверки в компоненте.
 - Валидация — `onBlur` для полей и полностью на `submit`. Ошибка — inline у поля
   (`aria-describedby`), никогда не тост. При submit с ошибками фокус переводится на первое

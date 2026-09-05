@@ -15,7 +15,7 @@
  */
 import { MantineProvider } from '@mantine/core';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
@@ -521,7 +521,7 @@ describe('the registration screen in a pseudo locale', () => {
    * The field messages, which are the reason this screen translates its resolver at all.
    *
    * Every schema in the repository answers with an i18n **key**, and `@mantine/form` renders what
-   * the resolver returned — so a form wiring `schemaResolver` straight into `validate` shows
+   * the resolver returned — so a form wiring its resolver straight into `validate` shows
    * `validation.email.invalid` under the field, in both languages. `cimode` renders that exactly
    * like a correct translation, which is why the defect can only be caught here.
    */
@@ -580,19 +580,18 @@ describe('the password-reset confirmation in a pseudo locale', () => {
  * under the field a sentence?
  *
  * The registration case above is the same assertion for one form. This block is the rest of them,
- * and there is no shorter way to write it: the defect is per-component — `validate:
- * schemaResolver(schema, { sync: true })` hands `@mantine/form` a record of i18n **keys**, and
- * Mantine renders what it is handed. Thirteen forms shipped that way, so thirteen fields read
+ * and there is no shorter way to write it: the defect is per-component — a resolver wired straight
+ * into `validate` handed `@mantine/form` a record of i18n **keys**, and Mantine rendered what it was
+ * handed. Twelve of the fourteen forms in the tree shipped that way, so twelve fields read
  * `validation.password.required` in both languages, and no test in the tree could tell — under
  * `cimode` `t(key)` *is* the key, so an assertion naming the key passes whether or not anything
  * translated it. Only a locale that transforms its values separates the two.
  *
- * Each row breaks the form in the cheapest way that reaches a **keyed** message: an empty required
- * field, or an empty one among otherwise valid values where the form starts filled in. Rows are not
- * asked «is nothing on screen unmarked» — a few bounds in these schemas (`max(120)` on a name,
- * `min(1)` on a timezone) carry no key and fall back to Zod's own English, which is a separate
- * defect and not this one. The question asked is narrower and exactly the class: *the message this
- * schema produced* arrived translated.
+ * Each row breaks the form in the cheapest way that reaches a message at all: an empty required
+ * field, or an empty one among otherwise valid values where the form starts filled in. That reaches
+ * the checks which fire on nothing and no others, which is why the block below this one exists —
+ * the upper bounds need a value that overshoots them, and until something did that they were the
+ * half of the same defect nobody had looked at.
  *
  * `test/architecture/form-issue-translation.test.ts` is what keeps the next form from arriving
  * without a row here.
@@ -752,5 +751,249 @@ describe('the field messages of every form in a pseudo locale', () => {
     // is translated» is true of no messages at all.
     expect(messages).not.toEqual([]);
     expect(messages.filter((text) => !isPseudoLocalised(text))).toEqual([]);
+  });
+});
+
+/**
+ * The boundaries a person only reaches by typing too much, too little, or the wrong kind of thing.
+ *
+ * The table above submits every form **empty**, so the only checks it can reach are the ones that
+ * fire on nothing: `min(1)`, «this field cannot be empty». Every upper bound in the tree — 120
+ * characters of a name, 80 hours a week, 50 skills — was therefore outside what any gate looked at,
+ * and that is exactly where the second half of the key defect survived: a bound written as
+ * `.max(120)` with no `error` falls back to **Zod's own English**, «Too big: expected string to have
+ * <=120 characters», which `@mantine/form` renders verbatim under the field of a Russian interface.
+ *
+ * `i18next/no-literal-string` cannot see it — there is no literal, the sentence is built inside a
+ * library at runtime. The rest of the suite cannot see it either, for the reason this whole file
+ * exists: under `cimode` an untranslated string and a translated one are the same bytes. Only a
+ * locale that transforms its values tells them apart, and only if something first makes the bound
+ * fail. That is what the cases below do — each one hands a form a value its schema refuses, then
+ * reads the message under the very field it filled.
+ *
+ * **Remove the `error` from any bound named here and its case goes red**, because Zod's English
+ * arrives without the `⟦…⟧` the catalogue puts on everything it answers.
+ */
+describe('the boundaries of the forms in a pseudo locale', () => {
+  const OVERLONG = 'x'.repeat(600);
+
+  /** Longer than the list allows, with every entry short enough that only the count is at fault. */
+  const TOO_MANY_SKILLS = Array.from({ length: 51 }, (_, index) => `s${index}`).join(',');
+
+  const noop = () => undefined;
+
+  const PROFILE = {
+    firstName: 'Ada',
+    lastName: 'Lovelace',
+    jobTitle: '',
+    department: '',
+    employmentType: 'FULL_TIME' as const,
+    weeklyCapacityHours: '40',
+    timezone: 'UTC',
+    skills: '',
+    emergencyContact: '',
+  };
+
+  const profileForm = (overrides: Partial<typeof PROFILE> = {}): React.ReactNode => (
+    <EmployeeUi.EmployeeProfileForm
+      canEditEmployment
+      carriesEmergencyContact
+      initialValues={{ ...PROFILE, ...overrides }}
+      isPending={false}
+      onSubmit={noop}
+    />
+  );
+
+  interface BoundaryCase {
+    /** Label of a field to fill, as a fragment of its English text, and what to put in it. */
+    readonly fill?: readonly (readonly [RegExp, string])[];
+    /** The fields whose own message this case is about. */
+    readonly targets: readonly RegExp[];
+    readonly element: React.ReactNode;
+  }
+
+  const CASES: readonly (readonly [string, BoundaryCase])[] = [
+    [
+      'a profile whose every text field is longer than its bound',
+      {
+        element: profileForm(),
+        fill: [
+          [/First name/, OVERLONG],
+          [/Last name/, OVERLONG],
+          [/Job title/, OVERLONG],
+          [/Department/, OVERLONG],
+          [/Timezone/, OVERLONG],
+          [/Skills/, OVERLONG],
+          [/Emergency contact/, OVERLONG],
+        ],
+        targets: [
+          /First name/,
+          /Last name/,
+          /Job title/,
+          /Department/,
+          /Timezone/,
+          /Skills/,
+          /Emergency contact/,
+        ],
+      },
+    ],
+    [
+      'a profile with an empty timezone',
+      { element: profileForm(), fill: [[/Timezone/, '   ']], targets: [/Timezone/] },
+    ],
+    [
+      'a weekly capacity that is not a whole number',
+      { element: profileForm(), fill: [[/Hours a week/, '40.5']], targets: [/Hours a week/] },
+    ],
+    [
+      'a weekly capacity below the range',
+      { element: profileForm(), fill: [[/Hours a week/, '-1']], targets: [/Hours a week/] },
+    ],
+    [
+      'a weekly capacity above the range',
+      { element: profileForm(), fill: [[/Hours a week/, '81']], targets: [/Hours a week/] },
+    ],
+    [
+      'a weekly capacity that is not a number at all',
+      { element: profileForm(), fill: [[/Hours a week/, 'many']], targets: [/Hours a week/] },
+    ],
+    [
+      'more skills than the list holds',
+      { element: profileForm(), fill: [[/Skills/, TOO_MANY_SKILLS]], targets: [/Skills/] },
+    ],
+    [
+      // Not reachable through the select, which offers four values and nothing else — but reachable
+      // through the stored document, which is where this value comes from on a real screen.
+      'an employment type the list no longer offers',
+      { element: profileForm({ employmentType: 'RETIRED' as never }), targets: [/Employment/] },
+    ],
+    [
+      'a team whose name, address and description are all too long',
+      {
+        element: (
+          <TeamUi.TeamForm
+            initialValues={{ name: '', slug: '', description: '' }}
+            isPending={false}
+            onSubmit={noop}
+            submitLabelKey="teams.create.submit"
+          />
+        ),
+        fill: [
+          [/⟦Name/, OVERLONG],
+          [/Address/, OVERLONG],
+          [/What this team does/, OVERLONG],
+        ],
+        targets: [/⟦Name/, /Address/, /What this team does/],
+      },
+    ],
+    [
+      'an organisation whose name and address are too long',
+      {
+        element: <AuthUi.RegisterForm isPending={false} onSubmit={noop} />,
+        fill: [
+          [/Organization name/, OVERLONG],
+          [/Short address/, OVERLONG],
+        ],
+        targets: [/Organization name/, /Short address/],
+      },
+    ],
+    [
+      'a new password shorter than the policy allows',
+      {
+        element: <AuthUi.ResetPasswordForm isPending={false} onSubmit={noop} />,
+        fill: [[/New password/, 'short']],
+        targets: [/New password/],
+      },
+    ],
+    [
+      'an exception whose reason is too short',
+      {
+        element: (
+          <IamUi.PermissionOverrideForm
+            effect="ALLOW"
+            initialValues={{ reason: '', neverExpires: true, expiresOn: '' }}
+            isPending={false}
+            onCancel={noop}
+            onSubmit={noop}
+            permission="task:create"
+          />
+        ),
+        fill: [[/Reason/, 'too short']],
+        targets: [/Reason/],
+      },
+    ],
+    [
+      'an exception whose reason is too long',
+      {
+        element: (
+          <IamUi.PermissionOverrideForm
+            effect="ALLOW"
+            initialValues={{ reason: '', neverExpires: true, expiresOn: '' }}
+            isPending={false}
+            onCancel={noop}
+            onSubmit={noop}
+            permission="task:create"
+          />
+        ),
+        fill: [[/Reason/, OVERLONG]],
+        targets: [/Reason/],
+      },
+    ],
+  ];
+
+  const mount = async (element: React.ReactNode): Promise<void> => {
+    const instance = await pseudoInstance();
+
+    render(
+      <I18nextProvider i18n={instance}>
+        <MantineProvider>{element}</MantineProvider>
+      </I18nextProvider>,
+    );
+  };
+
+  /**
+   * `fireEvent.change` rather than typing: one of these values is six hundred characters long, and
+   * `userEvent.type` would dispatch six hundred key events for a field whose only interesting
+   * property is its length.
+   */
+  const setField = (label: RegExp, value: string): void => {
+    fireEvent.change(screen.getByLabelText(label), { target: { value } });
+  };
+
+  /**
+   * The message of one field, read the way a screen reader reaches it: through the
+   * `aria-describedby` the control points at. Collecting «every error on the page» instead would
+   * let a case pass on a *neighbouring* field's message while the bound it names printed nothing.
+   */
+  const messageOf = (label: RegExp): string => {
+    const control = screen.getByLabelText(label);
+
+    return (control.getAttribute('aria-describedby') ?? '')
+      .split(/\s+/)
+      .filter((id) => id.endsWith('-error'))
+      .map((id) => document.getElementById(id)?.textContent?.trim() ?? '')
+      .join(' ')
+      .trim();
+  };
+
+  it.each(CASES)('%s refuses in a sentence, not in Zod English', async (_case, scenario) => {
+    await mount(scenario.element);
+
+    for (const [label, value] of scenario.fill ?? []) setField(label, value);
+
+    const user = userEvent.setup();
+    await user.click(document.body.querySelector('button[type="submit"]') as HTMLButtonElement);
+
+    for (const target of scenario.targets) {
+      const message = messageOf(target);
+
+      // CONTROL: the bound actually failed. An empty message would satisfy «nothing unmarked».
+      expect(message, `${String(target)} was not refused at all`).not.toBe('');
+      expect(isPseudoLocalised(message), `${String(target)}: ${message}`).toBe(true);
+      // And the sentence got the number it has a place for. A key is translated and marked whether
+      // or not its `{{count}}` was filled, so «is it a sentence» cannot see a bound that reached
+      // the catalogue without its value — a `refine` that forgot `params`, say.
+      expect(message, `${String(target)} left a placeholder unfilled`).not.toContain('{{');
+    }
   });
 });

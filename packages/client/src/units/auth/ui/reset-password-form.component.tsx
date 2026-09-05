@@ -1,6 +1,6 @@
 import { Button, PasswordInput, Stack } from '@mantine/core';
 import { useTranslation } from 'react-i18next';
-import { schemaResolver, useForm } from '@mantine/form';
+import { useForm } from '@mantine/form';
 
 import { SharedLib } from '@shared';
 
@@ -27,7 +27,7 @@ export interface ResetPasswordFormProps {
  * and store a new one instead.
  *
  * The policy check and the equality check are both `resetPasswordFormSchema`, rendered by
- * `schemaResolver` under the field each belongs to — the equality failure is pointed at
+ * `zodFormResolver` under the field each belongs to — the equality failure is pointed at
  * `confirmPassword`, which is the field the person has to fix.
  *
  * It shares the sign-in form's stylesheet: same object, same width, one place for it to change.
@@ -38,14 +38,11 @@ export function ResetPasswordForm({ isPending, onSubmit }: ResetPasswordFormProp
   const form = useForm<ResetPasswordFormValues>({
     mode: 'uncontrolled',
     initialValues: { newPassword: '', confirmPassword: '' },
-    // The resolver answers with i18n **keys** — every schema here does (`rules/i18n.mdc` §1) — and
-    // Mantine renders what it is handed, so without this the field would read
-    // `validation.password.too_short` itself.
+    // The resolver answers with an issue per field — an i18n **key** and the bound that refused
+    // (`rules/i18n.mdc` §1), not a sentence. Without this step React is handed an object as a child
+    // and the render throws; the form would not ship untranslated, it would not ship at all.
     validate: (values) =>
-      SharedLib.translateFormIssues(
-        schemaResolver(resetPasswordFormSchema, { sync: true })(values),
-        t,
-      ),
+      SharedLib.translateFormIssues(SharedLib.zodFormResolver(resetPasswordFormSchema)(values), t),
   });
 
   return (
