@@ -389,6 +389,12 @@ export class VerifySecondFactorUseCase {
     try {
       const decrypted = this.fields.decrypt(secretEnc);
 
+      // `FieldEncryptionPort.decrypt` never returns `null` for a non-null input — see its own
+      // contract. Guarded rather than asserted so a port that ever broke that promise fails here,
+      // loudly and in one place, instead of handing an empty secret to the verifier. The same words
+      // stand over the same guard in `confirm-totp`, `disable-totp` and
+      // `regenerate-recovery-codes`: four identical places, and one of them reading differently is
+      // how the next reader starts looking for a difference that is not there.
       if (decrypted === null) {
         throw new Error('field-encryption: decrypted a non-null ciphertext to null');
       }

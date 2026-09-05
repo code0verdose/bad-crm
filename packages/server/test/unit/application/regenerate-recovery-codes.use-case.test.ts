@@ -5,6 +5,7 @@ import { RegenerateRecoveryCodesUseCase } from '@/application/identity/use-cases
 import {
   RateLimitedError,
   ReauthenticationRequiredError,
+  ServiceUnavailableError,
 } from '@/domain/shared/errors/app.errors.js';
 
 import {
@@ -333,5 +334,59 @@ describe('the rate limit', () => {
         ipAddress: IP_ADDRESS,
       }),
     ).rejects.toBeInstanceOf(RateLimitedError);
+  });
+});
+
+describe('a TOTP secret this key cannot decrypt', () => {
+  it('answers service_unavailable rather than a bare 500, and logs at error level', async () => {
+    const harness = buildHarness();
+
+    await harness.enableTotp();
+    await harness.recoveryCodeRows.createMany(USER_ID, ['$argon2id$hashed:OLD1']);
+    harness.fields.decrypt = () => {
+      throw new Error('encrypted field is not in the v1 format this key reads');
+    };
+
+    await expect(
+      harness.useCase.execute({
+        actor: ACTOR,
+        currentPassword: CURRENT_PASSWORD,
+        totpCode: TOTP_CODE,
+        ipAddress: IP_ADDRESS,
+      }),
+    ).rejects.toBeInstanceOf(ServiceUnavailableError);
+
+    expect(harness.logger.lines).toContainEqual(
+      expect.objectContaining({
+        level: 'error',
+        fields: expect.objectContaining({ event: 'totp_secret_undecryptable' }),
+      }),
+    );
+    // Not a wrong code: the existing set stays, because nothing was proven either way.
+    expect(harness.recoveryCodeRows.rows.size).toBe(1);
+  });
+});
+
+describe('an account with no credential row at all', () => {
+  it('still pays one verification against the dummy digest, and answers reauthentication_required', async () => {
+    const harness = buildHarness();
+
+    await harness.enableTotp();
+    harness.users.credentials.delete(USER_ID);
+
+    await expect(
+      harness.useCase.execute({
+        actor: ACTOR,
+        currentPassword: CURRENT_PASSWORD,
+        totpCode: TOTP_CODE,
+        ipAddress: IP_ADDRESS,
+      }),
+    ).rejects.toBeInstanceOf(ReauthenticationRequiredError);
+
+    // Elapsed time must not tell «no credential row» apart from «the digest did not match».
+    expect(harness.hasher.verified).toContainEqual({
+      digest: harness.hasher.dummyHash,
+      password: CURRENT_PASSWORD,
+    });
   });
 });

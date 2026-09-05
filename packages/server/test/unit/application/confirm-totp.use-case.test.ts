@@ -388,3 +388,48 @@ describe('five refused codes in a row', () => {
     expect(abandonedEvents).toHaveLength(1);
   });
 });
+
+describe('losing the commit race', () => {
+  it('answers invalid_totp_code, issues no recovery codes and logs race_lost', async () => {
+    const harness = buildHarness();
+
+    await harness.seedDraft();
+    // The draft is gone by the time the write lands — a concurrent confirm closed it, or its own
+    // expiry passed between the read and the write. `commitEnrollment` reports `false` for both.
+    harness.enrollment.vanished = true;
+
+    await expect(harness.useCase.execute(harness.request())).rejects.toBeInstanceOf(
+      InvalidTotpCodeError,
+    );
+
+    expect(harness.recoveryCodeRows.rows.size).toBe(0);
+    expect(harness.audit.events.map((event) => event.action)).not.toContain('user.mfa_enabled');
+    expect(harness.logger.lines).toContainEqual(
+      expect.objectContaining({
+        level: 'warn',
+        fields: expect.objectContaining({ outcome: 'race_lost' }),
+      }),
+    );
+  });
+});
+
+describe('an account with no credential row at all', () => {
+  it('still pays one verification against the dummy digest, and answers reauthentication_required', async () => {
+    const harness = buildHarness();
+
+    await harness.seedDraft();
+    harness.users.credentials.delete(USER_ID);
+
+    await expect(harness.useCase.execute(harness.request())).rejects.toBeInstanceOf(
+      ReauthenticationRequiredError,
+    );
+
+    // The point of the branch: elapsed time must not tell «no credential row» apart from
+    // «the digest did not match», so the dummy digest is verified rather than skipped.
+    expect(harness.hasher.verified).toContainEqual({
+      digest: harness.hasher.dummyHash,
+      password: CURRENT_PASSWORD,
+    });
+    expect(harness.enrollment.rows.get(USER_ID)?.enabledAt).toBeNull();
+  });
+});

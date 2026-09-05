@@ -226,7 +226,8 @@ describe('GET /api/v1/auth/2fa/recovery-codes', () => {
 });
 
 describe('POST /api/v1/auth/2fa/recovery-codes/regenerate', () => {
-  const enroll = async (test: AuthApp, accessToken: string): Promise<void> => {
+  /** Enrols and hands back the otpauth secret, which regenerating needs to prove a *live* code. */
+  const enroll = async (test: AuthApp, accessToken: string): Promise<string> => {
     const setup = await authed(test, accessToken).post('/api/v1/auth/2fa/setup').expect(200);
     const { secret } = setup.body as { secret: string };
 
@@ -235,20 +236,35 @@ describe('POST /api/v1/auth/2fa/recovery-codes/regenerate', () => {
       .set('Idempotency-Key', IDEMPOTENCY_KEY)
       .send({ code: codeFor(secret, test.clock.now()), currentPassword: PASSWORD })
       .expect(200);
+
+    return secret;
   };
 
   it('replaces the set when the password and a live TOTP code are both correct', async () => {
     const test = createAuthApp();
     const session = await signIn(test);
+    const secret = await enroll(test, session.accessToken);
+
+    // Past the step `confirm` just spent: the same code inside the same window is a replay, and the
+    // anti-replay counter would refuse it — so the proof here has to be a genuinely newer code.
+    test.clock.advance(60);
+
+    const response = await authed(test, session.accessToken)
+      .post('/api/v1/auth/2fa/recovery-codes/regenerate')
+      .set('Idempotency-Key', IDEMPOTENCY_KEY)
+      .send({ currentPassword: PASSWORD, totpCode: codeFor(secret, test.clock.now()) })
+      .expect(200);
+
+    expect((response.body as { codes: string[] }).codes).toHaveLength(10);
+    expect(response.headers['cache-control']).toBe('private, no-store');
+  });
+
+  it('refuses a wrong TOTP code presented with the right password', async () => {
+    const test = createAuthApp();
+    const session = await signIn(test);
 
     await enroll(test, session.accessToken);
 
-    // The secret was consumed by `confirm` above and is not returned again; regenerating needs a
-    // *live* code, so this suite reads it back from the account row the same way the use-case does —
-    // through a second `setup`-and-confirm cycle is not possible (409 mfa_already_enabled), so the
-    // TOTP proof here is exercised through the negative case below instead, and the positive path is
-    // proven at the unit level (`regenerate-recovery-codes.use-case.test.ts`) with a scripted TOTP
-    // port. What this level adds is the reauthentication wall itself.
     const response = await authed(test, session.accessToken)
       .post('/api/v1/auth/2fa/recovery-codes/regenerate')
       .set('Idempotency-Key', IDEMPOTENCY_KEY)

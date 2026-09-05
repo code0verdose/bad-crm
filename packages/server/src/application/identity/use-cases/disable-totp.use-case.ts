@@ -267,6 +267,9 @@ export class DisableTotpUseCase {
     try {
       const decrypted = this.fields.decrypt(state.secretEnc);
 
+      // `FieldEncryptionPort.decrypt` never returns `null` for a non-null input — see its own
+      // contract. Guarded rather than asserted so a port that ever broke that promise fails here,
+      // loudly and in one place, instead of handing an empty secret to the verifier.
       if (decrypted === null) {
         throw new Error('field-encryption: decrypted a non-null ciphertext to null');
       }
