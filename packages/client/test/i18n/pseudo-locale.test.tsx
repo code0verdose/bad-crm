@@ -328,6 +328,78 @@ describe('the second-factor step in a pseudo locale', () => {
 });
 
 /**
+ * The change-password form in its two unhappy states, which no route case above reaches.
+ *
+ * Both are states somebody only ever sees when something has already gone wrong, and both are
+ * assembled at render time rather than written into the markup — which is the exact combination the
+ * two gates are blind to. `i18next/no-literal-string` reads source and sees no literal, because the
+ * sentence arrives as a key from a hook; the rest of the suite runs in `cimode`, where a component
+ * that forgot `t()` renders **identically** to one that remembered. That is how `ErrorState` shipped
+ * a button reading `common.retry`, twice, before this file was pointed at it.
+ *
+ * The strength meter is the second half and it is the same shape: four sentences chosen by
+ * arithmetic, none of them written in a component, all of them the entire content of the control.
+ */
+describe('the change-password form in a pseudo locale', () => {
+  const mountForm = async (failure: {
+    readonly fieldErrors: Readonly<Record<string, string>>;
+    readonly alertKey: string | undefined;
+  }): Promise<HTMLElement> => {
+    const instance = await pseudoInstance();
+
+    const { container } = render(
+      <I18nextProvider i18n={instance}>
+        <MantineProvider>
+          <AuthUi.ChangePasswordForm
+            failure={failure}
+            isPending={false}
+            onSubmit={() => undefined}
+          />
+        </MantineProvider>
+      </I18nextProvider>,
+    );
+
+    return container;
+  };
+
+  const unmarked = (container: HTMLElement): string[] =>
+    textNodes(container).filter(
+      (text) => !isPseudoLocalised(text) && !NOT_A_SENTENCE.test(text) && !PROPER_NOUNS.has(text),
+    );
+
+  it('shows the refusal as a sentence, not as a key', async () => {
+    const container = await mountForm({
+      fieldErrors: {},
+      alertKey: 'errors.code.rate_limited',
+    });
+
+    expect(unmarked(container)).toEqual([]);
+  });
+
+  /** CONTROL: the alert is on screen at all — one that never rendered would also pass. */
+  it('CONTROL: is looking at the refusal it names', async () => {
+    const container = await mountForm({
+      fieldErrors: {},
+      alertKey: 'errors.code.rate_limited',
+    });
+    const alert = container.querySelector('[role="alert"]');
+
+    expect(alert).not.toBeNull();
+    expect(isPseudoLocalised(alert?.textContent ?? '')).toBe(true);
+  });
+
+  it('shows the strength of the field as a sentence too', async () => {
+    const instance = await pseudoInstance();
+    const container = await mountForm({ fieldErrors: {}, alertKey: undefined });
+
+    expect(unmarked(container)).toEqual([]);
+    // Named, not merely «nothing unmarked»: a meter that rendered no text at all would satisfy the
+    // line above, and the words are the whole of what this control is.
+    expect(container.textContent).toContain(instance.t('security.password.strength.weak'));
+  });
+});
+
+/**
  * The notice above the sign-in fields, which the `/login` case above never reaches either.
  *
  * `noticeKey` is `undefined` on a screen nobody has submitted yet, so the happy mount walks past
@@ -462,5 +534,36 @@ describe('the registration screen in a pseudo locale', () => {
     const message = container.querySelector('.mantine-TextInput-error');
     expect(message).not.toBeNull();
     expect(isPseudoLocalised(message?.textContent ?? '')).toBe(true);
+  });
+});
+
+/**
+ * The panel that replaces the form once a password reset has been asked for.
+ *
+ * It shipped printing `auth.forgotPassword.sent` — the key itself — into an `Alert` with
+ * `role="status"`, which means the one sentence telling somebody to go and look in their mail was
+ * never a sentence. Found 2026-08-30, the fourth of this exact shape in a month; the previous three
+ * were `ErrorState`'s retry label, the sign-in notice and every field message a schema produces.
+ *
+ * Nothing else could have caught it. The suite runs in `cimode`, where `t(key)` answers with the
+ * key, so the component that forgot `t()` rendered byte for byte like the one that remembered — and
+ * the component's own test asserted the key was on screen, which was true either way.
+ */
+describe('the password-reset confirmation in a pseudo locale', () => {
+  it('shows the sentence, not the key', async () => {
+    const instance = await pseudoInstance();
+
+    const { container } = render(
+      <I18nextProvider i18n={instance}>
+        <MantineProvider>
+          <AuthUi.PasswordResetSent />
+        </MantineProvider>
+      </I18nextProvider>,
+    );
+
+    const status = container.querySelector('[role="status"]');
+
+    expect(status).not.toBeNull();
+    expect(isPseudoLocalised(status?.textContent ?? '')).toBe(true);
   });
 });

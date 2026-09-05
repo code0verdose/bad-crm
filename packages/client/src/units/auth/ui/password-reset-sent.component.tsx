@@ -1,4 +1,5 @@
 import { Alert } from '@mantine/core';
+import { useTranslation } from 'react-i18next';
 
 /**
  * The wording is the security control. «If this address is registered, a message has been sent» is
@@ -19,9 +20,11 @@ const SENT_MESSAGE_KEY = 'auth.forgotPassword.sent';
  * makes the swap audible to somebody who cannot see the form disappear (`rules/a11y.mdc` §13).
  */
 export function PasswordResetSent() {
+  const { t } = useTranslation();
+
   return (
     <Alert aria-live="polite" color="info" role="status" variant="light">
-      {SENT_MESSAGE_KEY}
+      {t(SENT_MESSAGE_KEY)}
     </Alert>
   );
 }
