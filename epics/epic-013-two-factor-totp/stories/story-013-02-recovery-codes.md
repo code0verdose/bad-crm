@@ -117,7 +117,11 @@ estimate: M
       `test/unit/domain/recovery-code.value.test.ts`,
       `test/unit/crypto/csprng-recovery-code-generator.adapter.test.ts`,
       `test/unit/application/{regenerate-recovery-codes.use-case,read-recovery-code-status.query}.test.ts`,
-      `test/integration/http/mfa-endpoints.test.ts` (п. 7, 8, 10), `test/unit/persistence/mfa-repositories.test.ts`;
+      `test/integration/http/mfa-endpoints.test.ts` (п. 7 и 8; **п. 10 там нет — исправлено
+      2026-09-06**: ни 429, ни `Retry-After`, ни бюджета в этом файле не встречается, ограничитель
+      проверяется юнит-тестами `consume-recovery-code`, `disable-totp`,
+      `regenerate-recovery-codes` и `rate-limit-key`. HTTP-доказательства лимита на этом пути нет),
+      `test/unit/persistence/mfa-repositories.test.ts`;
       isolation-тест таблицы приходит реестровым набором — `mfa_recovery_codes` добавлена в
       `TENANT_TABLES`, по которому идёт `test/integration/db/rls-isolation.test.ts`.
 - [x] Уведомление владельцу при трате кода (п. 4, почтовая половина) —
@@ -135,12 +139,16 @@ estimate: M
       `test/unit/persistence/mfa-recovery-code-structure.test.ts`: `codeHash` обязан быть, `code`,
       `plainCode`, `plaintextCode` и `recoveryCode` — отсутствовать; `recoveryCodes` обязан стоять в
       `REDACTED_PATHS` (это и есть заявленный «греп логов», сведённый к проверяемому факту).
-- [ ] E2E именно **входа по коду восстановления** — `packages/e2e/tests/auth/login-with-2fa.spec.ts`
-      доводит до шага второго фактора и проверяет, что переход «использовать код восстановления»
-      предложен, но сам вход по коду сквозь браузер не прогоняется; трата кода покрыта
-      `consume-recovery-code.use-case.test.ts` и `test/integration/db/mfa-recovery-code-race.test.ts`.
-      Поверхность принадлежит [STORY-013-03](story-013-03-login-second-factor.md), там же и владелец
-      этого сценария.
+- [x] E2E именно **входа по коду восстановления** — `packages/e2e/tests/auth/login-with-recovery-code.spec.ts`.
+      **Закрыто 2026-08-30, отметка снята с задержкой: пункт оставался открытым после того, как
+      сценарий появился, и ревизия успела повторить его слово в слово, посмотрев только на
+      `login-with-2fa.spec.ts`.** Сценарий проходит путь целиком: код тратится и пускает внутрь,
+      после выхода **тот же** код отвергается, и тут же **другой** неиспользованный снова пускает —
+      положительный контроль, без которого отказ проходил бы и на сборке, где путь сломан целиком.
+      Прогнан против поднятого стека четыре раза. `login-with-2fa.spec.ts` по-прежнему доводит
+      только до шага второго фактора и проверяет, что переход «использовать код восстановления»
+      предложен, — это его работа, а не пробел. Поверхность принадлежит
+      [STORY-013-03](story-013-03-login-second-factor.md), там же и владелец сценария.
 
 ## Ссылки
 
