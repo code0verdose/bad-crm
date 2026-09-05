@@ -2,7 +2,7 @@
  * `pnpm i18n:unused` — the filesystem around `i18n-unused.util.ts`.
  *
  * Reads both catalogues under `packages/client/src/shared/i18n/locales`, every non-test source of
- * the client and the shared zod schemas that declare form messages, prints the markdown the
+ * the client, the shared zod schemas that declare form messages and the permission catalogue, prints the markdown the
  * workflow would append to a job summary, and exits non-zero when a key is orphaned, asked for
  * without a sentence, or assembled at runtime.
  *
@@ -25,6 +25,8 @@ const CLIENT_SRC = join(repoRoot, 'packages/client/src');
 const LOCALES = join(CLIENT_SRC, 'shared/i18n/locales');
 /** Where the client's form messages are declared: a zod `error` there is an i18n key here. */
 const SHARED_SCHEMAS = join(repoRoot, 'packages/shared/src/validation');
+/** Where the permission catalogue names its sentences — see `catalogs` in the util for why. */
+const SHARED_PERMISSIONS = join(repoRoot, 'packages/shared/src/permissions');
 
 const sourceFiles = (directory: string): SourceFile[] =>
   readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
@@ -76,6 +78,7 @@ export const readInputs = (): AuditInput => {
     catalogue,
     screens: sourceFiles(CLIENT_SRC),
     schemas: sourceFiles(SHARED_SCHEMAS),
+    catalogs: sourceFiles(SHARED_PERMISSIONS),
   };
 };
 

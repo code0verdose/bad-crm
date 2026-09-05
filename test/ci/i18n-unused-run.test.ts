@@ -44,13 +44,16 @@ describe('pnpm i18n:unused', () => {
     expect(silently(run)).toBe(0);
   });
 
-  it('CONTROL: reads a non-trivial tree — catalogue, sources and schemas all found', () => {
+  it('CONTROL: reads a non-trivial tree — catalogue, sources, schemas and permissions all found', () => {
     const inputs = readInputs();
 
     expect(inputs.catalogue.length).toBeGreaterThan(400);
     expect(inputs.namespaces.length).toBeGreaterThan(10);
     expect(inputs.screens.length).toBeGreaterThan(100);
     expect(inputs.schemas.length).toBeGreaterThan(5);
+    // The permission catalogue: a wrong path here reads as «nothing describes a permission», and
+    // every sentence of the `permission` namespace would be reported as an orphan.
+    expect(inputs.catalogs.length).toBeGreaterThan(3);
   });
 
   /**

@@ -48,16 +48,42 @@ function PermissionTableRow({
   onChoose,
 }: PermissionRowProps) {
   const { t } = useTranslation();
+  /**
+   * The catalogue's sentence, or nothing at all — never the key twice.
+   *
+   * Only the keys some route declares have been described
+   * (`test/i18n/permission-descriptions.test.ts` says which, and why the rest are excused), and
+   * i18next answers a key it has no entry for with the key itself. Rendered plainly, three hundred
+   * rows would carry `permission.task.delete` under `task:delete` — the same string twice, in a
+   * shape that reads like a defect. `defaultValue: ''` turns the miss into an absence instead.
+   */
+  const description = t(row.descriptionKey, { defaultValue: '' });
+  /**
+   * The name of the row header, kept to what it was before the sentence arrived.
+   *
+   * `scope="row"` is not decoration: it is what makes a table reader announce this cell's content
+   * again on **every** data cell of the row, which is how somebody arriving at the third column
+   * still knows which permission they are looking at. Left to compute itself from the contents, that
+   * announcement would now carry the whole description — three times per row, on a table the
+   * catalogue makes three hundred rows long. `aria-label` pins the name to what identifies the row;
+   * the sentence stays in the cell and is read once, in the reading order it is written in.
+   */
+  const header = row.dangerous ? `${row.key} ${t('permissions.dangerous')}` : row.key;
 
   return (
     <Table.Tr>
-      <Table.Th className={classes['rowHeader']} scope="row">
+      <Table.Th aria-label={header} className={classes['rowHeader']} scope="row">
         <Text component="span" size="sm">
           {row.key}
         </Text>
         {row.dangerous && (
           <Text c="var(--bc-danger-text)" component="span" size="xs">
             {` ${t('permissions.dangerous')}`}
+          </Text>
+        )}
+        {description !== '' && (
+          <Text c="var(--bc-text-muted)" className={classes['rowDescription']} size="xs">
+            {description}
           </Text>
         )}
       </Table.Th>

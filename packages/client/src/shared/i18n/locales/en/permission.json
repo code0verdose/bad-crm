@@ -1,0 +1,39 @@
+{
+  "organization": {
+    "transfer_ownership": "Hand the organization over to somebody else: the previous owner keeps their account and loses everything ownership gave them."
+  },
+  "team": {
+    "read": "See the teams of the organization and who is in them.",
+    "create": "Start a new team and say what it is there to do.",
+    "update": "Rename a team and change what it is described as.",
+    "delete": "Delete a team — the people stay, the team does not.",
+    "manage_members": "Add people to a team, take them out, and decide who leads it."
+  },
+  "invitation": {
+    "read": "See who has been invited, and whether the invitation is still alive.",
+    "create": "Invite a new person by email and choose the roles they arrive with.",
+    "resend": "Send the invitation letter again, with a fresh link.",
+    "revoke": "Call an invitation back before it is accepted — the link stops working."
+  },
+  "employee": {
+    "read": "See the personnel directory and open a colleague's card.",
+    "view_org_chart": "See who reports to whom across the whole organization."
+  },
+  "user": {
+    "suspend": "Cut a person off from the product: every session of theirs ends and they can no longer sign in.",
+    "reactivate": "Bring a suspended colleague back to work with the roles they had.",
+    "reset_mfa": "Take somebody's second factor off, so that until they set up a new one the password alone is enough to sign in as them."
+  },
+  "role": {
+    "read": "See the roles of the organization and what each of them grants.",
+    "create": "Build a custom role out of permissions you hold yourself.",
+    "update": "Change what a role grants — for everybody holding it, at once.",
+    "delete": "Delete a role: everybody who held it loses what it granted.",
+    "assign": "Give a person a role, and with it every permission that role carries.",
+    "revoke": "Take a role away from a person, and with it everything the role granted."
+  },
+  "permission": {
+    "override_read": "Read another person's effective permissions together with the reason written beside each personal exception.",
+    "override": "Grant or take away a single permission for one person, past their roles and past what those roles say."
+  }
+}

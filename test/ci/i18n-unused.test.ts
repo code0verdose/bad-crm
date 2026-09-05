@@ -31,6 +31,7 @@ const input = (patch: Partial<AuditInput> = {}): AuditInput => ({
   catalogue: ['common.retry'],
   screens: [{ path: 'ui/a.tsx', text: "t('common.retry')" }],
   schemas: [],
+  catalogs: [],
   ...patch,
 });
 
@@ -189,6 +190,40 @@ describe('audit', () => {
     expect(report.orphaned).toEqual([]);
     expect(report.missing).toEqual([]);
     expect(report.deferred).toEqual(['validation.slug.invalid (validation/slug.schema.ts)']);
+    expect(isClean(report)).toBe(true);
+  });
+
+  /**
+   * The permission catalogue, and it defers the other way round from a schema.
+   *
+   * A `descriptionKey` is spelled in `packages/shared/src/permissions` and rendered from a variable,
+   * so nothing in the client tree names it: read as a screen would read it, every described
+   * permission is an orphan. Counting the tree as use fixes that — and the keys it names with no
+   * sentence are *not* listed one by one, because the catalogue covers a whole product's worth of
+   * features and the product ships a fraction of them. The count is the report; the reason for each
+   * is the `AWAITING_A_ROUTE` registry of `permission-descriptions.test.ts`.
+   */
+  it('accepts the permission catalogue as evidence of use and counts what it has not described', () => {
+    const report = audit(
+      input({
+        namespaces: [...NAMESPACES, 'permission'],
+        catalogue: ['common.retry', 'permission.team.read'],
+        catalogs: [
+          {
+            path: 'permissions/permissions.catalog.ts',
+            text: "descriptionKey: 'permission.team.read', descriptionKey: 'permission.task.delete'",
+          },
+        ],
+      }),
+    );
+
+    expect(
+      report.orphaned,
+      'a described permission is asked for by the screen through the catalogue',
+    ).toEqual([]);
+    expect(report.awaitingADescription).toBe(1);
+    // Not in `deferred`: that list is printed in full, and this one is counted for a reason.
+    expect(report.deferred).toEqual([]);
     expect(isClean(report)).toBe(true);
   });
 

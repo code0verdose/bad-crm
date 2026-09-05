@@ -187,4 +187,23 @@ describe('the rows of the permissions tab', () => {
     // CONTROL: not everything is dangerous, or the flag would say nothing.
     expect(rows.find((row) => row.key === 'task:read')?.dangerous).toBe(false);
   });
+
+  /**
+   * The key of the sentence, copied from the catalogue rather than rebuilt from the permission.
+   *
+   * Rebuilding it — `permission.${resource}.${action}` — would be a second place the shape of a
+   * description key is written down, and the first one to change would win silently. The row is
+   * asserted against `PERMISSION_META` itself, so a typo in the field being read (`description`
+   * for `descriptionKey`) fails here rather than as an empty second line on the screen.
+   */
+  it('carries the catalogue’s own description key onto every row', () => {
+    const rows = build(nothingGranted()).flatMap((group) => group.rows);
+
+    expect(rows.length).toBeGreaterThan(0);
+    expect(
+      rows.filter(
+        (row) => row.descriptionKey !== SharedPermissions.PERMISSION_META[row.key].descriptionKey,
+      ),
+    ).toEqual([]);
+  });
 });

@@ -4,7 +4,7 @@
  * The orphan half is cheap to get wrong in a way that ends the check: keys reach the catalogue
  * through a written-out `ERROR_MESSAGE_KEY` map, a `*_KEY` constant, a `titleKey`/`descriptionKey`
  * prop, an `i18nKey` on `Trans` and the `error` option of a zod schema — and only a minority through
- * `t('…')`. Measured on this repository, a `t()`-only reading calls **333 of 684** keys orphaned (2026-09-06;
+ * `t('…')`. Measured on this repository, a `t()`-only reading calls **356 of 707** keys orphaned (2026-09-06;
  * the pair drifts with the catalogue, which is why the report recomputes it rather than trusting
  * this line);
  * the first pull request opened against that report would have deleted half the interface's text, so
@@ -19,7 +19,7 @@
  * dropped.
  *
  * The set comparisons of `packages/client/test/i18n/catalogue-parity.test.ts` are the neighbouring
- * gate, and the two now read the same two trees through the very parser below: that file imports
+ * gate, and the two now read the same three trees through the very parser below: that file imports
  * `dottedKeyLiterals` rather than restating it, because two answers to «where is this key used» is
  * the class of drift both gates exist to find. Two differences remain, and both are this file's:
  * a key referenced only from a test file is not usage in this report, and the namespace filter of
@@ -47,6 +47,21 @@ export interface AuditInput {
   readonly screens: readonly SourceFile[];
   /** Shared zod schemas: message keys declared away from any screen. */
   readonly schemas: readonly SourceFile[];
+  /**
+   * The permission catalogue: a third tree that names keys no screen spells.
+   *
+   * Every entry of `PERMISSION_META` carries a `descriptionKey`, and the rights screen renders it
+   * through a variable — so a `t('…')`-shaped literal for those sentences exists nowhere in the
+   * client, and without reading this tree every one of them would be reported as orphaned.
+   *
+   * Kept apart from `schemas` because the two defer differently. An undescribed schema key is one
+   * line in a list worth printing; the catalogue describes the whole product and the product ships
+   * a twentieth of it, so printing three hundred lines here would bury the seventeen that are worth
+   * reading. What is printed instead is the count, and the registry with the reason behind each is
+   * `packages/client/test/i18n/permission-descriptions.test.ts` — that file is what fails when a key
+   * acquires a route and no sentence.
+   */
+  readonly catalogs: readonly SourceFile[];
 }
 
 export interface I18nUnusedReport {
@@ -60,6 +75,8 @@ export interface I18nUnusedReport {
   readonly deferred: readonly string[];
   /** Built at runtime from a prefix and a variable, so no gate can see it (`rules/i18n.mdc` §3). */
   readonly assembled: readonly string[];
+  /** Permission keys the catalogue names and no catalogue answers. Counted, not failed; see above. */
+  readonly awaitingADescription: number;
   /** What a `t('…')`-only reading would have called orphaned — the calibration, not a verdict. */
   readonly naiveOrphaned: readonly string[];
 }
@@ -161,14 +178,18 @@ export const audit = ({
   catalogue,
   screens,
   schemas,
+  catalogs,
 }: AuditInput): I18nUnusedReport => {
   const catalogued = new Set(catalogue.map(baseKey));
 
   const read = (file: SourceFile): string[] => keyLiterals(file.text, namespaces);
   const fromScreens = collect(screens, read);
   const fromSchemas = collect(schemas, read);
+  const fromCatalogs = collect(catalogs, read);
 
-  const used = new Set([...fromScreens.keys(), ...fromSchemas.keys()].map(baseKey));
+  const used = new Set(
+    [...fromScreens.keys(), ...fromSchemas.keys(), ...fromCatalogs.keys()].map(baseKey),
+  );
   const naive = new Set(
     [...collect(screens, (file) => naiveKeyLiterals(file.text)).keys()].map(baseKey),
   );
@@ -185,6 +206,8 @@ export const audit = ({
     orphaned: [...catalogued].filter((key) => !used.has(key)).sort(),
     missing: absent(fromScreens),
     deferred: absent(fromSchemas),
+    awaitingADescription: [...fromCatalogs.keys()].filter((key) => !catalogued.has(baseKey(key)))
+      .length,
     assembled: [
       ...collect([...screens, ...schemas], (file) => assembledKeys(file.text, namespaces)),
     ]
@@ -228,6 +251,10 @@ export const renderReport = (report: I18nUnusedReport): string => {
     `| Orphaned | ${report.orphaned.length} |`,
     `| Orphaned by a \`t()\`-only reading | ${report.naiveOrphaned.length} |`,
     `| Deferred (schema key, no sentence yet) | ${report.deferred.length} |`,
+    `| Permission keys awaiting a description | ${report.awaitingADescription} |`,
+    '',
+    'The permission keys are counted rather than listed: which of them may stay undescribed, and',
+    'why, is stated in `packages/client/test/i18n/permission-descriptions.test.ts`.',
     '',
     problems.length > 0 ? problems.join('\n') : 'Every catalogued key is asked for by the product.',
     '',

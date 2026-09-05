@@ -23,3 +23,15 @@
 .corner {
   z-index: 3;
 }
+
+/**
+ * The catalogue's sentence sits under the key, not beside it.
+ *
+ * The key stays the first thing on the line because it is the canonical identifier — it is what an
+ * administrator quotes in a ticket and what the search box above matches. The sentence is the
+ * second level, on its own line so the column keeps one reading order at any width.
+ */
+.rowDescription {
+  display: block;
+  max-inline-size: 32ch;
+}

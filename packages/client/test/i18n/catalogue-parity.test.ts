@@ -35,6 +35,19 @@ const SRC = fileURLToPath(new URL('../../src', import.meta.url));
 const LOCALES = `${SRC}/shared/i18n/locales`;
 /** Where the form messages of the client are declared — the same directory `pnpm i18n:unused` reads. */
 const SCHEMAS = fileURLToPath(new URL('../../../shared/src/validation', import.meta.url));
+/**
+ * The third tree that declares keys away from any screen: the permission catalogue.
+ *
+ * Every entry of `PERMISSION_META` names a `descriptionKey`, and the rights screen renders it
+ * through `row.descriptionKey` — a variable, so no literal of the key exists in the client tree and
+ * the orphan assertion below would call every one of those sentences unused. Which of them owe a
+ * sentence at all is a different question with its own gate: `permission-descriptions.test.ts` ties
+ * «described» to «declared by a route» and keeps the reasons for the rest. Here the tree is read for
+ * one purpose only — so that a translated description counts as asked for.
+ */
+const PERMISSION_CATALOG = fileURLToPath(
+  new URL('../../../shared/src/permissions', import.meta.url),
+);
 
 /**
  * The keys awaiting a sentence, written out rather than filtered quietly.
@@ -115,6 +128,9 @@ const usedKeys = (): Map<string, string> => keysIn([SRC]);
 /** Every key a shared zod schema declares: a form message, written where the check that refuses is. */
 const declaredKeys = (): Map<string, string> => keysIn([SCHEMAS]);
 
+/** Every `descriptionKey` of the permission catalogue — see the constant above for why. */
+const catalogueDescriptionKeys = (): Map<string, string> => keysIn([PERMISSION_CATALOG]);
+
 const namespaces = (language: string): string[] =>
   readdirSync(`${LOCALES}/${language}`).map((file) => file.replace(/\.json$/, ''));
 
@@ -155,6 +171,9 @@ describe('the translation catalogues', () => {
     // The declaration tree separately: a wrong path there reads as «no schema declares anything»,
     // which is silent — every assertion over it would pass on an empty set.
     expect(declaredKeys().size).toBeGreaterThan(10);
+    // The catalogue likewise: a wrong path there reads as «no permission is described», which would
+    // make the orphan assertion below silently forgiving of a description nobody renders.
+    expect(catalogueDescriptionKeys().size).toBeGreaterThan(300);
     expect(cataloguedKeys('en').size).toBeGreaterThan(20);
     expect(cataloguedKeys('ru').size).toBeGreaterThan(20);
     // CONTROL for the plural rule itself: the catalogues really do carry suffixed forms, so the
@@ -204,7 +223,11 @@ describe('the translation catalogues', () => {
    * about what the product says, and both hide the *next* missing translation in the noise.
    */
   it.each(['en', 'ru'])('carries no entry the interface never asks for — %s', (language) => {
-    const used = new Set([...usedKeys().keys(), ...declaredKeys().keys()]);
+    const used = new Set([
+      ...usedKeys().keys(),
+      ...declaredKeys().keys(),
+      ...catalogueDescriptionKeys().keys(),
+    ]);
 
     // A plural form is asked for through its base key, so `count_few` counts as used when
     // `roles.draft.count` appears in the source — and stops counting the moment that call goes.

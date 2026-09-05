@@ -65,6 +65,7 @@ export const permissionRows = ({
           return name === undefined ? [] : [name];
         }),
         dangerous: SharedPermissions.PERMISSION_META[key].dangerous,
+        descriptionKey: SharedPermissions.PERMISSION_META[key].descriptionKey,
       },
     ];
   });

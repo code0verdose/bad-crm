@@ -48,6 +48,15 @@ export interface PermissionRow {
   readonly override: OverrideFacts | null;
   readonly inheritedFrom: readonly string[];
   readonly dangerous: boolean;
+  /**
+   * The catalogue's own sentence about the key, as a translation key rather than as text.
+   *
+   * Copied through from `PERMISSION_META` for the same reason `dangerous` is: the row is a
+   * presentational component and may not read the catalogue itself. Most of the catalogue has no
+   * sentence yet — only the keys some route declares do
+   * (`test/i18n/permission-descriptions.test.ts`) — so the row has to be able to render nothing.
+   */
+  readonly descriptionKey: string;
 }
 
 /** The rows of one domain of the catalogue, in the catalogue's own order. */

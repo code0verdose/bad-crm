@@ -334,6 +334,94 @@ describe('the permissions tab', () => {
     expect(within(await rowOf('task:read')).queryByText('permissions.dangerous')).toBeNull();
   });
 
+  it('says in words what a key lets a person do, where the product has words for it', async () => {
+    // A **real** catalogue, because the property is about a key i18next cannot resolve: under
+    // `cimode` every key answers itself, so «described» and «not described» would render the same
+    // and the second half of this case would assert nothing.
+    const i18n = SharedI18n.createI18n('en');
+
+    await startAt({
+      i18n,
+      language: 'en',
+      permissions: () =>
+        json({
+          ...PERMISSIONS,
+          permissions: [
+            // Declared by `POST /users/{userId}/deactivate`, so it owes a sentence…
+            {
+              key: 'user:suspend',
+              allowed: true,
+              source: 'ROLE',
+              roleIds: [MANAGER_ROLE],
+              override: null,
+            },
+            // …and this one gates nothing in a product that has no tasks, so it owes none.
+            {
+              key: 'task:delete',
+              allowed: false,
+              source: 'NOT_GRANTED',
+              roleIds: [],
+              override: null,
+            },
+          ],
+        }),
+    });
+    await table();
+
+    const described = within(await rowOf('user:suspend'));
+
+    expect(described.getByText(i18n.t('permission.user.suspend'))).toBeInTheDocument();
+    // CONTROL: the key did not give way to the sentence. It is the identifier an administrator
+    // quotes in a ticket and the string the search box above matches, so it stays on the row.
+    expect(described.getByText('user:suspend')).toBeInTheDocument();
+
+    // And where there is no sentence there is silence — not the key printed a second time, which
+    // is what i18next answers with by default and what a reader would read as a defect.
+    expect(await rowOf('task:delete')).toBeInTheDocument();
+    expect(screen.queryByText('permission.task.delete')).toBeNull();
+  });
+
+  /**
+   * The sentence is in the row header cell and must stay out of the row header's **name**.
+   *
+   * `scope="row"` makes a table reader repeat that name on every data cell of the row — which is the
+   * point of it, and the reason the header has to stay short: computed from the contents it would
+   * now recite the whole description three times per row, three hundred rows down. What identifies
+   * the row is the key, plus the word that warns about it.
+   */
+  it('does not put the sentence into the name repeated on every cell of the row', async () => {
+    const i18n = SharedI18n.createI18n('en');
+
+    await startAt({
+      i18n,
+      language: 'en',
+      permissions: () =>
+        json({
+          ...PERMISSIONS,
+          permissions: [
+            {
+              key: 'user:suspend',
+              allowed: true,
+              source: 'ROLE',
+              roleIds: [MANAGER_ROLE],
+              override: null,
+            },
+          ],
+        }),
+    });
+    await table();
+
+    const row = await rowOf('user:suspend');
+    const header = within(row).getByRole('rowheader');
+
+    // `user:suspend` is `dangerous: true`, so the warning is part of what identifies the row and
+    // stays — the description is what does not.
+    expect(header).toHaveAccessibleName(`user:suspend ${i18n.t('permissions.dangerous')}`);
+    // CONTROL: the sentence really is inside that same cell, so this is the name being pinned and
+    // not the description having failed to render.
+    expect(within(header).getByText(i18n.t('permission.user.suspend'))).toBeInTheDocument();
+  });
+
   it('colours the source badge by whether it grants or refuses, not the same colour throughout', async () => {
     await startAt();
     await table();

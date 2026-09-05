@@ -13,6 +13,7 @@ import enMembers from './locales/en/members.json' with { type: 'json' };
 import enOffboarding from './locales/en/offboarding.json' with { type: 'json' };
 import enNav from './locales/en/nav.json' with { type: 'json' };
 import enPagination from './locales/en/pagination.json' with { type: 'json' };
+import enPermission from './locales/en/permission.json' with { type: 'json' };
 import enPermissions from './locales/en/permissions.json' with { type: 'json' };
 import enTeams from './locales/en/teams.json' with { type: 'json' };
 import enValidation from './locales/en/validation.json' with { type: 'json' };
@@ -28,6 +29,7 @@ import ruMembers from './locales/ru/members.json' with { type: 'json' };
 import ruOffboarding from './locales/ru/offboarding.json' with { type: 'json' };
 import ruNav from './locales/ru/nav.json' with { type: 'json' };
 import ruPagination from './locales/ru/pagination.json' with { type: 'json' };
+import ruPermission from './locales/ru/permission.json' with { type: 'json' };
 import ruPermissions from './locales/ru/permissions.json' with { type: 'json' };
 import ruTeams from './locales/ru/teams.json' with { type: 'json' };
 import ruValidation from './locales/ru/validation.json' with { type: 'json' };
@@ -50,6 +52,10 @@ const RESOURCES = {
     offboarding: enOffboarding,
     nav: enNav,
     pagination: enPagination,
+    // `permission` — the catalogue's own sentences, addressed by the `descriptionKey` of
+    // `PERMISSION_META`; `permissions` below is the screen that renders them. Near-identical names
+    // for two different things, and they cannot collide: i18next splits a key on the first dot.
+    permission: enPermission,
     permissions: enPermissions,
     security: enSecurity,
     teams: enTeams,
@@ -67,6 +73,7 @@ const RESOURCES = {
     offboarding: ruOffboarding,
     nav: ruNav,
     pagination: ruPagination,
+    permission: ruPermission,
     permissions: ruPermissions,
     security: ruSecurity,
     teams: ruTeams,
