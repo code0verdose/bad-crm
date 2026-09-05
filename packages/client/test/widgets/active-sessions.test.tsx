@@ -101,6 +101,8 @@ const problem = (code: string, status: number): Response =>
   );
 
 interface Answers {
+  /** Evaluated per request, so a retry can answer differently from the read that failed. */
+  readonly list?: () => Response;
   readonly revoke?: (sessionId: string) => Response;
   readonly revokeOthers?: () => Response;
   readonly i18n?: I18n;
@@ -108,6 +110,7 @@ interface Answers {
 }
 
 const startAt = async ({
+  list = () => json({ items: sessions }),
   revoke = (sessionId) => {
     sessions = sessions.filter((session) => (session as { id: string }).id !== sessionId);
 
@@ -134,7 +137,7 @@ const startAt = async ({
     }
     if (url.endsWith('/2fa/recovery-codes')) return json({ total: 0, remaining: 0 });
     if (url.endsWith('/auth/sessions/revoke-others')) return revokeOthers();
-    if (url.endsWith('/auth/sessions')) return json({ items: sessions });
+    if (url.endsWith('/auth/sessions')) return list();
     if (input.method === 'DELETE') return revoke(url.split('/').pop() ?? '');
 
     return json({ status: 'ok' });
@@ -215,6 +218,37 @@ afterEach(() => {
 });
 
 describe('the list', () => {
+  /**
+   * The failed read and the way back from it, asserted here rather than anywhere else.
+   *
+   * This section is the last one on `/settings/security`, so its error state used to be reached —
+   * and its retry clicked — by a case in `test/widgets/recovery-codes.test.tsx` that was looking
+   * for the recovery-code counter's retry and found this one by name. That made the line covered by
+   * accident: coverage of `use-active-sessions.hook.ts` depended on how a *different* suite stubbed
+   * its endpoints. The click belongs to the widget it acts on.
+   *
+   * The recovery is the point rather than the message: an error state whose button does nothing is
+   * the same dead end with a control drawn on it, so the answer changes between the two reads and
+   * the assertion is that the rows arrive.
+   */
+  it('offers a retry after a failed read, and the retry re-reads', async () => {
+    const user = userEvent.setup();
+    // A flag rather than a request count: the query retries on its own and `StrictMode` mounts
+    // twice, so «fail the first request» would be repaired by the harness rather than by the button.
+    let recovers = false;
+
+    await startAt({
+      list: () => (recovers ? json({ items: sessions }) : problem('internal_error', 500)),
+    });
+
+    expect(await screen.findByTestId('error-state')).toBeInTheDocument();
+
+    recovers = true;
+    await user.click(screen.getByRole('button', { name: 'common.retry' }));
+
+    expect(await rowOf('Firefox on macOS')).toBeInTheDocument();
+  });
+
   it('shows one row per device, with what the contract carries about it', async () => {
     await startAt();
 

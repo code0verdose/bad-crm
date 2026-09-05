@@ -88,6 +88,18 @@ const startAt = async ({
     }
     if (url.endsWith('/2fa/recovery-codes/regenerate')) return regenerate();
     if (url.endsWith('/2fa/recovery-codes')) return counts();
+    /*
+      `/settings/security` also carries the sessions section, and it reads on mount like every other
+      section here. Answered properly rather than through the fallback below, because the fallback
+      answers `{ status: 'ok' }` — a body with no `items`, which leaves that read failing and the
+      sessions section parked in an error state for the whole file.
+
+      An error state owns a «retry» button, and that is what made this a defect rather than untidy
+      stubbing: the one case below that clicks retry looked the button up by name across the whole
+      screen, found the sessions widget's, and passed. The counter's own retry was never called —
+      the case went on passing with `useRecoveryCodes().retry` replaced by a `throw`.
+    */
+    if (url.endsWith('/auth/sessions')) return json({ items: [] });
 
     return json({ status: 'ok' });
   });

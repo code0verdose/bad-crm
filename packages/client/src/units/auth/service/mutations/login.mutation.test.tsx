@@ -182,6 +182,40 @@ describe('what a successful sign-in leaves in the mutation cache', () => {
   });
 
   /**
+   * The refusal on the other side of «the password can be read once».
+   *
+   * `loginAttempt` hands its password over one time and answers `null` after that, which makes a
+   * second read a statement about the callers rather than about the network: two of them believed
+   * they owned the same attempt. The mutation refuses instead of sending, because the alternative —
+   * quietly re-posting a credential that was supposed to be spent — turns a wiring mistake into a
+   * second transmission of a password, and hides it.
+   *
+   * Asserted through `fetch` rather than only through the rejection: «it failed» would also be true
+   * of an implementation that sent the request and then threw.
+   */
+  it('refuses an attempt whose password has already been read, without sending it', async () => {
+    const send = vi.fn(() => Promise.resolve(signedIn()));
+
+    vi.stubGlobal('fetch', send);
+    const { AuthService } = await freshUnit();
+    const { wrapper } = harness();
+
+    const spent = attempt();
+
+    spent.takePassword();
+
+    const { result } = renderHook(() => AuthService.useLoginMutation(), { wrapper });
+    result.current.mutate(spent);
+
+    await waitFor(() => {
+      expect(result.current.isError).toBe(true);
+    });
+
+    expect(result.current.error?.message).toBe('login attempt has already been spent');
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  /**
    * The other answer of the same operation. It carries no session, so there is nothing to hide —
    * but it decides what the form says, so the outcome has to keep the status.
    */

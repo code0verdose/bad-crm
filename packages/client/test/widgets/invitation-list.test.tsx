@@ -410,6 +410,37 @@ describe('closing an invitation', () => {
     expect(sent.some((call) => call.method === 'DELETE')).toBe(false);
   });
 
+  /**
+   * The window Cancel opens, and the reason the confirm handler starts with a guard.
+   *
+   * The dialog is mounted for the whole life of the screen — it has to be, or the focus never comes
+   * back to the control that opened it — so «closed» is `opened={false}` plus an exit transition,
+   * not an unmount. For the length of that transition the confirm button is still on screen and
+   * still clickable, while the question it belonged to has already been dropped. A confirm handler
+   * that read the question without checking would act on `null` here; one that defaulted instead
+   * would revoke whichever invitation the placeholders happen to name.
+   *
+   * Asserted on the network rather than on the dialog: what must not happen is a deletion nobody
+   * confirmed. The click is deliberately not preceded by a wait for the dialog to go — waiting is
+   * what would close the window this is about.
+   */
+  it('ignores a confirm that lands while the dialog is closing', async () => {
+    const user = userEvent.setup();
+
+    await startAt();
+
+    const dialog = await openDialog(user, 'revoke', String(OPEN['email']));
+    const confirm = within(dialog).getByRole('button', { name: /revoke\.confirm/ });
+
+    await user.click(within(dialog).getByRole('button', { name: /invitations\.cancel/ }));
+    await user.click(confirm);
+
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog')).toBeNull();
+    });
+    expect(sent.some((call) => call.method === 'DELETE')).toBe(false);
+  });
+
   it('deletes the row, re-reads the list and reports it once', async () => {
     const user = userEvent.setup();
     let closed = false;
