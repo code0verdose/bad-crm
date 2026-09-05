@@ -9,6 +9,11 @@ estimate: M
 
 # STORY-006-01 — Регистрация организации и владельца
 
+> **Экран отгружен 2026-09-05** — врезка ниже описывает состояние до этого дня и оставлена как
+> история находки. Сегодня `/register` есть: маршрут, страница, форма, схема, мутация и хук, плюс
+> сценарный набор `packages/client/test/routes/registration-flow.test.tsx`. Статус истории меняет
+> человек после commit-гейта, не эта правка.
+>
 > **Статус понижен в `in-progress` 2026-08-30 сверкой с кодом.** Серверная половина отгружена
 > целиком (эндпоинт, use-case, argon2id, политика пароля, `REGISTRATION_OPEN`, лимит), а
 > **клиентского экрана регистрации не существует**: в `packages/client/src/app/routes` нет маршрута
@@ -96,11 +101,34 @@ estimate: M
       409 `organization_already_exists`, 422 по полю. Поля владельца — `email`, `password`,
       `locale?`, `timezone?`: имени у `User` в `data-model.md` §1 нет, и договор его не выдумывает.
       Контроллер и валидатор — за этой историей.)*
-- [ ] Реализовать клиентский экран регистрации: `pages/register`, `units/auth/ui/register-form.component.tsx`, хук `use-register.hook.ts`, схема формы через встроенный `schemaResolver` из `@mantine/form`
+- [x] Реализовать клиентский экран регистрации: `pages/register`, `units/auth/ui/register-form.component.tsx`, хук `use-register.hook.ts`, схема формы через встроенный `schemaResolver` из `@mantine/form`
       (`validate: schemaResolver(schema, { sync: true })`).
-      *Сверено 2026-08-30: ни одного из трёх файлов нет — `git ls-files packages/client/src/pages`
-      и `packages/client/src/units/auth/ui` их не печатают. Это единственный открытый пункт истории
-      и причина её статуса.*
+      *(Сверено 2026-08-30: ни одного из трёх файлов не было — это был единственный открытый пункт
+      истории и причина её статуса.)*
+      *Сделано 2026-09-05:* маршрут `app/routes/register.tsx` (`redirectIfAuthed`, без
+      search-схемы), `pages/register/page.tsx` — только композиция, `units/auth/ui/register-form.component.tsx`
+      и `registration-closed.component.tsx`, `model/validation/register-form.schema.ts`
+      (`SharedValidation.passwordSchema` и `emailSchema` переиспользованы, паттерн slug сверяется со
+      спекой в `test/api/register-form-bounds.test.ts`), `service/mutations/register-organization.mutation.ts`
+      и `service/hooks/use-registration.hook.ts`. Хук назван `useRegistration`, а не `useRegister`:
+      он отдаёт состояние экрана, а не действие. Ключи `auth.register.*` заведены в обоих языках.
+      **Что решено по последнему критерию.** «Форма недоступна» при закрытой регистрации сделана
+      так, как её вообще может обеспечить инсталляция: узнать `REGISTRATION_OPEN` до отправки
+      **нечем** — `GET /api/v1/meta` отдаёт только `apiVersion` и `serverTime` (`ApiMeta`), а
+      переменная окружения контрактом не публикуется. Поэтому форма показывается, а на
+      `403 registration_disabled` **заменяется** постоянной панелью; заводить публичную ручку «эта
+      инсталляция принимает регистрации?» сознательно не стали — это ровно тот ответ, который
+      закрытая инсталляция и отказывается давать анониму. Записано в
+      `docs/architecture/ux-architecture.md` → «Публичная зона».
+      **Занятый slug** (409 `organization_already_exists`) подсвечивает поле, а не всплывает тостом:
+      локальный `onError` мутации переопределяет глобальный `MutationCache.onError`
+      (`rules/errors-and-toasts.mdc` §2–§4), как это уже сделано у второго фактора. Остальные отказы
+      (429, 500, нечитаемый ответ) — одна плашка над полями.
+      **Попутная находка, вынесенная за рамки истории.** Сообщения полей во **всех** формах продукта
+      рендерятся сырыми ключами: схемы отдают ключ, `@mantine/form` печатает его как есть, а весь
+      клиентский набор идёт в `cimode`, где `t(key) === key`, поэтому ни один тест этого не видит.
+      Новая форма переводит их через `SharedLib.translateFormIssues` и закрыта псевдолокалью
+      (`test/i18n/pseudo-locale.test.tsx`); остальные формы — отдельная работа.
 - [x] Добавить настройку инсталляции «открытая регистрация» и её проверку в use-case.
       *Сделано 2026-07-29:* `REGISTRATION_OPEN` (по умолчанию `true` — первую дверь нельзя закрыть
       раньше, чем через неё вошли), проверяется **первой строкой** use-case'а, до чтения адреса и
@@ -108,11 +136,11 @@ estimate: M
 
 ## Definition of Done
 
-- [ ] Тесты написаны первыми (TDD), проходят, изменённый код покрыт
+- [x] Тесты написаны первыми (TDD), проходят, изменённый код покрыт
 - [ ] Commit-гейт зелёный (test-coverage, security-auditor, **db-reviewer обязателен**, production-readiness, commit-hygiene)
-- [ ] Документация обновлена (docs/ + запись в `docs/brain/`)
-- [ ] a11y-проверка: форма с корректными `label`, связью ошибок через `aria-describedby`, объявлением ошибок в live-region, полной работой с клавиатуры
-- [ ] i18n: строки в обоих языках, хардкода нет
+- [x] Документация обновлена (docs/ + запись в `docs/brain/`)
+- [x] a11y-проверка: форма с корректными `label`, связью ошибок через `aria-describedby`, объявлением ошибок в live-region, полной работой с клавиатуры
+- [x] i18n: строки в обоих языках, хардкода нет
 
 ## Ссылки
 

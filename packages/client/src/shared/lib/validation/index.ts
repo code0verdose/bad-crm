@@ -3,3 +3,4 @@
  * in them (`rules/zod-validation.mdc` rule 11). Per-entity filters belong to their unit.
  */
 export * from './list-search.schema.js';
+export * from './translate-form-issues.util.js';

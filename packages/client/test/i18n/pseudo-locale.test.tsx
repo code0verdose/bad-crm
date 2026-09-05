@@ -15,6 +15,7 @@
  */
 import { MantineProvider } from '@mantine/core';
 import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import i18next, { type i18n as I18n } from 'i18next';
@@ -373,5 +374,93 @@ describe.each([
 
     expect(alert).not.toBeNull();
     expect(isPseudoLocalised(alert?.textContent ?? '')).toBe(true);
+  });
+});
+
+/**
+ * The registration screen in its two unhappy states, neither of which any happy mount reaches.
+ *
+ * `/register` is where an installation is created, so the states that matter most are the ones an
+ * operator meets when it *cannot* be: a slug somebody else has taken, and an installation whose
+ * `REGISTRATION_OPEN` is `false`. Both replace or annotate what is on screen with a sentence, and
+ * both are invisible to the rest of the suite for the reason this file exists — `cimode` renders a
+ * forgotten `t()` identically to a remembered one.
+ *
+ * The closed panel is mounted rather than described because it is the only text in the product a
+ * person sees *instead of* a form: if it rendered as `auth.register.closed.description`, the last
+ * thing a new installation would say for itself is a dotted key.
+ */
+describe('the registration screen in a pseudo locale', () => {
+  const mountRegistration = async (
+    element: React.ReactNode = (
+      <AuthUi.RegisterForm
+        isPending={false}
+        noticeKey="errors.code.rate_limited"
+        onSubmit={() => undefined}
+        slugErrorKey="errors.code.organization_already_exists"
+      />
+    ),
+  ): Promise<HTMLElement> => {
+    const instance = await pseudoInstance();
+
+    const { container } = render(
+      <I18nextProvider i18n={instance}>
+        <MantineProvider>{element}</MantineProvider>
+      </I18nextProvider>,
+    );
+
+    return container;
+  };
+
+  it('shows nothing unmarked on the form, its notice or its refused field', async () => {
+    const unmarked = textNodes(await mountRegistration()).filter(
+      (text) => !isPseudoLocalised(text) && !NOT_A_SENTENCE.test(text) && !PROPER_NOUNS.has(text),
+    );
+
+    expect(unmarked).toEqual([]);
+  });
+
+  it('shows nothing unmarked when the installation is closed to registration', async () => {
+    const unmarked = textNodes(await mountRegistration(<AuthUi.RegistrationClosed />)).filter(
+      (text) => !isPseudoLocalised(text) && !NOT_A_SENTENCE.test(text) && !PROPER_NOUNS.has(text),
+    );
+
+    expect(unmarked).toEqual([]);
+  });
+
+  /** CONTROL: both mounts have to be finding their own text, not an empty container. */
+  it.each([
+    ['the form', undefined],
+    ['the closed panel', <AuthUi.RegistrationClosed key="closed" />],
+  ])('CONTROL: is looking at %s it names', async (_case, element) => {
+    const container = await mountRegistration(element ?? undefined);
+
+    expect(textNodes(container).filter(isPseudoLocalised).length).toBeGreaterThan(1);
+  });
+
+  /**
+   * The field messages, which are the reason this screen translates its resolver at all.
+   *
+   * Every schema in the repository answers with an i18n **key**, and `@mantine/form` renders what
+   * the resolver returned — so a form wiring `schemaResolver` straight into `validate` shows
+   * `validation.email.invalid` under the field, in both languages. `cimode` renders that exactly
+   * like a correct translation, which is why the defect can only be caught here.
+   */
+  it('translates the messages its own schema produced', async () => {
+    const user = userEvent.setup();
+    const container = await mountRegistration(
+      <AuthUi.RegisterForm isPending={false} onSubmit={() => undefined} />,
+    );
+
+    // Queried by shape rather than by name: every label on screen is pseudo-localised, so matching
+    // one by its text would mean writing the transformation out a second time.
+    const email = container.querySelector<HTMLInputElement>('input[type="email"]');
+    const submit = container.querySelector<HTMLButtonElement>('button[type="submit"]');
+    await user.type(email as HTMLInputElement, 'ada');
+    await user.click(submit as HTMLButtonElement);
+
+    const message = container.querySelector('.mantine-TextInput-error');
+    expect(message).not.toBeNull();
+    expect(isPseudoLocalised(message?.textContent ?? '')).toBe(true);
   });
 });

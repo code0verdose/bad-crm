@@ -107,6 +107,50 @@ export const confirmPasswordReset = async (request: ResetPasswordRequest): Promi
   );
 };
 
+/** What `POST /auth/register` accepts, straight from the contract: an organization and its owner. */
+export type OrganizationRegistration = components['schemas']['RegisterOrganizationRequest'];
+
+/**
+ * Creates an organization together with the account that owns it, and opens that account's first
+ * session — the same `AuthenticatedSession` sign-in answers with, so the client has one way of
+ * becoming signed in rather than a third.
+ *
+ * `Idempotency-Key` is **mandatory** here by contract, and it is the reason the operation can be
+ * retried at all: a connection dropped after the request left and before the answer arrived would
+ * otherwise create a second organization on the retry (`docs/api/openapi.yaml` →
+ * `registerOrganization`).
+ */
+export const registerOrganization = async (
+  registration: OrganizationRegistration,
+): Promise<RefreshedSession> => {
+  const { params } = idempotencyParams();
+
+  return unwrapApiResult(await apiClient.POST('/auth/register', { body: registration, params }));
+};
+
+/** The password one has and the password one wants. The confirmation field never reaches here. */
+export type ChangePasswordRequest = components['schemas']['ChangePasswordRequest'];
+
+/**
+ * Replaces the caller's password and, in the same transaction, closes every other session and
+ * invalidates every outstanding reset link.
+ *
+ * `Idempotency-Key` is not decoration here, it is the only thing that makes the operation retryable
+ * at all: the retry of a request whose answer was lost sends as «current» a password that has
+ * already been replaced, and without the stored response it would fail with `invalid_credentials`.
+ * It also stops the notification mail going out twice.
+ *
+ * Answers 204 and says nothing about the mail. At the moment the answer is decided the server does
+ * not yet know whether anything was delivered — the message is handed to the dispatcher afterwards —
+ * and an installation with no `SMTP_URL` changes the password anyway (`docs/api/openapi.yaml`,
+ * `changePassword`).
+ */
+export const changePassword = async (request: ChangePasswordRequest): Promise<void> => {
+  unwrapApiResult(
+    await apiClient.POST('/auth/change-password', { ...idempotencyParams(), body: request }),
+  );
+};
+
 /** What the invited person supplies: no address and no name — see the schema's own note. */
 export type InvitationAcceptance = components['schemas']['InvitationAcceptance'];
 

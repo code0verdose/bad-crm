@@ -230,6 +230,7 @@ flowchart TD
 
     PUB["Публичная зона — вне _authenticated"]
     PUB --> LOGIN["/login"]
+    PUB --> REG["/register — создание организации"]
     PUB --> INVITE["/invite/$token"]
     PUB --> RESET["/forgot-password, /reset-password/$token"]
     PUB --> SLINK["/link/$token — просмотр защищённой ссылки"]
@@ -282,11 +283,20 @@ flowchart TD
 | Маршрут | Файл route | Гард (beforeLoad) | Search-params (Zod) | Основной виджет |
 |---|---|---|---|---|
 | `/login` | `routes/login.tsx` | `redirectIfAuthed` | `loginSearchSchema`: `redirect?` | `AuthUi.LoginForm` |
+| `/register` | `routes/register.tsx` | `redirectIfAuthed` | — | `AuthUi.RegisterForm` |
 | `/forgot-password` | `routes/forgot-password.tsx` | `redirectIfAuthed` | — | `PasswordRecoveryWidget` |
 | `/reset-password/$token` | `routes/reset-password.$token.tsx` | — | — | `PasswordResetWidget` |
 | `/invite/$token` | `routes/invite.$token.tsx` | — | — | `InviteAcceptWidget` |
 | `/oauth/$provider/callback` — **задел, в 1.0 не активируется** (SSO/OIDC — backlog, см. PRD Won't) | `routes/oauth.$provider.callback.tsx` | — | `oauthCallbackSchema`: `code`, `state`, `error?` | `OauthCallbackWidget` |
 | `/link/$token` | `routes/link.$token.tsx` | — (публичный, rate-limit на сервере) | `secureLinkSearchSchema`: `download?` | `SecureLinkViewerWidget` |
+
+**`/register` и закрытая регистрация.** Открыта ли регистрация в инсталляции, до отправки формы
+узнать нечем: `GET /api/v1/meta` отдаёт версию API и часы (`ApiMeta`), а `REGISTRATION_OPEN` —
+серверная переменная окружения, которую контракт не публикует. Поэтому экран показывает форму, а на
+`403 registration_disabled` **заменяет её** постоянной панелью — это и есть «форма недоступна» в том
+виде, в каком инсталляция может её обеспечить. Заводить ручку «принимает ли эта инсталляция
+регистрации» отдельно не следует: это ровно тот ответ, который закрытая инсталляция и отказывается
+давать анониму.
 
 ### Каркас приложения
 
