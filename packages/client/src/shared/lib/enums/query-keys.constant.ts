@@ -26,13 +26,22 @@ export const entityQueryKeys = <TListParams>(scope: string): EntityQueryKeys<TLi
 });
 
 /**
- * Offset pagination, as `docs/api/openapi.yaml` publishes it for table-shaped lists. Declared per
- * group rather than shared, because the filters of a group are part of its contract: a parameter
- * the endpoint does not accept has to be a compile error at the call site, not an extra cache entry.
+ * The caller's own live sessions — a `list()` that takes no parameters, because the operation takes
+ * none.
+ *
+ * `GET /auth/sessions` is deliberately unpaginated (`docs/api/openapi.yaml`, `listSessions`: one row
+ * per signed-in device, capped by a thirty-day expiry), so a key carrying a page would be a second
+ * cache entry holding the same bytes. It said otherwise until STORY-006-04 shipped the screen: the
+ * group was `entityQueryKeys<SessionListParams>('sessions')` with `page`/`perPage`, written before
+ * any endpoint existed and describing a contract that never arrived.
+ *
+ * No `detail` either, and that is the contract rather than an omission: there is no
+ * `GET /auth/sessions/{id}`. The two operations that address a session — revoke one, revoke the
+ * rest — are writes, and both invalidate the group root, which is why `list()` starts with it.
  */
-export interface SessionListParams {
-  readonly page?: number;
-  readonly perPage?: number;
+export interface SessionQueryKeys {
+  readonly all: readonly [string];
+  readonly list: () => readonly [string, 'list'];
 }
 
 /**
@@ -161,7 +170,10 @@ export interface InvitationQueryKeys {
 }
 
 export const QueryKeys = {
-  Sessions: entityQueryKeys<SessionListParams>('sessions'),
+  Sessions: {
+    all: ['sessions'],
+    list: () => ['sessions', 'list'],
+  } satisfies SessionQueryKeys,
   RecoveryCodes: {
     all: ['recovery-codes'],
     status: () => ['recovery-codes', 'status'],

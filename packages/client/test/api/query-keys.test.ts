@@ -5,6 +5,17 @@ import { SharedLib } from '@shared';
 
 const { QueryKeys, entityQueryKeys } = SharedLib;
 
+/** Every filter of the directory, because the group declares them all as required. */
+const EMPLOYEE_LIST_PARAMS = {
+  q: '',
+  status: [],
+  role: [],
+  team: [],
+  sort: 'name',
+  page: 2,
+  perPage: 50,
+} as const satisfies SharedLib.EmployeeListParams;
+
 /**
  * The factory exists because invalidation is silent when it misses.
  *
@@ -29,16 +40,22 @@ describe('the shape of a key group', () => {
   });
 });
 
+/**
+ * The employees group stands in for «a group with both shapes», which is what the sentences below
+ * are about. It held `Sessions` until STORY-006-04 shipped the session screen and the group had to
+ * become what its endpoint actually is — one unpaginated read, no detail. A demonstration of the
+ * general shape has to be written over a group that genuinely has that shape.
+ */
 describe('invalidation by the group root', () => {
   it('reaches both the list and the detail entries derived from it', async () => {
     const client = new QueryClient();
-    const list = QueryKeys.Sessions.list({ page: 2 });
-    const detail = QueryKeys.Sessions.detail('session-1');
+    const list = QueryKeys.Employees.list(EMPLOYEE_LIST_PARAMS);
+    const detail = QueryKeys.Employees.detail('employee-1');
 
     client.setQueryData(list, ['stale']);
     client.setQueryData(detail, 'stale');
 
-    await client.invalidateQueries({ queryKey: QueryKeys.Sessions.all });
+    await client.invalidateQueries({ queryKey: QueryKeys.Employees.all });
 
     expect(client.getQueryState(list)?.isInvalidated).toBe(true);
     expect(client.getQueryState(detail)?.isInvalidated).toBe(true);
@@ -49,7 +66,7 @@ describe('invalidation by the group root', () => {
     const foreign = entityQueryKeys<{ page?: number }>('widgets').list({ page: 1 });
 
     client.setQueryData(foreign, ['kept']);
-    await client.invalidateQueries({ queryKey: QueryKeys.Sessions.all });
+    await client.invalidateQueries({ queryKey: QueryKeys.Employees.all });
 
     expect(client.getQueryState(foreign)?.isInvalidated).toBe(false);
   });
@@ -61,21 +78,49 @@ describe('invalidation by the group root', () => {
  */
 describe('the factory is typed', () => {
   it('accepts the parameters the group declares', () => {
-    expect(QueryKeys.Sessions.list({ page: 2, perPage: 50 })).toHaveLength(3);
+    expect(QueryKeys.Employees.list(EMPLOYEE_LIST_PARAMS)).toHaveLength(3);
   });
 
   it('rejects a parameter the group does not declare', () => {
-    // @ts-expect-error `sortBy` is not a parameter of the session list
-    const key = QueryKeys.Sessions.list({ page: 2, sortBy: 'createdAt' });
+    // @ts-expect-error `sortBy` is not a parameter of the employee directory
+    const key = QueryKeys.Employees.list({ ...EMPLOYEE_LIST_PARAMS, sortBy: 'createdAt' });
 
     expect(key).toHaveLength(3);
   });
 
   it('rejects an identifier of the wrong type', () => {
     // @ts-expect-error a detail key is addressed by a string id
-    const key = QueryKeys.Sessions.detail(7);
+    const key = QueryKeys.Employees.detail(7);
 
     expect(key).toHaveLength(3);
+  });
+});
+
+/**
+ * The sessions group, whose `list()` takes no parameters — `GET /auth/sessions` is deliberately
+ * unpaginated, one row per signed-in device.
+ *
+ * Both mutations of the screen (revoke one, revoke the rest) invalidate by the group root, and so
+ * does changing a password, which closes every other session as a side effect. All three only reach
+ * the list because it starts with that root.
+ */
+describe('the sessions group', () => {
+  it('is reached by invalidating its root, which is what all three writers do', async () => {
+    const client = new QueryClient();
+
+    client.setQueryData(QueryKeys.Sessions.list(), { items: [] });
+    await client.invalidateQueries({ queryKey: QueryKeys.Sessions.all });
+
+    expect(client.getQueryState(QueryKeys.Sessions.list())?.isInvalidated).toBe(true);
+  });
+
+  it('leaves a neighbouring group alone', async () => {
+    const client = new QueryClient();
+
+    client.setQueryData(QueryKeys.RecoveryCodes.status(), 'kept');
+    await client.invalidateQueries({ queryKey: QueryKeys.Sessions.all });
+
+    expect(client.getQueryState(QueryKeys.RecoveryCodes.status())?.isInvalidated).toBe(false);
   });
 });
 

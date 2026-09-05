@@ -13,10 +13,12 @@ type FocusReturn = 'trigger' | 'heading';
 /**
  * The way out of the second factor, on `/settings/security` — drawn only while there is one to take.
  *
- * It is the last section of the screen rather than a control beside «two-factor authentication is
- * on», and that is deliberate: everything above it is about keeping the factor working, and a
- * destructive setting belongs after the things it destroys, not next to them
- * (`rules/design-system.mdc` §17).
+ * It is the last of the second-factor sections rather than a control beside «two-factor
+ * authentication is on», and that is deliberate: everything above it is about keeping the factor
+ * working, and a destructive setting belongs after the things it destroys, not next to them
+ * (`rules/design-system.mdc` §17). It stopped being the last section of the *screen* when
+ * STORY-006-04 added the session list below — that section is not a setting, it is the state these
+ * settings produce.
  *
  * **No `DangerZone` wrapper.** §17 collects destructive settings into one, and there is exactly one
  * on this screen — the administrator reset lives on somebody else's profile, behind

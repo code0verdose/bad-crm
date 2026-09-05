@@ -5,7 +5,8 @@
   "password": {
     "mismatch": "The two passwords are different",
     "required": "Enter a password",
-    "too_short": "Too short — at least 12 characters"
+    "too_short": "Too short — at least 12 characters",
+    "unchanged": "The new password is the same as the current one"
   },
   "required": "This field cannot be empty",
   "second_factor": {

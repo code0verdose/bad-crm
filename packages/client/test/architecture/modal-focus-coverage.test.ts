@@ -56,6 +56,8 @@ const trapSurfaces = (): string[] =>
  */
 const OWNERS: Readonly<Record<string, string>> = {
   'units/auth/ui/recovery-codes-dialog.component.tsx': 'widgets/recovery-codes.test.tsx',
+  'widgets/active-sessions/ui/session-confirm-dialog.component.tsx':
+    'widgets/active-sessions.test.tsx',
   'widgets/app-shell/app-shell.widget.tsx': 'widgets/app-shell.test.tsx',
   'widgets/disable-totp/ui/disable-totp-dialog.component.tsx': 'widgets/disable-totp.test.tsx',
   'widgets/invitation-list/ui/invitation-confirm-dialog.component.tsx':

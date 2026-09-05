@@ -143,5 +143,84 @@
     "file": {
       "header": "Bad CRM recovery codes. Each code signs you in once, when your authenticator app is not available. Keep them somewhere you can reach without this account."
     }
+  },
+  "password": {
+    "title": "Password",
+    "description": "Changing it signs out every other device at the same moment, and cancels any reset link that has been sent.",
+    "current": {
+      "label": "Your current password"
+    },
+    "new": {
+      "label": "New password",
+      "description": "At least 12 characters. Length is worth more than punctuation — a phrase you can remember beats a short word with symbols in it."
+    },
+    "confirm": {
+      "label": "Repeat the new password"
+    },
+    "strength": {
+      "weak": "This password is weak.",
+      "fair": "This password will do.",
+      "good": "This password is good.",
+      "strong": "This password is strong."
+    },
+    "submit": "Change password",
+    "failed": {
+      "title": "The password was not changed"
+    },
+    "done": "Password changed. Every other session has been signed out."
+  },
+  "sessions": {
+    "title": "Where you are signed in",
+    "description": "One entry per device holding a live session. Close any of them you do not recognise — it stops working within a second, not when its token expires.",
+    "loadFailed": "Could not read the list of your sessions.",
+    "close": "Close",
+    "cancel": "Leave it open",
+    "column": {
+      "device": "Device",
+      "address": "Network",
+      "started": "Signed in",
+      "lastUsed": "Last active",
+      "actions": "Actions"
+    },
+    "current": "This device",
+    "unknownAddress": "Address unknown",
+    "action": {
+      "revoke": "Close",
+      "revokeAria": "Close the session on {{device}}",
+      "signOut": "Sign out",
+      "signOutAria": "Sign out of this device",
+      "others": "Close every other session"
+    },
+    "dialog": {
+      "revoke": {
+        "title": "Close this session?",
+        "description": "The session on «{{device}}» stops working immediately.",
+        "confirm": "Close it"
+      },
+      "signOut": {
+        "title": "Sign out of this device?",
+        "description": "This is the session you are using right now. Closing it signs you out here.",
+        "confirm": "Sign out"
+      },
+      "others": {
+        "title": "Close every other session?",
+        "description": "Every device except this one is signed out. This one keeps working.",
+        "confirm": "Close the others"
+      }
+    },
+    "consequence": {
+      "immediate": "It stops working within a second — the next request it makes is refused, rather than waiting for its token to run out.",
+      "signInAgain": "Whoever is using it has to sign in again with the password, and with the second factor if it is switched on.",
+      "noUndo": "There is no undoing this. A session that is closed cannot be reopened.",
+      "here": "This tab returns to the sign-in screen straight away. Nothing else about your account changes."
+    },
+    "failed": {
+      "title": "Nothing was closed"
+    },
+    "done": {
+      "revoked": "That session is closed.",
+      "others": "Other sessions closed: {{count}}",
+      "othersNone": "There was nothing else open — this is the only session."
+    }
   }
 }

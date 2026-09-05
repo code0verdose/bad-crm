@@ -6,6 +6,8 @@ export * from './download-recovery-codes.util.js';
 export * from './first-invalid-field.util.js';
 export * from './login-attempt.util.js';
 export * from './mfa-token-storage.util.js';
+export * from './password-change-failure.util.js';
+export * from './password-strength.util.js';
 export * from './qr-image-source.util.js';
 export * from './session-refresh.util.js';
 export * from './guards/index.js';

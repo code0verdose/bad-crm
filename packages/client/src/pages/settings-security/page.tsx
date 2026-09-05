@@ -2,14 +2,23 @@ import { Stack } from '@mantine/core';
 
 import { SharedUi } from '@shared';
 
+import { ActiveSessions } from '@widgets/active-sessions';
 import { Breadcrumbs } from '@widgets/breadcrumbs';
+import { ChangePassword } from '@widgets/change-password';
 import { DisableTotp } from '@widgets/disable-totp';
 import { RecoveryCodes } from '@widgets/recovery-codes';
 import { TotpSetup } from '@widgets/totp-setup';
 import { AuthService, AuthUi } from '@units/auth';
 
 /**
- * `/settings/security` — the second factor and the way back in.
+ * `/settings/security` — the password, the second factor, the way back in, and where the account is
+ * signed in.
+ *
+ * The order is the reading order it deserves: the credential itself, then the credential that backs
+ * it up, then the places both are currently in use and the way to cut them off. Only the middle
+ * group is drawn from the recovery-code counter, and only the middle group is inside the `DataState`
+ * that reads it — the first and last sections each own their own state, so one failed read cannot
+ * take the others off a screen somebody opened because something had gone wrong.
  *
  * Composition only (`rules/frontend-fsd.mdc` rule 7), but two of the arrangements below are
  * decisions rather than layout:
@@ -42,6 +51,15 @@ export function SettingsSecurityPage() {
     <Stack gap="md">
       <SharedUi.PageHeader breadcrumbs={<Breadcrumbs />} titleKey="security.title" />
 
+      {/*
+        First, and outside the counter's `DataState` below. The password is the credential everything
+        else on this screen protects, and the sections under it are drawn from a read that can fail —
+        wrapping the form in that state would take away the ability to change a password because a
+        recovery-code counter did not load, on the screen somebody opens when they think the password
+        has leaked.
+      */}
+      <ChangePassword />
+
       <SharedUi.DataState
         errorMessageKey="security.loadFailed"
         onRetry={codes.retry}
@@ -59,6 +77,14 @@ export function SettingsSecurityPage() {
           {codes.isEnrolled && <DisableTotp />}
         </Stack>
       </SharedUi.DataState>
+
+      {/*
+        Last, and outside the counter's `DataState` for the same reason the password form is outside
+        it: this section has a read of its own, and a failure of one must not take the other off the
+        screen. It comes after the second-factor sections because it is not a setting — it is the
+        state those settings produce, and the place to cut it off.
+      */}
+      <ActiveSessions />
 
       {issued !== undefined && (
         <AuthUi.RecoveryCodesDialog
