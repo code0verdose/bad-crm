@@ -141,6 +141,16 @@ const signed = (delta: number | undefined): string =>
   delta === undefined ? '—' : `${delta > 0 ? '+' : ''}${delta.toFixed(2)}`;
 
 /** The job summary: the whole table, not only the failures — a run is also evidence of progress. */
+/**
+ * A fall this large is a different event from a regression, and the report says so.
+ *
+ * Not a threshold guarding a verdict — the verdict is the same either side of it, because the run
+ * really did measure what it measured. It picks which sentence is printed underneath, and the value
+ * only has to sit above the largest honest slip (a package moves by fractions as files arrive) and
+ * below the smallest collapse (a partial report of one file out of hundreds).
+ */
+const COLLAPSE = 10;
+
 export const renderReport = (rows: readonly Comparison[], tolerance: number): string => {
   const lines = [
     '### Coverage against the baseline',
@@ -163,6 +173,17 @@ export const renderReport = (rows: readonly Comparison[], tolerance: number): st
       'Coverage fell below the committed baseline. Add the missing tests, or — if the drop is',
       'intended and explained in the pull request — move the baseline on purpose with',
       '`pnpm coverage:baseline --update`.',
+    );
+  }
+
+  if (rows.some((row) => (row.delta ?? 0) <= -COLLAPSE)) {
+    lines.push(
+      '',
+      `A drop of more than ${COLLAPSE} points is almost never a change to the code: the usual cause`,
+      'is a **partial report**. Coverage is on by default in every package, so a single',
+      '`vitest run one.test.ts` overwrites `coverage/` with a measurement of one file, and this',
+      'script reads whatever is on disk. Re-run the whole suite — `pnpm turbo run test` — before',
+      'looking for tests you think you lost.',
     );
   }
 

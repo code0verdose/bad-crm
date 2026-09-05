@@ -93,6 +93,34 @@ describe('comparing a run against the baseline', () => {
     });
   });
 
+  /**
+   * A collapse rather than a regression, and the report has to say which it is looking at.
+   *
+   * `coverage/` is state on disk, and every package leaves coverage on by default — so a single
+   * `vitest run one.test.ts`, which is what anybody does while working, silently overwrites the
+   * whole report with a measurement of one file. A 40.84 % server report reached disk that way on
+   * 2026-09-06, and this script would have read it as fact and reported a fifty-eight point
+   * regression.
+   *
+   * The verdict does not change: the run really did measure 40 %, and a gate that guessed otherwise
+   * would be worse than one that is blunt. What changes is the sentence underneath — a drop of this
+   * size is almost never a change to the code, and the reader should be told where to look before
+   * they go hunting for the tests they think they deleted.
+   */
+  it('names the likely cause when the drop is a collapse rather than a slip', () => {
+    const rows = compareToBaseline(baseline, measured({ '.': { lines: 40.84, branches: 70 } }));
+
+    expect(verdictOf(rows)).toBe(1);
+    expect(renderReport(rows, baseline.tolerance)).toContain('partial');
+  });
+
+  it('CONTROL: says nothing about partial reports for an ordinary slip', () => {
+    const rows = compareToBaseline(baseline, measured({ '.': { lines: 79.4, branches: 70 } }));
+
+    expect(verdictOf(rows)).toBe(1);
+    expect(renderReport(rows, baseline.tolerance)).not.toContain('partial');
+  });
+
   it('CONTROL: still accepts a hundred that stayed a hundred', () => {
     const perfect: CoverageBaseline = {
       tolerance: 0.5,
