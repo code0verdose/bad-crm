@@ -31,8 +31,9 @@ model: sonnet
 - **Плюрализация**: RU — `one/few/many`, EN — `one/other`; ICU через `Intl.PluralRules`. Ноль —
   отдельным ключом там, где «0 задач» звучит плохо.
 - **Форматирование** — только `Intl.*` (`DateTimeFormat`, `NumberFormat`, `RelativeTimeFormat`,
-  `ListFormat`) через обёртки `shared/lib/format`; хранение всегда ISO 8601 UTC, деньги — минорные
-  единицы целым числом, валюта — свойство контракта, не локали.
+  `ListFormat`) через обёртки `shared/lib/format`; хранение всегда ISO 8601 UTC, деньги — целые
+  micro-единицы в `BigInt` (`1 USD = 1_000_000`, `rules/i18n.mdc` §12; «минорные единицы» здесь были
+  ошибкой, исправлено 2026-09-06), валюта — свойство контракта, не локали.
 - **Сервер не переводит**: он отдаёт стабильный `code` в `problem+json`, клиент выбирает
   сообщение из `errors.json`.
 
@@ -97,9 +98,21 @@ git diff --staged --name-only | rg 'locales/(en|ru)/' | sed -E 's|.*/(en\|ru)/||
 cd packages/client
 rg -o '"[a-zA-Z0-9_.]+":' src/shared/i18n/locales/en | sed -E 's/.*"([^"]+)":/\1/' | sort -u > /tmp/keys-all.txt
 while read k; do
-  rg -q -- "$k" src --glob '!**/locales/**' || echo "ОСИРОТЕВШИЙ: $k";
+  rg -q -- "$k" src ../shared/src/validation --glob '!**/locales/**' || echo "ОСИРОТЕВШИЙ: $k";
 done < /tmp/keys-all.txt
 ```
+**Экран — не единственный, кто просит ключ.** Сообщение формы объявляется там, где стоит сама
+проверка, и часть проверок живёт в `packages/shared/src/validation`: `error:` у zod-схемы — это
+i18n-ключ к моменту, когда его получает `translateFormIssues`. Поэтому в поиск включён и этот
+каталог — иначе `validation.password.too_long` и `validation.locale.unsupported` дадут ложную
+находку «осиротевший». Обратная сторона: ключ, объявленный схемой и не переведённый, обязан быть
+либо переведён, либо назван в реестре `AWAITING_A_SENTENCE`
+(`packages/client/test/i18n/catalogue-parity.test.ts`) — это проверяет тот же гейт.
+
+`packages/server/src` в поиск **не** включён намеренно: `error:` серверного валидатора уезжает в
+`errors[].message` для разработчика, а текст пользователю выбирается по `errors[].code` через
+`VALIDATION_ISSUE_MESSAGE_KEY`. Эти строки похожи на ключи и ключами не являются.
+
 Учти ложные срабатывания: ключи, собираемые из `labelKey` в данных, и ключи плюрализации
 (`_one`/`_few`/`_many`/`_other`) — их ищи по базовой форме. Осиротевшие ключи не ломают продукт, но
 делают файлы локалей нечитаемыми и маскируют реально недостающие переводы: WARN, а массовое

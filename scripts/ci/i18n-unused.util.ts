@@ -4,7 +4,9 @@
  * The orphan half is cheap to get wrong in a way that ends the check: keys reach the catalogue
  * through a written-out `ERROR_MESSAGE_KEY` map, a `*_KEY` constant, a `titleKey`/`descriptionKey`
  * prop, an `i18nKey` on `Trans` and the `error` option of a zod schema — and only a minority through
- * `t('…')`. Measured on this repository, a `t()`-only reading calls **293 of 613** keys orphaned;
+ * `t('…')`. Measured on this repository, a `t()`-only reading calls **333 of 684** keys orphaned (2026-09-06;
+ * the pair drifts with the catalogue, which is why the report recomputes it rather than trusting
+ * this line);
  * the first pull request opened against that report would have deleted half the interface's text, so
  * the report prints that number beside the real one (`naiveOrphaned`) rather than leaving the
  * calibration to the reader's trust.
@@ -17,9 +19,12 @@
  * dropped.
  *
  * The set comparisons of `packages/client/test/i18n/catalogue-parity.test.ts` are the neighbouring
- * gate and this is deliberately stricter in two places it cannot reach: a key referenced only from a
- * test file is not usage here, and `packages/shared/src/validation/**` — where the client's form
- * messages are actually declared — is read here and is invisible there.
+ * gate, and the two now read the same two trees through the very parser below: that file imports
+ * `dottedKeyLiterals` rather than restating it, because two answers to «where is this key used» is
+ * the class of drift both gates exist to find. Two differences remain, and both are this file's:
+ * a key referenced only from a test file is not usage in this report, and the namespace filter of
+ * `keyLiterals` — which that gate deliberately does without, so that a key in a namespace nobody
+ * ships stays visible to something.
  */
 export interface SourceFile {
   readonly path: string;
@@ -105,9 +110,26 @@ const matches = (source: string, pattern: RegExp): string[] =>
 
 const isTestFile = (path: string): boolean => /\.test\.tsx?$/.test(path);
 
-/** Every key-shaped literal whose first segment is a namespace this product ships. */
+/**
+ * Every key-shaped literal, whatever its first segment.
+ *
+ * The namespace filter belongs to the report below and not to the parse, because
+ * `catalogue-parity.test.ts` needs precisely what the filter throws away: a literal like
+ * `taskboard.column.title`, whose namespace does not exist on disk, is the shape of a key that was
+ * renamed or invented, and it is the one i18next answers with the key itself. Filtering it out
+ * there would leave that class visible to no gate at all.
+ */
+export const dottedKeyLiterals = (source: string): string[] => matches(source, KEY_LITERAL);
+
+/**
+ * Every key-shaped literal whose first segment is a namespace this product ships.
+ *
+ * The filter is this report's, and it is what keeps `missing` readable: the client tree is full of
+ * dotted strings that are not keys — `react.transitional.element`, a `path` of a form issue — and a
+ * report that lists them beside a real missing sentence stops being read.
+ */
 export const keyLiterals = (source: string, namespaces: readonly string[]): string[] =>
-  matches(source, KEY_LITERAL).filter((key) => namespaces.includes(key.split('.')[0] ?? ''));
+  dottedKeyLiterals(source).filter((key) => namespaces.includes(key.split('.')[0] ?? ''));
 
 export const naiveKeyLiterals = (source: string): string[] => matches(source, NAIVE_LITERAL);
 
@@ -177,9 +199,14 @@ export const audit = ({
  *
  * `deferred` is deliberately not a failure. A key named by a shared zod schema that no form renders
  * yet — every `validation.money.*`, `validation.slug.*` and `validation.pagination.*` in the tree
- * today — has nowhere to be shown and no screen to be shown on; writing sentences for it would put
- * entries in the catalogue that `catalogue-parity.test.ts` correctly calls orphans. It is listed so
- * that the epic which builds the first form over those schemas finds the list already written.
+ * today — has nowhere to be shown and no screen to be shown on, and inventing a sentence for a
+ * screen that does not exist fills the catalogue with text nobody has read. It is listed so that the
+ * epic which builds the first form over those schemas finds the list already written.
+ *
+ * The report is one half of that decision and `catalogue-parity.test.ts` is the other: its
+ * `AWAITING_A_SENTENCE` registry names the same keys with the reason each is allowed to stay
+ * untranslated, and fails on any schema key that is neither translated nor listed. A key that
+ * acquires a sentence leaves this list on its own, because both sides are computed from the tree.
  */
 export const isClean = (report: I18nUnusedReport): boolean =>
   report.orphaned.length === 0 && report.missing.length === 0 && report.assembled.length === 0;

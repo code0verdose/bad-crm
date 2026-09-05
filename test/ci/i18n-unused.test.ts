@@ -164,8 +164,10 @@ describe('audit', () => {
   /**
    * A shared zod schema names its message key in `packages/shared`, where no screen can be seen.
    * The key counts as used — otherwise `validation.email.invalid`, which only a schema names,
-   * reads as an orphan — but a schema key with no sentence is *deferred*, not broken: no form
-   * renders those schemas yet (STORY-008-03), so it is reported and does not fail the run.
+   * reads as an orphan — but a schema key with no sentence is *deferred*, not broken: those are
+   * the checks no form reaches yet — money, durations, the page size of a list nothing imports —
+   * so the key is reported and does not fail the run. Which of them may stay that way is decided
+   * next door, by the `AWAITING_A_SENTENCE` registry of `catalogue-parity.test.ts`.
    */
   it('accepts a schema as evidence of use and defers a schema key with no sentence', () => {
     const report = audit(

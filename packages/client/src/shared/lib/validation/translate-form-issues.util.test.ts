@@ -16,9 +16,9 @@ const translate = (key: string, values: Readonly<Record<string, unknown>>): stri
 
 /**
  * Assembled rather than written as a literal, and that is not style: `catalogue-parity.test.ts`
- * scans the source for anything shaped like a dotted key in quotes — comments included — so writing
+ * scans the code for anything shaped like a dotted key in quotes, in whatever namespace, so writing
  * the nested path out as a quoted literal here would report it as a translation key the interface
- * asks for and no catalogue has.
+ * asks for and no catalogue has. (Comments are exempt — the gate strips them — but only comments.)
  */
 const NESTED_PATH = ['owner', 'email'].join('.');
 
@@ -66,7 +66,8 @@ describe('translating the issues a schema produced', () => {
     const node = { type: 'span' };
     const keyedElement = {
       // Assembled for the same reason as `NESTED_PATH` above: written out, React's own marker is
-      // shaped exactly like a translation key and `catalogue-parity.test.ts` reports it as one.
+      // shaped exactly like a translation key and `catalogue-parity.test.ts` reports it as one —
+      // its reading is deliberately not restricted to namespaces that exist.
       $$typeof: Symbol.for(['react', 'transitional', 'element'].join('.')),
       key: 'terms',
       type: 'a',
