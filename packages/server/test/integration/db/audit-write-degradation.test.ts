@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 
 import { type PrismaClient } from '@prisma/client';
-import { afterAll, beforeAll, beforeEach, describe, expect, inject, it } from 'vitest';
+import { afterAll, assert, beforeAll, beforeEach, describe, expect, inject, it } from 'vitest';
 
 import { type AuditLoggerPort } from '@/application/platform/ports/audit-logger.port.js';
 import { type LogFields, type LoggerPort } from '@/application/platform/ports/logger.port.js';
@@ -201,12 +201,15 @@ describe('an INFO row that cannot be written', () => {
     ]);
     expect(await failedWrites()).toBe(1);
     expect(errorLines).toHaveLength(1);
-    expect(errorLines[0]?.fields).toMatchObject({
+    const [errorLine] = errorLines;
+
+    assert(errorLine !== undefined, 'the degraded write must have produced one error line');
+    expect(errorLine.fields).toMatchObject({
       action: 'session.signed_in',
       severity: 'INFO',
       requestId: 'degraded',
     });
-    expect(JSON.stringify(errorLines[0]?.fields)).not.toContain('laptop');
+    expect(JSON.stringify(errorLine.fields)).not.toContain('laptop');
   });
 
   /**

@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { assert, describe, expect, it } from 'vitest';
 
 import {
   AuditFenceRollbackError,
@@ -121,7 +121,10 @@ describe('an INFO event whose row could not be written', () => {
 
     await audit.record({ ...info(), requestId: undefined });
 
-    expect(lines[0]?.fields).not.toHaveProperty('requestId');
+    const [line] = lines;
+
+    assert(line !== undefined, 'the degraded write must have produced one log line');
+    expect(line.fields).not.toHaveProperty('requestId');
   });
 
   /**
@@ -140,14 +143,17 @@ describe('an INFO event whose row could not be written', () => {
 
     await audit.record(info());
 
-    expect(lines[0]?.fields).toMatchObject({
+    const [line] = lines;
+
+    assert(line !== undefined, 'the degraded write must have produced one log line');
+    expect(line.fields).toMatchObject({
       failure: {
         type: 'PrismaClientValidationError',
         message: 'Invalid `prisma.auditLog.create()` invocation:',
       },
     });
-    expect(JSON.stringify(lines[0]?.fields)).not.toContain('laptop');
-    expect(lines[0]?.fields).not.toHaveProperty('err');
+    expect(JSON.stringify(line.fields)).not.toContain('laptop');
+    expect(line.fields).not.toHaveProperty('err');
   });
 
   /**
@@ -161,9 +167,12 @@ describe('an INFO event whose row could not be written', () => {
 
     await audit.record(info());
 
-    expect(lines[0]?.fields).not.toHaveProperty('after');
-    expect(lines[0]?.fields).not.toHaveProperty('before');
-    expect(JSON.stringify(lines[0]?.fields)).not.toContain('laptop');
+    const [line] = lines;
+
+    assert(line !== undefined, 'the degraded write must have produced one log line');
+    expect(line.fields).not.toHaveProperty('after');
+    expect(line.fields).not.toHaveProperty('before');
+    expect(JSON.stringify(line.fields)).not.toContain('laptop');
   });
 
   /**
