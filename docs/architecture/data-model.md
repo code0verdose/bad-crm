@@ -823,7 +823,7 @@ salt (`saltB`), а сервер хранит `argon2id(authVerifier, serverSalt)
 | `RolePermission` | [T] | `roleId`, `permissionKey` → `Permission.key` | только **ALLOW**, DENY не существует |
 | `UserRole` | [T] | `userId`, `roleId`, `grantedById`, `grantedAt`, `expiresAt?` | join |
 | `UserPermissionOverride` | [T] | `userId`, `permissionKey`, `effect ALLOW\|DENY`, `reason` (обязателен, `ck_user_permission_overrides_reason`: `length(btrim(reason)) >= 10`), `grantedById`, `grantedAt`, `expiresAt?` | точечное исключение |
-| `ResourceAcl` | [T] | `resourceType ORGANIZATION\|PROJECT\|BOARD\|TASK\|DOC_PAGE\|KB_SPACE\|KB_NOTE\|FILE\|FILE_FOLDER\|CHANNEL\|VAULT\|DASHBOARD`, `resourceId`, `subjectType USER\|ROLE\|TEAM`, `subjectId`, `accessLevel`, `grantedById`, `expiresAt?` | полиморфная |
+| `ResourceAcl` | [T] | `resourceType ORGANIZATION\|PROJECT\|BOARD\|TASK\|DOC_PAGE\|KB_SPACE\|KB_NOTE\|FILE\|FILE_FOLDER\|CHANNEL\|VAULT\|DASHBOARD`, `resourceId`, `subjectType USER\|ROLE\|TEAM`, `subjectId`, `accessLevel`, `grantedById?`, `grantedAt`, `expiresAt?` | полиморфная |
 
 **`ResourceAcl` отгружена 2026-09-06** — миграция `20260906135729_resource_acl`, таблица
 `resource_acl`, три PostgreSQL-enum'а (`acl_resource_type`, `acl_subject_type`, `access_level`),
@@ -893,7 +893,7 @@ salt (`saltB`), а сервер хранит `argon2id(authVerifier, serverSalt)
   `idx_upo_expires (expires_at) WHERE expires_at IS NOT NULL` — джоб-чистильщик.
 - `uq_resource_acl (organization_id, resource_id, resource_type, subject_id, subject_type)` — **один
   индекс на две работы**, отгружен 2026-09-06 в этой форме вместо пары «уникальность по четвёрке +
-  `idx_resource_acl_resource`» из ревизии 2026-07-26. (а) **Уникальность**: один субъект не может
+  отдельный индекс по ресурсу» из ревизии 2026-07-26 (тот второй индекс так и не был создан). (а) **Уникальность**: один субъект не может
   иметь два разных уровня на один объект — внутри организации ключ по-прежнему четвёрка;
   `organization_id` в ключе потому, что ни `resource_id`, ни `subject_id` не FK, и без него
   совпавшая пара uuid в чужой организации отвергала бы вставку по строке, которую арендатор не
@@ -996,7 +996,7 @@ erDiagram
 это не является узким местом.
 
 **Отгружено 2026-09-06** (`20260906135656_projects_and_project_members`) с двумя оговорками к
-строкам выше. `clientId` и `idx_projects_org_client` **придут вместе с таблицей `clients`**
+строкам выше. `clientId` и индекс по клиенту **придут вместе с таблицей `clients`**
 (STORY-014-07): uuid-колонка без составного FK на родителя была бы ссылкой, которую ничто не
 проверяет (`rules/tenancy-rls.mdc`, 7), а добавить nullable-колонку позже — чистый expand-шаг.
 `key` хранится нормализованным и держится `ck_projects_key_format` (`^[A-Z][A-Z0-9]{1,9}$`); списки
@@ -1005,7 +1005,9 @@ erDiagram
 
 **Индексы:** `uq_projects_org_key (organization_id, key) WHERE deleted_at IS NULL`;
 `idx_projects_org_status (organization_id, status) WHERE deleted_at IS NULL`;
-`idx_projects_org_client (organization_id, client_id)`;
+`idx_projects_org_lead (organization_id, lead_id)` — «какие проекты ведёт этот человек», вопрос
+офбординга и передачи лида, и он же индекс под составной FK; индекс по клиенту придёт вместе с
+колонкой `clientId` и таблицей `clients` (STORY-014-07);
 `uq_project_members (project_id, user_id) WHERE left_at IS NULL`;
 `idx_project_members_org_user (organization_id, user_id)` — «мои проекты».
 
