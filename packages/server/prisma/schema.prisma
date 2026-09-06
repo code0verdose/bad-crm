@@ -51,8 +51,8 @@ model Organization {
   defaultCurrency String @default("USD") @map("default_currency") @db.Char(3)
   settings        Json   @default("{}")
 
-  /// The account that administers this organization, set by the registration use-case of
-  /// STORY-006-01 immediately after it creates the owner.
+  /// The account that administers this organization, written by the registration use-case of
+  /// STORY-006-01 in the same statement that creates the owner (see below).
   ///
   /// Mandatory since the contract step (`20260730120000_organization_owner_not_null`): an
   /// organization whose owner is nobody is an organization nobody can administer, and that is now a

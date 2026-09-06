@@ -36,11 +36,12 @@ import { ROW_FACTORIES } from './row-factories.util.js';
  *   2. **through this path, another organization is not readable**;
  *   3. **through this path, another organization is not writable**.
  *
- * A stand-in stands in for the owner: `users` arrives with [EPIC-006] (STORY-006-01 creates the
- * table), and this suite must still observe a *second real write* inside the same transaction —
+ * The owner is a real `users` row now (STORY-006-01), written in the same statement as the
+ * organization. This suite must still observe a *second real write* inside the same transaction —
  * otherwise "one transaction" is a claim about a single statement, which is trivially true. `teams`
  * is that second write: a tenant-scoped table with the same policy shape, which rolls back with the
- * organization exactly as the users table will.
+ * organization exactly as the owner row does. (Header rewritten 2026-09-06; it still said the
+ * users table had not arrived.)
  */
 
 const silentLogger: LoggerPort = {
