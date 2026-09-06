@@ -1,7 +1,7 @@
 ---
 id: EPIC-013
 title: Двухфакторная аутентификация (TOTP)
-status: in-progress
+status: review
 blocked: false
 milestone: M2
 owner: unassigned
