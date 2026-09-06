@@ -155,6 +155,8 @@ paths:
           $ref: '#/components/responses/RateLimited'
         '500':
           $ref: '#/components/responses/InternalError'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
 
   /auth/login:
     post:
@@ -856,6 +858,8 @@ paths:
           $ref: '#/components/responses/RateLimited'
         '500':
           $ref: '#/components/responses/InternalError'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
 
   /auth/forgot-password:
     post:
@@ -983,6 +987,8 @@ paths:
           $ref: '#/components/responses/RateLimited'
         '500':
           $ref: '#/components/responses/InternalError'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
 
   /telemetry/client-error:
     post:
@@ -1849,6 +1855,8 @@ paths:
           $ref: '#/components/responses/RateLimited'
         '500':
           $ref: '#/components/responses/InternalError'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
 
   /invitations/{invitationId}/resend:
     post:
@@ -5397,8 +5405,17 @@ components:
         counter of failed attempts; the incident runbook keys on the `totp_secret_undecryptable`
         security event this path logs beside the 503.
 
-        A caller can distinguish nothing from this code beyond "not now": both causes are stated
-        here for the operator reading the contract, and neither is reported in the body.
+        Every operation that hashes or verifies a password declares it for a third cause: argon2id
+        computations run behind a process-wide ceiling (`AUTH_ARGON2_MAX_CONCURRENCY`), and a caller
+        that waits out `AUTH_ARGON2_QUEUE_TIMEOUT_MS` without reaching a slot is refused rather than
+        left holding memory in a queue with no deadline (STORY-013-06). This is the one cause that
+        can state a delay: the refusal carries `Retry-After` derived from the wait budget, so a
+        client can back off instead of retrying into the same saturated queue. The operations
+        concerned are sign-in and second-factor verification, registration, invitation acceptance,
+        the password change and the password reset, and the 2FA operations that re-check a password.
+
+        A caller can distinguish nothing from this code beyond "not now": all three causes are
+        stated here for the operator reading the contract, and none is reported in the body.
       headers:
         Retry-After:
           description: Seconds to wait, when the server can estimate it.

@@ -3145,8 +3145,17 @@ export interface components {
          *     counter of failed attempts; the incident runbook keys on the `totp_secret_undecryptable`
          *     security event this path logs beside the 503.
          *
-         *     A caller can distinguish nothing from this code beyond "not now": both causes are stated
-         *     here for the operator reading the contract, and neither is reported in the body.
+         *     Every operation that hashes or verifies a password declares it for a third cause: argon2id
+         *     computations run behind a process-wide ceiling (`AUTH_ARGON2_MAX_CONCURRENCY`), and a caller
+         *     that waits out `AUTH_ARGON2_QUEUE_TIMEOUT_MS` without reaching a slot is refused rather than
+         *     left holding memory in a queue with no deadline (STORY-013-06). This is the one cause that
+         *     can state a delay: the refusal carries `Retry-After` derived from the wait budget, so a
+         *     client can back off instead of retrying into the same saturated queue. The operations
+         *     concerned are sign-in and second-factor verification, registration, invitation acceptance,
+         *     the password change and the password reset, and the 2FA operations that re-check a password.
+         *
+         *     A caller can distinguish nothing from this code beyond "not now": all three causes are
+         *     stated here for the operator reading the contract, and none is reported in the body.
          */
         ServiceUnavailable: {
             headers: {
@@ -3420,6 +3429,7 @@ export interface operations {
             422: components["responses"]["ValidationFailed"];
             429: components["responses"]["RateLimited"];
             500: components["responses"]["InternalError"];
+            503: components["responses"]["ServiceUnavailable"];
         };
     };
     login: {
@@ -3921,6 +3931,7 @@ export interface operations {
             422: components["responses"]["ValidationFailed"];
             429: components["responses"]["RateLimited"];
             500: components["responses"]["InternalError"];
+            503: components["responses"]["ServiceUnavailable"];
         };
     };
     requestPasswordReset: {
@@ -4045,6 +4056,7 @@ export interface operations {
             422: components["responses"]["ValidationFailed"];
             429: components["responses"]["RateLimited"];
             500: components["responses"]["InternalError"];
+            503: components["responses"]["ServiceUnavailable"];
         };
     };
     reportClientError: {
@@ -4929,6 +4941,7 @@ export interface operations {
             422: components["responses"]["ValidationFailed"];
             429: components["responses"]["RateLimited"];
             500: components["responses"]["InternalError"];
+            503: components["responses"]["ServiceUnavailable"];
         };
     };
     resendInvitation: {
