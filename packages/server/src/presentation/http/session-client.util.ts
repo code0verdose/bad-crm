@@ -5,9 +5,10 @@ import { type SessionClient } from '@/application/identity/use-cases/issue-sessi
 /**
  * The peer address, as far as the process is allowed to believe it.
  *
- * `req.ip` and not `X-Forwarded-For` read by hand: `trust proxy` is set to exactly one hop in
- * `http-server.factory.ts`, so Express takes the entry the operator's own proxy wrote and ignores
- * whatever a client prepended. The value is masked and hashed before it is stored, and it appears in
+ * `req.ip` and not `X-Forwarded-For` read by hand: `trust proxy` is set in `http-server.factory.ts`
+ * to `TRUSTED_PROXY_HOPS` (default `0` — the header is not believed at all until the operator says
+ * how many of their own proxies wrote it), so Express takes the entry the operator's proxy wrote
+ * and ignores whatever a client prepended. The value is masked and hashed before it is stored, and it appears in
  * no log and in no response.
  *
  * Shared by every operation that opens a session — sign-in, registration and accepting an
