@@ -1,7 +1,7 @@
 ---
 id: STORY-013-06
 epic: EPIC-013
-status: in-progress
+status: review
 blocked: false
 priority: should
 estimate: S
@@ -149,6 +149,12 @@ estimate: S
 ## Definition of Done
 
 - [x] Тесты написаны первыми (TDD), проходят, изменённый код покрыт
-- [ ] Commit-гейт зелёный (test-coverage, security-auditor, production-readiness, commit-hygiene)
+- [x] Commit-гейт зелёный (test-coverage, security-auditor, production-readiness, commit-hygiene)
+      *Закрыт 2026-09-06 после тринадцати коммитов и шести волн ревью. Первые проходы дали
+      FAIL у покрытия (потолок можно было снять из проводки при 2858 зелёных тестах) и у
+      продакшен-готовности (четыре блокирующих, семь существенных); повторные — PASS. Судья
+      снял девять ложных утверждений, независимая проверка возврата точки нашла ещё шесть.
+      Полный набор: `turbo run typecheck lint build test` 21/21, `coverage:baseline` без
+      просадок (server lines −0.18 при допуске 0.5, branches +0.02).*
 - [x] Документация обновлена (docs/ + запись в `docs/brain/`)
 - [x] Новая обязательная env объявлена в `.env.example` **и** в runbook'е обновления
