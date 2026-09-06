@@ -157,6 +157,7 @@ describe('the action catalogue', () => {
       'invitation.revoked',
       'invitation.accepted',
       'employee.updated',
+      'organization.security_policy_updated',
       'organization.ownership_transferred',
       'user.suspended',
       'user.reactivated',

@@ -67,6 +67,8 @@
     "mfa_token_expired": "That sign-in step is no longer valid. Enter your password again to start over.",
     "mfa_invalid_code": "That code did not work. Check your authenticator app and try again.",
     "mfa_code_replayed": "That code has already been used to sign in. Wait for the next one.",
+    "mfa_enrollment_required": "Your organization requires two-factor authentication. Set it up to continue.",
+    "mfa_required_by_policy": "Your organization requires two-factor authentication for your role, so it cannot be turned off.",
     "rate_limited": "Too many attempts. Try again in {{seconds}} s.",
     "registration_disabled": "This installation is not open for registration.",
     "role_already_exists": "That role already exists.",

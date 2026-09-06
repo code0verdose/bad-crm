@@ -10,6 +10,10 @@ import { ConfirmTotpUseCase } from '@/application/identity/use-cases/confirm-tot
 import { DisableTotpUseCase } from '@/application/identity/use-cases/disable-totp.use-case.js';
 import { EndSessionUseCase } from '@/application/identity/use-cases/end-session.use-case.js';
 import { GenerateRecoveryCodesUseCase } from '@/application/identity/use-cases/generate-recovery-codes.use-case.js';
+import { MfaPolicyQuery } from '@/application/organization/use-cases/mfa-policy.query.js';
+import { MfaCoverageReportQuery } from '@/application/organization/use-cases/mfa-coverage-report.query.js';
+import { ReadSecurityPolicyQuery } from '@/application/organization/use-cases/read-security-policy.query.js';
+import { UpdateSecurityPolicyUseCase } from '@/application/organization/use-cases/update-security-policy.use-case.js';
 import { IssueSessionUseCase } from '@/application/identity/use-cases/issue-session.use-case.js';
 import { ListSessionsQuery } from '@/application/identity/use-cases/list-sessions.query.js';
 import { LoginUseCase } from '@/application/identity/use-cases/login.use-case.js';
@@ -79,6 +83,7 @@ import { createTestPlatform } from './test-app.util.js';
 import {
   FakeAccessTokens,
   FakeAddressHasher,
+  FakeMfaPolicyReader,
   FakeAuthLookup,
   FakeClock,
   FakeIdGenerator,
@@ -142,6 +147,8 @@ export interface AuthApp {
   /** Recovery codes, so a suite can seed a batch and read back what a reset or disable removed. */
   readonly recoveryCodeRows: FakeRecoveryCodes;
   readonly organizations: FakeOrganizations;
+  /** Seeded by a suite that wants the organization's second-factor policy to cover somebody. */
+  readonly mfaPolicyReader: FakeMfaPolicyReader;
   readonly lookup: FakeAuthLookup;
   readonly hasher: FakePasswordHasher;
   readonly logger: RecordingLogger;
@@ -298,6 +305,16 @@ export const createAuthApp = (options: AuthAppOptions = {}): AuthApp => {
 
   lookup.readingCredentials(users).readingResetTokens(resetTokenRows);
 
+  // Declared before `issueSession`, which reads it to decide whether the token it mints is scoped to
+  // enrolment (STORY-013-05, acceptance 3).
+  const totpEnrollment = new FakeTotpEnrollment();
+
+  // The organization's second-factor policy. Empty by default — no grants recorded, so every
+  // session this harness issues is an ordinary one, which is the state of an installation that has
+  // not switched the policy on. A suite that wants the enrolment gate seeds `mfaPolicyReader`.
+  const mfaPolicyReader = new FakeMfaPolicyReader();
+  const mfaPolicy = new MfaPolicyQuery(organizations, mfaPolicyReader, clock, logger);
+
   const issueSession = new IssueSessionUseCase(
     sessions,
     organizations,
@@ -306,6 +323,8 @@ export const createAuthApp = (options: AuthAppOptions = {}): AuthApp => {
     new FakeAddressHasher(),
     clock,
     new FakeIdGenerator(),
+    totpEnrollment,
+    mfaPolicy,
   );
 
   const bootstrap = new BootstrapOrganizationUseCase(
@@ -320,7 +339,6 @@ export const createAuthApp = (options: AuthAppOptions = {}): AuthApp => {
   // `CsprngRecoveryCodeGenerator` over the same fake hasher every other credential in this harness
   // shares) — the same reasoning `fields` below already applies to `AesFieldEncryption`: a real
   // adapter over a fixed test key is more faithful than a second, hand-rolled encryption double.
-  const totpEnrollment = new FakeTotpEnrollment();
   const recoveryCodeRows = new FakeRecoveryCodes();
   const totp = new OtplibTotpAdapter();
   const qr = new QrcodeSvgAdapter();
@@ -491,6 +509,7 @@ export const createAuthApp = (options: AuthAppOptions = {}): AuthApp => {
       audit,
       dispatcher,
       APP_URL,
+      mfaPolicy,
     ),
     verifySecondFactor: new VerifySecondFactorUseCase(
       mfaPendingTokens,
@@ -662,7 +681,29 @@ export const createAuthApp = (options: AuthAppOptions = {}): AuthApp => {
     options.trustedProxyHops === undefined ? {} : { TRUSTED_PROXY_HOPS: options.trustedProxyHops },
   );
 
-  const app = createHttpServer({ ...platform.http, identity, iam });
+  /**
+   * The organization's own administration, over the same in-memory doubles as everything else.
+   *
+   * Wired here rather than taken from `platform.http`: the shared platform container is built
+   * without a database, so its organization slice raises on every call — which would make the three
+   * security-policy routes answer 500 in every suite that reaches them, the permission matrix
+   * included.
+   */
+  const organization = {
+    readSecurityPolicy: new ReadSecurityPolicyQuery(unitOfWork, mfaPolicy),
+    updateSecurityPolicy: new UpdateSecurityPolicyUseCase(
+      unitOfWork,
+      organizations,
+      customRoles,
+      mfaPolicyReader,
+      totpEnrollment,
+      clock,
+      audit,
+    ),
+    mfaCoverageReport: new MfaCoverageReportQuery(unitOfWork, mfaPolicyReader, mfaPolicy, clock),
+  };
+
+  const app = createHttpServer({ ...platform.http, identity, iam, organization });
 
   let listening: Server | undefined;
   const server = (): Server => {
@@ -701,6 +742,8 @@ export const createAuthApp = (options: AuthAppOptions = {}): AuthApp => {
     enrollment: totpEnrollment,
     recoveryCodeRows,
     organizations,
+    /** Seeded by a suite that wants the organization's second-factor policy to cover somebody. */
+    mfaPolicyReader,
     lookup,
     hasher,
     logger,

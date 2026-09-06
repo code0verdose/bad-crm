@@ -69,4 +69,25 @@ export interface OrganizationRepositoryPort {
 
   /** The organization of the current scope, or `null` when it does not exist or is soft-deleted. */
   findCurrent(): Promise<OrganizationSummary | null>;
+
+  /**
+   * The raw `settings` JSON of the current scope, or `null` when there is no organization to read.
+   *
+   * Deliberately *not* a field of `OrganizationSummary`, and deliberately `unknown`. The summary is
+   * a filter — `organization-row.util.ts` says so — and putting a `Json` column in it would type
+   * every consumer of the tenant root against a shape nobody validated. Whoever asks for this owes
+   * the column a `safeParse`; `SharedOrganization.readSecurityPolicy` is the one for the half of it
+   * this epic writes.
+   */
+  readSettings(): Promise<unknown>;
+
+  /**
+   * Replaces `settings` wholesale with an object the caller assembled from the one it read.
+   *
+   * Whole-object rather than a JSON merge at the database, because the merge that matters is a
+   * *semantic* one — the policy is replaced, everything else survives — and `SharedOrganization`
+   * already owns it (`writeSecurityPolicy`). Two merges, one in SQL and one in TypeScript, would be
+   * two answers to «what happened to the key nobody mentioned».
+   */
+  writeSettings(settings: Record<string, unknown>): Promise<void>;
 }

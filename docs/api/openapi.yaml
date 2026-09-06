@@ -1939,6 +1939,215 @@ paths:
         '500':
           $ref: '#/components/responses/InternalError'
 
+  /organization/security-policy:
+    get:
+      operationId: readSecurityPolicy
+      summary: Read the organization's security policy.
+      description: |
+        Which roles must carry a second factor, and how long somebody has to arrange one.
+
+        Gated by `organization:manage_security_policy` — a **dangerous** key held by `owner` and
+        `admin` — rather than by `organization:read`, which everybody holds. The list of roles that
+        must carry a second factor is a map of where the weak accounts are, so it is not a fact the
+        whole organization gets to read.
+
+        A fresh installation answers the disabled policy: an empty `mfaRequiredForRoles` and a grace
+        period of zero. That is «off», not «everybody» (`STORY-013-05`, acceptance 10).
+      tags: [organization]
+      x-permission: organization:manage_security_policy
+      responses:
+        '200':
+          description: The stored policy.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SecurityPolicy'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    patch:
+      operationId: updateSecurityPolicy
+      summary: Set the organization's second-factor policy.
+      description: |
+        Names the roles whose holders must have a second factor, and the grace period they get to
+        arrange one. Both fields are replaced wholesale — this is the policy, not a patch of it.
+
+        **The countdown belongs to a person and a role, not to the policy.** A role already in the
+        policy keeps the date it entered on; a role being added starts now. Somebody who is given a
+        covered role next month gets their own grace period from the day of the assignment, and
+        loses the requirement entirely when the role is taken away (acceptance 5). That is why the
+        stored dates are computed here and cannot be sent: a client that could set them could hand
+        itself a grace period that expired last year.
+
+        **The blast radius is a lockout, so it is recorded as one.** Every change writes
+        `organization.security_policy_updated` to the audit trail at `CRITICAL` severity, with the
+        whole policy before and after.
+
+        **Putting yourself under it needs two signals** (acceptance 7). A caller who has no second
+        factor and whose own roles the new policy covers is refused **428 `confirmation_required`**
+        the first time; repeating the request with `confirmedSelfLockout: true` performs it. The
+        refusal is not a block — rolling the policy out to yourself is the normal way to adopt it —
+        it exists so that nobody arranges their own enrolment deadline without seeing it.
+
+        Refusals: **404** for a role id that names no role of this organization — the same answer an
+        id of another organization gets, so the endpoint is not an oracle of which role ids exist;
+        **422** for a role reference that is neither a system role key nor a uuid, and for a grace
+        period outside 0…30 days.
+      tags: [organization]
+      x-permission: organization:manage_security_policy
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [mfaRequiredForRoles, mfaGracePeriodDays]
+              properties:
+                mfaRequiredForRoles:
+                  type: array
+                  maxItems: 64
+                  items:
+                    $ref: '#/components/schemas/PolicyRoleRef'
+                  description: |
+                    Empty switches the policy off. It is «off», never «everybody».
+                mfaGracePeriodDays:
+                  type: integer
+                  minimum: 0
+                  maximum: 30
+                  description: |
+                    `0` enforces from the moment a role starts being covered. The ceiling is thirty
+                    because a window measured in months is a policy nobody ever lives under.
+                confirmedSelfLockout:
+                  type: boolean
+                  description: |
+                    Sent only on the repeat of a request refused **428 `confirmation_required`**.
+      responses:
+        '200':
+          description: The stored policy, as it now is.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SecurityPolicy'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '428':
+          $ref: '#/components/responses/ConfirmationRequired'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /organization/mfa-coverage:
+    get:
+      operationId: readMfaCoverage
+      summary: Who the second-factor policy affects.
+      description: |
+        Every active account with the verdict the policy gives it — the confirmation preview of
+        acceptance 2 and the standing report of acceptance 9, which are the same question asked
+        twice.
+
+        Passing `role` (repeatable) and `graceDays` reports against an **unsaved draft** instead of
+        the stored policy, computed exactly as the save would compute it: roles already covered keep
+        their date, new ones start now. Answering the preview from a different code path is how a
+        confirmation dialog ends up naming people the enforcement does not.
+
+        The verdict per person is the same function the login gate uses, so the screen cannot say
+        «compliant» about somebody the door is turning away.
+
+        Not paged: the report is bounded by the size of the organization, and a page cursor would
+        make «how many are not enrolled» a second request that can disagree with the first. The
+        client filters it in the URL.
+
+        Gated by the same **dangerous** capability as the policy: this is a list of which colleagues
+        have no second factor.
+      tags: [organization]
+      x-permission: organization:manage_security_policy
+      parameters:
+        - name: role
+          in: query
+          required: false
+          description: |
+            A role of the draft policy. Repeated rather than comma-joined, because a reference may
+            be a uuid and a separator inside a value is how a filter starts dropping entries.
+          schema:
+            type: array
+            items:
+              $ref: '#/components/schemas/PolicyRoleRef'
+          style: form
+          explode: true
+        - name: graceDays
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 0
+            maximum: 30
+      responses:
+        '200':
+          description: The report.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [policy, covered, enrolled, rows]
+                properties:
+                  policy:
+                    $ref: '#/components/schemas/SecurityPolicy'
+                  covered:
+                    type: integer
+                    description: How many people hold a role the policy names.
+                  enrolled:
+                    type: integer
+                    description: Of those, how many already have a second factor.
+                  rows:
+                    type: array
+                    items:
+                      type: object
+                      additionalProperties: false
+                      required: [userId, email, roleKeys, gate]
+                      properties:
+                        userId:
+                          type: string
+                          format: uuid
+                        email:
+                          type: string
+                          format: email
+                        roleKeys:
+                          type: array
+                          items:
+                            type: string
+                        gate:
+                          type: string
+                          enum: [not_covered, satisfied, grace, enrollment_required]
+                        graceEndsAt:
+                          type: string
+                          format: date-time
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
   /organization/transfer-ownership:
     post:
       operationId: transferOwnership
@@ -2911,6 +3120,28 @@ components:
           $ref: '#/components/schemas/SessionUser'
         organization:
           $ref: '#/components/schemas/SessionOrganization'
+        mfaEnrollment:
+          type: boolean
+          const: true
+          description: |
+            Present, and `true`, only when the organization's second-factor policy has scoped this
+            session to enrolment: it reaches `POST /auth/2fa/setup`, `POST /auth/2fa/confirm` and
+            `POST /auth/logout`, and every other operation answers **403 `mfa_enrollment_required`**
+            (`STORY-013-05`, acceptance 3).
+
+            Absent for an ordinary session rather than `false`, so the client branches on presence
+            and never has to read the field as «no». Enrolling clears it on the next refresh, which
+            is when the scope is decided again.
+        mfaGraceEndsAt:
+          type: string
+          format: date-time
+          description: |
+            When the caller's grace period under that policy ends — what the countdown banner of
+            acceptance 4 counts down to. Absent when the policy covers none of their roles, which is
+            every session of every installation that has not switched a policy on.
+
+            A timestamp rather than a duration, unlike `expiresIn`: the grace period is days long and
+            belongs to the organization, so a duration would go stale in a cached sign-in answer.
 
     OrganizationSelectionRequired:
       type: object
@@ -3432,6 +3663,8 @@ components:
         - mfa_token_expired
         - mfa_invalid_code
         - mfa_code_replayed
+        - mfa_enrollment_required
+        - mfa_required_by_policy
         - rate_limited
         - feature_disabled
         - service_unavailable
@@ -3862,6 +4095,41 @@ components:
           description: |
             Always `false`. Stated in the answer because it is the question the caller asks next:
             teams, projects and vaults are not restored with the account.
+
+    PolicyRoleRef:
+      type: string
+      description: |
+        A role the security policy names: a system role key, or the uuid of a custom role. Both
+        spellings in one field because a person holds the two kinds identically; the union is closed
+        on the system side, so a typo like `admins` is refused instead of quietly covering nobody.
+      oneOf:
+        - type: string
+          enum: [owner, admin, manager, lead, developer, viewer, guest]
+        - type: string
+          format: uuid
+
+    SecurityPolicy:
+      type: object
+      additionalProperties: false
+      required: [mfaRequiredForRoles, mfaGracePeriodDays, mfaRequiredSince]
+      properties:
+        mfaRequiredForRoles:
+          type: array
+          items:
+            $ref: '#/components/schemas/PolicyRoleRef'
+        mfaGracePeriodDays:
+          type: integer
+          minimum: 0
+          maximum: 30
+        mfaRequiredSince:
+          type: object
+          additionalProperties:
+            type: string
+            format: date-time
+          description: |
+            When each named role started being covered. Written by the server, never by the client:
+            it is one half of the countdown of acceptance 5, and the other half is the person's own
+            `granted_at`. Whichever is later is when their grace period starts.
 
     ResetMfaResult:
       type: object

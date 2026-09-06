@@ -91,6 +91,8 @@ export const createAuthController = (
       serializeAuthenticatedSession({
         accessToken: result.session.accessToken,
         expiresInSeconds: result.session.expiresInSeconds,
+        mfaEnrollment: result.session.mfaEnrollment,
+        mfaGraceEndsAt: result.session.mfaGraceEndsAt,
         user: result.user,
         organization: result.organization,
       }),
@@ -133,6 +135,8 @@ export const createAuthController = (
       serializeAuthenticatedSession({
         accessToken: result.session.accessToken,
         expiresInSeconds: result.session.expiresInSeconds,
+        mfaEnrollment: result.session.mfaEnrollment,
+        mfaGraceEndsAt: result.session.mfaGraceEndsAt,
         user: result.user,
         organization: result.organization,
       }),
@@ -160,6 +164,8 @@ export const createAuthController = (
       serializeAuthenticatedSession({
         accessToken: result.session.accessToken,
         expiresInSeconds: result.session.expiresInSeconds,
+        mfaEnrollment: result.session.mfaEnrollment,
+        mfaGraceEndsAt: result.session.mfaGraceEndsAt,
         user: result.user,
         organization: result.organization,
       }),
@@ -190,6 +196,8 @@ export const createAuthController = (
       serializeAuthenticatedSession({
         accessToken: result.session.accessToken,
         expiresInSeconds: result.session.expiresInSeconds,
+        mfaEnrollment: result.session.mfaEnrollment,
+        mfaGraceEndsAt: result.session.mfaGraceEndsAt,
         user: result.user,
         organization: result.organization,
       }),

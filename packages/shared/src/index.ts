@@ -13,6 +13,7 @@ export * as SharedPermissions from './permissions/index.js';
 export * as SharedErrors from './errors/index.js';
 export * as SharedAudit from './audit/index.js';
 export * as SharedResult from './result/index.js';
+export * as SharedOrganization from './organization/index.js';
 
 /** Branded ids are types only — they carry no runtime value to put behind a namespace. */
 export type * from './types/index.js';

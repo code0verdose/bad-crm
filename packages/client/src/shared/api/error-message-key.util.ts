@@ -49,6 +49,8 @@ export const ERROR_MESSAGE_KEY: Readonly<Record<SharedErrors.ErrorCode, string>>
   mfa_token_expired: 'errors.code.mfa_token_expired',
   mfa_invalid_code: 'errors.code.mfa_invalid_code',
   mfa_code_replayed: 'errors.code.mfa_code_replayed',
+  mfa_enrollment_required: 'errors.code.mfa_enrollment_required',
+  mfa_required_by_policy: 'errors.code.mfa_required_by_policy',
   invitation_already_accepted: 'errors.code.invitation_already_accepted',
   rate_limited: 'errors.code.rate_limited',
   feature_disabled: 'errors.code.feature_disabled',

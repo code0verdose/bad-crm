@@ -31,6 +31,26 @@ export interface AuthenticatedSessionResponse {
     readonly name: string;
     readonly slug: string;
   };
+  /**
+   * Present, and `true`, only when the organization's second-factor policy has scoped this session
+   * to enrolment (STORY-013-05, acceptance 3).
+   *
+   * Absent for an ordinary session rather than `false`, so the field never has to be read as «no»:
+   * the client branches on its presence, exactly as it branches on `mfaGraceEndsAt`.
+   */
+  readonly mfaEnrollment?: true;
+  /**
+   * When the caller's grace period ends, for the countdown banner of acceptance 4.
+   *
+   * A timestamp and not a duration, unlike `expiresIn` above, because the two are different kinds of
+   * fact: the token's life is a few minutes and belongs to this response, while the grace period is
+   * days long and belongs to the organization — a duration would go stale in the client's own cache
+   * of the sign-in answer.
+   *
+   * Absent when the policy covers none of the caller's roles, which is every session of every
+   * installation that has not switched a policy on.
+   */
+  readonly mfaGraceEndsAt?: string;
 }
 
 export interface MfaRequiredResponse {
@@ -64,6 +84,8 @@ export const serializeAuthenticatedSession = (input: {
   readonly expiresInSeconds: number;
   readonly user: SessionProfile;
   readonly organization: SessionOrganization;
+  readonly mfaEnrollment?: boolean;
+  readonly mfaGraceEndsAt?: Date | undefined;
 }): AuthenticatedSessionResponse => ({
   status: 'authenticated',
   accessToken: input.accessToken,
@@ -80,6 +102,12 @@ export const serializeAuthenticatedSession = (input: {
     name: input.organization.name,
     slug: input.organization.slug,
   },
+  // Spread rather than assigned, so an ordinary session carries no key at all — see the two fields'
+  // own docs for why absence is the shape rather than `false`/`null`.
+  ...(input.mfaEnrollment === true ? { mfaEnrollment: true as const } : {}),
+  ...(input.mfaGraceEndsAt === undefined
+    ? {}
+    : { mfaGraceEndsAt: input.mfaGraceEndsAt.toISOString() }),
 });
 
 /**

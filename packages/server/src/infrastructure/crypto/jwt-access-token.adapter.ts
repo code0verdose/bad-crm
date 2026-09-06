@@ -28,10 +28,26 @@ interface RawClaims {
   readonly org?: unknown;
   readonly sid?: unknown;
   readonly pv?: unknown;
+  readonly scope?: unknown;
 }
 
+/**
+ * The one `scope` an access token may carry, and what it means.
+ *
+ * An ordinary session has no `scope` claim at all. `mfa_enrollment` is the session the organization's
+ * second-factor policy opened for somebody who has to enrol before doing anything else
+ * (STORY-013-05, acceptance 3); it is still a real session — the row exists, the caller is
+ * established — and what it may reach is decided by the registry, not here.
+ *
+ * Every *other* value is refused outright rather than read as «no scope». That is what stops the
+ * scope from being a claim an attacker can widen by inventing a value nothing branches on, and it
+ * is also the line that now refuses an `mfa_pending` token by *scope* rather than by the shape
+ * coincidence `authenticate.middleware.ts` documents.
+ */
+const ENROLLMENT_SCOPE = 'mfa_enrollment';
+
 const asClaims = (payload: RawClaims): AccessTokenClaims | undefined => {
-  const { sub, org, sid, pv } = payload;
+  const { sub, org, sid, pv, scope } = payload;
 
   if (typeof sub !== 'string' || typeof org !== 'string' || typeof sid !== 'string') {
     return undefined;
@@ -42,7 +58,18 @@ const asClaims = (payload: RawClaims): AccessTokenClaims | undefined => {
   // (harmless) or current (not harmless), depending on which way somebody wrote the comparison.
   if (typeof pv !== 'number' || !Number.isInteger(pv)) return undefined;
 
-  return { userId: sub, organizationId: org, sessionId: sid, permissionsVersion: pv };
+  // Absent means an ordinary session; `mfa_enrollment` means the enrolment gate; anything else is
+  // not a token this installation signed for a purpose it knows, and is refused rather than
+  // widened into one.
+  if (scope !== undefined && scope !== ENROLLMENT_SCOPE) return undefined;
+
+  return {
+    userId: sub,
+    organizationId: org,
+    sessionId: sid,
+    permissionsVersion: pv,
+    mfaEnrollment: scope === ENROLLMENT_SCOPE,
+  };
 };
 
 /**
@@ -70,6 +97,10 @@ export class JwtAccessTokenAdapter implements AccessTokenPort {
       org: claims.organizationId,
       sid: claims.sessionId,
       pv: claims.permissionsVersion,
+      // Omitted rather than signed as `false` for an ordinary session: a claim that is absent cannot
+      // be read as anything, while a boolean invites `scope: false` being compared against a string
+      // somewhere and quietly meaning «unscoped» in one place and «scoped» in another.
+      ...(claims.mfaEnrollment ? { scope: ENROLLMENT_SCOPE } : {}),
     })
       .setProtectedHeader({ alg: ALGORITHM, typ: 'JWT' })
       .setSubject(claims.userId)

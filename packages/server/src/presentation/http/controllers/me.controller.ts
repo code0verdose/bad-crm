@@ -27,6 +27,7 @@ export const createMeController = (
     const permissions = await dependencies.getMyPermissions.execute({
       userId: caller.userId,
       organizationId: caller.organizationId,
+      mfaEnrollment: caller.mfaEnrollment,
     });
     const etag = `"perm-${caller.userId}-${String(permissions.version)}"`;
 

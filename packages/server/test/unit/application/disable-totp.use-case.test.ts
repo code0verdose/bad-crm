@@ -2,7 +2,9 @@ import { describe, expect, it } from 'vitest';
 
 import { DisableTotpUseCase } from '@/application/identity/use-cases/disable-totp.use-case.js';
 import { RecoveryCodeMatcher } from '@/application/identity/use-cases/recovery-code-matcher.use-case.js';
+import { MfaPolicyQuery } from '@/application/organization/use-cases/mfa-policy.query.js';
 import {
+  MfaRequiredByPolicyError,
   RateLimitedError,
   ReauthenticationRequiredError,
 } from '@/domain/shared/errors/app.errors.js';
@@ -10,6 +12,8 @@ import {
 import {
   authUser,
   FakeAuditLogger,
+  FakeMfaPolicyReader,
+  FakeOrganizations,
   FakeClock,
   FakeMailDispatcher,
   FakePasswordHasher,
@@ -63,6 +67,12 @@ const buildHarness = () => {
   const logger = new RecordingLogger();
   const audit = new FakeAuditLogger();
   const dispatcher = new FakeMailDispatcher();
+  const organizations = new FakeOrganizations();
+
+  // Empty by default: an installation with no second-factor policy, which is what every case in
+  // this file but the last block is about. `policyReader.grants` is what puts the account under one.
+  const policyReader = new FakeMfaPolicyReader();
+  const policies = new MfaPolicyQuery(organizations, policyReader, clock, logger);
 
   const useCase = new DisableTotpUseCase(
     enrollment,
@@ -79,6 +89,7 @@ const buildHarness = () => {
     audit,
     dispatcher,
     'https://crm.example.com',
+    policies,
   );
 
   const enableTotp = async (): Promise<void> => {
@@ -114,6 +125,9 @@ const buildHarness = () => {
     dispatcher,
     enableTotp,
     seedRecoveryCode,
+    policyReader,
+    organizations,
+    policies,
   };
 };
 
@@ -444,6 +458,7 @@ describe('the rate limit', () => {
       harness.audit,
       harness.dispatcher,
       'https://crm.example.com',
+      harness.policies,
     );
 
     await expect(
@@ -454,5 +469,110 @@ describe('the rate limit', () => {
         ipAddress: IP_ADDRESS,
       }),
     ).rejects.toBeInstanceOf(RateLimitedError);
+  });
+});
+
+/**
+ * STORY-013-05 acceptance 6, and the half STORY-013-04 deliberately left open: `assertNotRequiredByPolicy`
+ * was not written then because there was no policy row for it to read, and a refusal nobody could
+ * lift would have been worse than none.
+ */
+describe('the organization policy', () => {
+  const underPolicy = async (
+    harness: ReturnType<typeof buildHarness>,
+    graceDays = 30,
+  ): Promise<void> => {
+    harness.organizations.settings = {
+      securityPolicy: {
+        mfaRequiredForRoles: ['admin'],
+        mfaGracePeriodDays: graceDays,
+        mfaRequiredSince: { admin: harness.clock.now().toISOString() },
+      },
+    };
+    harness.policyReader.grants.set(USER_ID, [
+      { roleKey: 'admin', roleId: 'role-admin', grantedAt: harness.clock.now() },
+    ]);
+  };
+
+  it('refuses with mfa_required_by_policy and leaves 2FA on', async () => {
+    const harness = buildHarness();
+
+    await harness.enableTotp();
+    await underPolicy(harness);
+
+    await expect(
+      harness.useCase.execute({
+        actor: ACTOR,
+        password: PASSWORD,
+        code: TOTP_CODE,
+        ipAddress: IP_ADDRESS,
+      }),
+    ).rejects.toBeInstanceOf(MfaRequiredByPolicyError);
+
+    const state = await harness.enrollment.find(USER_ID);
+
+    expect(state).not.toBeNull();
+    expect(state?.enabledAt).toEqual(harness.clock.now());
+  });
+
+  /**
+   * Inside the grace period the policy still *requires* the factor: the countdown decides what a
+   * session may do, not whether a factor already in place may be thrown away.
+   */
+  it('refuses inside the grace period too', async () => {
+    const harness = buildHarness();
+
+    await harness.enableTotp();
+    await underPolicy(harness, 30);
+
+    await expect(
+      harness.useCase.execute({
+        actor: ACTOR,
+        password: PASSWORD,
+        code: TOTP_CODE,
+        ipAddress: IP_ADDRESS,
+      }),
+    ).rejects.toBeInstanceOf(MfaRequiredByPolicyError);
+  });
+
+  /**
+   * The refusal is about the organization's state, not about the caller's credentials, so it must
+   * never be reachable without them: otherwise a stolen access token would answer «is this colleague
+   * covered by the policy» for free.
+   */
+  it('answers the reauthentication refusal first for a wrong password', async () => {
+    const harness = buildHarness();
+
+    await harness.enableTotp();
+    await underPolicy(harness);
+
+    await expect(
+      harness.useCase.execute({
+        actor: ACTOR,
+        password: 'not-the-password',
+        code: TOTP_CODE,
+        ipAddress: IP_ADDRESS,
+      }),
+    ).rejects.toBeInstanceOf(ReauthenticationRequiredError);
+  });
+
+  it('CONTROL: the same request succeeds when the policy covers none of the caller’s roles', async () => {
+    const harness = buildHarness();
+
+    await harness.enableTotp();
+    await underPolicy(harness);
+    harness.policyReader.grants.set(USER_ID, [
+      { roleKey: 'developer', roleId: 'role-developer', grantedAt: harness.clock.now() },
+    ]);
+
+    await harness.useCase.execute({
+      actor: ACTOR,
+      password: PASSWORD,
+      code: TOTP_CODE,
+      ipAddress: IP_ADDRESS,
+    });
+
+    // Disabled: the row is gone, exactly as every other successful disable in this file leaves it.
+    expect(await harness.enrollment.find(USER_ID)).toBeNull();
   });
 });

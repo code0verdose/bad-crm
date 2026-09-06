@@ -21,6 +21,7 @@ import {
   FakeAccessTokens,
   FakeAddressHasher,
   FakeAuditLogger,
+  disabledMfaPolicy,
   FakeClock,
   FakeIdGenerator,
   FakeMailDispatcher,
@@ -39,6 +40,7 @@ import {
 import {
   FakeFieldEncryption,
   FakeRecoveryCodes,
+  FakeTotpEnrollment,
   ScriptedTotp,
 } from '../../support/mfa-doubles.util.js';
 import { FakeMfaPendingTokens, JournalingTotpEnrollment } from './second-factor-doubles.util.js';
@@ -99,6 +101,8 @@ const buildHarness = (rateLimitOptions: Omit<FakeRateLimitOptions, 'journal'> = 
     new FakeAddressHasher(),
     clock,
     new FakeIdGenerator(),
+    new FakeTotpEnrollment(),
+    disabledMfaPolicy(clock),
   );
 
   const dispatcher = new FakeMailDispatcher();

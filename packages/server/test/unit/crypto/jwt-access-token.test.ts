@@ -1,4 +1,4 @@
-import { SignJWT } from 'jose';
+import { decodeJwt, SignJWT } from 'jose';
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -13,6 +13,7 @@ const claims = {
   organizationId: '7c9e6679-7425-40de-944b-e07fc1f90ae7',
   sessionId: '4f1c2f4a-0a6d-4a7b-9a1e-2d3c4b5a6f70',
   permissionsVersion: 3,
+  mfaEnrollment: false,
 };
 
 /** A clock the test moves, so expiry is asserted rather than waited for. */
@@ -28,6 +29,61 @@ const fixedClock = (start: Date): { now: () => Date; advance: (seconds: number) 
 };
 
 const at = (): Date => new Date('2026-07-29T10:00:00.000Z');
+
+/**
+ * STORY-013-05, acceptance 3: an ordinary session carries no `scope`, an enrolment-scoped one
+ * carries `mfa_enrollment`, and any other value is refused rather than read as «no scope».
+ *
+ * The third case is the one that matters. The claim decides what a whole session may reach, so a
+ * value nothing branches on must not degrade into an ordinary token — that would make «invent a
+ * scope» the way past the gate.
+ */
+describe('the scope claim', () => {
+  const forge = async (scope: unknown): Promise<string> =>
+    new SignJWT({
+      org: claims.organizationId,
+      sid: claims.sessionId,
+      pv: claims.permissionsVersion,
+      ...(scope === undefined ? {} : { scope }),
+    })
+      .setProtectedHeader({ alg: 'HS256', typ: 'JWT' })
+      .setSubject(claims.userId)
+      .setIssuer('bad-crm')
+      .setAudience('bad-crm-api')
+      .setIssuedAt(Math.floor(at().getTime() / 1000))
+      .setExpirationTime(Math.floor(at().getTime() / 1000) + ACCESS_TOKEN_TTL_SECONDS)
+      .sign(new TextEncoder().encode(SECRET));
+
+  it('omits the claim entirely for an ordinary session', async () => {
+    const tokens = new JwtAccessTokenAdapter(SECRET, fixedClock(at()));
+    const issued = await tokens.issue(claims);
+
+    expect(decodeJwt(issued.token)['scope']).toBeUndefined();
+  });
+
+  it('round-trips an enrolment-scoped session', async () => {
+    const tokens = new JwtAccessTokenAdapter(SECRET, fixedClock(at()));
+    const issued = await tokens.issue({ ...claims, mfaEnrollment: true });
+
+    expect(decodeJwt(issued.token)['scope']).toBe('mfa_enrollment');
+    await expect(tokens.verify(issued.token)).resolves.toEqual({ ...claims, mfaEnrollment: true });
+  });
+
+  it.each([['mfa_pending'], ['admin'], [''], [false], [7]])(
+    'refuses a token whose scope is %o — everything else about it well formed',
+    async (scope) => {
+      const tokens = new JwtAccessTokenAdapter(SECRET, fixedClock(at()));
+
+      await expect(tokens.verify(await forge(scope))).resolves.toBeUndefined();
+    },
+  );
+
+  it('CONTROL: the same forger produces a token that verifies when the scope is absent', async () => {
+    const tokens = new JwtAccessTokenAdapter(SECRET, fixedClock(at()));
+
+    await expect(tokens.verify(await forge(undefined))).resolves.toEqual(claims);
+  });
+});
 
 describe('the access token', () => {
   it('carries sub, org, sid and pv, and expires in fifteen minutes', async () => {

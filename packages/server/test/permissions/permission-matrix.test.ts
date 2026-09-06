@@ -142,6 +142,18 @@ const CALLS: Readonly<Record<string, Call>> = {
     request(target).get('/api/v1/employees').set('Authorization', `Bearer ${token}`),
   'GET /api/v1/employees/org-chart': (target, token) =>
     request(target).get('/api/v1/employees/org-chart').set('Authorization', `Bearer ${token}`),
+  'GET /api/v1/organization/security-policy': (app, token) =>
+    request(app)
+      .get('/api/v1/organization/security-policy')
+      .set('Authorization', `Bearer ${token}`),
+  'PATCH /api/v1/organization/security-policy': (app, token) =>
+    request(app)
+      .patch('/api/v1/organization/security-policy')
+      .set('Authorization', `Bearer ${token}`)
+      .set('Idempotency-Key', IDEMPOTENCY_KEY)
+      .send({ mfaRequiredForRoles: [], mfaGracePeriodDays: 0 }),
+  'GET /api/v1/organization/mfa-coverage': (app, token) =>
+    request(app).get('/api/v1/organization/mfa-coverage').set('Authorization', `Bearer ${token}`),
   'POST /api/v1/organization/transfer-ownership': (app, token) =>
     request(app)
       .post('/api/v1/organization/transfer-ownership')

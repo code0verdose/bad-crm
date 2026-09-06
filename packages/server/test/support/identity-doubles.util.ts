@@ -46,6 +46,12 @@ import {
   type OrganizationRepositoryPort,
   type OrganizationSummary,
 } from '@/application/organization/ports/organization-repository.port.js';
+import {
+  type MfaCoverageSubject,
+  type MfaPolicyReaderPort,
+} from '@/application/organization/ports/mfa-policy-reader.port.js';
+import { type HeldRoleGrant } from '@/domain/identity/access/mfa-requirement.policy.js';
+import { MfaPolicyQuery } from '@/application/organization/use-cases/mfa-policy.query.js';
 import { type ClockPort } from '@/application/platform/ports/clock.port.js';
 import { type IdGeneratorPort } from '@/application/platform/ports/id-generator.port.js';
 import { type LogFields, type LoggerPort } from '@/application/platform/ports/logger.port.js';
@@ -516,8 +522,41 @@ export class FakeOrganizations implements OrganizationRepositoryPort {
     return Promise.resolve(this.organization);
   }
 
+  /** The `settings` column, as whatever was last written to it. `{}` is a fresh installation. */
+  settings: unknown = {};
+
+  readSettings(): Promise<unknown> {
+    return Promise.resolve(this.organization === null ? null : this.settings);
+  }
+
+  writeSettings(settings: Record<string, unknown>): Promise<void> {
+    this.settings = settings;
+
+    return Promise.resolve();
+  }
+
   forget(): void {
     this.organization = null;
+  }
+}
+
+/**
+ * `MfaPolicyReaderPort` over two maps.
+ *
+ * Empty by default, which is exactly the state of every installation that has not switched the
+ * policy on: no grants recorded, so `evaluateMfaRequirement` answers `not_covered` and the sessions
+ * these suites issue are ordinary ones. A suite that wants the gate seeds `grants`.
+ */
+export class FakeMfaPolicyReader implements MfaPolicyReaderPort {
+  readonly grants = new Map<string, HeldRoleGrant[]>();
+  readonly subjects: MfaCoverageSubject[] = [];
+
+  roleGrantsOf(userId: string): Promise<readonly HeldRoleGrant[]> {
+    return Promise.resolve(this.grants.get(userId) ?? []);
+  }
+
+  coverageSubjects(): Promise<readonly MfaCoverageSubject[]> {
+    return Promise.resolve(this.subjects);
   }
 }
 
@@ -888,3 +927,21 @@ export class FakeAuditLogger implements AuditLoggerPort {
     return Promise.resolve();
   }
 }
+
+/**
+ * An `MfaPolicyQuery` that always answers «no policy» — the state of every installation that has
+ * not switched one on, and therefore the right default for every suite that is about something
+ * else.
+ *
+ * A helper rather than two constructor arguments repeated at each call site: `IssueSessionUseCase`
+ * now needs the policy in order to decide the token's scope, and a suite about sign-in or session
+ * rotation has no opinion about it. A suite that *is* about the gate builds the query itself over a
+ * seeded `FakeMfaPolicyReader`.
+ */
+export const disabledMfaPolicy = (clock: ClockPort): MfaPolicyQuery =>
+  new MfaPolicyQuery(
+    new FakeOrganizations(),
+    new FakeMfaPolicyReader(),
+    clock,
+    new RecordingLogger(),
+  );

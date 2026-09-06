@@ -14,6 +14,7 @@ import { createMeController } from '@/presentation/http/controllers/me.controlle
 import { createPermissionOverrideController } from '@/presentation/http/controllers/permission-override.controller.js';
 import { createUserPermissionsController } from '@/presentation/http/controllers/user-permissions.controller.js';
 import { createOwnershipController } from '@/presentation/http/controllers/ownership.controller.js';
+import { createSecurityPolicyController } from '@/presentation/http/controllers/security-policy.controller.js';
 import { createUserLifecycleController } from '@/presentation/http/controllers/user-lifecycle.controller.js';
 import { createUserSecurityController } from '@/presentation/http/controllers/user-security.controller.js';
 import { createTeamController } from '@/presentation/http/controllers/team.controller.js';
@@ -21,6 +22,7 @@ import { createUserRoleController } from '@/presentation/http/controllers/user-r
 import { allowedOrigins } from '@/presentation/http/cors-origin.util.js';
 import { type HttpServerDependencies } from '@/presentation/http/http-server.types.js';
 import { createAuthenticationMiddleware } from '@/presentation/http/middleware/authenticate.middleware.js';
+import { createFullSessionMiddleware } from '@/presentation/http/middleware/require-full-session.middleware.js';
 import { requireIdempotencyKey } from '@/presentation/http/middleware/idempotency-key.middleware.js';
 import { createPermissionMiddleware } from '@/presentation/http/middleware/require-permission.middleware.js';
 import { createSameOriginMiddleware } from '@/presentation/http/middleware/same-origin.middleware.js';
@@ -29,6 +31,7 @@ import {
   isSelfServiceRoute,
   isGuardedRoute,
   requiresAuthentication,
+  requiresFullSession,
   requiresPermission,
   type RouteDeclaration,
 } from '@/presentation/http/route-registry.types.js';
@@ -69,6 +72,10 @@ import {
 } from '@/presentation/http/validators/permission-override.validator.js';
 import { userPermissionsParamsSchema } from '@/presentation/http/validators/user-permissions.validator.js';
 import { transferOwnershipBodySchema } from '@/presentation/http/validators/ownership.validator.js';
+import {
+  mfaCoverageQuerySchema,
+  updateSecurityPolicyBodySchema,
+} from '@/presentation/http/validators/security-policy.validator.js';
 import {
   addTeamMemberBodySchema,
   createTeamBodySchema,
@@ -253,6 +260,17 @@ export const createRouteRegistry = (
     memberValidator: teamMemberValidator,
   });
 
+  const updateSecurityPolicyValidator = validate({ body: updateSecurityPolicyBodySchema });
+  const mfaCoverageValidator = validate({ query: mfaCoverageQuerySchema });
+
+  const securityPolicy = createSecurityPolicyController({
+    readPolicy: dependencies.organization.readSecurityPolicy,
+    updatePolicy: dependencies.organization.updateSecurityPolicy,
+    coverageReport: dependencies.organization.mfaCoverageReport,
+    updateValidator: updateSecurityPolicyValidator,
+    coverageValidator: mfaCoverageValidator,
+  });
+
   const transferOwnershipValidator = validate({ body: transferOwnershipBodySchema });
 
   const ownership = createOwnershipController({
@@ -396,6 +414,9 @@ export const createRouteRegistry = (
       method: 'post',
       path: `${API_PREFIX}/auth/logout`,
       handlers: [auth.logout],
+      // The way out. A scoped session that could not sign out would leave somebody who does not want
+      // to enrol right now with no action available at all but closing the tab.
+      mfaEnrollmentAllowed: true,
       selfService: true,
       selfServiceReason:
         'ending one’s own session is not a capability anybody can be denied; the subject and the object are the same person',
@@ -466,6 +487,9 @@ export const createRouteRegistry = (
       method: 'post',
       path: `${API_PREFIX}/auth/2fa/setup`,
       handlers: [mfa.setup],
+      // One of the three routes a session scoped by the organization's policy may reach: this is
+      // the wizard the scope exists to send people to (STORY-013-05, acceptance 3).
+      mfaEnrollmentAllowed: true,
       selfService: true,
       selfServiceReason:
         'drafting a TOTP secret for one’s own account is authorised by holding the session, not by a capability; nobody could be denied the right to protect their own login (docs/security/permission-model.md §3.20)',
@@ -475,6 +499,9 @@ export const createRouteRegistry = (
       method: 'post',
       path: `${API_PREFIX}/auth/2fa/confirm`,
       handlers: [requireIdempotencyKey(), confirmTotpValidator.handler, mfa.confirm],
+      // The second half of the wizard. Without it the scope would be a room with a door and no
+      // handle: a session could draft a secret and never confirm it.
+      mfaEnrollmentAllowed: true,
       selfService: true,
       selfServiceReason:
         'confirming possession of one’s own drafted secret, reauthenticated with the current password in the same request; bounded by the mfa_setup_attempt budget of five per fifteen minutes on the caller, spent in ConfirmTotpUseCase before either proof is even read',
@@ -734,6 +761,42 @@ export const createRouteRegistry = (
       ownershipCheckedIn: 'WriteEmployeeProfileUseCase',
     },
     {
+      method: 'get',
+      path: `${API_PREFIX}/organization/security-policy`,
+      handlers: [securityPolicy.read],
+      permission: 'organization:manage_security_policy',
+      // The reading half of the same `dangerous` capability rather than `organization:read`: which
+      // roles must carry a second factor is a map of where the weak accounts are, and every account
+      // holds `organization:read`. Nothing narrower to decide — the policy is the tenant's, and the
+      // tenant is the scope.
+      aclCheckedIn: 'ReadSecurityPolicyQuery',
+    },
+    {
+      method: 'patch',
+      path: `${API_PREFIX}/organization/security-policy`,
+      handlers: [
+        requireIdempotencyKey(),
+        updateSecurityPolicyValidator.handler,
+        securityPolicy.update,
+      ],
+      permission: 'organization:manage_security_policy',
+      // The guard answers «may this caller change the policy at all». Whether the role ids it names
+      // exist in this tenant (404 rather than 403), when each countdown starts, and whether the
+      // caller is about to put themselves under a requirement they do not meet are all decided in
+      // the use-case, which is the only place that reads the tenant root and the grants in the
+      // transaction that writes.
+      aclCheckedIn: 'UpdateSecurityPolicyUseCase',
+    },
+    {
+      method: 'get',
+      path: `${API_PREFIX}/organization/mfa-coverage`,
+      handlers: [mfaCoverageValidator.handler, securityPolicy.coverage],
+      permission: 'organization:manage_security_policy',
+      // The same capability as the policy itself, and for the same reason: the report is a list of
+      // which colleagues have no second factor, which is exactly the list an intruder would like.
+      aclCheckedIn: 'MfaCoverageReportQuery',
+    },
+    {
       method: 'post',
       path: `${API_PREFIX}/organization/transfer-ownership`,
       handlers: [requireIdempotencyKey(), transferOwnershipValidator.handler, ownership.transfer],
@@ -831,8 +894,24 @@ export const createRouteRegistry = (
   // the permission guard reads the caller the authentication guard establishes, and reversing the
   // two makes every guarded route answer 500 instead of 401.
   return declarations.map((route) =>
-    withAuthenticationGuard(withPermissionGuard(route, dependencies), dependencies),
+    withAuthenticationGuard(
+      withFullSessionGuard(withPermissionGuard(route, dependencies)),
+      dependencies,
+    ),
   );
+};
+
+/**
+ * Prepends the enrolment gate to every authenticated route not on the whitelist.
+ *
+ * Between the authentication guard and the permission guard, which is the only order that works:
+ * it reads the caller the first one established, and it must refuse *before* the second one spends
+ * eleven statements building an actor for a session that may do nothing.
+ */
+const withFullSessionGuard = (route: RouteDeclaration): RouteDeclaration => {
+  if (!requiresFullSession(route)) return route;
+
+  return { ...route, handlers: [createFullSessionMiddleware(), ...route.handlers] };
 };
 
 /**

@@ -1150,6 +1150,98 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/organization/security-policy": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read the organization's security policy.
+         * @description Which roles must carry a second factor, and how long somebody has to arrange one.
+         *
+         *     Gated by `organization:manage_security_policy` — a **dangerous** key held by `owner` and
+         *     `admin` — rather than by `organization:read`, which everybody holds. The list of roles that
+         *     must carry a second factor is a map of where the weak accounts are, so it is not a fact the
+         *     whole organization gets to read.
+         *
+         *     A fresh installation answers the disabled policy: an empty `mfaRequiredForRoles` and a grace
+         *     period of zero. That is «off», not «everybody» (`STORY-013-05`, acceptance 10).
+         */
+        get: operations["readSecurityPolicy"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Set the organization's second-factor policy.
+         * @description Names the roles whose holders must have a second factor, and the grace period they get to
+         *     arrange one. Both fields are replaced wholesale — this is the policy, not a patch of it.
+         *
+         *     **The countdown belongs to a person and a role, not to the policy.** A role already in the
+         *     policy keeps the date it entered on; a role being added starts now. Somebody who is given a
+         *     covered role next month gets their own grace period from the day of the assignment, and
+         *     loses the requirement entirely when the role is taken away (acceptance 5). That is why the
+         *     stored dates are computed here and cannot be sent: a client that could set them could hand
+         *     itself a grace period that expired last year.
+         *
+         *     **The blast radius is a lockout, so it is recorded as one.** Every change writes
+         *     `organization.security_policy_updated` to the audit trail at `CRITICAL` severity, with the
+         *     whole policy before and after.
+         *
+         *     **Putting yourself under it needs two signals** (acceptance 7). A caller who has no second
+         *     factor and whose own roles the new policy covers is refused **428 `confirmation_required`**
+         *     the first time; repeating the request with `confirmedSelfLockout: true` performs it. The
+         *     refusal is not a block — rolling the policy out to yourself is the normal way to adopt it —
+         *     it exists so that nobody arranges their own enrolment deadline without seeing it.
+         *
+         *     Refusals: **404** for a role id that names no role of this organization — the same answer an
+         *     id of another organization gets, so the endpoint is not an oracle of which role ids exist;
+         *     **422** for a role reference that is neither a system role key nor a uuid, and for a grace
+         *     period outside 0…30 days.
+         */
+        patch: operations["updateSecurityPolicy"];
+        trace?: never;
+    };
+    "/organization/mfa-coverage": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Who the second-factor policy affects.
+         * @description Every active account with the verdict the policy gives it — the confirmation preview of
+         *     acceptance 2 and the standing report of acceptance 9, which are the same question asked
+         *     twice.
+         *
+         *     Passing `role` (repeatable) and `graceDays` reports against an **unsaved draft** instead of
+         *     the stored policy, computed exactly as the save would compute it: roles already covered keep
+         *     their date, new ones start now. Answering the preview from a different code path is how a
+         *     confirmation dialog ends up naming people the enforcement does not.
+         *
+         *     The verdict per person is the same function the login gate uses, so the screen cannot say
+         *     «compliant» about somebody the door is turning away.
+         *
+         *     Not paged: the report is bounded by the size of the organization, and a page cursor would
+         *     make «how many are not enrolled» a second request that can disagree with the first. The
+         *     client filters it in the URL.
+         *
+         *     Gated by the same **dangerous** capability as the policy: this is a list of which colleagues
+         *     have no second factor.
+         */
+        get: operations["readMfaCoverage"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/organization/transfer-ownership": {
         parameters: {
             query?: never;
@@ -1763,6 +1855,28 @@ export interface components {
             expiresIn: number;
             user: components["schemas"]["SessionUser"];
             organization: components["schemas"]["SessionOrganization"];
+            /**
+             * @description Present, and `true`, only when the organization's second-factor policy has scoped this
+             *     session to enrolment: it reaches `POST /auth/2fa/setup`, `POST /auth/2fa/confirm` and
+             *     `POST /auth/logout`, and every other operation answers **403 `mfa_enrollment_required`**
+             *     (`STORY-013-05`, acceptance 3).
+             *
+             *     Absent for an ordinary session rather than `false`, so the client branches on presence
+             *     and never has to read the field as «no». Enrolling clears it on the next refresh, which
+             *     is when the scope is decided again.
+             * @constant
+             */
+            mfaEnrollment?: true;
+            /**
+             * Format: date-time
+             * @description When the caller's grace period under that policy ends — what the countdown banner of
+             *     acceptance 4 counts down to. Absent when the policy covers none of their roles, which is
+             *     every session of every installation that has not switched a policy on.
+             *
+             *     A timestamp rather than a duration, unlike `expiresIn`: the grace period is days long and
+             *     belongs to the organization, so a duration would go stale in a cached sign-in answer.
+             */
+            mfaGraceEndsAt?: string;
         };
         /**
          * @description The password verified and the account exists in more than one organization on this
@@ -2123,7 +2237,7 @@ export interface components {
          *     reused with a different meaning.
          * @enum {string}
          */
-        ErrorCode: "validation_failed" | "unauthenticated" | "invalid_credentials" | "account_suspended" | "registration_disabled" | "password_reset_token_invalid" | "invitation_not_valid" | "mail_not_configured" | "route_not_found" | "payload_too_large" | "vault_locked" | "stale_version" | "idempotency_key_reuse" | "last_owner_required" | "period_locked" | "self_lockout" | "system_role_immutable" | "owner_immutable" | "invitation_already_accepted" | "manager_cycle_detected" | "employment_period_inverted" | "recipient_not_active" | "member_not_active" | "invalid_recipient" | "not_the_owner" | "confirmation_required" | "invalid_totp_code" | "totp_code_replayed" | "mfa_already_enabled" | "reauthentication_required" | "recovery_code_invalid" | "mfa_token_expired" | "mfa_invalid_code" | "mfa_code_replayed" | "rate_limited" | "feature_disabled" | "service_unavailable" | "internal_error" | "organization_not_found" | "organization_forbidden" | "organization_already_exists" | "team_not_found" | "team_forbidden" | "team_already_exists" | "user_not_found" | "user_forbidden" | "user_already_exists" | "role_not_found" | "role_forbidden" | "role_already_exists" | "invitation_not_found" | "invitation_forbidden" | "invitation_already_exists" | "session_not_found" | "session_forbidden" | "session_already_exists" | "project_not_found" | "project_forbidden" | "project_already_exists" | "board_not_found" | "board_forbidden" | "board_already_exists" | "task_not_found" | "task_forbidden" | "task_already_exists" | "sprint_not_found" | "sprint_forbidden" | "sprint_already_exists" | "comment_not_found" | "comment_forbidden" | "comment_already_exists" | "doc_not_found" | "doc_forbidden" | "doc_already_exists" | "kb_note_not_found" | "kb_note_forbidden" | "kb_note_already_exists" | "file_not_found" | "file_forbidden" | "file_already_exists" | "vault_item_not_found" | "vault_item_forbidden" | "vault_item_already_exists" | "secure_link_not_found" | "secure_link_forbidden" | "secure_link_already_exists" | "time_entry_not_found" | "time_entry_forbidden" | "time_entry_already_exists" | "channel_not_found" | "channel_forbidden" | "channel_already_exists" | "message_not_found" | "message_forbidden" | "message_already_exists" | "dashboard_not_found" | "dashboard_forbidden" | "dashboard_already_exists";
+        ErrorCode: "validation_failed" | "unauthenticated" | "invalid_credentials" | "account_suspended" | "registration_disabled" | "password_reset_token_invalid" | "invitation_not_valid" | "mail_not_configured" | "route_not_found" | "payload_too_large" | "vault_locked" | "stale_version" | "idempotency_key_reuse" | "last_owner_required" | "period_locked" | "self_lockout" | "system_role_immutable" | "owner_immutable" | "invitation_already_accepted" | "manager_cycle_detected" | "employment_period_inverted" | "recipient_not_active" | "member_not_active" | "invalid_recipient" | "not_the_owner" | "confirmation_required" | "invalid_totp_code" | "totp_code_replayed" | "mfa_already_enabled" | "reauthentication_required" | "recovery_code_invalid" | "mfa_token_expired" | "mfa_invalid_code" | "mfa_code_replayed" | "mfa_enrollment_required" | "mfa_required_by_policy" | "rate_limited" | "feature_disabled" | "service_unavailable" | "internal_error" | "organization_not_found" | "organization_forbidden" | "organization_already_exists" | "team_not_found" | "team_forbidden" | "team_already_exists" | "user_not_found" | "user_forbidden" | "user_already_exists" | "role_not_found" | "role_forbidden" | "role_already_exists" | "invitation_not_found" | "invitation_forbidden" | "invitation_already_exists" | "session_not_found" | "session_forbidden" | "session_already_exists" | "project_not_found" | "project_forbidden" | "project_already_exists" | "board_not_found" | "board_forbidden" | "board_already_exists" | "task_not_found" | "task_forbidden" | "task_already_exists" | "sprint_not_found" | "sprint_forbidden" | "sprint_already_exists" | "comment_not_found" | "comment_forbidden" | "comment_already_exists" | "doc_not_found" | "doc_forbidden" | "doc_already_exists" | "kb_note_not_found" | "kb_note_forbidden" | "kb_note_already_exists" | "file_not_found" | "file_forbidden" | "file_already_exists" | "vault_item_not_found" | "vault_item_forbidden" | "vault_item_already_exists" | "secure_link_not_found" | "secure_link_forbidden" | "secure_link_already_exists" | "time_entry_not_found" | "time_entry_forbidden" | "time_entry_already_exists" | "channel_not_found" | "channel_forbidden" | "channel_already_exists" | "message_not_found" | "message_forbidden" | "message_already_exists" | "dashboard_not_found" | "dashboard_forbidden" | "dashboard_already_exists";
         /**
          * @description Why one field was rejected. The list mirrors
          *     `packages/shared/src/errors/validation-issue.enums.ts`; anything a validator produces
@@ -2336,6 +2450,24 @@ export interface components {
              *     teams, projects and vaults are not restored with the account.
              */
             membershipsRestored: boolean;
+        };
+        /**
+         * @description A role the security policy names: a system role key, or the uuid of a custom role. Both
+         *     spellings in one field because a person holds the two kinds identically; the union is closed
+         *     on the system side, so a typo like `admins` is refused instead of quietly covering nobody.
+         */
+        PolicyRoleRef: string & (("owner" | "admin" | "manager" | "lead" | "developer" | "viewer" | "guest") | string);
+        SecurityPolicy: {
+            mfaRequiredForRoles: components["schemas"]["PolicyRoleRef"][];
+            mfaGracePeriodDays: number;
+            /**
+             * @description When each named role started being covered. Written by the server, never by the client:
+             *     it is one half of the countdown of acceptance 5, and the other half is the person's own
+             *     `granted_at`. Whichever is later is when their grace period starts.
+             */
+            mfaRequiredSince: {
+                [key: string]: string;
+            };
         };
         ResetMfaResult: {
             /** Format: uuid */
@@ -4893,6 +5025,153 @@ export interface operations {
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
             409: components["responses"]["Conflict"];
+            422: components["responses"]["ValidationFailed"];
+            429: components["responses"]["RateLimited"];
+            500: components["responses"]["InternalError"];
+        };
+    };
+    readSecurityPolicy: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The stored policy. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SecurityPolicy"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            429: components["responses"]["RateLimited"];
+            500: components["responses"]["InternalError"];
+        };
+    };
+    updateSecurityPolicy: {
+        parameters: {
+            query?: never;
+            header: {
+                /**
+                 * @description Client-generated key, mandatory on every unsafe operation that creates an entity, sends
+                 *     mail or spends money or tokens.
+                 *
+                 *     **Today the server only requires the key; it does not yet store or replay a response.** The
+                 *     table keyed by `(key, request hash)` is a cross-cutting mechanism that has not been built —
+                 *     the open half is recorded in STORY-006-01. What the requirement buys now is that a client
+                 *     which never learned to send the header cannot be made idempotent later without a breaking
+                 *     change; what it does not buy is the convenience of getting the original `201` back instead
+                 *     of a `409` on retry. Where a lost response is genuinely ambiguous rather than merely
+                 *     inconvenient, the operation says so in its own description.
+                 *
+                 *     When the store lands: a replay carrying the same request hash will return the stored
+                 *     response, and the same key with a different hash will be refused with 409
+                 *     `idempotency_key_reuse`.
+                 *
+                 *     Declaring the parameter is not a claim that the operation will replay: the client attaches a
+                 *     key to every unsafe request, and nearly every unsafe operation therefore requires one. What
+                 *     the store will change differs per operation, and each says so in its own description:
+                 *
+                 *     * operations that create something, send mail or spend tokens are the ones a replay is *for*
+                 *       — today a lost response leaves the caller unable to tell «it did not happen» from «it
+                 *       happened and the answer was lost»;
+                 *     * operations idempotent by construction (`assignRole`, `deactivateUser`, `reactivateUser`)
+                 *       require the key but gain nothing from a stored response — asking twice for a state that is
+                 *       already there answers the same way. The key is required anyway, so a client written today
+                 *       keeps working when the store lands;
+                 *     * `POST /auth/login` and `POST /auth/refresh` will **never** replay: a stored response *is* a
+                 *       credential. Replaying it would hand back tokens that have since been rotated or revoked,
+                 *       and would let one key slip a repeat past the failed-attempt counter the lockout depends on.
+                 */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description Empty switches the policy off. It is «off», never «everybody». */
+                    mfaRequiredForRoles: components["schemas"]["PolicyRoleRef"][];
+                    /**
+                     * @description `0` enforces from the moment a role starts being covered. The ceiling is thirty
+                     *     because a window measured in months is a policy nobody ever lives under.
+                     */
+                    mfaGracePeriodDays: number;
+                    /** @description Sent only on the repeat of a request refused **428 `confirmation_required`**. */
+                    confirmedSelfLockout?: boolean;
+                };
+            };
+        };
+        responses: {
+            /** @description The stored policy, as it now is. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SecurityPolicy"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["ValidationFailed"];
+            428: components["responses"]["ConfirmationRequired"];
+            429: components["responses"]["RateLimited"];
+            500: components["responses"]["InternalError"];
+        };
+    };
+    readMfaCoverage: {
+        parameters: {
+            query?: {
+                /**
+                 * @description A role of the draft policy. Repeated rather than comma-joined, because a reference may
+                 *     be a uuid and a separator inside a value is how a filter starts dropping entries.
+                 */
+                role?: components["schemas"]["PolicyRoleRef"][];
+                graceDays?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The report. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        policy: components["schemas"]["SecurityPolicy"];
+                        /** @description How many people hold a role the policy names. */
+                        covered: number;
+                        /** @description Of those, how many already have a second factor. */
+                        enrolled: number;
+                        rows: {
+                            /** Format: uuid */
+                            userId: string;
+                            /** Format: email */
+                            email: string;
+                            roleKeys: string[];
+                            /** @enum {string} */
+                            gate: "not_covered" | "satisfied" | "grace" | "enrollment_required";
+                            /** Format: date-time */
+                            graceEndsAt?: string;
+                        }[];
+                    };
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
             422: components["responses"]["ValidationFailed"];
             429: components["responses"]["RateLimited"];
             500: components["responses"]["InternalError"];

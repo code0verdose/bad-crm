@@ -26,7 +26,12 @@ export interface MyPermissions {
 export class GetMyPermissionsQuery {
   constructor(private readonly buildActor: BuildActorQuery) {}
 
-  async execute(input: { userId: string; organizationId: string }): Promise<MyPermissions> {
+  async execute(input: {
+    userId: string;
+    organizationId: string;
+    /** Passed through rather than defaulted — see `BuildActorInput.mfaEnrollment` for why. */
+    mfaEnrollment: boolean;
+  }): Promise<MyPermissions> {
     const actor = await this.buildActor.execute(input);
 
     return {

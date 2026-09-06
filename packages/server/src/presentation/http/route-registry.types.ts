@@ -18,6 +18,19 @@ interface RouteBase {
   readonly path: string;
   /** Validator middleware first, controller last. */
   readonly handlers: readonly RequestHandler[];
+  /**
+   * Reachable by a session the organization's second-factor policy has scoped to enrolment
+   * (STORY-013-05, acceptance 3).
+   *
+   * Absent means «no», which is the direction that has to be the default: a route added next month
+   * is closed to a scoped session until somebody argues in this field that it should not be. The
+   * whitelist is deliberately tiny — arranging the second factor, and leaving — and
+   * `test/unit/http/mfa-enrollment-scope.test.ts` walks the whole registry to prove that every
+   * other route answers 403 `mfa_enrollment_required`.
+   *
+   * A public route never carries it: nothing about a credential applies where none is required.
+   */
+  readonly mfaEnrollmentAllowed?: true;
 }
 
 /** A route gated by a capability from the closed catalog in `packages/shared`. */
@@ -152,3 +165,21 @@ export const requiresAuthentication = (route: RouteDeclaration): boolean => !isP
 
 /** Whether the permission guard is mounted — only a route that names a capability. */
 export const requiresPermission = (route: RouteDeclaration): boolean => isGuardedRoute(route);
+
+/**
+ * Whether the enrolment gate is mounted — every authenticated route that is not on the whitelist.
+ *
+ * Derived rather than declared per route for the reason `requiresAuthentication` is: the closed
+ * default is only a property of the code if forgetting to write something produces the *strict*
+ * behaviour, not the lax one.
+ */
+export const requiresFullSession = (route: RouteDeclaration): boolean => {
+  if (!requiresAuthentication(route) || route.mfaEnrollmentAllowed === true) return false;
+
+  // `POST /auth/refresh` is the one authenticated route the authentication guard is *not* mounted
+  // on — the handler consumes the cookie itself — so there is no caller for this gate to read, and
+  // mounting it there would answer 500 to every refresh. The scope is re-decided by the rotation
+  // anyway: the new access token gets whatever the policy says at that moment, which is what makes
+  // acceptance 5 take effect on the next refresh rather than on the next sign-in.
+  return !(isSelfServiceRoute(route) && route.credential === 'refresh-cookie');
+};

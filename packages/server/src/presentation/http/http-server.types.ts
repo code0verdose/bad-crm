@@ -60,6 +60,9 @@ import { type ReadRecoveryCodeStatusQuery } from '@/application/identity/use-cas
 import { type RefreshSessionUseCase } from '@/application/identity/use-cases/refresh-session.use-case.js';
 import { type RegenerateRecoveryCodesUseCase } from '@/application/identity/use-cases/regenerate-recovery-codes.use-case.js';
 import { type RegisterOrganizationUseCase } from '@/application/identity/use-cases/register-organization.use-case.js';
+import { type MfaCoverageReportQuery } from '@/application/organization/use-cases/mfa-coverage-report.query.js';
+import { type ReadSecurityPolicyQuery } from '@/application/organization/use-cases/read-security-policy.query.js';
+import { type UpdateSecurityPolicyUseCase } from '@/application/organization/use-cases/update-security-policy.use-case.js';
 import { type RequestPasswordResetUseCase } from '@/application/identity/use-cases/request-password-reset.use-case.js';
 import { type SetupTotpUseCase } from '@/application/identity/use-cases/setup-totp.use-case.js';
 import { type MetricsPort } from '@/application/platform/ports/metrics.port.js';
@@ -127,6 +130,19 @@ export interface IdentityDependencies {
   readonly regenerateRecoveryCodes: RegenerateRecoveryCodesUseCase;
   readonly disableTotp: DisableTotpUseCase;
   readonly verifySecondFactor: VerifySecondFactorUseCase;
+}
+
+/**
+ * The tenant root's own operations, as the HTTP surface needs them.
+ *
+ * Its own group rather than a corner of `iam`: what an organization decides about itself — today its
+ * second-factor policy — is not a question about who may do what, and putting it beside the
+ * permission layer is how the two start sharing a use-case.
+ */
+export interface OrganizationDependencies {
+  readonly readSecurityPolicy: ReadSecurityPolicyQuery;
+  readonly updateSecurityPolicy: UpdateSecurityPolicyUseCase;
+  readonly mfaCoverageReport: MfaCoverageReportQuery;
 }
 
 /**
@@ -199,4 +215,5 @@ export interface HttpServerDependencies {
   readonly recordClientError: RecordClientErrorUseCase;
   readonly identity: IdentityDependencies;
   readonly iam: IamDependencies;
+  readonly organization: OrganizationDependencies;
 }

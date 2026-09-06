@@ -1,3 +1,4 @@
+import { FakeTotpEnrollment } from '../../support/mfa-doubles.util.js';
 import { describe, expect, it } from 'vitest';
 
 import { IssueSessionUseCase } from '@/application/identity/use-cases/issue-session.use-case.js';
@@ -8,6 +9,7 @@ import { ProvisionSystemRolesUseCase } from '@/application/iam/use-cases/provisi
 
 import { FakeRoleRepository } from '../../support/iam-doubles.util.js';
 import {
+  disabledMfaPolicy,
   FakeAccessTokens,
   FakeAddressHasher,
   FakeClock,
@@ -72,6 +74,8 @@ const harness = (
     new FakeAddressHasher(),
     clock,
     new FakeIdGenerator(),
+    new FakeTotpEnrollment(),
+    disabledMfaPolicy(clock),
   );
 
   return {

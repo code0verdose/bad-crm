@@ -288,6 +288,31 @@ const GENERIC_ERROR_CODE_STATUS = {
   mfa_invalid_code: 401,
   mfa_code_replayed: 401,
   /**
+   * The session was opened under the organization's second-factor policy and has nowhere to go but
+   * the enrolment wizard (STORY-013-05, acceptance 3).
+   *
+   * The credential is genuine and the session is live, so this is **403** rather than 401: the
+   * client must not answer it by refreshing and must not clear the session — the token it holds is
+   * the one it is supposed to have, and the only way out is to finish enrolling. That is the same
+   * distinction `reauthentication_required` draws, from the other side: there a second proof is
+   * missing, here a second *factor* is.
+   *
+   * Which routes it is *not* answered on is data, not prose: `mfaEnrollmentAllowed` in
+   * `presentation/http/route-registry.factory.ts`, checked over the whole registry by
+   * `test/unit/http/mfa-enrollment-scope.test.ts`.
+   */
+  mfa_enrollment_required: 403,
+  /**
+   * `POST /auth/2fa/disable` by somebody a role of theirs puts under the organization's policy
+   * (STORY-013-04 acceptance 4, STORY-013-05 acceptance 6).
+   *
+   * **409**, and for the reason every other conflict here carries one: the request is well formed
+   * and the caller proved both factors — what refuses is the state of the organization, not the
+   * request and not the credential. The remedy is a person, not a retry, which is why the client
+   * shows «your organization requires this» rather than «try again».
+   */
+  mfa_required_by_policy: 409,
+  /**
    * An optional subsystem is switched off in this installation, and the honest answer is "this
    * installation does not do that": search without Meilisearch, the assistant with `AI_ENABLED`
    * off.

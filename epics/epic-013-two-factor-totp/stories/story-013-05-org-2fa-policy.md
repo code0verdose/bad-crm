@@ -85,17 +85,36 @@ estimate: M
 
 ## Задачи
 
-- [ ] `packages/shared/src/organization/security-policy.schema.ts` — Zod-схема
+- [x] `packages/shared/src/organization/security-policy.schema.ts` — Zod-схема
       (`mfaRequiredForRoles: SystemRoleKey[] ∪ customRoleIds`, `mfaGracePeriodDays: 0…30`), тип через
-      `z.infer`; чтение `Organization.settings` через `safeParse`.
-- [ ] `packages/server/src/application/organization/use-cases/update-security-policy.use-case.ts`.
-- [ ] `packages/server/src/application/organization/queries/mfa-coverage-report.query.ts` (п. 2, 9).
-- [ ] `packages/server/src/domain/identity/access/mfa-requirement.ts` — чистая функция
-      `isMfaRequired(actorRoles, policy, roleGrantedAt, now): { required, graceEndsAt }`.
-- [ ] `packages/server/src/infrastructure/identity/mfa-enrollment-token.service.ts` +
-      обработка `scope = mfa_enrollment` в `auth.middleware.ts`.
-- [ ] `packages/server/src/presentation/http/route-registry.factory.ts` —
-      `organization:manage_security_policy`; whitelist маршрутов, доступных при `mfa_enrollment`.
+      `z.infer`; чтение `Organization.settings` через `safeParse`. Добавлено третье поле, которого в
+      исходном списке не было и без которого критерий 5 невыразим: `mfaRequiredSince` —
+      дата **на роль**, вторая половина отсчёта рядом с `UserRole.grantedAt`.
+- [x] `packages/server/src/application/organization/use-cases/update-security-policy.use-case.ts`.
+- [x] `mfa-coverage-report.query.ts` (п. 2, 9) — в `use-cases/`, а не в `queries/`: правило имён
+      требует `.query.ts` внутри `use-cases/`, каталога `queries/` в этом пакете нет.
+- [x] `packages/server/src/domain/identity/access/mfa-requirement.policy.ts` — чистая
+      `evaluateMfaRequirement`. Суффикс `.policy.ts` обязателен (`naming.test.ts`), и функция
+      возвращает `graceEndsAtMs: number`, а не `Date`: `new Date(...)` в `domain` запрещён
+      `layers.test.ts`, потому что тот же конструктор строит и момент из аргумента, и момент из
+      часов. Вердикт шире, чем `{ required, graceEndsAt }` — `not_covered | satisfied | grace |
+      enrollment_required`, чтобы отчёт покрытия и гейт входа читали один ответ.
+- [x] `scope = mfa_enrollment` — **не отдельный сервис токенов**. Это claim обычного access-токена
+      (`jwt-access-token.adapter.ts`), а не второй вид токена: в отличие от `mfa_pending`, эта
+      сессия настоящая — строка есть, вызывающий установлен, — и отличается только тем, куда её
+      пускают. Отдельный issuer заставил бы `authenticate.middleware.ts` проверять сессию дважды.
+      Любое **иное** значение `scope` отвергается, а не читается как «без области».
+- [x] `packages/server/src/presentation/http/route-registry.factory.ts` —
+      `organization:manage_security_policy` (ключ уже был в закрытом каталоге, `dangerous: true`,
+      у `owner` и `admin` — миграции каталога не потребовалось); whitelist через
+      `mfaEnrollmentAllowed?: true` в объявлении маршрута, гейт монтируется по производному
+      предикату `requiresFullSession`, поэтому «забыл написать» означает «закрыто».
+- [ ] **Клиентская половина — не сделана, вне зоны этой дельты.** Контракт под неё отгружен целиком:
+      `GET`/`PATCH /organization/security-policy` и `GET /organization/mfa-coverage` (последняя
+      принимает `?role=&graceDays=` и отвечает предпросмотром **несохранённого** черновика —
+      критерий 2 — тем же кодом, что и постоянный отчёт), `mfaEnrollment` и `mfaGraceEndsAt` в
+      ответе входа под баннер критерия 4, коды `mfa_enrollment_required` и `mfa_required_by_policy`
+      переведены на оба языка.
 - [ ] `packages/client/src/app/routes/_authenticated/admin/organization.tsx` — вкладка `security`;
       `widgets/security-policy/security-policy.widget.tsx` +
       `ui/mfa-coverage-table.component.tsx`, `ui/policy-preview-modal.component.tsx`.
@@ -103,10 +122,45 @@ estimate: M
       `mfa_enrollment`; `widgets/mfa-enrollment-gate/mfa-enrollment-gate.widget.tsx`, баннер
       grace-периода.
 - [ ] i18n: `packages/client/src/app/i18n/{en,ru}/security-policy.json`.
-- [ ] Тесты: `mfa-requirement.test.ts` (табличный: роль × политика × grace × наличие 2FA),
-      `mfa-enrollment-token-scope.test.ts` (табличный по `ROUTE_REGISTRY`, п. 3),
-      интеграционные п. 5, 6, 8, e2e `mandatory-2fa-enrollment.spec.ts` + axe (Playwright-набор
-      именуется `.spec.ts` — это не то же расхождение, что у Vitest-наборов выше).
+- [x] Тесты: `test/unit/domain/mfa-requirement.test.ts` (табличный: роль × политика × grace ×
+      наличие 2FA), `test/unit/http/mfa-enrollment-scope.test.ts` (табличный по `ROUTE_REGISTRY`,
+      п. 3 — три таблицы: отказ, положительный контроль обычным токеном, и сам whitelist как
+      множество; снятие гейта делает красными 41 из 86 кейсов),
+      `test/integration/http/security-policy.test.ts` (п. 1, 2, 3, 4, 5, 7, 8, 9, 10, 11),
+      блок «the organization policy» в `test/unit/application/disable-totp.use-case.test.ts` (п. 6).
+- [ ] e2e `mandatory-2fa-enrollment.spec.ts` + axe — вместе с клиентской половиной: сценарий
+      целиком экранный.
+
+## Что сделано и что осталось (серверная половина, 2026-09-06)
+
+**Закрыто на сервере:** 1 (хранение + аудит `organization.security_policy_updated`, `CRITICAL`,
+before/after), 3 (область токена и табличная проверка по реестру), 4 (льготный период), 5 (отсчёт
+следует за ролью в обе стороны), 6 (409 `mfa_required_by_policy` в `DisableTotpUseCase`), 7
+(428 `confirmation_required` и повтор с `confirmedSelfLockout`), 8 (403 без права), 10 (дефолт —
+выключено), 11 (изоляция), серверные половины 2 и 9 (отчёт покрытия, включая предпросмотр
+черновика).
+
+**Осталось:** экранные половины 2, 4 и 9 (вкладка настроек, баннер обратного отсчёта, таблица
+покрытия с фильтрами в URL и напоминаниями), гард `beforeLoad` для вкладки (критерий 8, вторая
+половина) и e2e. Напоминание сотруднику из критерия 9 сервером **не** реализовано — ручки под него
+нет, и заглушки не заведено.
+
+**Про самоблокировку владельца — прямо.** Владелец, включивший политику на собственную роль без
+второго фактора, из продукта не выпадает: подписанная область оставляет ему ровно те маршруты,
+которыми второй фактор и настраивается, а пароль не менялся, так что войти он может всегда. Тупика
+эта операция не создаёт. Тупик существует **другой** и создаётся не здесь: аккаунт, у которого 2FA
+уже включена, аутентификатор потерян, коды восстановления израсходованы, а в организации больше
+никого с `user:reset_mfa`. Выход из него — операторский, по
+[`docs/runbooks/incident.md`](../../../docs/runbooks/incident.md), и он не появился с этой историей.
+
+**Про стоимость.** Проверка политики **не добавляет ни одного чтения на запрос**. Она выполняется
+там, где выдаётся сессия (`IssueSessionUseCase`), то есть при входе и при каждом обновлении токена —
+раз в пятнадцать минут на сессию, — и стоит три оператора: `settings` корня арендатора, неистёкшие
+назначения ролей субъекта, строка записи TOTP. Вердикт едет в claim `scope`, поэтому гейт на
+маршруте не читает ничего. Альтернатива — решать в мидлваре — положила бы эти три оператора на
+**каждый** запрос **каждой** организации, включая те, где политики нет вовсе, то есть по умолчанию
+все. Сравнение с STORY-011-08: сборка прав — одиннадцать операторов и 5,4 мс на запрос; эта дельта
+к тому числу не прибавляет ничего.
 
 ## Ссылки
 

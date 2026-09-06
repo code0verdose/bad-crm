@@ -1,5 +1,6 @@
 {
   "organization": {
+    "manage_security_policy": "Decide which roles must carry a second factor and how long their holders have to arrange one. Getting it wrong locks colleagues out of the product.",
     "transfer_ownership": "Hand the organization over to somebody else: the previous owner keeps their account and loses everything ownership gave them."
   },
   "team": {

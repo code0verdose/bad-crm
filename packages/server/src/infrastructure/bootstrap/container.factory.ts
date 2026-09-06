@@ -136,6 +136,11 @@ import { PrismaUserLifecycleRepository } from '@/infrastructure/persistence/pris
 import { PrismaEmployeeProfileRepository } from '@/infrastructure/persistence/prisma/employee-profile.repository.js';
 import { PrismaInvitationRepository } from '@/infrastructure/persistence/prisma/invitation.repository.js';
 import { PrismaOrganizationRepository } from '@/infrastructure/persistence/prisma/organization.repository.js';
+import { PrismaMfaPolicyReaderRepository } from '@/infrastructure/persistence/prisma/mfa-policy-reader.repository.js';
+import { MfaPolicyQuery } from '@/application/organization/use-cases/mfa-policy.query.js';
+import { MfaCoverageReportQuery } from '@/application/organization/use-cases/mfa-coverage-report.query.js';
+import { ReadSecurityPolicyQuery } from '@/application/organization/use-cases/read-security-policy.query.js';
+import { UpdateSecurityPolicyUseCase } from '@/application/organization/use-cases/update-security-policy.use-case.js';
 import { PrismaMfaRecoveryCodeRepository } from '@/infrastructure/persistence/prisma/mfa-recovery-code.repository.js';
 import { PrismaPasswordResetTokenRepository } from '@/infrastructure/persistence/prisma/password-reset-token.repository.js';
 import { PrismaSessionRepository } from '@/infrastructure/persistence/prisma/session.repository.js';
@@ -160,6 +165,7 @@ import { type ServerEnv } from '@/infrastructure/bootstrap/env.schema.js';
 import { API_VERSION } from '@/presentation/http/api-version.constant.js';
 import {
   type IamDependencies,
+  type OrganizationDependencies,
   type IdentityDependencies,
 } from '@/presentation/http/http-server.types.js';
 
@@ -419,6 +425,16 @@ export const buildContainer = (input: ContainerInput): AppContainer => {
       identity: identity.dependencies,
       // The permission layer. Built here, beside identity, because it needs the same unit of work:
       // «who is this» and «what may they do» are two reads of the same transaction boundary.
+      // The tenant root's own operations. Built here rather than inside `buildIam` because what an
+      // organization decides about itself is not a question about who may do what — and because the
+      // policy is read by two different slices, which is exactly the shape that goes wrong when one
+      // of them owns it.
+      organization: buildOrganization({
+        database: input.database,
+        audit,
+        logger,
+        clock,
+      }),
       iam: buildIam({
         database: input.database,
         audit,
@@ -477,6 +493,41 @@ interface IdentityWiring {
  * entry that records it have to be one transaction, and a second unit of work would be a second
  * transaction that can commit alone.
  */
+/**
+ * The organization's own administration — today, its second-factor policy.
+ *
+ * Its repositories are fresh instances, like every other slice's: they hold no state beyond the
+ * tenant scope they read out of AsyncLocalStorage, so sharing one would buy nothing and couple two
+ * slices that have no reason to be coupled.
+ */
+const buildOrganization = (input: {
+  readonly database: DatabaseConnection | undefined;
+  readonly audit: AuditLoggerPort;
+  readonly logger: LoggerPort;
+  readonly clock: SystemClockAdapter;
+}): OrganizationDependencies => {
+  const unitOfWork =
+    input.database === undefined ? detachedUnitOfWork() : new PrismaUnitOfWork(input.database.base);
+
+  const organizations = new PrismaOrganizationRepository();
+  const reader = new PrismaMfaPolicyReaderRepository();
+  const policies = new MfaPolicyQuery(organizations, reader, input.clock, input.logger);
+
+  return {
+    readSecurityPolicy: new ReadSecurityPolicyQuery(unitOfWork, policies),
+    updateSecurityPolicy: new UpdateSecurityPolicyUseCase(
+      unitOfWork,
+      organizations,
+      new PrismaCustomRoleRepository(),
+      reader,
+      new PrismaTotpEnrollmentRepository(),
+      input.clock,
+      input.audit,
+    ),
+    mfaCoverageReport: new MfaCoverageReportQuery(unitOfWork, reader, policies, input.clock),
+  };
+};
+
 const buildIam = (input: {
   readonly database: DatabaseConnection | undefined;
   readonly audit: AuditLoggerPort;
@@ -665,6 +716,18 @@ const buildIdentity = (input: {
   const totpEnrollment = new PrismaTotpEnrollmentRepository();
   const recoveryCodeRows = new PrismaMfaRecoveryCodeRepository();
 
+  // The organization's second-factor policy, read here because the two operations that *apply* it
+  // live in this slice: issuing a session decides the token's scope with it, and turning 2FA off is
+  // refused by it. The administration half of the same policy is wired in `buildIam`, over its own
+  // repository instances, for the same reason every other slice builds its own — a shared instance
+  // would be a shared connection to co-ordinate, and these hold no state.
+  const mfaPolicy = new MfaPolicyQuery(
+    organizations,
+    new PrismaMfaPolicyReaderRepository(),
+    input.clock,
+    input.logger,
+  );
+
   /**
    * One hasher for the whole process, and the ceiling is around it rather than around a use-case.
    *
@@ -722,6 +785,8 @@ const buildIdentity = (input: {
     addresses,
     input.clock,
     input.idGenerator,
+    totpEnrollment,
+    mfaPolicy,
   );
 
   const bootstrap = new BootstrapOrganizationUseCase(
@@ -868,6 +933,7 @@ const buildIdentity = (input: {
       input.audit,
       input.mailDispatcher,
       input.env.APP_URL,
+      mfaPolicy,
     ),
     verifySecondFactor: new VerifySecondFactorUseCase(
       mfaPendingTokens,

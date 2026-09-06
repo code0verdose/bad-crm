@@ -198,6 +198,10 @@ const resolveCaller = async (
         organizationId: record.organizationId,
         sessionId: record.sessionId,
         familyId: record.familyId,
+        // The refresh cookie is a full credential, not a scoped one: the only route that accepts it
+        // is sign-out, and refusing to sign somebody out because their *access* token was scoped
+        // would trap them in the enrolment wizard with no way back to the login form.
+        mfaEnrollment: false,
       };
 };
 

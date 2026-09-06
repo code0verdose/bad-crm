@@ -10,6 +10,15 @@ export interface AuthenticatedCaller {
   readonly organizationId: string;
   readonly sessionId: string;
   readonly familyId: string;
+  /**
+   * The session was opened under the organization's second-factor policy and may reach nothing but
+   * the enrolment routes (STORY-013-05, acceptance 3).
+   *
+   * Read from the token's `scope` claim rather than recomputed here: the decision was made when the
+   * session was issued, and remaking it per request would be the policy read, the role read and the
+   * enrolment read on every request of every organization.
+   */
+  readonly mfaEnrollment: boolean;
 }
 
 /**
@@ -65,6 +74,7 @@ export class AuthenticateSessionQuery {
               organizationId: claims.organizationId,
               sessionId: context.sessionId,
               familyId: context.familyId,
+              mfaEnrollment: claims.mfaEnrollment,
             }
           : undefined;
       },

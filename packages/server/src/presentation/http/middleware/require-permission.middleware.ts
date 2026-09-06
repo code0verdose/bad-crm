@@ -43,6 +43,7 @@ export const createPermissionMiddleware = (
       const actor = await dependencies.buildActor.execute({
         userId: caller.userId,
         organizationId: caller.organizationId,
+        mfaEnrollment: caller.mfaEnrollment,
       });
 
       (response.locals as ActorLocals)[ACTOR] = actor;

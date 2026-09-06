@@ -102,4 +102,32 @@ export class PrismaOrganizationRepository
       return row === null ? null : toOrganizationSummary(row);
     });
   }
+
+  /** The `settings` column, unread and unvalidated — see the port for why it stays `unknown`. */
+  readSettings(): Promise<unknown> {
+    return this.run('readSettings', async (tx) => {
+      const row = await tx.organization.findFirst({
+        where: { deletedAt: null },
+        select: { settings: true },
+      });
+
+      return row === null ? null : row.settings;
+    });
+  }
+
+  /**
+   * Writes `settings` back for the organization of the current scope.
+   *
+   * `updateMany` rather than `update` by id: this table's policy already restricts the statement to
+   * one row, and naming the id would state the tenant twice. A soft-deleted organization is
+   * excluded for the same reason `findCurrent` excludes it — the policy does not express it.
+   */
+  writeSettings(settings: Record<string, unknown>): Promise<void> {
+    return this.run('writeSettings', async (tx) => {
+      await tx.organization.updateMany({
+        where: { deletedAt: null },
+        data: { settings: settings as never },
+      });
+    });
+  }
 }

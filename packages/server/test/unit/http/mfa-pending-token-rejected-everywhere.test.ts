@@ -210,6 +210,7 @@ describe('the mfa-pending token — rejected on every guarded route (STORY-013-0
         organizationId: ORGANIZATION_ID,
         sessionId: SESSION_ID,
         permissionsVersion: PERMISSIONS_VERSION,
+        mfaEnrollment: false,
       })
     ).token;
 

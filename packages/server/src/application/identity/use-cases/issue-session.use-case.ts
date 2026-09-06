@@ -10,6 +10,11 @@ import {
   type SessionRepositoryPort,
 } from '@/application/identity/ports/session-repository.port.js';
 import { type OrganizationRepositoryPort } from '@/application/organization/ports/organization-repository.port.js';
+import {
+  type MfaGateVerdict,
+  type MfaPolicyQuery,
+} from '@/application/organization/use-cases/mfa-policy.query.js';
+import { type TotpEnrollmentRepositoryPort } from '@/application/identity/ports/totp-enrollment.port.js';
 import { type ClockPort } from '@/application/platform/ports/clock.port.js';
 import { type IdGeneratorPort } from '@/application/platform/ports/id-generator.port.js';
 import { maskIpAddress } from '@/domain/identity/mask-ip-address.util.js';
@@ -47,6 +52,21 @@ export interface IssueSessionInput {
 
 export interface IssuedSession {
   readonly sessionId: string;
+  /**
+   * The session may enrol a second factor and sign out, and nothing else (acceptance 3).
+   *
+   * Returned as well as signed into the token so that the sign-in response can say so without the
+   * client decoding a JWT it has no business reading — the same reasoning `LoginResult` gives for
+   * carrying `expiresInSeconds` beside `mfaToken`.
+   */
+  readonly mfaEnrollment: boolean;
+  /**
+   * When the caller's grace period ends, for the countdown banner of acceptance 4.
+   *
+   * `undefined` when the organization's policy covers none of their roles — which is every session
+   * of every installation that has not switched the policy on, i.e. the default.
+   */
+  readonly mfaGraceEndsAt: Date | undefined;
   readonly familyId: string;
   readonly accessToken: string;
   readonly expiresInSeconds: number;
@@ -78,6 +98,8 @@ export class IssueSessionUseCase {
     private readonly addresses: AddressHasherPort,
     private readonly clock: ClockPort,
     private readonly ids: IdGeneratorPort,
+    private readonly enrollment: TotpEnrollmentRepositoryPort,
+    private readonly policies: MfaPolicyQuery,
   ) {}
 
   async execute(input: IssueSessionInput): Promise<IssuedSession> {
@@ -100,11 +122,18 @@ export class IssueSessionUseCase {
 
     const { created, refresh } = minted;
 
+    // The one place the organization's second-factor policy decides anything about a session, and
+    // therefore the one place every path that opens one — sign-in, the second-factor step, a
+    // refresh, accepting an invitation, registering — is covered by the same decision. A branch in
+    // each caller would be five branches, and the fifth would be the one somebody forgot.
+    const verdict = await this.gate(input.userId);
+
     const access = await this.accessTokens.issue({
       userId: input.userId,
       organizationId: await this.organizationOf(),
       sessionId: created.id,
       permissionsVersion: input.permissionsVersion,
+      mfaEnrollment: verdict.gate === 'enrollment_required',
     });
 
     return {
@@ -114,7 +143,28 @@ export class IssueSessionUseCase {
       expiresInSeconds: access.expiresInSeconds,
       refreshToken: refresh.token,
       refreshExpiresAt: expiresAt,
+      mfaEnrollment: verdict.gate === 'enrollment_required',
+      mfaGraceEndsAt: verdict.covered ? verdict.graceEndsAt : undefined,
     };
+  }
+
+  /**
+   * What the organization's policy says about the account this session belongs to.
+   *
+   * Two statements — the tenant root's `settings`, and the account's unexpired role grants — plus
+   * the enrolment row, which is a third. They run **once per session issue**, which on a live
+   * installation means once per sign-in and once per refresh (every fifteen minutes per session),
+   * not once per request: nothing on the hot path grew. The alternative, a guard that re-decided per
+   * request, would have added all three to every request of every organization — including the ones
+   * with no policy, which is all of them by default.
+   */
+  private async gate(userId: string): Promise<MfaGateVerdict> {
+    const enrolled = await this.enrollment.find(userId);
+
+    return this.policies.gateFor({
+      userId,
+      hasSecondFactor: enrolled !== null && enrolled.enabledAt !== null,
+    });
   }
 
   /**

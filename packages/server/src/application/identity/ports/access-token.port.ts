@@ -21,6 +21,22 @@ export interface AccessTokenClaims {
    * take effect without keeping a list of every issued token (`schema.prisma`, `User`).
    */
   readonly permissionsVersion: number;
+  /**
+   * `scope` — whether this session may do anything but enrol a second factor and sign out.
+   *
+   * `false` for an ordinary session, and the claim is then absent from the token entirely. `true`
+   * mints `scope: 'mfa_enrollment'`: the organization's policy covers a role this person holds,
+   * they have no second factor and their grace period is over, so the session exists only so they
+   * can arrange one (STORY-013-05, acceptance 3).
+   *
+   * **In the token rather than read per request, deliberately.** The alternative — deciding it in a
+   * guard — would put the policy read, the role read and the enrolment read on every request of
+   * every organization, including the ones that have no policy. Here it costs two statements once
+   * per session issue, and the fifteen-minute lifetime is what bounds the staleness: somebody who
+   * enrols keeps a scoped token until their next refresh, which is why `ConfirmTotpUseCase`'s
+   * response tells the client to refresh.
+   */
+  readonly mfaEnrollment: boolean;
 }
 
 export interface IssuedAccessToken {

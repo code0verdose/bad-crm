@@ -1,3 +1,4 @@
+import { FakeTotpEnrollment } from '../../support/mfa-doubles.util.js';
 import { describe, expect, it } from 'vitest';
 
 import { AuthenticateSessionQuery } from '@/application/identity/use-cases/authenticate-session.query.js';
@@ -8,6 +9,7 @@ import { type LogFields } from '@/application/platform/ports/logger.port.js';
 import { SECURITY_EVENTS } from '@/domain/identity/security-event.constant.js';
 import { type AppError } from '@/domain/shared/errors/app.errors.js';
 import {
+  disabledMfaPolicy,
   FakeAccessTokens,
   FakeAddressHasher,
   FakeClock,
@@ -70,6 +72,8 @@ const harness = (): Harness => {
       new FakeAddressHasher(),
       clock,
       new FakeIdGenerator(),
+      new FakeTotpEnrollment(),
+      disabledMfaPolicy(clock),
     ),
     end: new EndSessionUseCase(sessions, unitOfWork, clock, logger, audit),
     list: new ListSessionsQuery(sessions, unitOfWork, clock),
@@ -162,6 +166,8 @@ describe('issuing a session', () => {
       new FakeAddressHasher(),
       clock,
       new FakeIdGenerator(),
+      new FakeTotpEnrollment(),
+      disabledMfaPolicy(clock),
     );
 
     await expect(
@@ -391,6 +397,9 @@ describe('authenticating a request', () => {
       organizationId: ORGANIZATION_ID,
       sessionId: session.sessionId,
       familyId: session.familyId,
+      // An installation with no second-factor policy issues ordinary sessions — the default, and
+      // the state of every installation until somebody switches the policy on (STORY-013-05).
+      mfaEnrollment: false,
     });
   });
 
@@ -460,6 +469,7 @@ describe('authenticating a request', () => {
       organizationId: ORGANIZATION_ID,
       sessionId: 'session-elsewhere',
       permissionsVersion: 1,
+      mfaEnrollment: false,
     });
 
     expect((await refusal(() => test.authenticate.execute('access.session-elsewhere'))).code).toBe(
@@ -477,6 +487,7 @@ describe('authenticating a request', () => {
       organizationId: ORGANIZATION_ID,
       sessionId: session.sessionId,
       permissionsVersion: 1,
+      mfaEnrollment: false,
     });
 
     expect(

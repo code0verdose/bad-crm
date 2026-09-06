@@ -355,6 +355,38 @@ export class PayloadTooLargeError extends AppError {
  * context that reaches the log and never the body (`error-handler.middleware.ts`), and «which key
  * made this request stop» is exactly what the log is read for afterwards.
  */
+/**
+ * The session may enrol a second factor and sign out, and nothing else (STORY-013-05, acceptance 3).
+ *
+ * **403 and not 401**, which is the whole point of it being its own class: the token is genuine and
+ * the session is live, so the client must not refresh and must not clear the session — the way out
+ * is to finish enrolling, not to authenticate again.
+ */
+export class MfaEnrollmentRequiredError extends AppError {
+  constructor(details?: ErrorDetails) {
+    super('mfa_enrollment_required', 'This session must enrol a second factor first', details);
+  }
+}
+
+/**
+ * Turning the second factor off is refused because the organization's policy covers a role the
+ * caller holds (STORY-013-04 acceptance 4, STORY-013-05 acceptance 6).
+ *
+ * A conflict rather than a refusal of the credentials: both proofs were accepted, and what says no
+ * is the state of the organization. The details name nothing about the policy — which roles it
+ * covers is readable by whoever may read the policy, and this answer is given to whoever holds the
+ * account.
+ */
+export class MfaRequiredByPolicyError extends AppError {
+  constructor(details?: ErrorDetails) {
+    super(
+      'mfa_required_by_policy',
+      'The organization requires a second factor for this account',
+      details,
+    );
+  }
+}
+
 export class ConfirmationRequiredError extends AppError {
   constructor(details?: ErrorDetails) {
     super('confirmation_required', 'This operation needs an explicit confirmation', details);

@@ -90,6 +90,10 @@ class InMemoryDatabase {
    * ordering left to get wrong, and no window between them to test for.
    */
   readonly organizations: OrganizationRepositoryPort = {
+    // Neither is exercised here: this suite is about the two rows the bootstrap writes, and the
+    // policy lives in the column those two do not touch.
+    readSettings: () => Promise.resolve({}),
+    writeSettings: () => Promise.resolve(),
     createWithOwner: (
       organizationDraft: OrganizationDraft,
       ownerDraft: OrganizationOwnerDraft,

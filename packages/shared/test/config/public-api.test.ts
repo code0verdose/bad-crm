@@ -26,9 +26,18 @@ const NAMESPACES = [
   'SharedPermissions',
   'SharedErrors',
   'SharedResult',
+  'SharedOrganization',
 ] as const;
 
-const SUBPATHS = ['.', './validation', './types', './permissions', './errors', './result'];
+const SUBPATHS = [
+  '.',
+  './validation',
+  './types',
+  './permissions',
+  './errors',
+  './result',
+  './organization',
+];
 
 describe('public API of @bad-crm/shared', () => {
   it.each(NAMESPACES)('exposes the %s namespace', (namespace) => {

@@ -174,6 +174,16 @@ export const AUDIT_ACTIONS = [
    * `{ ownerId }` on each side — plus `previousOwnerRoleKey`, the one fact of the handover that is
    * written nowhere else: which role the outgoing owner was left holding.
    */
+  /**
+   * The organization's security policy changed — today, which roles must carry a second factor and
+   * how long they have to arrange it (STORY-013-05, acceptance 1).
+   *
+   * `before` and `after` carry the policy itself: role references and a number of days, no secrets
+   * and nothing about any individual. A change here decides whether an account can sign in at all
+   * once its grace period runs out, which is why it is filed `CRITICAL` beside an ownership
+   * transfer rather than beside a rename.
+   */
+  'organization.security_policy_updated',
   'organization.ownership_transferred',
   /**
    * An account was deactivated or brought back (STORY-012-05).

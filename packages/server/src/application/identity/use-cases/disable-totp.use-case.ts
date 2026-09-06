@@ -21,10 +21,12 @@ import {
 } from '@/domain/identity/recovery-code.value.js';
 import { SECURITY_EVENTS } from '@/domain/identity/security-event.constant.js';
 import {
+  MfaRequiredByPolicyError,
   RateLimitedError,
   ReauthenticationRequiredError,
   ServiceUnavailableError,
 } from '@/domain/shared/errors/app.errors.js';
+import { type MfaPolicyQuery } from '@/application/organization/use-cases/mfa-policy.query.js';
 
 export interface DisableTotpInput {
   readonly actor: { readonly organizationId: string; readonly userId: string };
@@ -135,6 +137,7 @@ export class DisableTotpUseCase {
     private readonly mailDispatcher: MailDispatchPort,
     /** `APP_URL`. Required rather than defaulted: a link built on a guess points at nobody. */
     private readonly appUrl: string,
+    private readonly policies: MfaPolicyQuery,
   ) {}
 
   async execute(input: DisableTotpInput): Promise<void> {
@@ -169,6 +172,22 @@ export class DisableTotpUseCase {
     ]);
 
     if (!passwordCheck.ok || !secondFactor.ok) throw new ReauthenticationRequiredError();
+
+    // STORY-013-04 acceptance 4 / STORY-013-05 acceptance 6, and it is checked **after** both proofs
+    // rather than before them. Refusing first would answer «your organization requires 2FA» to
+    // somebody who has not proved they hold the account — a free read of the policy for anybody with
+    // a stolen access token, and a free confirmation that this particular colleague is covered by
+    // it. Two extra statements on an operation that runs a handful of times per account.
+    //
+    // `covered`, not `gate`: whether the grace period has run out decides what a *session* may do,
+    // and has nothing to say about whether a factor already in place may be removed. Somebody inside
+    // their grace period is still somebody the policy requires a factor of.
+    const verdict = await this.policies.gateFor({
+      userId: input.actor.userId,
+      hasSecondFactor: true,
+    });
+
+    if (verdict.covered) throw new MfaRequiredByPolicyError();
 
     const committed = await this.commit(input.actor.userId, secondFactor, now);
 

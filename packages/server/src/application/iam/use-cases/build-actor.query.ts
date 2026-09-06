@@ -4,10 +4,19 @@ import { type EffectivePermissionsReaderPort } from '@/application/iam/ports/eff
 import { type UnitOfWorkPort } from '@/application/platform/ports/unit-of-work.port.js';
 import { type Actor } from '@/domain/access/actor.types.js';
 import { denyAccess } from '@/domain/shared/errors/access-denial.util.js';
+import { MfaEnrollmentRequiredError } from '@/domain/shared/errors/app.errors.js';
 
 export interface BuildActorInput {
   readonly userId: string;
   readonly organizationId: string;
+  /**
+   * The caller's session is scoped to second-factor enrolment (STORY-013-05, acceptance 3).
+   *
+   * **Required, not optional with a default.** A default of `false` would make «forgot to pass it»
+   * mean «unscoped», which is the direction that fails open — the one shape of this field that must
+   * not compile.
+   */
+  readonly mfaEnrollment: boolean;
 }
 
 /**
@@ -43,6 +52,14 @@ export class BuildActorQuery {
   ) {}
 
   async execute(input: BuildActorInput): Promise<Actor> {
+    // The second of the two refusals STORY-013-05 acceptance 3 asks for, and the authoritative one:
+    // `require-full-session.middleware.ts` refuses earlier and cheaper, but it is presentation, and
+    // invariant 2 of CLAUDE.md is that the decision may not live only there. Every capability-gated
+    // use-case reaches its actor through this query, so a route that somehow lost the guard still
+    // cannot act under a scoped session. Refused **before** the read, because there is nothing this
+    // caller may be told about their own rights while the only thing they may do is enrol.
+    if (input.mfaEnrollment) throw new MfaEnrollmentRequiredError();
+
     return this.unitOfWork.withTenant(
       { organizationId: input.organizationId, userId: input.userId },
       async () => {

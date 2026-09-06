@@ -96,6 +96,10 @@ export const AUDIT_ACTION_SEVERITY: Readonly<Record<AuditAction, AuditSeverity>>
    * including granting themselves whatever the trail would otherwise record. An installation that
    * alerts on one event should alert on this one.
    */
+  // Beside an ownership transfer, and for a comparable reason: this row decides who is locked out
+  // of the organization tomorrow. Widening it lets somebody drop the requirement from their own
+  // role without touching a single account, which no other entry would record.
+  'organization.security_policy_updated': 'CRITICAL',
   'organization.ownership_transferred': 'CRITICAL',
   /**
    * `WARNING`, not `INFO`: deactivation ends somebody's access to everything at once, and it is the

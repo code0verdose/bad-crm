@@ -114,6 +114,8 @@ export const createInvitationController = (
       serializeAuthenticatedSession({
         accessToken: accepted.session.accessToken,
         expiresInSeconds: accepted.session.expiresInSeconds,
+        mfaEnrollment: accepted.session.mfaEnrollment,
+        mfaGraceEndsAt: accepted.session.mfaGraceEndsAt,
         user: accepted.user,
         organization: accepted.organization,
       }),

@@ -1,3 +1,4 @@
+import { FakeTotpEnrollment } from '../../support/mfa-doubles.util.js';
 import { assert, describe, expect, it } from 'vitest';
 
 import { IssueSessionUseCase } from '@/application/identity/use-cases/issue-session.use-case.js';
@@ -9,6 +10,7 @@ import { SECURITY_EVENTS } from '@/domain/identity/security-event.constant.js';
 import {
   FakeAccessTokens,
   FakeAddressHasher,
+  disabledMfaPolicy,
   FakeAuditLogger,
   FakeAuthLookup,
   FakeClock,
@@ -75,6 +77,8 @@ const harness = (
     new FakeAddressHasher(),
     clock,
     new FakeIdGenerator(),
+    new FakeTotpEnrollment(),
+    disabledMfaPolicy(clock),
   );
 
   return {
