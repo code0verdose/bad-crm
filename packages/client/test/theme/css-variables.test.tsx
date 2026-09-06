@@ -63,4 +63,37 @@ describe('the application css variables', () => {
       expect(css, scale).toContain(`--mantine-color-${scale}-light-color:`);
     }
   });
+
+  /**
+   * The remap that takes `-text` and `-outline` off `primaryShade`, asserted where it is emitted.
+   *
+   * `tokens.test.ts` measures the *contrast* of the remapped pairs by calling the resolvers
+   * directly, which is the only way to get a colour out of jsdom — it applies no stylesheet, so
+   * `getComputedStyle` on a rendered alert returns the `var(...)` text and never a hex. What that
+   * cannot prove is that the resolver is wired: a remap written and not passed measures perfectly
+   * and ships the 4.02:1. So the pairs are measured there and their arrival is asserted here, on
+   * the style block `MantineProvider` really renders, in both schemes.
+   */
+  it('takes outline and text off the primary shade for every scale, in both schemes', () => {
+    const { container } = render(
+      <Providers queryClient={new QueryClient()}>
+        <div />
+      </Providers>,
+    );
+
+    const css = mantineStyles(container);
+
+    for (const scale of ['brand', 'danger', 'warning', 'success', 'info', 'neutral']) {
+      for (const variable of ['text', 'outline']) {
+        // Shade 9 in the light scheme — what `variant="light"` already puts on that same tint.
+        expect(css, `light: ${scale}`).toContain(
+          `--mantine-color-${scale}-${variable}: var(--mantine-color-${scale}-9)`,
+        );
+        // Shade 3 in the dark one, one step lighter than the shade 4 Mantine derives there.
+        expect(css, `dark: ${scale}`).toContain(
+          `--mantine-color-${scale}-${variable}: var(--mantine-color-${scale}-3)`,
+        );
+      }
+    }
+  });
 });

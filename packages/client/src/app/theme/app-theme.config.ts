@@ -9,9 +9,11 @@ import {
  * The status scales, and why they are ours rather than Mantine's.
  *
  * A component that says `color="yellow"` is not naming a colour, it is naming a *palette*, and
- * Mantine derives three things from it that all have to be read: `variant="light"` puts shade 9 on
+ * Mantine derives several things from it that all have to be read: `variant="light"` puts shade 9 on
  * shade 1, `variant="filled"` puts white on shade 6, and the dark scheme puts shade 0 on a tint of
- * the same hue. Measured against WCAG 1.4.3, Mantine's own palettes fail the first two for every
+ * the same hue. (A fourth — `-text` and `-outline`, which the library derives from `primaryShade` —
+ * is not readable on a tint at any point of these scales and is remapped by `appCssVariables` at the
+ * foot of this file.) Measured against WCAG 1.4.3, Mantine's own palettes fail the first two for every
  * warm and green hue there is: `yellow-9` on `yellow-1` is 2.68:1, `teal-9` on `teal-1` is 4.32:1,
  * `green-9` on `green-1` is 3.80:1, `orange-9` on `orange-1` is 3.61:1 — and no darker shade
  * exists, so this cannot be fixed by picking a different number. White on `red-6` is 3.28:1, which
@@ -29,8 +31,10 @@ import {
  * | `info` | blue | 0.85 | 6.21:1 | 4.72:1 | 6.90:1 |
  * | `neutral` | gray | 0.80 | 15.08:1 | 4.87:1 | 15.91:1 |
  *
- * The numbers are not maintained by hand: `test/theme/tokens.test.ts` recomputes the pairs from
- * these arrays, in both schemes, on every run — the same treatment `BRAND_COLORS` already gets.
+ * The numbers are not maintained by hand: `test/theme/tokens.test.ts` recomputes the pairs in both
+ * schemes on every run — and asks **Mantine** which shade each pair is made of rather than indexing
+ * these arrays, because a shade index written into a test is a belief about the library's table
+ * that nothing rechecks. One such belief already cost the product ten failing pairs.
  *
  * Naming them by *status* rather than by hue is the half of this that a linter can hold: hue names
  * are what let `color="yellow"` mean «amber, and hope», and `bad-crm/no-raw-mantine-color` now
@@ -209,8 +213,53 @@ export const appTheme: MantineThemeOverride = createTheme({
  * is precisely when the stylesheet override would have lost. One mechanism, and it is the one that
  * cannot be undone by load order.
  */
+/** Every palette this product declares. `-text` and `-outline` are remapped on all of them. */
+const PROJECT_SCALES = ['brand', 'danger', 'warning', 'success', 'info', 'neutral'] as const;
+
+/**
+ * `--mantine-color-<scale>-text` and `-outline`, moved off the primary shade.
+ *
+ * Mantine derives both from `primaryShade` — shade 6 in the light scheme here, shade 4 in the dark
+ * one — and `primaryShade` is chosen for a different job: it is the background of a **filled**
+ * control, picked as the lightest shade that still carries white text. A colour tuned to be read
+ * *under* white is not thereby readable *on* a tint, and that is the whole defect. Measured
+ * 2026-09-06, light scheme, `-outline` on the scale's own `variant="light"` surface: brand 3.62,
+ * success 3.99, danger 4.02 (`ErrorState`'s «Try again» inside its own alert — the pair an `axe`
+ * audit reported), info 3.83, warning 4.31, neutral 4.38. On a striped table row
+ * (`--bc-surface-raised`, where the outline `Badge`s of `/admin/members` sit): brand 4.39, success
+ * 4.34, info 4.48, and in the **dark** scheme brand 4.08. Ten failures of WCAG 1.4.3, all of them
+ * one variable.
+ *
+ * The light half moves to shade 9 — the shade Mantine already puts on that same tint for
+ * `variant="light"`, so an outline control inside a light panel now reads as one thing rather than
+ * two, at 6.21:1 or better. The dark half moves one step lighter, from shade 4 to shade 3, the
+ * smallest move that clears the bar on the lighter of the two dark surfaces (brand 5.67:1, the
+ * tightest); shade 0 would clear it too and would cost the hue, leaving `c="danger"` and body text
+ * the same colour.
+ *
+ * **Not done by moving shade 6 itself.** That shade is `filled`'s background: to clear 4.5:1
+ * against shade 1 it would have to darken past shade 7, so shades 6–9 would all be redesigned and
+ * every filled button in the product would change colour — for a pair no filled control paints.
+ *
+ * **Not done with `variantColorResolver` either**, although that hook is real in 9.5.1 and does
+ * reach `variant="outline"`. It reaches only variants: `--mantine-color-<c>-text` is derived
+ * separately, is what `c="danger"` resolves to, and can be named by any stylesheet — so half the
+ * defect would survive, in the half a variant-level test would then stop looking at.
+ *
+ * `-outline-hover` is deliberately left alone: it is a 5 % wash behind the same control, carries no
+ * text of its own, and moving it would only shift the background the remapped colour sits on by a
+ * fraction of a percent.
+ */
+const readableOnTint = (shade: 3 | 9): Record<string, string> =>
+  Object.fromEntries(
+    PROJECT_SCALES.flatMap((scale) => [
+      [`--mantine-color-${scale}-text`, `var(--mantine-color-${scale}-${shade})`],
+      [`--mantine-color-${scale}-outline`, `var(--mantine-color-${scale}-${shade})`],
+    ]),
+  );
+
 export const appCssVariables: CSSVariablesResolver = () => ({
   variables: {},
-  light: { '--mantine-color-dimmed': 'var(--bc-text-muted)' },
-  dark: { '--mantine-color-dimmed': 'var(--bc-text-muted)' },
+  light: { '--mantine-color-dimmed': 'var(--bc-text-muted)', ...readableOnTint(9) },
+  dark: { '--mantine-color-dimmed': 'var(--bc-text-muted)', ...readableOnTint(3) },
 });

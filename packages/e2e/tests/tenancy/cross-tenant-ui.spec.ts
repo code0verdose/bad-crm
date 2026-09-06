@@ -144,27 +144,16 @@ test.describe('the interface of one organization never shows another', () => {
     await expect(saveButton).toBeHidden();
 
     /*
-      NOT audited here, and the reason is a defect rather than an oversight — the only place in this
-      suite where a screen it visits is left unchecked, so it is written down rather than left to be
-      rediscovered.
-
-      Adding `audit(ownerPage)` on this line is what found it, and it still fails: `color-contrast`,
-      **4.02:1** where AA asks 4.5, on `#c84242` over `#ffe3e3` — the alert's own text and the label
-      of its «Try again» button, at 12px. Those are `danger-6` on `danger-1`, which is what Mantine
-      paints for `variant="light"`, and it sets them as **inline** custom properties, so no
-      stylesheet in this repository can override them.
-
-      It is therefore not a defect of this screen. Every `variant="light"` surface in the product
-      draws the same pair out of the same palette, and `ErrorState` is merely the first one an
-      automated audit ever rendered. `test/theme/tokens.test.ts` believes it covers this — its scale
-      block asserts «carries its own label on a light-variant surface» as shade 9 on shade 1 — and
-      that assumption is simply wrong for Mantine 9, which is exactly why the failure shipped.
-
-      Repairing it means moving shade 6 on five palettes while keeping white legible on it, and
-      correcting the gate that measures the wrong pair. That is a design-system change with its own
-      review, not a rider on an end-to-end story: measured and filed 2026-09-06, and this line comes
-      back the day the palette does.
+      Audited, and this line was switched off between 2026-09-06 and the palette repair of the same
+      week. It is the audit that found the defect: `color-contrast`, 4.02:1 where AA asks 4.5, on
+      `#c84242` over `#ffe3e3` — the «Try again» button of this alert, at 12px. That is
+      `danger-outline` on `danger-light`, and `-outline` resolved to the primary shade, which is
+      chosen to carry white on a filled button rather than to be read on a tint. `-outline` and
+      `-text` are now remapped for every scale in `app/theme/app-theme.config.ts` and measured for
+      every scale in `packages/client/test/theme/tokens.test.ts`, so the pair is held at 6.26:1 by a
+      unit test — and this line is what proves the unit test is talking about the rendered screen.
     */
+    await audit(ownerPage);
 
     // CONTROL: the identical navigation, one's own organization, and the record opens. Without it
     // this passes against a route that is simply broken for everybody.

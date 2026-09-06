@@ -3,15 +3,8 @@ import { resolve } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
-import {
-  DANGER_COLORS,
-  INFO_COLORS,
-  NEUTRAL_COLORS,
-  SUCCESS_COLORS,
-  WARNING_COLORS,
-} from '@app/theme/app-theme.config.js';
-
 import { contrastRatio, roundRatio } from './contrast.util.js';
+import { paintedColor } from './painted-colors.util.js';
 import { colourTokens, declaredTokens, schemeTokens, tokensCss } from './token-table.util.js';
 
 /**
@@ -218,68 +211,68 @@ describe.each(['light', 'dark'] as const)('contrast in the %s scheme', (scheme) 
 });
 
 /**
- * The semantic scales, measured at the three places Mantine reads text off a palette.
+ * The semantic scales, measured where Mantine actually reads text off a palette.
  *
- * A component says `color="warning"`, and the library — not this repository — decides that
- * `variant="light"` is shade 9 on shade 1, that `variant="filled"` is white on the primary shade,
- * and that the dark scheme puts shade 0 on a tint built from the dark end. None of those three
- * pairs is named by a `--bc-*` token, so the block above cannot see them, and every one of them
- * failed on Mantine's own palettes: `yellow-9` on `yellow-1` is 2.68:1, white on `red-6` is
- * 3.28:1. This is the assertion that makes «shade 6 is a bit prettier one step lighter» fail in a
- * test run rather than in an axe report on a screen nobody opened.
+ * Every pair below is **asked of the library** rather than written as a shade index
+ * (`painted-colors.util.ts`): the assertion names a variable, and Mantine's own resolvers say which
+ * colour that variable holds under this theme, this `primaryShade` and this scheme. The previous
+ * form of this block wrote `scale[9]`, `scale[6]`, `scale[0]` and `scale[4]` — a transcription of
+ * the library's table into a place where nothing rechecks it, and a transcription that had already
+ * gone wrong once: it left `--mantine-color-<c>-outline` unmeasured entirely, which is the primary
+ * shade, and an outline control standing on a light-variant panel shipped at 4.02:1 (`ErrorState`'s
+ * «Try again», `#c84242` on `#ffe3e3`, found by an `axe` audit on 2026-09-06 and by nothing here).
+ *
+ * The pair that block did assert — shade 9 on shade 1 — was never wrong. It is `light-color` on
+ * `light`, exactly what `variant="light"`, `subtle` and `transparent` paint in the light scheme,
+ * and it is the first case below. What it was not is *sufficient*.
+ *
+ * The three surfaces are the ones the product puts these colours on: the scale's own tinted panel,
+ * a striped table row, and the page.
  */
-describe.each([
-  ['danger', DANGER_COLORS],
-  ['warning', WARNING_COLORS],
-  ['success', SUCCESS_COLORS],
-  ['info', INFO_COLORS],
-  ['neutral', NEUTRAL_COLORS],
-] as const)('the %s scale', (_name, scale) => {
-  const ratio = (foreground: string, background: string): number =>
-    roundRatio(contrastRatio(foreground, background));
+const SCALES = ['brand', 'danger', 'warning', 'success', 'info', 'neutral'] as const;
 
-  /**
-   * **This case does not measure what its name says, and the correction is not a one-line edit.**
-   *
-   * Mantine 9 paints `variant="light"` as `--mantine-color-<c>-light-color` on
-   * `--mantine-color-<c>-light`, and in the light scheme that resolves to **shade 6** on shade 1,
-   * not shade 9 on shade 1. Measured on a rendered page 2026-09-06: the `ErrorState` alert reports
-   * `#c84242` on `#ffe3e3` — `danger-6` on `danger-1` — at **4.02:1**, a WCAG AA failure, while
-   * this assertion sat green throughout.
-   *
-   * So the pair below is real (shade 9 on shade 1 is what a hand-written label on a tinted panel
-   * uses) but it is not the library's, and asserting it has been giving false confidence to every
-   * `variant="light"` surface in the product. Repairing that means moving shade 6 on five palettes
-   * while keeping white legible on it — a design-system change with its own review — so the wrong
-   * assumption is annotated here rather than quietly deleted, and the missing case is added by that
-   * work. `packages/e2e/tests/tenancy/cross-tenant-ui.spec.ts` carries the same note beside the one
-   * screen whose audit is switched off because of it.
-   */
-  it('carries a hand-written label on a light-variant surface', () => {
-    expect(ratio(scale[9] as string, scale[1] as string)).toBeGreaterThanOrEqual(4.5);
-  });
+describe.each(SCALES)('the %s scale', (name) => {
+  describe.each(['light', 'dark'] as const)('in the %s scheme', (scheme) => {
+    const ratio = (foreground: string, background: string): number =>
+      roundRatio(contrastRatio(paintedColor(scheme, foreground), paintedColor(scheme, background)));
 
-  it('carries white on a filled surface in either scheme', () => {
-    // `primaryShade` is 6 in the light scheme and 8 in the dark one, and Mantine applies it to
-    // every palette, not only the primary — so a filled control is one of these two.
-    expect(ratio('#ffffff', scale[6] as string)).toBeGreaterThanOrEqual(4.5);
-    expect(ratio('#ffffff', scale[8] as string)).toBeGreaterThanOrEqual(4.5);
-  });
+    const light = `--mantine-color-${name}-light`;
+    const raised = '--bc-surface-raised';
 
-  it('carries its lightest shade on its darkest, which is the dark-scheme light variant', () => {
-    expect(ratio(scale[0] as string, scale[9] as string)).toBeGreaterThanOrEqual(4.5);
-  });
+    /** `variant="light"`, `subtle` and `transparent` — the label of a tinted panel on that panel. */
+    it('reads the text of a light variant on the surface of that variant', () => {
+      expect(ratio(`--mantine-color-${name}-light-color`, light)).toBeGreaterThanOrEqual(4.5);
+    });
 
-  /**
-   * Shade 4 is what `--mantine-color-<scale>-text` and `-outline` resolve to in the dark scheme,
-   * and the light-scheme half of that same variable is where this whole repair started:
-   * `--mantine-color-red-text` was `red-6` on white at 3.28:1, on every `dangerous` label there is.
-   * The dark half deserves the same assertion, not the same trust.
-   */
-  it('carries its text shade on the dark page surface', () => {
-    const surface = colourTokens('dark').get('--bc-surface') as string;
+    /**
+     * The pair nothing measured, and the one that shipped broken: `ErrorState` puts an
+     * `variant="outline"` button inside a `variant="light"` alert of the same colour, so the
+     * outline colour — the **primary shade**, not shade 9 — lands on the tint.
+     */
+    it('reads an outline control standing on that same surface', () => {
+      expect(ratio(`--mantine-color-${name}-outline`, light)).toBeGreaterThanOrEqual(4.5);
+    });
 
-    expect(ratio(scale[4] as string, surface)).toBeGreaterThanOrEqual(4.5);
+    /**
+     * The other surface an outline control stands on, and the harder of the two neutral ones: a
+     * striped table paints every other row `--bc-surface-raised`, and the outline `Badge`s of
+     * `/admin/members` sit on it. This is where `--bc-link` failed at 4.39:1 in 2026-09.
+     */
+    it('reads an outline control standing on a striped row', () => {
+      expect(ratio(`--mantine-color-${name}-outline`, raised)).toBeGreaterThanOrEqual(4.5);
+    });
+
+    /** `c="danger"` and anything naming `--mantine-color-<c>-text`, on the page it is written on. */
+    it('reads its text colour on the page surface', () => {
+      expect(ratio(`--mantine-color-${name}-text`, '--bc-surface')).toBeGreaterThanOrEqual(4.5);
+    });
+
+    /** `variant="filled"`: white by `defaultVariantColorsResolver`, over whatever `filled` is. */
+    it('carries white on a filled control', () => {
+      expect(
+        ratio('--mantine-color-white', `--mantine-color-${name}-filled`),
+      ).toBeGreaterThanOrEqual(4.5);
+    });
   });
 });
 
