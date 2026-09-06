@@ -1,5 +1,8 @@
 import { type PasswordHasherPort } from '@/application/identity/ports/password-hasher.port.js';
-import { type RecoveryCodeRepositoryPort } from '@/application/identity/ports/recovery-code-repository.port.js';
+import {
+  type RecoveryCodeCandidate,
+  type RecoveryCodeRepositoryPort,
+} from '@/application/identity/ports/recovery-code-repository.port.js';
 import { RECOVERY_CODE_COUNT } from '@/domain/identity/recovery-code.value.js';
 
 /**
@@ -33,12 +36,31 @@ import { RECOVERY_CODE_COUNT } from '@/domain/identity/recovery-code.value.js';
  * still exists to attach the resulting session to) before doing so; this class answers only "does
  * this code belong to this account and is it still unused", the one part of that question every
  * caller answers identically.
+ *
+ * ## Why the read and the comparisons are two calls and not one
+ *
+ * `listCandidates` needs a tenant scope; `compare` must not run inside one. Since STORY-013-06 every
+ * Argon2id computation may first **wait** up to `AUTH_ARGON2_QUEUE_TIMEOUT_MS` for a slot, and this
+ * loop pays that wait `RECOVERY_CODE_COUNT` times over, one queueing per verification. Held inside
+ * an interactive transaction those waits are ten deadlines stacked inside one five-second budget
+ * (`tenant.context.ts`, `DEFAULT_TIMEOUT_MS`), on a pinned pool connection: the transaction is
+ * killed first and the caller is answered `500 internal_error` instead of the `503` with a
+ * `Retry-After` the queue itself produced — the saturation regime turned into an outage of the whole
+ * pool. Splitting the two lets a caller read its candidates in one short scope, run the comparisons
+ * holding nothing, and open a second scope to write. It is the rule `tenant.context.ts` already
+ * states for S3, SMTP and every other call that can block for seconds; the ceiling put Argon2id into
+ * that class.
  */
 export class RecoveryCodeMatcher {
   constructor(
     private readonly codes: RecoveryCodeRepositoryPort,
     private readonly hasher: PasswordHasherPort,
   ) {}
+
+  /** Every unused row of the account — a tenant-scoped read, and the only I/O this class does. */
+  async listCandidates(userId: string): Promise<readonly RecoveryCodeCandidate[]> {
+    return await this.codes.listUnused(userId);
+  }
 
   /**
    * The id of the unused row `normalizedCode` matches, or `null`.
@@ -54,10 +76,14 @@ export class RecoveryCodeMatcher {
    * check on public facts about the format, and every caller pays it before this — the one Argon2id
    * cost this method exists to bound is not owed to a string that could never have been a code this
    * system issued.
+   *
+   * Takes the candidates rather than reading them, so that the loop can run outside the transaction
+   * that read them — see the class docstring's last section.
    */
-  async match(userId: string, normalizedCode: string): Promise<string | null> {
-    const candidates = await this.codes.listUnused(userId);
-
+  async compare(
+    candidates: readonly RecoveryCodeCandidate[],
+    normalizedCode: string,
+  ): Promise<string | null> {
     let matchId: string | null = null;
     const slots = Math.max(candidates.length, RECOVERY_CODE_COUNT);
 

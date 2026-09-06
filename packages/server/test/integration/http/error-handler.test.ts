@@ -314,3 +314,65 @@ describe('Retry-After', () => {
     expect(response.headers['retry-after']).toBeUndefined();
   });
 });
+
+/**
+ * A refusal the system produced on purpose is not an unhandled error, whatever its status digit.
+ *
+ * The queue in front of argon2id (STORY-013-06) answers `503 service_unavailable` with a
+ * `Retry-After` when a request waited out its budget — load the ceiling exists to shed, in the one
+ * regime the ceiling was written for. Filing each of those at `error` with a stack means the
+ * saturation an operator is supposed to see as one metric arrives as thousands of traces, written
+ * by unauthenticated traffic, in the level that is supposed to page somebody.
+ *
+ * What separates the two is not the class and not the status: it is whether the failure knows when
+ * to come back. A queue refusal names the delay it computed from its own budget; Redis going away
+ * names nothing, because nothing about that failure predicts its end.
+ */
+describe('the level of a failure the system handled', () => {
+  it('logs a refusal that named its retry delay at warn, with its details and no stack', async () => {
+    const { app, logLines } = appThrowing(() => {
+      throw new ServiceUnavailableError(
+        { dependency: 'password-hashing', waitedMs: 2000 },
+        undefined,
+        2,
+      );
+    });
+
+    await request(app).get('/boom');
+
+    const entry = entriesOf(logLines()).find((line) => line['code'] === 'service_unavailable');
+
+    expect(entry?.['level']).toBe(40);
+    // Which dependency shed the load, in the line an operator reads — not only wherever the error
+    // serializer happens to reproduce it.
+    expect(entry?.['details']).toMatchObject({ dependency: 'password-hashing', waitedMs: 2000 });
+    expect(framesIn(entry)).toEqual([]);
+  });
+
+  /** CONTROL: a dependency that failed with no answer to «when» is an outage, and still pages. */
+  it('CONTROL: keeps a 503 that named no delay at error, with its stack', async () => {
+    const { app, logLines } = appThrowing(() => {
+      throw new ServiceUnavailableError({ dependency: 'redis' });
+    });
+
+    await request(app).get('/boom');
+
+    const entry = entriesOf(logLines()).find((line) => line['code'] === 'service_unavailable');
+
+    expect(entry?.['level']).toBe(50);
+    expect(framesIn(entry).length).toBeGreaterThan(0);
+  });
+
+  /** CONTROL: the 429 the rate limiter already answered stays where it was — a 4xx at warn. */
+  it('CONTROL: leaves an expected 4xx that names a delay at warn', async () => {
+    const { app, logLines } = appThrowing(() => {
+      throw new RateLimitedError(42);
+    });
+
+    await request(app).get('/boom');
+
+    expect(entriesOf(logLines()).find((line) => line['code'] === 'rate_limited')?.['level']).toBe(
+      40,
+    );
+  });
+});

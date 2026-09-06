@@ -41,7 +41,7 @@ export interface RecoveryCodeRepositoryPort {
    *
    * **`userId` is required, not implied by `id` being unique.** `id` on its own already can only ever
    * name one row — the predicate is not there to disambiguate it. It is there because `id` reaches
-   * this call by way of `ConsumeRecoveryCodeUseCase.match`, which resolves it from an argon2id
+   * this call by way of `RecoveryCodeMatcher.compare`, which resolves it from an argon2id
    * comparison over a candidate list rather than from a `WHERE user_id = …` a database enforces on
    * this call itself; a caller that passed the wrong id — a bug reachable without crossing any tenant
    * boundary RLS would catch — would otherwise spend a different account's code inside the very same

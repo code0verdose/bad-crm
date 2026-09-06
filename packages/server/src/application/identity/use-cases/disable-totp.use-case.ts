@@ -1,8 +1,14 @@
 import { type AuditLoggerPort } from '@/application/platform/ports/audit-logger.port.js';
 import { type PasswordHasherPort } from '@/application/identity/ports/password-hasher.port.js';
 import { type RecoveryCodeMatcher } from '@/application/identity/use-cases/recovery-code-matcher.use-case.js';
-import { type RecoveryCodeRepositoryPort } from '@/application/identity/ports/recovery-code-repository.port.js';
-import { type TotpEnrollmentRepositoryPort } from '@/application/identity/ports/totp-enrollment.port.js';
+import {
+  type RecoveryCodeCandidate,
+  type RecoveryCodeRepositoryPort,
+} from '@/application/identity/ports/recovery-code-repository.port.js';
+import {
+  type TotpEnrollmentRepositoryPort,
+  type TotpEnrollmentState,
+} from '@/application/identity/ports/totp-enrollment.port.js';
 import { type TotpPort } from '@/application/identity/ports/totp.port.js';
 import {
   type UserCredentialRecord,
@@ -42,6 +48,15 @@ export interface DisableTotpInput {
  *  backend.mdc`); the two patterns are the same string by construction, not by coincidence. */
 const TOTP_CODE_PATTERN = /^\d{6}$/;
 
+/** Every row the two proofs are judged against, read in one scope before any Argon2id runs. */
+interface CallerProofs {
+  readonly credential: UserCredentialRecord | null;
+  /** The enrolment, for a code of TOTP shape; `null` for a recovery code, which does not need it. */
+  readonly enrollment: TotpEnrollmentState | null;
+  /** The unused recovery rows, for a code that is not of TOTP shape; empty otherwise. */
+  readonly candidates: readonly RecoveryCodeCandidate[];
+}
+
 /** Which of the two accepted proofs a presented `code` turned out to be, and what committing it needs. */
 type SecondFactorCheck =
   | { readonly ok: false }
@@ -72,7 +87,7 @@ type SecondFactorCheck =
  *
  * ## A recovery code is matched, never spent, until the password has also checked out
  *
- * `RecoveryCodeMatcher.match` only compares — it does not call `RecoveryCodeRepositoryPort.markUsed`.
+ * `RecoveryCodeMatcher.compare` only compares — it does not call `RecoveryCodeRepositoryPort.markUsed`.
  * That split exists for this use-case specifically: spending a code is supposed to cost the account
  * exactly one of its ten, and a request that presents a valid recovery code alongside a *wrong*
  * password must not burn it. Only after `passwordCheck.ok` is confirmed does `commit` call
@@ -91,28 +106,29 @@ type SecondFactorCheck =
  * one of those cases (acceptance 2). Acceptance 3 — a stolen access token with no password — is not a
  * separate branch: the password check simply fails, and the answer is identical.
  *
- * ## Disabling and deleting every recovery code are one transaction — and so is verifying the caller
+ * ## Disabling and deleting every recovery code are one transaction; verifying the caller is not
  *
  * `enrollment.disable` and `recoveryCodes.deleteAllForUser` both run inside the single
  * `unitOfWork.withTenant` block STORY-013-04's acceptance 1 asks for ("**все** коды восстановления
  * удаляются в той же транзакции"): an account with 2FA cleared and an old recovery-code batch still
  * valid would let that batch re-arm a *future* enrolment nobody scanned a QR code for.
  *
- * **Unlike `ConfirmTotpUseCase` and `RegenerateRecoveryCodesUseCase`, there is nothing here to mint
- * before that transaction opens.** Both siblings pay their Argon2id cost early only for the batch of
- * *new* recovery codes they are about to issue — a cost this operation does not have, because it
- * deletes a batch rather than creating one. What every one of the three sibling use-cases shares, this
- * one included, is that verifying the *caller* — the password digest, and either the TOTP secret's
- * decryption plus one `TotpPort.verify` or `RecoveryCodeMatcher.match`'s fixed `RECOVERY_CODE_COUNT`
- * Argon2id comparisons — happens **inside** `withTenant`, in `disable` below, because
- * `UserRepositoryPort.findCredential` and `TotpEnrollmentRepositoryPort.find` are tenant-scoped reads
- * that only resolve inside the scope this command's one transaction opens; there is no "read-only
- * tenant scope" this codebase offers to run them in ahead of it. That cost is bounded and known: one
- * password verification, and either one decrypt-plus-verify or ten fixed comparisons — never both,
- * `verifySecondFactor` branches on the shape of `code` — comfortably inside the transaction's timeout
- * on the hardware this Argon2id configuration is tuned for. What actually bounds concurrent load on
- * this path is `mfa_reauth_attempt`, spent in `execute` before `withTenant` is even called: a caller
- * who has exhausted the budget never reaches the transaction at all.
+ * **Verifying the caller costs Argon2id, and Argon2id may not run inside that transaction.** Since
+ * STORY-013-06 every hash and every verification first queues for one of
+ * `AUTH_ARGON2_CONCURRENCY` slots and may wait `AUTH_ARGON2_QUEUE_TIMEOUT_MS` for it. A recovery
+ * code costs `RECOVERY_CODE_COUNT` verifications, each queueing separately: ten waits, on a pinned
+ * pool connection, inside a transaction whose budget is five seconds (`tenant.context.ts`). Under
+ * the saturation the ceiling exists for, the transaction is killed first and the caller is answered
+ * `500 internal_error` in place of the `503` with a `Retry-After` the queue produced. So this
+ * command runs three phases instead of one: `read` takes every row the proofs are judged against in
+ * one short scope, the verifications run holding nothing, and `disable` opens a second scope to
+ * write. Nothing atomic is given up — the two writes that decide the outcome, `advanceCounter` and
+ * `markUsed`, are conditional statements that answer `false` when somebody else got there first,
+ * which is the same guarantee they gave inside one Read Committed transaction.
+ *
+ * What bounds concurrent load on this path besides the ceiling is `mfa_reauth_attempt`, spent in
+ * `execute` before the first scope opens: a caller who has exhausted the budget never reaches the
+ * database at all.
  *
  * ## The owner is told, outside the transaction
  *
@@ -147,7 +163,22 @@ export class DisableTotpUseCase {
 
     if (!decision.allowed) throw new RateLimitedError(decision.retryAfterSeconds);
 
-    const credential = await this.unitOfWork.withTenant(input.actor, () => this.disable(input));
+    const now = this.clock.now();
+
+    // Read in one scope, judged holding none, written in a second — see the class docstring,
+    // «Verifying the caller costs Argon2id, and Argon2id may not run inside the transaction».
+    const proofs = await this.unitOfWork.withTenant(input.actor, () => this.read(input));
+
+    const [passwordCheck, secondFactor] = await Promise.all([
+      this.verifyPassword(proofs.credential, input.password),
+      this.verifySecondFactor(input.actor, proofs, input.code, now),
+    ]);
+
+    if (!passwordCheck.ok || !secondFactor.ok) throw new ReauthenticationRequiredError();
+
+    await this.unitOfWork.withTenant(input.actor, () => this.disable(input, secondFactor, now));
+
+    const credential = passwordCheck.credential;
 
     await this.rateLimit.reset('mfa_reauth_attempt', { userId: input.actor.userId });
 
@@ -163,16 +194,27 @@ export class DisableTotpUseCase {
     this.notify(input, credential);
   }
 
-  private async disable(input: DisableTotpInput): Promise<UserCredentialRecord> {
-    const now = this.clock.now();
+  /**
+   * Everything the two proofs are judged against, in one tenant-scoped read and no computation.
+   *
+   * The recovery-code candidates are read only for a code that could be one: a six-digit string is
+   * a TOTP code by shape, and listing ten rows for it would be a read nothing consumes.
+   */
+  private async read(input: DisableTotpInput): Promise<CallerProofs> {
+    const isTotpShape = TOTP_CODE_PATTERN.test(input.code);
 
-    const [passwordCheck, secondFactor] = await Promise.all([
-      this.verifyPassword(input.actor.userId, input.password),
-      this.verifySecondFactor(input.actor, input.code, now),
-    ]);
+    return {
+      credential: await this.users.findCredential(input.actor.userId),
+      enrollment: isTotpShape ? await this.enrollment.find(input.actor.userId) : null,
+      candidates: isTotpShape ? [] : await this.matcher.listCandidates(input.actor.userId),
+    };
+  }
 
-    if (!passwordCheck.ok || !secondFactor.ok) throw new ReauthenticationRequiredError();
-
+  private async disable(
+    input: DisableTotpInput,
+    secondFactor: Extract<SecondFactorCheck, { ok: true }>,
+    now: Date,
+  ): Promise<void> {
     // STORY-013-04 acceptance 4 / STORY-013-05 acceptance 6, and it is checked **after** both proofs
     // rather than before them. Refusing first would answer «your organization requires 2FA» to
     // somebody who has not proved they hold the account — a free read of the policy for anybody with
@@ -209,8 +251,6 @@ export class DisableTotpUseCase {
       after: { recoveryCodesDeleted, secondFactorKind: secondFactor.kind },
       requestId: undefined,
     });
-
-    return passwordCheck.credential;
   }
 
   /** Advances the TOTP counter or spends the matched recovery code; `enrollment.disable` last. */
@@ -233,13 +273,11 @@ export class DisableTotpUseCase {
   }
 
   private async verifyPassword(
-    userId: string,
+    credential: UserCredentialRecord | null,
     password: string,
   ): Promise<
     { readonly ok: false } | { readonly ok: true; readonly credential: UserCredentialRecord }
   > {
-    const credential = await this.users.findCredential(userId);
-
     if (credential === null) {
       await this.hasher.verify(this.hasher.dummyHash, password);
 
@@ -253,10 +291,11 @@ export class DisableTotpUseCase {
 
   private async verifySecondFactor(
     actor: DisableTotpInput['actor'],
+    proofs: CallerProofs,
     code: string,
     now: Date,
   ): Promise<SecondFactorCheck> {
-    if (TOTP_CODE_PATTERN.test(code)) return this.checkTotp(actor, code, now);
+    if (TOTP_CODE_PATTERN.test(code)) return this.checkTotp(actor, proofs.enrollment, code, now);
 
     const normalized = normalizeRecoveryCode(code);
 
@@ -264,7 +303,7 @@ export class DisableTotpUseCase {
     // `ConsumeRecoveryCodeUseCase` applies before calling the same matcher.
     if (!isWellFormedRecoveryCode(normalized)) return { ok: false };
 
-    const matchId = await this.matcher.match(actor.userId, normalized);
+    const matchId = await this.matcher.compare(proofs.candidates, normalized);
 
     return matchId === null
       ? { ok: false }
@@ -272,13 +311,12 @@ export class DisableTotpUseCase {
   }
 
   /** Verifies the presented TOTP code without touching `totp_last_counter` — see the class docstring. */
-  private async checkTotp(
+  private checkTotp(
     actor: DisableTotpInput['actor'],
+    state: TotpEnrollmentState | null,
     code: string,
     now: Date,
-  ): Promise<SecondFactorCheck> {
-    const state = await this.enrollment.find(actor.userId);
-
+  ): SecondFactorCheck {
     if (state === null || state.enabledAt === null) return { ok: false };
 
     let base32Secret: string;

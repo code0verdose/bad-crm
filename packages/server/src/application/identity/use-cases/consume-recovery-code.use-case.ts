@@ -121,9 +121,7 @@ export class ConsumeRecoveryCodeUseCase {
     // Refused before any Argon2id verification runs — shape and alphabet are public facts this
     // costs nothing to check and reveals nothing account-specific (see the class docstring).
     const spent = isWellFormedRecoveryCode(normalized)
-      ? await this.unitOfWork.withTenant(input.actor, () =>
-          this.spend(input.actor, normalized, input.ipAddress),
-        )
+      ? await this.spend(input.actor, normalized, input.ipAddress)
       : null;
 
     if (spent === null) {
@@ -203,15 +201,43 @@ export class ConsumeRecoveryCodeUseCase {
     );
   }
 
+  /**
+   * Reads the candidates in one scope, compares them holding none, spends the winner in a second.
+   *
+   * The comparisons are `RECOVERY_CODE_COUNT` Argon2id verifications and each of them may wait
+   * `AUTH_ARGON2_QUEUE_TIMEOUT_MS` for a slot since STORY-013-06 — ten waits that inside one
+   * interactive transaction outlive its five-second budget and turn this system's own `503` into a
+   * `500` (`RecoveryCodeMatcher`'s docstring carries the reasoning in full).
+   *
+   * **Nothing is given up by comparing between the two scopes.** The winner was never decided by
+   * this loop: `markUsed`'s conditional `UPDATE ... WHERE used_at IS NULL` decides it, and answers
+   * `false` for a row somebody else spent in the meantime — the same answer, from the same
+   * statement, whether the meantime was inside one transaction or between two. Read Committed never
+   * offered more than that: a row spent by a transaction that commits after our read is visible to
+   * the `UPDATE` under either shape.
+   */
   private async spend(
     actor: ConsumeRecoveryCodeInput['actor'],
     normalizedCode: string,
     ipAddress: string | undefined,
   ): Promise<{ readonly id: string; readonly credential: UserCredentialRecord | null } | null> {
-    const matchId = await this.matcher.match(actor.userId, normalizedCode);
+    const candidates = await this.unitOfWork.withTenant(actor, () =>
+      this.matcher.listCandidates(actor.userId),
+    );
+
+    const matchId = await this.matcher.compare(candidates, normalizedCode);
 
     if (matchId === null) return null;
 
+    return await this.unitOfWork.withTenant(actor, () => this.commit(actor, matchId, ipAddress));
+  }
+
+  /** The write half: the conditional spend, the trail entry, and the address the notice goes to. */
+  private async commit(
+    actor: ConsumeRecoveryCodeInput['actor'],
+    matchId: string,
+    ipAddress: string | undefined,
+  ): Promise<{ readonly id: string; readonly credential: UserCredentialRecord | null } | null> {
     const won = await this.codes.markUsed(actor.userId, matchId, this.clock.now());
 
     // Lost the race to another request resolving the same row — answered exactly like "no match",

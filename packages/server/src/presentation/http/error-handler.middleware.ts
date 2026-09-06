@@ -78,9 +78,11 @@ const asAppError = (error: unknown): AppError | undefined => {
  *   never turns a 404 into a 403: the choice between them is made once, in
  *   `domain/shared/errors/access-denial.util.ts`, because a denial that crosses organizations must
  *   be indistinguishable from a resource that does not exist (invariant 2 of CLAUDE.md).
- * - **Expected failures log at `warn` without a stack, unexpected ones at `error` with it.** A 404
- *   logged at `error` with a stack trace is how a team learns to ignore the level that should page
- *   somebody.
+ * - **A failure the system handled logs at `warn` without a stack, an unhandled one at `error` with
+ *   it** — and «handled» is read off the error, not off its status digit: a failure that names the
+ *   delay after which to retry is one this system produced on purpose, whether that is a 429 from
+ *   the rate limiter or the 503 of a saturated queue. A 404, or a shed request, logged at `error`
+ *   with a stack trace is how a team learns to ignore the level that should page somebody.
  * - **A response that already started is left alone.** Express's default handler destroys the
  *   connection; writing a second set of headers would throw inside the error handler itself, and
  *   the process would lose the original error as well.
@@ -98,9 +100,20 @@ export const createErrorHandler = (dependencies: ErrorHandlerDependencies): Erro
     const status = appError?.status ?? 500;
     const code = appError?.code ?? 'internal_error';
 
-    if (appError !== undefined && status < 500) {
+    // The level follows one property of the error, not its status digit and not its class: does it
+    // know when to come back. A 4xx and the 503 the argon2 queue raises after a request waited out
+    // its budget (STORY-013-06) both do — they are this system shedding load it was built to shed,
+    // and each one names the delay it computed. A dependency that simply went away names nothing,
+    // because nothing about that failure predicts its end, and that is what has to page somebody.
+    //
+    // Deciding it by listing classes instead would be wrong in the direction that costs most: under
+    // the saturation the ceiling exists for, every refusal is an `error` line with a stack, written
+    // by unauthenticated traffic, in the level an operator alerts on — the real outage arrives into
+    // a log nobody can read any more.
+    if (appError !== undefined && (status < 500 || appError.retryAfterSeconds !== undefined)) {
       // `details` goes to the log and never to the body: it is developer context (which probe,
-      // which limit), and the response carries only what the client can act on.
+      // which limit, which dependency shed the load and after how long), and the response carries
+      // only what the client can act on.
       dependencies.logger.warn(
         { requestId, code, status, details: appError.details },
         'request rejected',

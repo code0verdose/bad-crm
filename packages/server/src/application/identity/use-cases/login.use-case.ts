@@ -382,22 +382,32 @@ export class LoginUseCase {
   /**
    * The session, or `null` when the account's second factor still has to be presented.
    *
-   * The enrolment is read **inside** the same transaction as the re-hash and the session, so both
-   * outcomes cost the same reads and the same scope: a branch that skipped the transaction entirely
-   * for one of the two would make "does this account have 2FA" measurable from outside.
+   * The enrolment is read **inside** the same transaction as the re-hash write and the session, so
+   * both outcomes cost the same reads and the same scope: a branch that skipped the transaction
+   * entirely for one of the two would make "does this account have 2FA" measurable from outside.
+   * The re-hash *computation* is the one thing that moved out of it, and it is upstream of the
+   * enrolment read either way — what it costs does not depend on the answer.
    */
   private async openSession(
     user: AuthUserRecord,
     input: LoginInput,
   ): Promise<AuthenticatedLogin | null> {
+    // The transparent re-hash of the epic acceptance, computed in the one moment the plaintext
+    // exists and the person has already proved they know it — and computed **before** the
+    // transaction opens. Since STORY-013-06 a hash may first wait `AUTH_ARGON2_QUEUE_TIMEOUT_MS`
+    // for a slot, and an operator who raises `ARGON2_MEMORY_COST` makes this branch true for every
+    // sign-in of every account: that wait inside the transaction would put the whole installation's
+    // sign-in traffic on pinned pool connections for the length of the queue. The write it feeds
+    // stays inside, so a failure still leaves neither a new digest nor a session.
+    const rehashed = this.hasher.needsRehash(user.passwordHash)
+      ? await this.hasher.hash(input.password)
+      : null;
+
     const session = await this.unitOfWork.withTenant(
       { organizationId: user.organizationId, userId: user.userId },
       async () => {
-        // The transparent re-hash of the epic acceptance, in the one moment the plaintext exists and
-        // the person has already proved they know it. In the same transaction as the session, so a
-        // failure leaves neither rather than a new digest and no sign-in.
-        if (this.hasher.needsRehash(user.passwordHash)) {
-          await this.users.updatePasswordHash(user.userId, await this.hasher.hash(input.password));
+        if (rehashed !== null) {
+          await this.users.updatePasswordHash(user.userId, rehashed);
         }
 
         const enrollment = await this.enrollment.find(user.userId);

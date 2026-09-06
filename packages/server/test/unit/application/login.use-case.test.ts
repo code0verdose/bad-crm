@@ -582,6 +582,34 @@ describe('signing in', () => {
       expect(unitOfWork.scopes).toHaveLength(1);
     });
 
+    /**
+     * STORY-013-06 made a hash something that can **wait**: up to `AUTH_ARGON2_QUEUE_TIMEOUT_MS`
+     * for a slot before it computes anything. Raising `ARGON2_MEMORY_COST` makes `needsRehash` true
+     * on every successful sign-in of every account, so that wait would be paid by every sign-in in
+     * the installation — on a pinned pool connection, inside the transaction's five-second budget.
+     * Computing first and writing inside keeps the atomicity the test above asserts and takes the
+     * queue out of the transaction.
+     */
+    it('computes the new digest before the transaction opens', async () => {
+      const test = harness();
+      const insideScope: boolean[] = [];
+      const compute = test.hasher.hash.bind(test.hasher);
+
+      test.hasher.rehashNeeded = true;
+      test.hasher.hash = async (password: string): Promise<string> => {
+        insideScope.push(test.unitOfWork.current !== undefined);
+
+        return await compute(password);
+      };
+
+      await test.login.execute({ email: 'ada@example.com', password: PASSWORD, client: CLIENT });
+
+      expect(insideScope).toEqual([false]);
+      // CONTROL: the digest it produced is still written inside the one transaction as before.
+      expect(test.users.rehashed).toHaveLength(1);
+      expect(test.unitOfWork.scopes).toHaveLength(1);
+    });
+
     it('leaves a current digest alone', async () => {
       const { login, users } = harness();
 
