@@ -5406,13 +5406,18 @@ components:
         security event this path logs beside the 503.
 
         Every operation that hashes or verifies a password declares it for a third cause: argon2id
-        computations run behind a process-wide ceiling (`AUTH_ARGON2_MAX_CONCURRENCY`), and a caller
-        that waits out `AUTH_ARGON2_QUEUE_TIMEOUT_MS` without reaching a slot is refused rather than
-        left holding memory in a queue with no deadline (STORY-013-06). This is the one cause that
-        can state a delay: the refusal carries `Retry-After` derived from the wait budget, so a
-        client can back off instead of retrying into the same saturated queue. The operations
-        concerned are sign-in and second-factor verification, registration, invitation acceptance,
-        the password change and the password reset, and the 2FA operations that re-check a password.
+        computations run behind a process-wide ceiling (`AUTH_ARGON2_MAX_CONCURRENCY`), and the queue
+        in front of it refuses in two ways rather than one (STORY-013-06). A caller that waits out
+        `AUTH_ARGON2_QUEUE_TIMEOUT_MS` without reaching a slot is refused rather than left holding
+        memory in a queue with no deadline; a caller that arrives when the queue is already as long
+        as anything that budget could drain is refused **immediately**, without waiting at all,
+        because parking it would buy it nothing and cost the server a held socket for the whole
+        budget. So an integrator should expect this status to arrive both slowly and instantly, and
+        should not read a fast 503 as a different fault. This is the one cause that can state a
+        delay: both refusals carry `Retry-After` derived from the wait budget, so a client can back
+        off instead of retrying into the same saturated queue. The operations concerned are sign-in
+        and second-factor verification, registration, invitation acceptance, the password change and
+        the password reset, and the 2FA operations that re-check a password.
 
         A caller can distinguish nothing from this code beyond "not now": all three causes are
         stated here for the operator reading the contract, and none is reported in the body.

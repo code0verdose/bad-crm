@@ -419,6 +419,23 @@ const fields = z.object({
    * the file-descriptor limit reaches first. The bound follows what can be served, not what fits in
    * memory: raise this and the ceiling together only against a memory budget you computed.
    *
+   * ## The range is wider than what is safe, and ~4 900 ms is where it stops being safe
+   *
+   * Three commands deliberately keep **one** argon2id computation inside their transaction —
+   * `ConfirmTotpUseCase`, `RegenerateRecoveryCodesUseCase` and `ConfirmPasswordResetUseCase`
+   * (`test/unit/application/hashing-outside-transaction.test.ts` records why each one is left there).
+   * A tenant scope's budget is five seconds (`tenant.context.ts`, `DEFAULT_TIMEOUT_MS`), so under a
+   * saturated queue one wait plus one computation has to fit inside it: at 2 000 ms that is ≈ 2.1 s
+   * and the caller gets the `503` with a `Retry-After` this queue exists to produce.
+   *
+   * Past roughly 4 900 ms it does not fit, and the failure is qualitative rather than slow: the
+   * driver kills the transaction and the caller is answered `500 internal_error`. **A value like
+   * 10 000 — inside the accepted range and outwardly reasonable — therefore breaks confirming 2FA,
+   * regenerating recovery codes and completing a password reset**, and breaks them only while the
+   * host is under the load the setting was raised to survive. The schema does not clamp it there
+   * because a fourth path could move a computation out of its transaction and lift the bound; the
+   * number is written here, in `.env.example` and in both runbooks so it is met before it is hit.
+   *
    * ## Why the range is 100–60 000 ms
    *
    * Both ends fail identically — every waiter refused at once — which is why neither may be left
