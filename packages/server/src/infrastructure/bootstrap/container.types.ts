@@ -1,3 +1,4 @@
+import { type AuditLoggerPort } from '@/application/platform/ports/audit-logger.port.js';
 import { type LoggerPort } from '@/application/platform/ports/logger.port.js';
 import { type PasswordHasherPort } from '@/application/identity/ports/password-hasher.port.js';
 import { type ProcessLifecycleAdapter } from '@/infrastructure/platform/process-lifecycle.adapter.js';
@@ -60,5 +61,19 @@ export interface AppContainer {
    * own hashing and not to build a second path around the queue.
    */
   readonly passwordHasher: PasswordHasherPort;
+  /**
+   * The one audit writer every use-case of this process records through, decorators included.
+   *
+   * **A seam of the same kind as `passwordHasher`, published for the same reason.** The chain is
+   * three decorators whose order is the contract — the counter inside so it sees every failure,
+   * the degrading decision outside so it decides who else does (`container.factory.ts`) — and until
+   * this line the order had no observation point: every suite that proved it built the chain by
+   * hand, so swapping the two decorators in the composition root left the whole server suite green
+   * while `audit_write_failed_total` stopped counting exactly the failures it exists to count.
+   *
+   * It is the **same instance** the use-cases received: reading it can neither build a second
+   * writer around the counter nor reach the transaction behind one. Nothing in `src/` reads it.
+   */
+  readonly audit: AuditLoggerPort;
   readonly http: HttpServerDependencies;
 }

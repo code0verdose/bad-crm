@@ -22,15 +22,16 @@ const countOf = (rendered: string): string | undefined =>
 /**
  * `audit_write_failed_total` — STORY-016-02, acceptance 9.
  *
- * Today a failed insert brings the whole transaction down, which is the right answer for a
- * `warning` or a `critical`: an action nobody could write down did not happen. What is missing is
- * that the operator learns of it only through the request that failed, and a request that failed
- * looks like every other one in the RED set. This counter is the difference between «the trail is
- * broken» and «somebody complained».
+ * A failed insert of a `WARNING` or `CRITICAL` row brings the whole transaction down: an action
+ * nobody could write down did not happen. Without a counter the operator learns of it only through
+ * the request that failed, and a request that failed looks like every other one in the RED set.
+ * This counter is the difference between «the trail is broken» and «somebody complained».
  *
- * The decorator counts and **rethrows**. The one thing this suite must not let through is a version
- * that reports the failure and swallows it — that would turn fail-closed into fail-open by way of
- * an improvement in observability.
+ * The decorator counts and **rethrows**, for every severity. Whether an `INFO` failure then reaches
+ * the caller is decided one layer out (`degrading-audit-logger.adapter.ts`, its own suite), and it
+ * is decided there precisely so that this one never softens: a version that reported the failure
+ * and swallowed it here would turn fail-closed into fail-open for the actions the trail exists for,
+ * by way of an improvement in observability.
  */
 describe('the counted audit logger', () => {
   it('counts a write that failed', async () => {

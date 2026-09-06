@@ -166,6 +166,24 @@ describe('error serializer', () => {
     expect(serialized.stack).toContain('redaction.test.ts');
   });
 
+  /**
+   * `AuditFenceRollbackError` carries the insert failure as `cause` and the rollback failure in its
+   * message; a serializer that dropped `cause` would lose the reason the row was refused, which is
+   * the half an operator needs first.
+   */
+  it('keeps the cause of an error, so a wrapped failure is not lost on the line', () => {
+    const serialized = serializeLogError(
+      new Error('savepoint could not be rolled back (connection reset)', {
+        cause: new Error('unsupported Unicode escape sequence'),
+      }),
+    );
+
+    expect(`${serialized.message}\n${serialized.stack ?? ''}`).toContain(
+      'unsupported Unicode escape sequence',
+    );
+    expect(serialized.message).toContain('connection reset');
+  });
+
   it.each([
     ['a string', 'just a string', 'just a string'],
     ['an object', { reason: 'rejected' }, '{"reason":"rejected"}'],

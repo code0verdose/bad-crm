@@ -39,6 +39,7 @@ import { countedAuditLogger } from '@/infrastructure/metrics/counted-audit-logge
 import { countedUnscopedAuditLogger } from '@/infrastructure/metrics/counted-unscoped-audit-logger.adapter.js';
 import { noopMetrics } from '@/infrastructure/metrics/noop-metrics.adapter.js';
 import { RecordClientErrorUseCase } from '@/application/platform/use-cases/record-client-error.use-case.js';
+import { degradingAuditLogger } from '@/infrastructure/logging/degrading-audit-logger.adapter.js';
 import { pinoAuditLogger } from '@/infrastructure/logging/pino-audit.adapter.js';
 import { PrismaAuditLogger } from '@/infrastructure/persistence/prisma/audit-log.adapter.js';
 import { createAuditLogBytesReader } from '@/infrastructure/persistence/prisma/audit-log-size.adapter.js';
@@ -301,20 +302,26 @@ export const buildContainer = (input: ContainerInput): AppContainer => {
    * that had drifted out of the ambient tenant scope had its privileged action quietly turned into a
    * rotated log line and was told nothing, which is the failure the trail exists to not have.
    *
-   * Two decorators, counting two different things. `countedAuditLogger` is outermost — so it also
-   * sees a failure of the sink underneath — and counts what could **not** be written; it counts and
-   * **rethrows**, so the fail-closed contract of `audit-logger.port.ts` is unchanged and has to stay
-   * that way. `countedUnscopedAuditLogger` wraps the sink and counts what legitimately took the log
-   * path, so that «the trail is partly in the log» is a series an operator can alert on instead of
-   * something nobody can see.
+   * Three decorators, and the order is the contract. `countedUnscopedAuditLogger` wraps the sink
+   * and counts what legitimately took the log path, so that «the trail is partly in the log» is a
+   * series an operator can alert on. `countedAuditLogger` wraps the writer — so it also sees a
+   * failure of the sink underneath — and counts what could **not** be written; it counts and
+   * **rethrows**. `degradingAuditLogger` is outermost and is the one place that decides what a
+   * failure means to the action: a degradable row — `INFO`, behind no `dangerous` key — that could
+   * not be written is reported at `error` and the action goes on; every other row fails the action
+   * with it (STORY-016-02, acceptance 9; `degradable-audit-actions.util.ts`). It has to sit outside the counter, or the holes it lets through would be exactly
+   * the failures the counter never saw.
    */
-  const audit = countedAuditLogger(
-    new PrismaAuditLogger({
-      addressHasher: new HmacAddressHasher(input.env.APP_ENCRYPTION_KEY),
-      requestContext,
-      unscoped: countedUnscopedAuditLogger(pinoAuditLogger(logger, clock), metrics),
-    }),
-    metrics,
+  const audit = degradingAuditLogger(
+    countedAuditLogger(
+      new PrismaAuditLogger({
+        addressHasher: new HmacAddressHasher(input.env.APP_ENCRYPTION_KEY),
+        requestContext,
+        unscoped: countedUnscopedAuditLogger(pinoAuditLogger(logger, clock), metrics),
+      }),
+      metrics,
+    ),
+    logger,
   );
 
   /**
@@ -437,6 +444,8 @@ export const buildContainer = (input: ContainerInput): AppContainer => {
     startupChecks,
     // The instance the use-cases got, not a copy — see `container.types.ts` for why it is published.
     passwordHasher: identity.identityKit.hasher,
+    // Same reasoning, same file: the chain as wired, not a copy.
+    audit,
     http: {
       config: {
         appUrl: input.env.APP_URL,

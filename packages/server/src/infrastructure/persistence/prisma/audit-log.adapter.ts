@@ -2,7 +2,11 @@ import { SharedAudit } from '@bad-crm/shared';
 import { Prisma } from '@prisma/client';
 
 import { redactAuditPayload } from '@/application/platform/audit/audit-redaction.util.js';
-import { AuditTrailUnscopedError } from '@/application/platform/audit/audit-trail.errors.js';
+import {
+  AuditFenceRollbackError,
+  AuditTrailUnscopedError,
+} from '@/application/platform/audit/audit-trail.errors.js';
+import { isDegradableAuditAction } from '@/application/platform/audit/degradable-audit-actions.util.js';
 import { AUDIT_ACTIONS_WITHOUT_ORGANIZATION } from '@/application/platform/audit/unscoped-audit-actions.constant.js';
 import {
   type AuditEvent,
@@ -10,7 +14,10 @@ import {
 } from '@/application/platform/ports/audit-logger.port.js';
 import { type AddressHasherPort } from '@/application/identity/ports/address-hasher.port.js';
 import { type RequestContextPort } from '@/application/platform/ports/request-context.port.js';
-import { currentTenant } from '@/infrastructure/persistence/prisma/tenant.context.js';
+import {
+  currentTenant,
+  type TenantStore,
+} from '@/infrastructure/persistence/prisma/tenant.context.js';
 
 export interface PrismaAuditLoggerDependencies {
   readonly addressHasher: AddressHasherPort;
@@ -52,8 +59,34 @@ export interface PrismaAuditLoggerDependencies {
  * **The address is hashed, never stored.** `AuditEvent` carries the address because that is what an
  * HTTP layer has; what reaches the column is a keyed digest, the same one sessions store, so «the
  * same address again» stays answerable without the address being recoverable from a dump.
+ *
+ * **A degradable insert is fenced in a savepoint; a fail-closed one is not.** The writer still
+ * rejects on every failure — softening is not its job — but a failed statement aborts the
+ * PostgreSQL transaction it ran in, and an action that may go on without its row
+ * (`degradable-audit-actions.util.ts`) needs a transaction that still accepts its commit. The
+ * savepoint is what makes that so, and it is bought only where it is used: for every other action
+ * the aborted transaction *is* the intended outcome.
+ *
+ * **Records are serialised per transaction, and every fence has a name of its own.** A savepoint is
+ * a point on the connection's stack, and `ROLLBACK TO` undoes everything issued after it — not only
+ * the insert it was set for. Two records started together on one transaction put both fences on
+ * the stack before either insert ran, and the rollback of the second erased the row of the first
+ * while the first reported success and the counter saw one failure. So the fence and the insert of
+ * one entry are kept contiguous on the wire by a queue keyed on the transaction, and the name is
+ * taken from a counter so a rollback can only ever address the point it set. The name is the one
+ * thing this file interpolates into SQL, and it is built from a checked integer and nothing the
+ * caller supplied.
  */
 export class PrismaAuditLogger implements AuditLoggerPort {
+  /** Numbers the fences; never restarts, so no two fences of this process share a name. */
+  private fenceSequence = 0;
+
+  /**
+   * The tail of the queue of each open transaction. A `WeakMap` on the transaction client, so a
+   * transaction that ended takes its entry with it and nothing here outlives `withTenant`.
+   */
+  private readonly queues = new WeakMap<object, Promise<unknown>>();
+
   constructor(private readonly dependencies: PrismaAuditLoggerDependencies) {}
 
   async record(event: AuditEvent): Promise<void> {
@@ -102,30 +135,103 @@ export class PrismaAuditLogger implements AuditLoggerPort {
       );
     }
 
-    await store.tx.auditLog.create({
-      data: {
-        organizationId,
-        actorId: safe.actor.userId ?? null,
-        // A privileged action with an acting person is `USER`; one without is the system acting on
-        // its own — a job, a migration path, a scheduled revocation.
-        actorType: safe.actor.userId === undefined ? 'SYSTEM' : 'USER',
-        action: safe.action,
-        resourceType: safe.target.type,
-        resourceId: safe.target.id ?? null,
-        before: toJson(safe.before),
-        after: toJson(safe.after),
-        ipHash:
-          safe.actor.ipAddress === undefined
-            ? null
-            : this.dependencies.addressHasher.hash(safe.actor.ipAddress),
-        userAgent: null,
-        // The thread that ties an HTTP request to its entry. Taken from the ambient context when the
-        // caller did not pass one, because a use-case should not have to carry a transport detail
-        // through four constructor arguments to record it.
-        requestId: safe.requestId ?? this.dependencies.requestContext.current()?.requestId ?? '',
-        severity: SharedAudit.severityOf(safe.action),
-      },
-    });
+    return this.enqueue(store.tx, () => this.write(store.tx, safe, organizationId));
+  }
+
+  /**
+   * Runs one write after every write already queued on the same transaction — whatever the earlier
+   * one's outcome, since its rejection belongs to its own caller and must not turn the next record
+   * into a second failure.
+   */
+  private enqueue(tx: object, write: () => Promise<void>): Promise<void> {
+    const previous = this.queues.get(tx) ?? Promise.resolve();
+    const next = previous.then(write, write);
+
+    this.queues.set(tx, next);
+
+    return next;
+  }
+
+  private async write(
+    tx: TenantStore['tx'],
+    safe: AuditEvent,
+    organizationId: string,
+  ): Promise<void> {
+    const insert = (): Promise<unknown> =>
+      tx.auditLog.create({
+        data: {
+          organizationId,
+          actorId: safe.actor.userId ?? null,
+          // A privileged action with an acting person is `USER`; one without is the system acting on
+          // its own — a job, a migration path, a scheduled revocation.
+          actorType: safe.actor.userId === undefined ? 'SYSTEM' : 'USER',
+          action: safe.action,
+          resourceType: safe.target.type,
+          resourceId: safe.target.id ?? null,
+          before: toJson(safe.before),
+          after: toJson(safe.after),
+          ipHash:
+            safe.actor.ipAddress === undefined
+              ? null
+              : this.dependencies.addressHasher.hash(safe.actor.ipAddress),
+          userAgent: null,
+          // The thread that ties an HTTP request to its entry. Taken from the ambient context when the
+          // caller did not pass one, because a use-case should not have to carry a transport detail
+          // through four constructor arguments to record it.
+          requestId: safe.requestId ?? this.dependencies.requestContext.current()?.requestId ?? '',
+          severity: SharedAudit.severityOf(safe.action),
+        },
+      });
+
+    // A fail-closed action — every WARNING and CRITICAL, and the INFO entries that stand behind a
+    // dangerous key — is written bare. If the insert fails, the transaction is aborted and the
+    // caller's own commit is refused — which is the outcome the trail wants, and paying two round
+    // trips to fence it would buy nothing but the ability to soften it.
+    if (!isDegradableAuditAction(safe.action)) {
+      await insert();
+
+      return;
+    }
+
+    // A degradable row may be missing without the action being undone (STORY-016-02, acceptance
+    // 9), and that is only true if a failed insert leaves the transaction usable: PostgreSQL aborts
+    // it on the first failed statement and refuses everything after, the `COMMIT` included. The
+    // savepoint is what restores it. The failure is still rethrown from here — the writer reports,
+    // and who softens it is decided one layer up (`degrading-audit-logger.adapter.ts`), where the
+    // counter and the log line live. Cost of the fence: two statements, priced in
+    // `docs/runbooks/audit-log.md`.
+    const savepoint = Prisma.raw(this.nextFenceName());
+
+    await tx.$executeRaw`SAVEPOINT ${savepoint}`;
+
+    try {
+      await insert();
+    } catch (insertFailure) {
+      try {
+        await tx.$executeRaw`ROLLBACK TO SAVEPOINT ${savepoint}`;
+      } catch (rollbackFailure) {
+        throw new AuditFenceRollbackError(safe.action, rollbackFailure, insertFailure);
+      }
+
+      throw insertFailure;
+    }
+
+    await tx.$executeRaw`RELEASE SAVEPOINT ${savepoint}`;
+  }
+
+  /**
+   * `audit_entry_<n>` from the adapter's own counter. The check is what makes `Prisma.raw` above
+   * defensible: the interpolated text is an identifier built from a positive safe integer, and
+   * nothing that arrived in an event can reach it.
+   */
+  private nextFenceName(): string {
+    this.fenceSequence += 1;
+
+    if (!Number.isSafeInteger(this.fenceSequence) || this.fenceSequence <= 0) {
+      throw new RangeError(`audit savepoint sequence out of range: ${this.fenceSequence}`);
+    }
+
+    return `audit_entry_${this.fenceSequence}`;
   }
 }
 

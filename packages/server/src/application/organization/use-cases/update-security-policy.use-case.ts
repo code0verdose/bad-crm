@@ -69,6 +69,11 @@ export interface SecurityPolicyResult {
  * whose organization has nobody else holding `user:reset_mfa`. That one is the operator's, through
  * `docs/runbooks/incident.md`, and this operation does not create it: it can only ever require a
  * factor that is not yet set up, which is a state its own routes can leave.
+ *
+ * No capability check in this body: whether the caller holds
+ * `organization:manage_security_policy` is the guard's question and it already answered it. The
+ * route carries no `:id`, so there is no object to answer 404 for — the same shape as
+ * `TransferOwnershipUseCase` (`rules/permissions.mdc`, 3; `test/contract/acl-coverage.test.ts`).
  */
 export class UpdateSecurityPolicyUseCase {
   constructor(

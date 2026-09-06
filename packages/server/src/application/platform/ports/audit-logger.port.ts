@@ -39,7 +39,7 @@ export interface AuditEvent {
 /**
  * Where a privileged action is written down.
  *
- * A port from the first day, with a pino adapter behind it until EPIC-016 builds the table. The
+ * A port from the first day, with a pino adapter behind it until STORY-016-01 built the table (2026-08-05). The
  * point is the call sites: adding them later means finding every privileged action in a grown
  * codebase and hoping none was missed, and «hoping none was missed» is not a property an audit trail
  * may have.
@@ -49,9 +49,24 @@ export interface AuditEvent {
  * Handing every privileged use-case a `ClockPort` so it could fill in a field the writer already
  * knows would be four constructor arguments bought for nothing.
  *
- * **`record` may reject, and the caller decides what that means.** For a privileged action the
- * decision is fail-closed — an action nobody could write down did not happen — and that belongs to
- * the use-case that knows whether it is inside a transaction, not to the adapter.
+ * **`record` may reject, and what that means is decided by the action, not by the caller.** A
+ * `WARNING` or `CRITICAL` event that could not be written rejects, and so does an `INFO` one that
+ * records the exercise of a key the permission catalogue marks dangerous (`permission.inspected`
+ * behind `permission:override_read`); the use-case that awaited it fails with its transaction — an
+ * action nobody could write down did not happen. Any other `INFO` event that could not be written
+ * resolves: the failure is counted, reported at `error`, and the action goes on without its row
+ * (STORY-016-02, acceptance 9). The line between the two is
+ * `application/platform/audit/degradable-audit-actions.util.ts`, drawn from `AUDIT_ACTION_SEVERITY`
+ * and `AUDIT_ACTION_PERMISSIONS` together; the decision is made in the decorator the composition
+ * root wraps every writer in (`degrading-audit-logger.adapter.ts`), so a use-case simply awaits and
+ * never chooses.
+ *
+ * **Two `record` calls on one transaction are safe to start together; a `record` and the caller's
+ * own statement are not.** The writer serialises its own calls per transaction, so racing two
+ * records cannot lose a row. It cannot serialise the caller: a degradable row is fenced in a
+ * savepoint, and a statement the use-case started concurrently with `record` — instead of before
+ * or after it — would be undone by that fence's rollback with nothing reporting it. Await `record`
+ * in sequence with the change it describes.
  *
  * **Recording outside the tenant scope of the change is one of the ways it rejects.** The row lives
  * in a tenant table, so an event that names no organization, or one the open scope disagrees with,

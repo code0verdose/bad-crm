@@ -58,6 +58,11 @@ export interface MfaCoverageReport {
  * The verdict per person is `evaluateMfaRequirement`, the same function the login gate uses. That is
  * the property that matters: a report assembled from its own idea of «covered» would be a screen
  * that disagrees with the door.
+ *
+ * No capability check in this body: whether the caller holds
+ * `organization:manage_security_policy` is the guard's question and it already answered it. The
+ * route carries no `:id`, so there is no object to answer 404 for — the same shape as
+ * `TransferOwnershipUseCase` (`rules/permissions.mdc`, 3; `test/contract/acl-coverage.test.ts`).
  */
 export class MfaCoverageReportQuery {
   constructor(

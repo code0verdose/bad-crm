@@ -12,6 +12,11 @@ import { type Actor } from '@/domain/access/actor.types.js';
  * `admin`, while `organization:read` is held by everybody. Folding the policy into the general
  * organization read would hand every account the list of roles that must carry a second factor —
  * which is a map of where the weak accounts are.
+ *
+ * No capability check in this body: whether the caller holds
+ * `organization:manage_security_policy` is the guard's question and it already answered it. The
+ * route carries no `:id`, so there is no object to answer 404 for — the same shape as
+ * `TransferOwnershipUseCase` (`rules/permissions.mdc`, 3; `test/contract/acl-coverage.test.ts`).
  */
 export class ReadSecurityPolicyQuery {
   constructor(

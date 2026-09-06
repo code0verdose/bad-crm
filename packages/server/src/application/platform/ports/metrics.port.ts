@@ -61,10 +61,12 @@ export interface MetricsPort {
    * exists to answer — «is the trail writing at all» — needs none of them. Which event failed is in
    * the log line the caller's own failure produces.
    *
-   * It reports; it does not soften. A failed write still fails the transaction that caused it
-   * (`audit-logger.port.ts`: an action nobody could write down did not happen). What changes is that
-   * an operator learns of it from a series they can alert on instead of from a request that failed
-   * and looked like every other failed request.
+   * It reports; it does not soften. Whether the action survives the failure is decided elsewhere,
+   * by the action (`degrading-audit-logger.adapter.ts`): a write that failed fails the transaction
+   * that caused it unless the action is degradable — `INFO`, and standing behind no `dangerous`
+   * key — in which case it is let through and reported at `error`. Both are counted here — the counter sits inside that decision on purpose, so a hole
+   * the trail was allowed to have is still a number an operator can alert on, and not only a line
+   * in the log.
    */
   incrementAuditWriteFailed(): void;
   /**

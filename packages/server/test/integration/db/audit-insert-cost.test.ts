@@ -38,6 +38,14 @@ import {
  * (`docs/runbooks/audit-log.md`: «единицы в месяц, но именно они дают выбросы по размеру»). Both are
  * measured, because a mean over a mixture would describe neither.
  *
+ * ## A third arm, for the fence
+ *
+ * Since STORY-016-02 acceptance 9 a degradable row (INFO, behind no dangerous key) is written inside a savepoint (`audit-log.adapter.ts`):
+ * `SAVEPOINT` before the insert, `RELEASE SAVEPOINT` after, so that a failed row can be rolled back
+ * to it and the action go on. That is two more statements on the user's path for every degradable
+ * action, and «a savepoint is free» is a claim about the database, not about the wire — so the
+ * typical payload is measured a second time with the fence around it, against the same control.
+ *
  * ## What is asserted
  *
  * The timings live in the comment beside the assertion and in `docs/runbooks/audit-log.md`, with the
@@ -94,33 +102,46 @@ const AUDIT_WRITE = `INSERT INTO audit_logs
   VALUES ($1::uuid, $2::uuid, 'USER', 'role.assigned', 'ROLE', $3::uuid,
           $4::jsonb, $5::jsonb, 'hashed', $6, 'INFO')`;
 
-interface Arm {
+interface Samples {
   readonly control: number[];
   readonly audited: number[];
 }
 
-const runArm = async (withAudit: boolean, keys: number): Promise<number> => {
+/**
+ * Which statements a transaction issues besides the ordinary write.
+ *
+ * `bare` is the insert as a fail-closed row is written; `fenced` adds the savepoint the
+ * adapter puts around a degradable row (`audit-log.adapter.ts`, STORY-016-02 acceptance 9) — two
+ * utility statements that cost nothing in the database and one round trip each on the wire.
+ */
+type Arm = 'control' | 'bare' | 'fenced';
+
+const runArm = async (arm: Arm, keys: number): Promise<number> => {
   const started = process.hrtime.bigint();
 
   await asTenant(pools.app, ORG, async (client) => {
     await client.query(ORDINARY_WRITE, [ACTOR]);
 
-    if (withAudit) {
-      await client.query(AUDIT_WRITE, [
-        ORG,
-        ACTOR,
-        randomUUID(),
-        payload(keys),
-        payload(keys),
-        `req-${randomUUID()}`,
-      ]);
-    }
+    if (arm === 'control') return;
+
+    if (arm === 'fenced') await client.query('SAVEPOINT audit_entry_cost');
+
+    await client.query(AUDIT_WRITE, [
+      ORG,
+      ACTOR,
+      randomUUID(),
+      payload(keys),
+      payload(keys),
+      `req-${randomUUID()}`,
+    ]);
+
+    if (arm === 'fenced') await client.query('RELEASE SAVEPOINT audit_entry_cost');
   });
 
   return Number(process.hrtime.bigint() - started) / 1e6;
 };
 
-const measure = async (keys: number): Promise<Arm> => {
+const measure = async (keys: number, arm: Exclude<Arm, 'control'> = 'bare'): Promise<Samples> => {
   const control: number[] = [];
   const audited: number[] = [];
 
@@ -128,9 +149,9 @@ const measure = async (keys: number): Promise<Arm> => {
     // Interleaved, and the audited arm first on odd iterations, so neither arm is always the one
     // that pays for a cold page.
     const first = iteration % 2 === 0;
-    const controlMs = first ? await runArm(false, keys) : 0;
-    const auditedMs = await runArm(true, keys);
-    const trailingControlMs = first ? 0 : await runArm(false, keys);
+    const controlMs = first ? await runArm('control', keys) : 0;
+    const auditedMs = await runArm(arm, keys);
+    const trailingControlMs = first ? 0 : await runArm('control', keys);
 
     if (iteration >= WARMUP) {
       control.push(first ? controlMs : trailingControlMs);
@@ -151,7 +172,7 @@ interface ArmSummary {
   readonly deltaP50: number;
 }
 
-const summarise = (arm: Arm): ArmSummary => ({
+const summarise = (arm: Samples): ArmSummary => ({
   controlMean: Number(mean(arm.control).toFixed(3)),
   controlP50: Number(percentile(arm.control, 0.5).toFixed(3)),
   auditedMean: Number(mean(arm.audited).toFixed(3)),
@@ -215,12 +236,20 @@ describe('cost of an audit entry inside the transaction it records', () => {
     // записи».
     const typical = summarise(await measure(4));
     const outlier = summarise(await measure(331));
+    // The degradable row, as the adapter writes it since STORY-016-02 acceptance 9: the same insert with
+    // `SAVEPOINT` before and `RELEASE SAVEPOINT` after. Recorded 2026-09-06 in one run on the same
+    // host, quiet, so the two arms are comparable with each other rather than with the figures
+    // above (that run was slower overall — control 4.5–5.3 ms): bare typical **delta 1.28 ms**
+    // (p50 1.01), fenced typical **delta 2.96 ms** (p50 2.80). The fence adds about 1.7 ms — two
+    // round trips of ~0.85 ms each on a client-to-Colima socket, and nothing in the database. It is
+    // bought for INFO rows only, and it is what lets a failed one leave the action standing.
+    const fenced = summarise(await measure(4, 'fenced'));
 
     // The delta, not the absolute: what is under test is the journal, and everything else in the
     // transaction is in both arms. A generous ceiling on purpose — this runs on whatever machine CI
     // was given, and the assertion that has to survive that is «the journal is not what makes a
     // privileged action slow», not a reproduction of the number in the runbook.
-    for (const summary of [typical, outlier]) {
+    for (const summary of [typical, outlier, fenced]) {
       expect(summary.deltaMean).toBeLessThan(REQUEST_BUDGET_MS * 0.2);
       expect(summary.auditedMean).toBeLessThan(summary.controlMean * 3);
     }
