@@ -13,6 +13,41 @@ estimate: M
 прямо в адресе, **чтобы** одна ссылка приводила коллегу в тот же проект и тот же раздел, а не
 «в приложение, где надо ещё найти нужное».
 
+> **Сверено с кодом 2026-09-06.** История написана 2026-07-26, до EPIC-011 и EPIC-012. Текст ниже
+> оставлен как запись замысла; расхождения с деревом — здесь.
+>
+> **Пути и имена.**
+> - Каталога `application/<контекст>/queries/` нет: чтения лежат в `use-cases/` рядом с командами
+>   и различаются суффиксом (`application/iam/use-cases/list-teams.query.ts`). То есть
+>   `list-project-options.query.ts` ложится в `application/project/use-cases/`.
+> - Namespace локали называется `nav.json`, а не `navigation.json`, и лежит в
+>   `packages/client/src/shared/i18n/locales/{en,ru}/`. Набор namespace обязан совпадать в обоих
+>   языках — это гейт `pnpm i18n:check`.
+> - Клиентские тесты — `*.test.ts`; `.spec.ts` носят только сценарии `packages/e2e` (для
+>   `project-switcher.spec.ts` имя верно, для `use-project-switcher.hook.spec.ts` — нет).
+> - `ROUTE_REGISTRY` из состава — это `createRouteRegistry` в
+>   `packages/server/src/presentation/http/route-registry.factory.ts`; файла
+>   `presentation/http/routes/registry.ts` не существует.
+>
+> **Критерий 6 описывает не тот механизм, что в коде.** «`permissionsVersion` изменился,
+> `me/permissions` инвалидирован» верно только наполовину, и половины стоит развести:
+> - **На сервере кеша прав нет и не будет.** Актор пересобирается на каждый запрос; §8 модели прав
+>   проектировала 60-секундный кеш в Redis по `permissionsVersion`, но 2026-09-06 стоимость чтения
+>   была **замерена** (5.4 мс среднее, 6.0 мс p95 на 317 действующих ключах) и кеш отвергнут, а не
+>   отложен — обоснование в `application/iam/use-cases/build-actor.query.ts:30-42`. Инвалидировать
+>   на сервере нечего, и именно поэтому «доступ пропал немедленно» держится по построению.
+> - **На клиенте кеш есть — это кеш TanStack Query.** `GET /me/permissions` существует
+>   (`units/iam/api/iam.api.ts:15`) и отдаёт `ETag` вида `"perm-<userId>-<version>"`, где версия —
+>   `permissionsVersion`. Значит критерий про инвалидацию адресован клиентскому query-ключу
+>   (`shared/lib/enums/query-keys.constant.ts`), а не серверному кешу.
+>
+> **Чего история не называет, а гейты требуют.** Лёгкий эндпоинт из критерия 9 обязан появиться в
+> `docs/api/openapi.yaml`: спека сверяется со стеком Express в обе стороны
+> (`packages/server/test/contract/openapi.test.ts:166`). И если `project:read` встаёт на маршрут
+> здесь первым — **в том же коммите** нужны сентенции `permission.project.*` на EN и RU и удаление
+> строки `project` из `AWAITING_A_ROUTE`
+> (`packages/client/test/i18n/permission-descriptions.test.ts:59`).
+
 ## Acceptance (Given/When/Then)
 
 1. **Контекст проекта — в пути, а не в состоянии.**

@@ -13,6 +13,42 @@ estimate: M
 каком он состоянии и куда идти дальше, **чтобы** восстановление контекста занимало секунды, а не
 обход четырёх вкладок.
 
+> **Сверено с кодом 2026-09-06.** История написана 2026-07-26, до EPIC-011 и EPIC-012. Текст ниже
+> оставлен как запись замысла; расхождения с деревом — здесь.
+>
+> **Пути и имена.**
+> - Каталога `application/<контекст>/queries/` нет: чтения лежат в `use-cases/` рядом с командами,
+>   образец — `application/iam/use-cases/get-team-detail.query.ts`. То есть
+>   `get-project-detail.query.ts` ложится в `application/project/use-cases/`.
+> - `units/auth/lib/guards/` содержит только сессионные гварды (`require-session.guard.ts`,
+>   `redirect-if-authed.guard.ts`, `guard-args.types.ts`). Гвард по правам живёт в другом юните —
+>   `packages/client/src/units/iam/service/guards/require-permission.guard.ts`, — и
+>   `requireProjectMember` принадлежит туда же либо в `units/project`, но не в `auth`.
+> - Локали клиента — `packages/client/src/shared/i18n/locales/{en,ru}/`, каталога `src/app/i18n/` нет.
+> - Клиентские и серверные тесты — `*.test.ts`; `.spec.ts` носят только сценарии `packages/e2e`
+>   (для `project-overview.spec.ts` имя верно, для остальных из состава — нет).
+>
+> **Блок `permissions` в DTO — это открытый критерий соседней истории.** Критерии 5 и 9 требуют,
+> чтобы решение о видимости кнопок бралось из `permissions: { canEdit, canManageMembers, canArchive }`
+> внутри DTO проекта. Такого блока сегодня не отдаёт **ни один** сериализатор: это критерий 12
+> [STORY-011-08](../../epic-011-rbac-permissions/stories/story-011-08-effective-permissions.md),
+> оставленный открытым с формулировкой «некуда класть, пока нет ресурса ни у одного домена:
+> STORY-011-06, EPIC-014». Проект — тот самый первый ресурс, поэтому здесь блок появляется впервые,
+> и закрывает он не только эту историю.
+>
+> **Метрика расхождения из критерия 6.** `ui_server_permission_mismatch_total` не существует;
+> это половина критерия 13 той же STORY-011-08, открытая по причине «нужен канал клиентской
+> телеметрии». Канал приёма клиентских ошибок при этом есть
+> (`POST /api/v1/telemetry/client-error`, EPIC-009) — то есть работа реальная, но она не сводится к
+> инкременту в обработчике 403.
+>
+> **Контракт и права.** `GET /api/v1/projects/{projectId}` обязан появиться в
+> `docs/api/openapi.yaml` — спека сверяется со стеком Express в обе стороны
+> (`packages/server/test/contract/openapi.test.ts:166`). А первый `project:*`-маршрут, где бы он ни
+> появился первым, обязан **в том же коммите** принести сентенции `permission.project.*` на EN и RU
+> и удалить строку `project` из `AWAITING_A_ROUTE`
+> (`packages/client/test/i18n/permission-descriptions.test.ts:59`).
+
 ## Acceptance (Given/When/Then)
 
 1. **Layout проекта и его вкладки.**

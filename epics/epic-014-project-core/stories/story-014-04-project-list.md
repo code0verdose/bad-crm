@@ -13,6 +13,41 @@ estimate: M
 статусу, лиду и клиенту и делиться ссылкой на конкретную выборку, **чтобы** коллега открыл ровно тот
 же экран, а не «примерно похожий».
 
+> **Сверено с кодом 2026-09-06.** История написана 2026-07-26 (правлена 2026-07-28), до EPIC-011 и
+> EPIC-012. Текст ниже оставлен как запись замысла; расхождения с деревом — здесь.
+>
+> **Пути и имена.**
+> - `presentation/http/routes/registry.ts` не существует: реестр — `route-registry.factory.ts`
+>   (`createRouteRegistry`) плюс `route-registry.types.ts` в
+>   `packages/server/src/presentation/http/`; так же поправлено в
+>   [STORY-011-07](../../epic-011-rbac-permissions/stories/story-011-07-policy-layer.md), `:116-117`.
+> - Каталога `application/<контекст>/queries/` нет: чтения лежат в `use-cases/` рядом с командами и
+>   различаются суффиксом (`application/iam/use-cases/list-employees.query.ts` — прямой образец для
+>   `list-projects.query.ts`, вплоть до фильтров в URL и пагинации).
+> - Локали клиента — `packages/client/src/shared/i18n/locales/{en,ru}/`, каталога `src/app/i18n/`
+>   не существует.
+> - Серверные и клиентские тесты — `*.test.ts`; `.spec.ts` носят только сценарии `packages/e2e`
+>   (для `project-list.spec.ts` имя в составе остаётся верным, для остальных — нет).
+>
+> **Чего история не называет, а гейты требуют.**
+> - `GET /api/v1/projects` обязан появиться в `docs/api/openapi.yaml`: спека сверяется со стеком
+>   Express в обе стороны (`packages/server/test/contract/openapi.test.ts:166`), и маршрут без
+>   записи роняет CI так же, как запись без маршрута.
+> - Если `project:read` встаёт на маршрут именно этой историей, то **в том же коммите** нужны
+>   сентенции `permission.project.*` на EN и RU и удаление строки `project` из `AWAITING_A_ROUTE`
+>   (`packages/client/test/i18n/permission-descriptions.test.ts:59`) — гейт двусторонний.
+> - Критерии 5 и 6 опираются на снапшот матрицы прав. Сегодня **каждая его ячейка — capability-решение**
+>   (`requiredLevel` равен `null` у всех ключей на маршрутах,
+>   `packages/server/test/permissions/permission-matrix.test.ts:29-33`); `project:read` в каталоге
+>   объявлен с `requiredLevel: 'VIEWER'`, поэтому первый же такой маршрут делает снимок двумерным —
+>   его придётся переснять.
+>
+> **Зависимости, а не работа этой истории.** Критерий 5 требует «единую функцию видимости»
+> `visibleProjectIds` — она заводится в
+> [STORY-014-03](story-014-03-project-access.md), и правильный её адрес —
+> `domain/project/access/visible-projects.policy.ts` (каталога `policies/` в домене нет, а пороги
+> покрытия 100/100 стоят на `src/domain/**/access/*.policy.ts`, `packages/server/vitest.config.ts:59`).
+
 ## Acceptance (Given/When/Then)
 
 1. **Состояние живёт в URL.**

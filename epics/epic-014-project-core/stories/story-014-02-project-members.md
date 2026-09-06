@@ -13,6 +13,55 @@ estimate: M
 каждого вместе с долей загрузки, **чтобы** доступ к проекту следовал за участием, а не выдавался
 отдельными записями ACL на каждого человека.
 
+> **Сверено с кодом 2026-09-06.** История написана 2026-07-26, до EPIC-011, EPIC-012 и журнала
+> действий. Текст ниже оставлен как запись замысла; расхождения с деревом — здесь.
+>
+> **Пути и имена.**
+> - `presentation/http/routes/registry.ts` не существует: реестр — `route-registry.factory.ts`
+>   (`createRouteRegistry`) плюс `route-registry.types.ts` в
+>   `packages/server/src/presentation/http/`. Так же поправлено в
+>   [STORY-011-07](../../epic-011-rbac-permissions/stories/story-011-07-policy-layer.md), `:116-117`.
+> - Каталога `application/<контекст>/queries/` не существует: чтения лежат рядом с командами в
+>   `use-cases/` и различаются суффиксом — образцы `application/iam/use-cases/list-teams.query.ts`
+>   и `get-team-detail.query.ts`. То есть `list-project-members.query.ts` ложится в
+>   `application/project/use-cases/`.
+> - Серверные тесты — `*.test.ts` в `packages/server/test/**`, а не `*.spec.ts` рядом с кодом;
+>   `.spec.ts` носят только сценарии `packages/e2e`.
+>
+> **Утверждения, которых код не подтверждает.**
+> - `domain/access/implicit-level.ts` **не существует**, и идентификатор `implicitLevel` не
+>   встречается в `packages/` ни разу. Значит это не «добавить ветку `PROJECT` к существующему
+>   файлу», а завести механизм целиком: таблица неявных уровней —
+>   `docs/security/permission-model.md:1318-1332`, пятнадцать строк (ORGANIZATION, PROJECT, CHANNEL,
+>   личный ресурс, guest), из них проектных шесть. Ветки `CHANNEL` и «личный ресурс» предмета не
+>   имеют — эти домены M4 — и здесь **заглушек не получают**: реализуются проектные строки,
+>   остальные заводит эпик своего домена.
+> - `AuditLog`: каталог действий закрытый (`packages/shared/src/audit/audit-action.enums.ts`),
+>   `project.*` в нём нет. `project.member_added` и события критериев 4, 5, 11 — расширение
+>   закрытого каталога, отдельная строка работы, а не деталь use-case.
+> - Кодов `last_project_lead_required` и `invalid_member` в
+>   `packages/shared/src/errors/error-code.enums.ts` нет. Прецедент формы есть — `last_owner_required`
+>   (`:138`) и `member_not_active` (`:190`) — но каталог закрытый и `code` это контракт: новый код
+>   заводится решением, с переводом на обоих языках и записью в спеке. `permission_not_granted`
+>   из критерия 6 — `DenyReason`, а не код ошибки, он существует.
+> - Механизм `permissionsVersion` существует и работает (инкремент в той же транзакции — как в
+>   офбординге и передаче владения), а **кеша прав, который он инвалидировал бы, на сервере нет и
+>   не будет**: актор пересобирается на каждый запрос, кеш отвергнут по замеру 2026-09-06
+>   (`application/iam/use-cases/build-actor.query.ts:30-42`). Критерий 4 от этого только выигрывает:
+>   «действует со следующего запроса» держится по построению.
+>
+> **Чего история не называет, а гейты требуют.**
+> - Первый `project:*`-маршрут обязан прийти **в том же коммите** с сентенциями
+>   `permission.project.*` на EN и RU и с удалением строки `project` из `AWAITING_A_ROUTE`
+>   (`packages/client/test/i18n/permission-descriptions.test.ts:59`) — гейт двусторонний и падает
+>   и на отсутствующем переводе, и на устаревшей причине отсрочки.
+> - `docs/api/openapi.yaml` сверяется со стеком Express в обе стороны
+>   (`packages/server/test/contract/openapi.test.ts:166`): маршрут без записи в спеке роняет CI.
+> - Таблица `project_members` обязана получить строку в
+>   `infrastructure/persistence/prisma/tenant-tables.constant.ts` и фабрику в
+>   `test/integration/db/row-factories.util.ts` (`satisfies Record<TenantTableName, …>`, `:414`) —
+>   без них код **не компилируется**.
+
 ## Acceptance (Given/When/Then)
 
 1. **Добавление участника.**

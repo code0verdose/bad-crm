@@ -13,6 +13,61 @@ estimate: M
 видимостью, лидом и сроками, **чтобы** появилось пространство, к которому дальше пристёгиваются
 задачи, документы, файлы и часы.
 
+> **Сверено с кодом 2026-09-06.** История написана 2026-07-26, до EPIC-011, EPIC-012, EPIC-013 и
+> журнала действий. Текст ниже оставлен как запись замысла; расхождения с деревом — здесь.
+>
+> **Пути и имена.**
+> - `presentation/http/routes/registry.ts` не существует. Реестр — это
+>   `packages/server/src/presentation/http/route-registry.factory.ts` (`createRouteRegistry`,
+>   `satisfies readonly RouteDeclaration[]` на `:348`) плюс форма объявления в
+>   `route-registry.types.ts`. То же расхождение закрыто в
+>   [STORY-011-07](../../epic-011-rbac-permissions/stories/story-011-07-policy-layer.md), состав, `:116-117`.
+> - Серверные тесты называются `*.test.ts` и лежат отдельным деревом в `packages/server/test/**`
+>   (`unit/`, `integration/`, `contract/`, `permissions/`); `*.spec.ts` носят только сценарии
+>   `packages/e2e`. Имена в составе ниже читать с этой поправкой.
+> - Локали клиента лежат в `packages/client/src/shared/i18n/locales/{en,ru}/`, каталога
+>   `src/app/i18n/` нет.
+> - `infrastructure/persistence/prisma/soft-delete.extension.ts` не существует, и единственный
+>   `$extends` во всём дереве — `tenant-guard.adapter.ts:59`. Само требование мягкого удаления верно
+>   (`data-model.md`, «Мягкое удаление»; флаг `softDeleted` в `tenant-tables.constant.ts`), но
+>   критерий 11 — работа с нуля, а не подключение к существующему механизму.
+>
+> **Утверждения, которых код не подтверждает.**
+> - `AuditLog`: каталог действий закрытый (`packages/shared/src/audit/audit-action.enums.ts`), и
+>   `project.*` в нём нет ни одного — для сравнения, `team.*` есть пять. Значит `project.created`,
+>   `project.updated` и `project.visibility_changed` — **расширение закрытого каталога**, отдельная
+>   строка работы с докстрингом на каждое действие, а не деталь реализации use-case.
+> - Кодов `project_key_taken`, `project_key_immutable`, `invalid_lead` в
+>   `packages/shared/src/errors/error-code.enums.ts` нет. Есть сгенерированная тройка
+>   `project_not_found` / `project_forbidden` / `project_already_exists` (`project` входит в
+>   `ERROR_RESOURCES`, `:30`). Каталог закрытый, `code` — контракт, который не переименовывают:
+>   каждый новый код это отдельное решение, перевод на обоих языках и запись в спеке.
+>   `permission_not_granted` и `insufficient_acl_level` из критериев 5 и 6 — это `DenyReason`
+>   (`packages/shared/src/permissions/deny-reason.enums.ts:22,32`), а не коды ошибок; они есть.
+> - Критерии 5 и 6 предполагают, что отказ по ACL различим в снапшоте матрицы прав. Сегодня
+>   **каждая ячейка снапшота — capability-решение**: `requiredLevel` равен `null` у всех ключей,
+>   стоящих на маршрутах, и докстринг снапшота говорит это прямо
+>   (`packages/server/test/permissions/permission-matrix.test.ts:29-33`). У `project:*` в каталоге
+>   уровни проставлены (`project:update` — `EDITOR`, `project:delete` и `project:manage_visibility` —
+>   `MANAGER`, оба `dangerous`), поэтому первый же `project:*` на маршруте делает снимок
+>   двумерным: снапшот придётся переснять и, возможно, добавить ось ресурса.
+>
+> **Чего история не называет, а гейты требуют.**
+> - **Описания прав.** `packages/client/test/i18n/permission-descriptions.test.ts` работает в обе
+>   стороны: требует сентенцию для каждого ключа, объявленного маршрутом, **и запрещает** её для
+>   ключа без маршрута; плюс роняет сборку на строке `AWAITING_A_ROUTE`, переставшей быть правдой, —
+>   а `project` там стоит (`:59`). Значит первый `project:*`-маршрут обязан прийти **в том же
+>   коммите** с `permission.project.*` на EN и RU и с удалением строки `project` из
+>   `AWAITING_A_ROUTE`.
+> - **Контракт.** `docs/api/openapi.yaml` сверяется со стеком Express в обе стороны
+>   (`packages/server/test/contract/openapi.test.ts:166`) — маршрут без записи в спеке роняет CI, и
+>   наоборот. Плюс `error-codes.test.ts`, `validated-operations.test.ts`, `acl-coverage.test.ts`.
+> - **Реестр таблиц арендатора.** Новая таблица обязана получить строку в
+>   `packages/server/src/infrastructure/persistence/prisma/tenant-tables.constant.ts` и фабрику
+>   строки в `packages/server/test/integration/db/row-factories.util.ts` (`TENANT_ROW_FACTORIES`
+>   закреплён `satisfies Record<TenantTableName, TenantRowFactory>`, `:414`). Без этих двух записей
+>   код **не компилируется** — это не «не забыть», а условие сборки.
+
 ## Acceptance (Given/When/Then)
 
 1. **Создание проекта.**
