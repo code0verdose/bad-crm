@@ -128,7 +128,7 @@ estimate: M
 - [x] Структурная проверка грантов (п. 3, 4, 5, 8) — в том же
       `test/integration/db/audit-log-append-only.test.ts`: попытки `UPDATE`/`DELETE`/`DETACH` ролью
       `app_user` и чтение `information_schema.role_table_grants` после них. Отдельного файла под
-      `test/structure/` нет — проверка живёт там, где есть живой Postgres.
+      каталога структурных тестов в дереве нет — проверка живёт там, где есть живой Postgres.
 - [x] Замеры вместо рассуждений (п. 2 в части `EXPLAIN`, п. 7, п. 9) — два файла вместо одного и с
       суффиксом `.test.ts`, а не `.spec.ts` (`spec` не запускается ни одним раннером Vitest в этом
       репозитории): `test/integration/db/audit-partition-pruning.test.ts` — отсечение партиций и

@@ -175,7 +175,7 @@ estimate: L
 стоит, чем она закрыта.
 
 - [x] `packages/server/src/application/platform/ports/audit-logger.port.ts` — есть (STORY-009-06).
-      `packages/shared/src/audit/audit-event.types.ts` не заведён: union «действие → обязательные
+      отдельный файл типов события в `packages/shared/src/audit/` не заведён: union «действие → обязательные
       поля» заменён закрытым списком `AUDIT_ACTIONS` + `AUDIT_ACTION_SEVERITY`
       (`Record<AuditAction, …>`, действие без уровня не компилируется).
 - [x] Адаптер вставки в текущей транзакции — отгружен как
@@ -186,7 +186,7 @@ estimate: L
       `application/platform/audit/audit-redaction.util.ts` (`4463e0d`), см. врезку к пункту 1
       раздела «Что реально открыто».
 - [x] Хеш адреса — `infrastructure/crypto/address-hasher.adapter.ts` (тот же, что у сессий);
-      отдельного `infrastructure/security/ip-hash.util.ts` нет и не нужно.
+      отдельной утилиты хеширования адреса в `infrastructure/security/` нет и не нужно.
 - [x] Подключение `AuditLoggerPort` в существующие use-cases — 44 вызова
       (`grep -rc 'audit\.record(' packages/server/src/application`); EPIC-014/015 ещё нет.
 - [ ] Протяжка `requestId` **в конверт outbox-события** — outbox в коде нет. Половина HTTP →
