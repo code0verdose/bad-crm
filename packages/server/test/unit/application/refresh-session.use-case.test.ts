@@ -6,7 +6,10 @@ import {
   REFRESH_RACE_GRACE_SECONDS,
   RefreshSessionUseCase,
 } from '@/application/identity/use-cases/refresh-session.use-case.js';
+import { type MailDispatchPort } from '@/application/platform/ports/mail-dispatch.port.js';
+import { renderRefreshReuseMail } from '@/domain/identity/refresh-reuse-mail.util.js';
 import { SECURITY_EVENTS } from '@/domain/identity/security-event.constant.js';
+import { ImmediateMailDispatcher } from '@/infrastructure/mail/immediate-mail-dispatcher.adapter.js';
 import {
   FakeAccessTokens,
   FakeAddressHasher,
@@ -15,6 +18,8 @@ import {
   FakeAuthLookup,
   FakeClock,
   FakeIdGenerator,
+  FakeMail,
+  FakeMailDispatcher,
   FakeOrganizations,
   FakeRateLimit,
   type FakeRateLimitOptions,
@@ -29,6 +34,7 @@ import {
 
 const CLIENT = { userAgent: 'Firefox/128.0', ipAddress: '203.0.113.42' };
 const FAMILY_ID = 'f0f0f0f0-0000-4000-8000-000000000001';
+const APP_URL = 'https://crm.example.com';
 
 interface Harness {
   readonly refresh: RefreshSessionUseCase;
@@ -40,6 +46,7 @@ interface Harness {
   readonly rateLimit: FakeRateLimit;
   readonly audit: FakeAuditLogger;
   readonly unitOfWork: FakeUnitOfWork;
+  readonly dispatcher: FakeMailDispatcher;
 }
 
 /**
@@ -47,7 +54,13 @@ interface Harness {
  * the `app_auth` lookup that the cookie resolves through.
  */
 const harness = (
-  options: { status?: string; failingAudit?: boolean } = {},
+  options: {
+    status?: string;
+    failingAudit?: boolean;
+    locale?: string;
+    /** A dispatcher other than the recording one — the whole chain down to a transport that fails. */
+    dispatcher?: MailDispatchPort;
+  } = {},
   rateLimitOptions: Omit<FakeRateLimitOptions, 'journal'> = {},
 ): Harness => {
   const rateLimit = new FakeRateLimit(rateLimitOptions);
@@ -61,12 +74,14 @@ const harness = (
     {
       id: USER_ID,
       email: 'ada@example.com',
-      locale: 'en',
+      locale: options.locale ?? 'en',
       timezone: 'Europe/Berlin',
       status: options.status ?? 'ACTIVE',
       permissionsVersion: 1,
     },
   ]);
+
+  const dispatcher = new FakeMailDispatcher();
 
   const refreshTokens = new FakeRefreshTokens();
   const issue = new IssueSessionUseCase(
@@ -94,6 +109,8 @@ const harness = (
       logger,
       rateLimit,
       audit,
+      options.dispatcher ?? dispatcher,
+      APP_URL,
     ),
     lookup,
     sessions,
@@ -103,6 +120,7 @@ const harness = (
     rateLimit,
     audit,
     unitOfWork,
+    dispatcher,
   };
 };
 
@@ -216,8 +234,8 @@ describe('rotating a refresh token', () => {
      * `rules/security.mdc` rule 8 requires the detection to be recorded, and a detection nobody can
      * select on is not recorded in any useful sense: an alert keyed on a substring of `msg` breaks
      * the day somebody improves the wording, and a wording is exactly the kind of thing that gets
-     * improved. The notification mail the rule also asks for does not exist yet (STORY-006-03
-     * «Что осталось»); the `AuditLog` row below it does, since this fix.
+     * improved. The `AuditLog` row and the notification mail the rule also asks for select on this
+     * same field rather than on the prose, and both are asserted below.
      */
     it('marks the line with a machine-readable event name, not only with prose', async () => {
       const test = harness();
@@ -353,6 +371,197 @@ describe('rotating a refresh token', () => {
       await refusal(() => test.refresh.execute({ refreshToken: token, client: CLIENT }));
 
       expect(reuseEvents(test.logger)).toHaveLength(1);
+    });
+
+    /**
+     * The third of the three actions `rules/security.mdc` rule 8 asks for, beside the revocation and
+     * the trail: the account owner is told, through a channel the stolen session does not control.
+     */
+    describe('the notice to the account owner', () => {
+      /** One family, one rotation, and the spent token presented again outside the grace window. */
+      const replay = async (test: Harness): Promise<string> => {
+        const token = await signIn(test);
+
+        await test.refresh.execute({ refreshToken: token, client: CLIENT });
+        test.clock.advance(REFRESH_RACE_GRACE_SECONDS + 1);
+        await refusal(() => test.refresh.execute({ refreshToken: token, client: CLIENT }));
+
+        return token;
+      };
+
+      it('hands one message to the dispatcher, addressed to the account', async () => {
+        const test = harness();
+
+        await replay(test);
+
+        const [notice] = test.dispatcher.dispatched;
+
+        assert(notice !== undefined, 'the notice was handed over');
+
+        expect(test.dispatcher.dispatched).toHaveLength(1);
+        expect(notice.mail.to).toBe('ada@example.com');
+        expect(notice.context).toEqual({
+          event: SECURITY_EVENTS.refreshReuseDetected,
+          organizationId: ORGANIZATION_ID,
+          userId: USER_ID,
+        });
+      });
+
+      it('says how many sessions were closed', async () => {
+        const test = harness();
+
+        await replay(test);
+
+        expect(test.dispatcher.dispatched[0]?.mail.text).toContain('1 session was signed out');
+      });
+
+      /** The account's own language, `users.locale`, since there is no browser to ask. */
+      it('renders in the language of the account, not of the request', async () => {
+        const test = harness({ locale: 'ru' });
+
+        await replay(test);
+
+        expect(test.dispatcher.dispatched[0]?.mail.subject).toBe(
+          renderRefreshReuseMail({ locale: 'ru', appUrl: APP_URL, revokedSessions: 1 }).subject,
+        );
+      });
+
+      /**
+       * Nothing in the message is a credential or a fragment of one — not the replayed token, not
+       * its digest, not the address of the request. The reader is somebody who may be reading a
+       * mailbox that is itself compromised.
+       */
+      it('carries no token, no digest and no address', async () => {
+        const test = harness();
+        const token = await replay(test);
+        const serialized = JSON.stringify(test.dispatcher.dispatched);
+
+        expect(serialized).not.toContain(token);
+        expect(serialized).not.toContain(`sha256:${token}`);
+        expect(serialized).not.toContain(CLIENT.ipAddress);
+      });
+
+      /** `rules/outbox.mdc` rule 2: nothing external is touched from inside the transaction. */
+      it('hands the notice over after the revoking scope has closed', async () => {
+        const test = harness();
+
+        test.unitOfWork.onScopeClosed = (): void => {
+          expect(test.dispatcher.dispatched).toEqual([]);
+        };
+
+        await replay(test);
+
+        expect(test.dispatcher.dispatched).toHaveLength(1);
+      });
+
+      /**
+       * The recipient is read *after* the revocation committed, in a scope of its own. Reading it
+       * inside the revoking transaction would put the mail path in a position to undo the defence:
+       * an exhausted pool or a backend restarting mid-statement would roll back the revocation and
+       * its trail together, leaving the stolen token working and nothing recording that anybody
+       * noticed. Three scopes, in order: the rotation, the revocation, the read.
+       */
+      it('reads the recipient outside the transaction that revoked', async () => {
+        const test = harness();
+
+        await replay(test);
+
+        expect(test.unitOfWork.scopes).toHaveLength(3);
+      });
+
+      /**
+       * And the consequence that count exists for: a read of the recipient that fails leaves the
+       * revocation and its trail standing. Inside the revoking transaction this would roll both
+       * back — a stolen token still working, with nothing recording that it was noticed.
+       */
+      it('keeps the revocation when the recipient cannot be read', async () => {
+        const test = harness();
+        const token = await signIn(test);
+
+        await test.refresh.execute({ refreshToken: token, client: CLIENT });
+        test.clock.advance(REFRESH_RACE_GRACE_SECONDS + 1);
+        test.users.findById = (): Promise<never> => Promise.reject(new Error('connection lost'));
+
+        await expect(test.refresh.execute({ refreshToken: token, client: CLIENT })).rejects.toThrow(
+          'connection lost',
+        );
+
+        expect([...test.sessions.rows.values()].every((row) => row.revokedAt !== null)).toBe(true);
+        expect(test.audit.events).toHaveLength(1);
+        expect(test.dispatcher.dispatched).toEqual([]);
+      });
+
+      it('sends nothing when the loss was a race rather than theft', async () => {
+        const test = harness();
+        const token = await signIn(test);
+
+        await test.refresh.execute({ refreshToken: token, client: CLIENT });
+        test.clock.advance(REFRESH_RACE_GRACE_SECONDS - 1);
+        await refusal(() => test.refresh.execute({ refreshToken: token, client: CLIENT }));
+
+        expect(test.dispatcher.dispatched).toEqual([]);
+      });
+
+      /**
+       * The account can be gone by the time a stolen token is replayed — deleted rather than
+       * suspended, which is what a self-hosted installation's own maintenance does. The family is
+       * still closed and the trail still written; there is simply nobody left to write to.
+       */
+      it('revokes without a notice when the account row is gone', async () => {
+        const test = harness();
+        const token = await signIn(test);
+
+        await test.refresh.execute({ refreshToken: token, client: CLIENT });
+        test.clock.advance(REFRESH_RACE_GRACE_SECONDS + 1);
+        test.users.rows.delete(USER_ID);
+
+        await refusal(() => test.refresh.execute({ refreshToken: token, client: CLIENT }));
+
+        expect(test.dispatcher.dispatched).toEqual([]);
+        expect(test.audit.events).toHaveLength(1);
+        expect([...test.sessions.rows.values()].every((row) => row.revokedAt !== null)).toBe(true);
+      });
+
+      /**
+       * A mail per presentation would hand the attacker a mailer aimed at the person they stole
+       * from: the family is already closed, so replaying the same token ten more times must cost
+       * ten more log lines and no further messages. What bounds it is the revocation itself —
+       * `UPDATE … WHERE family_id = $1 AND revoked_at IS NULL` matches nothing the second time —
+       * rather than a counter somebody has to keep somewhere.
+       */
+      it('sends once per family, however many times the token comes back', async () => {
+        const test = harness();
+        const token = await replay(test);
+
+        for (let attempt = 0; attempt < 3; attempt += 1) {
+          await refusal(() => test.refresh.execute({ refreshToken: token, client: CLIENT }));
+        }
+
+        expect(test.dispatcher.dispatched).toHaveLength(1);
+        expect(reuseEvents(test.logger)).toHaveLength(4);
+      });
+
+      /**
+       * The revocation is the defence and the mail is the courtesy. An installation whose relay is
+       * down still closes the family, still writes the trail, and still answers the replay with the
+       * one refusal — proven through the real dispatcher and a transport that fails, because that
+       * is where the swallowing actually happens (`ImmediateMailDispatcher`, «Why it never throws»).
+       */
+      it('revokes the family even when the transport is down', async () => {
+        const transport = new FakeMail();
+
+        transport.failure = 'connection';
+
+        const dispatcher = new ImmediateMailDispatcher(transport, new RecordingLogger());
+        const test = harness({ dispatcher });
+
+        await replay(test);
+        await dispatcher.drain();
+
+        expect([...test.sessions.rows.values()].every((row) => row.revokedAt !== null)).toBe(true);
+        expect(test.audit.events).toHaveLength(1);
+        expect(transport.sent).toHaveLength(1);
+      });
     });
 
     it('answers the same refusal whether it was theft or a race', async () => {

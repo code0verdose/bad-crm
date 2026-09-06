@@ -407,6 +407,8 @@ export const createAuthApp = (options: AuthAppOptions = {}): AuthApp => {
       logger,
       rateLimit,
       audit,
+      dispatcher,
+      APP_URL,
     ),
     requestPasswordReset: new RequestPasswordResetUseCase(
       lookup,

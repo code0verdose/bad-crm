@@ -833,6 +833,8 @@ const buildIdentity = (input: {
       input.logger,
       input.rateLimit,
       input.audit,
+      input.mailDispatcher,
+      input.env.APP_URL,
     ),
     changePassword: new ChangePasswordUseCase(
       users,

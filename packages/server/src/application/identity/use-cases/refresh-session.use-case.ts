@@ -18,8 +18,10 @@ import { type OrganizationRepositoryPort } from '@/application/organization/port
 import { type AuditLoggerPort } from '@/application/platform/ports/audit-logger.port.js';
 import { type ClockPort } from '@/application/platform/ports/clock.port.js';
 import { type LoggerPort } from '@/application/platform/ports/logger.port.js';
+import { type MailDispatchPort } from '@/application/platform/ports/mail-dispatch.port.js';
 import { type RateLimitPort } from '@/application/platform/ports/rate-limit.port.js';
 import { type UnitOfWorkPort } from '@/application/platform/ports/unit-of-work.port.js';
+import { renderRefreshReuseMail } from '@/domain/identity/refresh-reuse-mail.util.js';
 import { SECURITY_EVENTS } from '@/domain/identity/security-event.constant.js';
 import { RateLimitedError } from '@/domain/shared/errors/app.errors.js';
 
@@ -85,6 +87,8 @@ export class RefreshSessionUseCase {
     private readonly logger: LoggerPort,
     private readonly rateLimit: RateLimitPort,
     private readonly audit: AuditLoggerPort,
+    private readonly dispatcher: MailDispatchPort,
+    private readonly appUrl: string,
   ) {}
 
   async execute(input: RefreshSessionInput): Promise<RefreshSessionResult | null> {
@@ -126,6 +130,17 @@ export class RefreshSessionUseCase {
    * the `AuditLog` row that describes it is written — in its own committed transaction, and the
    * refusal is raised *after* it: raising inside would roll both back along with everything else,
    * which is the one outcome this branch must not produce.
+   *
+   * The notice to the account owner sits *outside* that transaction for the same reason and one
+   * more: SMTP is never called from inside one (`rules/outbox.mdc`, rule 2), and the revocation is
+   * the defence while the mail is the courtesy. A relay that is down loses the message and closes
+   * the family anyway — `MailDispatchPort.dispatch` returns before a socket is opened and never
+   * throws, and the adapter records every outcome including the failures
+   * (`ImmediateMailDispatcher`, «Why it never throws»). No `isConfigured()` check guards it, on the
+   * same reasoning as `ChangePasswordUseCase`: an installation of the `minimal` profile has no
+   * `SMTP_URL`, and a defensive revocation must not depend on a transport it does not have. The
+   * eventual shape is the outbox row and a queue handler (ADR-0021); neither exists yet, and this
+   * call site does not change when they do.
    */
   private async handleSpentToken(
     record: AuthSessionRecord,
@@ -139,7 +154,7 @@ export class RefreshSessionUseCase {
 
     if (lostRace) return;
 
-    await this.unitOfWork.withTenant(
+    const revoked = await this.unitOfWork.withTenant(
       { organizationId: record.organizationId, userId: record.userId },
       async () => {
         const sessionsRevoked = await this.sessions.revokeFamily(
@@ -166,6 +181,8 @@ export class RefreshSessionUseCase {
           after: { sessionsRevoked },
           requestId: undefined,
         });
+
+        return sessionsRevoked;
       },
     );
 
@@ -176,8 +193,7 @@ export class RefreshSessionUseCase {
     //
     // **The event name is the `event` field, not the sentence.** An alert keyed on a substring of
     // `msg` stops matching the first time somebody improves the wording, and stops matching
-    // silently. The notification mail rule 8 also asks for is not here: no `MailPort` is threaded
-    // into this use-case yet (STORY-006-03, «Что осталось»).
+    // silently.
     this.logger.warn(
       {
         event: SECURITY_EVENTS.refreshReuseDetected,
@@ -187,6 +203,48 @@ export class RefreshSessionUseCase {
         sessionId: record.sessionId,
       },
       'refresh token reuse detected, revoking the session family',
+    );
+
+    // **One message per revoked family, not per presentation.** The condition is the revocation
+    // itself: `UPDATE … WHERE family_id = $1 AND revoked_at IS NULL` matches rows exactly once, so a
+    // token replayed ten more times against a family that is already closed costs ten more lines
+    // here and no further mail. Without that, the detection would be a mailer aimed at the person
+    // whose token was stolen — the attacker chooses when it fires.
+    //
+    // The trail and the log line stay unconditional: every presentation is a fact worth recording,
+    // and only the *notification* has a recipient who can be flooded.
+    if (revoked === 0) return;
+
+    // The address and the language are read in a **second** scope, after the revoking one has
+    // committed — not inside it. `withTenant` opens a transaction, not merely an RLS scope
+    // (`UnitOfWorkPort`), and a read that failed there — an exhausted pool, a backend restarting
+    // mid-statement — would roll the revocation and its trail back with it: a stolen token left
+    // working, and nothing recording that it was ever noticed. Reading the recipient is part of the
+    // mail path, and the mail must not be able to undo the defence. The same second scope for the
+    // same reason is what `rotate` opens for its `OFFBOARDING` revocation below.
+    //
+    // `null` when the row is gone — the account can be deleted between the rotation and the replay.
+    const account = await this.unitOfWork.withTenant(
+      { organizationId: record.organizationId, userId: record.userId },
+      () => this.users.findById(record.userId),
+    );
+
+    if (account === null) return;
+
+    this.dispatcher.dispatch(
+      {
+        to: account.email,
+        ...renderRefreshReuseMail({
+          locale: account.locale,
+          appUrl: this.appUrl,
+          revokedSessions: revoked,
+        }),
+      },
+      {
+        event: SECURITY_EVENTS.refreshReuseDetected,
+        organizationId: record.organizationId,
+        userId: record.userId,
+      },
     );
   }
 
