@@ -155,7 +155,10 @@ estimate: L
 - **Пункт 5 приёмки — экран «Почему есть доступ» (`GET /permissions/explain`).** Не реализован и
   заглушки не заведено. Цепочка решения по нему обязана заканчиваться **узлом ACL** с записью
   `ResourceAcl` (`grantedById`, `accessLevel`, `expiresAt`), а сущности `ResourceAcl` в продукте нет:
-  STORY-011-06 заблокирована до EPIC-014. В каталоге `requiredLevel` не `null` у 162 ключей (весь
+  STORY-011-06 заблокирована до EPIC-014. *(Уточнено 2026-09-06: `ResourceAcl` и резолвер
+  отгружены, STORY-011-06 — `in-progress`; экран «Почему есть доступ» по-прежнему ждёт маршрута
+  `GET /permissions/explain`, который резолвер вызовет, — маршрутов `acl:*` ещё нет.)* В каталоге
+  `requiredLevel` не `null` у 162 ключей (весь
   `project:*`/`board:*`/`task:*`, например `organization:update` → `MANAGER`, `task:read` →
   `VIEWER`) — но ни один из 22 permission, объявленных сегодня в `ROUTE_REGISTRY`, непустого
   `requiredLevel` не имеет: ресурсного слоя нет ни у одного **живого** маршрута. Эндпоинт, который

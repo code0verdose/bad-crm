@@ -15,7 +15,8 @@ import { canInspectPermissions } from '@/domain/iam/access/permission-inspection
  * the shape of the organization's administration. `owner` and `admin` hold that one.
  *
  * `permission:explain` is a third question again — «why does Ivan reach *this object*» — and it
- * needs the ACL layer that does not exist yet (STORY-011-06, blocked on EPIC-014).
+ * needs an object to answer about: the ACL layer exists since 2026-09-06 (STORY-011-06), the
+ * explain route does not.
  */
 
 const SELF = 'admin';

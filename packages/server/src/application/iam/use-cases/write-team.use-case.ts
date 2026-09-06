@@ -33,9 +33,10 @@ export interface CreatedTeam {
  * Creating a team.
  *
  * **Nobody's access changes.** A `Team` is an org-structure container: no permission is derived from
- * membership, and the `ResourceAcl` that would make a team the subject of a grant is STORY-011-06,
- * blocked until a resource layer exists. So there is no permission version to bump here and no
- * escalation rule to apply — the two things that make the equivalent role use-case as long as it is.
+ * membership as such. Since 2026-09-06 a team can be the subject of a `ResourceAcl` grant
+ * (STORY-011-06), but a freshly created team has no members and no grants, so there is still no
+ * permission version to bump here and no escalation rule to apply — the two things that make the
+ * equivalent role use-case as long as it is.
  *
  * The slug is unique inside the organization and nowhere else. `uq_teams_org_slug` is **partial**
  * (`WHERE deleted_at IS NULL`), which is what makes a slug freed by disbanding a team reusable — and

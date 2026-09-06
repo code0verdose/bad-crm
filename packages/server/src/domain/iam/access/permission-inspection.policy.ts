@@ -16,9 +16,10 @@ import { type Decision } from '@/domain/access/decision.types.js';
  * statement about people, and `owner` and `admin` are the roles that hold it (§4.2).
  *
  * Nor `permission:explain`, which is the third question in the family — «why does Ivan reach *this
- * object*» — and needs the resource layer that does not exist yet (STORY-011-06, blocked on
- * EPIC-014). Using it here would spend the key on an answer that contains no object, and leave the
- * screen that does need it unable to ask for anything narrower.
+ * object*» — and needs an object to answer about: the resource layer exists since 2026-09-06
+ * (STORY-011-06 — `ResourceAcl`, `resolveAcl`), the explain route that would use it does not. Using
+ * the key here would spend it on an answer that contains no object, and leave the screen that does
+ * need it unable to ask for anything narrower.
  *
  * **No self-service branch, deliberately**, and this is where it differs from `canReadProfile` next
  * door. A person reads their own rights through `GET /me/permissions`, which answers what they may

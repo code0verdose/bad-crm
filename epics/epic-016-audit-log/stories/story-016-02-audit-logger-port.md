@@ -262,7 +262,9 @@ estimate: L
 Про acceptance 2 прежняя редакция была неверна фактически: из названных там семейств `role.*`,
 `permission.override.*` и `user.mfa_*` **отгружены** и имеют вызывающего — все три в
 `packages/shared/src/audit/audit-action.enums.ts`. Открыты только `acl.*` (домена ресурсного ACL нет,
-STORY-011-06 заблокирована до EPIC-014) и `file.*` (EPIC-015).
+STORY-011-06 заблокирована до EPIC-014) и `file.*` (EPIC-015). *(Уточнено 2026-09-06: `acl.granted`
+и `acl.revoked` объявлены в `audit-action.enums.ts` и пишутся из `grant-acl.use-case.ts` /
+`revoke-acl.use-case.ts` — STORY-011-06 разблокирована; открытым остаётся только `file.*`.)*
 
 ## Что реально открыто
 

@@ -65,6 +65,15 @@ allow = tenantMatches(RLS)                      # ADR-0004
 > отложены три критерия STORY-012-07 (команда как субъект ACL) — и заглушек они не получили, что
 > правильно: ветка, до которой ничего не доходит, — это не подготовка, а необслуживаемый код.
 >
+> **Уточнено 2026-09-06.** Абзац про слой 4 устарел в день kickoff EPIC-014: `model ResourceAcl`
+> в `schema.prisma` есть (миграция `20260906135729_resource_acl`), `resolveAcl` —
+> `application/access/use-cases/resolve-acl.query.ts`, `implicitLevel` —
+> `domain/access/implicit-level.policy.ts`, цепочка предков (`PROJECT → ORGANIZATION`) строится в
+> резолвере из фактов `ProjectAccessReaderPort.aclFacts`. STORY-011-06 — `in-progress`,
+> `blocked: false`. Слой 4 отгружен без маршрутов `acl:*`;
+> ресурсная половина слоя 5 (`authorizeResource`) написана, но её пока не вызывает ни один
+> маршрут. Три критерия STORY-012-07 (3, 4, 6) ждут только маршрут `POST /acl`.
+>
 > Поэтому в формуле выше **второй конъюнкт `resourceAclAllows(...)` сегодня не вычисляется
 > ничем**. Практического пробела в доступе это не создаёт: у ключей, которыми пользуются
 > отгруженные endpoint'ы, `requiredLevel = null` — они организационного скоупа, и конъюнкция для

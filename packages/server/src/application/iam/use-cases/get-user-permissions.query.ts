@@ -44,8 +44,9 @@ export interface PermissionState {
  * organization», not «this person may do this to that object». For the keys that carry a
  * `requiredLevel` the object half is still ahead of them, and this endpoint has no object to apply
  * it to. Answering the narrower question is `permission:explain` — a different key, a different
- * operation, and one that needs `ResourceAcl` to exist first (STORY-011-06, blocked on EPIC-014).
- * The client knows which keys those are: it holds the same catalogue.
+ * operation, and one that needs an object to resolve against — `ResourceAcl` and the resolver exist
+ * since 2026-09-06 (STORY-011-06), the route that would ask them does not. The client knows which
+ * keys those are: it holds the same catalogue.
  *
  * Every key of the catalogue is present, including the ones nobody granted. The alternative — omit
  * them and let the client read absence as refusal — moves one rule of the permission model into the
