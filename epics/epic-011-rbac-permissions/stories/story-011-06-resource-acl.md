@@ -1,8 +1,8 @@
 ---
 id: STORY-011-06
 epic: EPIC-011
-status: backlog
-blocked: true
+status: in-progress
+blocked: false
 priority: must
 estimate: L
 ---
@@ -25,6 +25,14 @@ estimate: L
 > (`schema.prisma:403`, `domain/iam/access/team-access.policy.ts:25`), а
 > [EPIC-014](../../epic-014-project-core/epic.md) в статусе `backlog`. Причина блокировки не
 > устранена и не изменилась.
+>
+> **Разблокировано 2026-09-06 — kickoff EPIC-014.** Условие, записанное 2026-08-07, наступило:
+> проект становится первым доменом с наследованием, и таблица `resource_acl` получает живой
+> предмет — цепочку `PROJECT → ORGANIZATION`. Семь историй EPIC-014 предварительно сверены с
+> кодом (`304fdd0`, девятнадцать расхождений сняты), порядок работ выведен из зависимостей:
+> таблицы проекта → `resource_acl` и резолвер → access-reader проекта и policy → CRUD. Флаг
+> `blocked` снят, статус `in-progress`. Заглушек по-прежнему нет — всё ниже строится против
+> настоящего дерева.
 >
 > **Блокировка подтверждена повторно 2026-08-12 → 2026-08-30.** Сверка та же и с тем же исходом:
 > `grep -c '^model Project' packages/server/prisma/schema.prisma` печатает `0`, миграции с

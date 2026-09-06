@@ -1,7 +1,7 @@
 ---
 id: EPIC-014
 title: Проект как центральная модель
-status: backlog
+status: in-progress
 blocked: false
 milestone: M2
 owner: unassigned

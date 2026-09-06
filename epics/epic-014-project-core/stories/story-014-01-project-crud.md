@@ -1,7 +1,7 @@
 ---
 id: STORY-014-01
 epic: EPIC-014
-status: backlog
+status: in-progress
 blocked: false
 priority: must
 estimate: M
