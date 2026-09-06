@@ -16,3 +16,4 @@ export * from './employee-profile/index.js';
 export * from './settings-security/index.js';
 export * from './admin-teams/index.js';
 export * from './team-detail/index.js';
+export * from './admin-organization/index.js';

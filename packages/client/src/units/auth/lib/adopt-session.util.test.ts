@@ -40,6 +40,25 @@ describe('adopting a session from the wire', () => {
     });
   });
 
+  /**
+   * The organization's second-factor policy rides on the same answer (STORY-013-05).
+   *
+   * Both fields are **absent** on an ordinary session rather than `false` and `null`, so they are
+   * carried through as absent too: a consumer that read `mfaEnrollment === false` would be reading a
+   * value the contract never promises. `mfaEnrollment` has no screen yet — the enrolment gate is the
+   * open half of that story — and is asserted here so that the field survives until one exists.
+   */
+  it('carries the second-factor verdict when the answer states one', () => {
+    expect(
+      adoptSession(session({ mfaEnrollment: true, mfaGraceEndsAt: '2026-09-12T12:00:00.000Z' })),
+    ).toEqual({
+      userId: USER_ID,
+      organizationId: ORGANIZATION_ID,
+      mfaEnrollment: true,
+      mfaGraceEndsAt: '2026-09-12T12:00:00.000Z',
+    });
+  });
+
   it('puts the access token in memory and nowhere in its answer', () => {
     const identity = adoptSession(session());
 

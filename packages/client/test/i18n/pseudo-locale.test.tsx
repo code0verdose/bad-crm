@@ -15,9 +15,9 @@
  */
 import { MantineProvider } from '@mantine/core';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import i18next, { type i18n as I18n } from 'i18next';
 import { I18nextProvider, initReactI18next } from 'react-i18next';
@@ -996,4 +996,130 @@ describe('the boundaries of the forms in a pseudo locale', () => {
       expect(message, `${String(target)} left a placeholder unfilled`).not.toContain('{{');
     }
   });
+});
+
+/**
+ * The organization's security tab, which no route case above reaches.
+ *
+ * It is here for the reason the whole file exists, and it is a screen with an unusual amount of
+ * assembled text: four verdict labels chosen from a `Record`, seven role names chosen from another,
+ * two «this is empty because…» sentences picked from a count, and a confirmation dialog whose every
+ * word is decided at render time. Under `cimode` a forgotten `t()` renders identically to a
+ * remembered one, so all of that is invisible to `security-policy.test.tsx` — the file that
+ * otherwise proves this screen works.
+ *
+ * The report is answered **empty** on purpose. Rows carry addresses and role keys, which are data
+ * rather than sentences: the walker cannot tell an untranslated label from a colleague's email, and
+ * a screen with people on it would need an exemption list that eventually hides a real defect.
+ */
+describe('the organization security tab in a pseudo locale', () => {
+  const platformFetch = globalThis.fetch;
+
+  const json = (body: unknown): Response =>
+    new Response(JSON.stringify(body), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    });
+
+  const mountScreen = async (): Promise<HTMLElement> => {
+    vi.resetModules();
+    vi.stubGlobal('fetch', async (input: Request) => {
+      const { pathname } = new URL(input.url);
+
+      if (pathname.endsWith('/me/permissions')) {
+        return json({
+          permissions: ['organization:manage_security_policy'],
+          denied: [],
+          roles: [],
+          isOwner: false,
+          version: 1,
+        });
+      }
+      if (pathname.endsWith('/organization/mfa-coverage')) {
+        return json({
+          policy: { mfaRequiredForRoles: [], mfaGracePeriodDays: 0, mfaRequiredSince: {} },
+          covered: 0,
+          enrolled: 0,
+          rows: [],
+        });
+      }
+      if (pathname.endsWith('/organization/security-policy')) {
+        return json({ mfaRequiredForRoles: [], mfaGracePeriodDays: 0, mfaRequiredSince: {} });
+      }
+
+      return json({ status: 'ok' });
+    });
+
+    const { renderApp } = await import('../support/render-app.util.js');
+    const { container } = renderApp({
+      path: '/admin/organization?tab=security',
+      status: 'authenticated',
+      i18n: await pseudoInstance(),
+      language: 'pseudo',
+    });
+
+    // The empty-report sentence, in its pseudo-localised form — waiting for a **key** would wait for
+    // a string this locale never produces, and the walk would then run over a half-drawn screen.
+    await screen.findByText(/organization has no active accounts/);
+
+    return container;
+  };
+
+  const unmarkedIn = (container: HTMLElement): string[] =>
+    textNodes(container).filter(
+      (text) => !isPseudoLocalised(text) && !NOT_A_SENTENCE.test(text) && !PROPER_NOUNS.has(text),
+    );
+
+  afterEach(() => {
+    vi.stubGlobal('fetch', platformFetch);
+  });
+
+  it('shows nothing that did not come from the catalogue', async () => {
+    expect(unmarkedIn(await mountScreen())).toEqual([]);
+  });
+
+  /** CONTROL: the walker is looking at this screen rather than at a shell that never filled. */
+  it('CONTROL: is looking at the screen it names', async () => {
+    const container = await mountScreen();
+
+    expect(textNodes(container).filter(isPseudoLocalised).length).toBeGreaterThan(10);
+  });
+
+  /**
+   * The confirmation, whose text is the part nobody sees until they are about to change something —
+   * and the part a missing `t()` would turn into four dotted keys over a `CRITICAL` operation.
+   */
+  it('shows the confirmation in sentences too', async () => {
+    const user = userEvent.setup();
+
+    await mountScreen();
+
+    const dialog = await openConfirmation(user);
+
+    expect(unmarkedIn(dialog)).toEqual([]);
+    expect(textNodes(dialog).filter(isPseudoLocalised).length).toBeGreaterThan(3);
+
+    /*
+      The icon button has no text node at all, so the walk above cannot see it: its whole name is an
+      `aria-label`, and under `cimode` a forgotten `t()` renders the key — which is exactly what the
+      widget suite then asserts against. Only a locale that transforms its values can tell the two
+      apart, which is why the name is read here rather than there.
+    */
+    const close = within(dialog).getByRole('button', { name: /Close/ });
+
+    expect(isPseudoLocalised(close.getAttribute('aria-label') ?? '')).toBe(true);
+  });
+
+  /** Opens the policy confirmation by its pseudo-localised label, since there are no keys to match. */
+  const openConfirmation = async (
+    user: ReturnType<typeof userEvent.setup>,
+  ): Promise<HTMLElement> => {
+    const instance = await pseudoInstance();
+
+    await user.click(
+      await screen.findByRole('button', { name: instance.t('organization.security.review') }),
+    );
+
+    return await screen.findByRole('dialog');
+  };
 });

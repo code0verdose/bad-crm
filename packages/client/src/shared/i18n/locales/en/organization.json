@@ -1,0 +1,87 @@
+{
+  "title": "Organization",
+  "tab": {
+    "security": "Security"
+  },
+  "security": {
+    "title": "Two-factor policy",
+    "description": "Choose the roles whose holders must sign in with a second factor. Everybody else is unaffected. Nothing changes until you review who it applies to and apply it.",
+    "rolesLabel": "Roles that must have a second factor",
+    "rolesHint": "No role selected means the policy is off. It is «off», never «everybody».",
+    "graceLabel": "Grace period, days",
+    "graceHint": "How long somebody has to set up an authenticator after their role starts being covered. Zero enforces it from that moment. The countdown belongs to the person and the role: a colleague given a covered role next month gets their own days from that day.",
+    "off": "The policy is off. No role requires a second factor.",
+    "on_one": "{{count}} role requires a second factor.",
+    "on_other": "{{count}} roles require a second factor.",
+    "review": "Review who this affects",
+    "discard": "Discard changes",
+    "saved": "The policy now applies.",
+    "loadFailed": "The organization's security policy could not be read.",
+    "customRoles_one": "The policy also names {{count}} custom role, which this screen keeps but cannot show by name.",
+    "customRoles_other": "The policy also names {{count}} custom roles, which this screen keeps but cannot show by name.",
+    "role": {
+      "owner": "Owner",
+      "admin": "Administrator",
+      "manager": "Manager",
+      "lead": "Team lead",
+      "developer": "Developer",
+      "viewer": "Viewer",
+      "guest": "Guest"
+    },
+    "gate": {
+      "notCovered": "Not covered",
+      "satisfied": "Has a second factor",
+      "grace": "Setting up",
+      "enrollmentRequired": "Blocked until set up"
+    },
+    "preview": {
+      "title": "Who this policy will affect",
+      "description": "Counted by the server against the draft above, with the same rule that admits people at sign-in — so this list is the list the door will use.",
+      "close": "Close",
+      "cancel": "Cancel",
+      "apply": "Apply the policy",
+      "loadFailed": "The preview could not be read. Nothing has been changed.",
+      "covered_one": "{{count}} person holds a role this policy names.",
+      "covered_other": "{{count}} people hold a role this policy names.",
+      "enrolled": "{{enrolled}} of them already have a second factor; {{missing}} do not.",
+      "empty": "Nobody holds a role this policy names.",
+      "listTitle": "Without a second factor",
+      "failed": {
+        "title": "The policy was not applied"
+      },
+      "selfLockout": {
+        "title": "You are putting yourself under this policy",
+        "body": "One of your own roles is in the draft and you have no second factor. Applying it starts your grace period too; once it runs out, signing in will let you do nothing except set up an authenticator.",
+        "confirm": "I understand — apply it anyway"
+      },
+      "nothingToApply": "Nothing to apply — the draft matches the policy that is already in force."
+    },
+    "coverage": {
+      "title": "Second-factor coverage",
+      "description": "Every active account, with the verdict the policy currently in force gives it.",
+      "searchLabel": "Find a person",
+      "searchPlaceholder": "name@example.com",
+      "roleLabel": "Role",
+      "gateLabel": "Status",
+      "reset": "Clear the filters",
+      "summary": "{{enrolled}} of {{covered}} covered people have a second factor.",
+      "shown": "Showing {{shown}} of {{total}}.",
+      "column": {
+        "person": "Person",
+        "roles": "Roles",
+        "status": "Status",
+        "deadline": "Grace period ends"
+      },
+      "noDeadline": "—",
+      "empty": "This organization has no active accounts.",
+      "noMatches": "Nobody matches these filters.",
+      "loadFailed": "The coverage report could not be read."
+    }
+  },
+  "grace": {
+    "title": "Two-factor authentication is required for your role",
+    "body": "Set up an authenticator app before the grace period ends. After that, signing in will let you do nothing else until you have.",
+    "deadline": "Grace period ends",
+    "action": "Set it up now"
+  }
+}

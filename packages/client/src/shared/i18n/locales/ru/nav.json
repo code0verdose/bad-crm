@@ -22,5 +22,6 @@
   "adminMembers": "Сотрудники",
   "adminTeams": "Команды",
   "adminRoles": "Роли и права",
-  "settingsSecurity": "Безопасность"
+  "settingsSecurity": "Безопасность",
+  "adminOrganization": "Организация"
 }

@@ -48,8 +48,11 @@ export interface AppShellProps {
  * failure `axe` reports and a screen reader acts on.
  */
 export function AppShell({ children }: AppShellProps) {
-  const { can } = IamService.IamHooks.useCan();
-  const sections = visibleSections(NAV_SECTIONS, can);
+  // `holds`, not `can`: a menu entry mirrors the **route gate**, which asks only whether the person
+  // holds the capability. `can` additionally demands an ACL level for a key whose catalogue entry
+  // names one, and would hide «Organization» from the very owner who may edit its security policy.
+  const { holds } = IamService.IamHooks.useCan();
+  const sections = visibleSections(NAV_SECTIONS, holds);
   const { t } = useTranslation();
 
   const [isDrawerOpen, drawer] = useDisclosure(false);

@@ -156,6 +156,63 @@ describe('asking what the interface may offer', () => {
     expect(result.current.can('project:update', 'VIEWER')).toBe(false);
   });
 
+  /**
+   * The other question, and the one a route gate asks: does this person **hold** the capability.
+   *
+   * `project:update` is the sharpest way to state the difference — `can()` refuses it without a
+   * level, which is right for a control acting on one object and wrong for a screen that has none.
+   * `organization:manage_security_policy` is the key that made the difference matter: it is the
+   * first with a `requiredLevel` that a route was gated on, and `can()` hid the section from the
+   * owner of the organization while the server admitted them.
+   */
+  it('separates holding a capability from being allowed on an object', async () => {
+    vi.stubGlobal(
+      'fetch',
+      answer({
+        permissions: ['project:update', 'organization:manage_security_policy'],
+        denied: [],
+        roles: [],
+        isOwner: false,
+        version: 1,
+      }),
+    );
+
+    const useCan = await freshHook();
+    const { result } = renderHook(() => useCan(), { wrapper: wrapper() });
+
+    await waitFor(() => {
+      expect(result.current.holds('project:update')).toBe(true);
+    });
+    // The conjunction still refuses without a level — `holds` widens nothing about objects.
+    expect(result.current.can('project:update')).toBe(false);
+    expect(result.current.holds('organization:manage_security_policy')).toBe(true);
+    // Fails closed on both counts a route gate could be fooled by.
+    expect(result.current.holds('task:teleport')).toBe(false);
+    expect(result.current.holds('project:delete')).toBe(false);
+  });
+
+  /** A personal DENY beats the grant here exactly as it does in `can()` — one ladder, two questions. */
+  it('honours a personal deny when asked whether somebody holds a capability', async () => {
+    vi.stubGlobal(
+      'fetch',
+      answer({
+        permissions: ['organization:manage_security_policy'],
+        denied: ['organization:manage_security_policy'],
+        roles: [],
+        isOwner: false,
+        version: 1,
+      }),
+    );
+
+    const useCan = await freshHook();
+    const { result } = renderHook(() => useCan(), { wrapper: wrapper() });
+
+    await waitFor(() => {
+      expect(result.current.isLoading).toBe(false);
+    });
+    expect(result.current.holds('organization:manage_security_policy')).toBe(false);
+  });
+
   it('says no to a key the catalogue does not contain', async () => {
     // A typo must not open anything. `can()` fails closed on an unknown key, and this is the client
     // side of that same guarantee.
@@ -188,9 +245,12 @@ describe('asking what the interface may offer', () => {
     // The client retries once before giving up, so settling takes longer than a render — and the
     // answer must be «no» throughout, not only at the end.
     expect(result.current.can('role:read')).toBe(false);
-    await waitFor(() => {
-      expect(result.current.isLoading).toBe(false);
-    }, { timeout: 5_000 });
+    await waitFor(
+      () => {
+        expect(result.current.isLoading).toBe(false);
+      },
+      { timeout: 5_000 },
+    );
     expect(result.current.can('role:read')).toBe(false);
   });
 });

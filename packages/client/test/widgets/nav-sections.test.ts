@@ -41,6 +41,24 @@ describe('what NAV_SECTIONS actually requires', () => {
    * denied the right to protect their own sign-in. An entry gated on a permission there would hide
    * the second factor from exactly the accounts that hold no permissions at all.
    */
+  /**
+   * «Организация» is gated on a key with a `requiredLevel`, and that is why it is named here.
+   *
+   * The menu is filtered with `useCan().holds` rather than `can` (`app-shell.widget.tsx`): `can()`
+   * demands an ACL level for such a key and would hide this entry from the very owner who may edit
+   * the organization's security policy. The filter below is `holds` — capability only — and this
+   * case is what keeps the wiring from quietly reverting.
+   */
+  it('shows «Организация» to somebody who holds organization:manage_security_policy', () => {
+    const sections = visibleSections(
+      NAV_SECTIONS,
+      (permission) => permission === 'organization:manage_security_policy',
+    );
+    const labels = sections.flatMap((section) => section.items.map((item) => item.labelKey));
+
+    expect(labels).toEqual(['nav.dashboard', 'nav.settingsSecurity', 'nav.adminOrganization']);
+  });
+
   it('hides every administrative entry, «Команды» included, from somebody granted nothing', () => {
     const sections = visibleSections(NAV_SECTIONS, () => false);
     const labels = sections.flatMap((section) => section.items.map((item) => item.labelKey));

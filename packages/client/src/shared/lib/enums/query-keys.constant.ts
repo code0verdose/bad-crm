@@ -169,6 +169,31 @@ export interface InvitationQueryKeys {
   readonly list: () => readonly [string, 'list'];
 }
 
+/**
+ * The organization's second-factor policy, and the report of who it affects.
+ *
+ * Two addresses under one prefix, because saving the policy changes both answers at once and one
+ * `invalidateQueries({ queryKey: QueryKeys.SecurityPolicy.all })` has to reach them together — a
+ * table still showing yesterday's verdicts beside a policy that has just changed is a screen that
+ * disagrees with the door.
+ *
+ * `coverage` takes the **draft** it is reporting on, because the preview of a policy nobody has
+ * saved is a different answer from the standing report and must not be served from its cache
+ * entry: `undefined` addresses the stored policy, and every draft addresses its own.
+ */
+export interface CoverageDraftParams {
+  readonly roles: readonly string[];
+  readonly graceDays: number;
+}
+
+export interface SecurityPolicyQueryKeys {
+  readonly all: readonly [string];
+  readonly policy: () => readonly [string, 'policy'];
+  readonly coverage: (
+    draft: CoverageDraftParams | undefined,
+  ) => readonly [string, 'coverage', CoverageDraftParams | null];
+}
+
 export const QueryKeys = {
   Sessions: {
     all: ['sessions'],
@@ -200,4 +225,17 @@ export const QueryKeys = {
     list: () => ['teams', 'list'],
     detail: (id: string) => ['teams', 'detail', id],
   } satisfies TeamQueryKeys,
+  SecurityPolicy: {
+    all: ['security-policy'],
+    policy: () => ['security-policy', 'policy'],
+    // `null` rather than `undefined` for «the stored policy»: a key is serialised for hashing, and
+    // `undefined` in an array is not distinguishable from a missing element on the way back.
+    // The roles are **sorted** into the key: «admin then manager» and «manager then admin» are one
+    // question, and two entries for it would be two requests answered identically and a preview that
+    // depends on the order somebody happened to tick boxes in.
+    coverage: (draft) =>
+      draft === undefined
+        ? ['security-policy', 'coverage', null]
+        : ['security-policy', 'coverage', { ...draft, roles: [...draft.roles].sort() }],
+  } satisfies SecurityPolicyQueryKeys,
 } as const;

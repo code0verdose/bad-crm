@@ -22,10 +22,30 @@ export const sessionIdentitySchema = z
   .object({
     user: z.object({ id: SharedValidation.userIdSchema }),
     organization: z.object({ id: SharedValidation.organizationIdSchema }),
+    /**
+     * The organization's second-factor policy, as it applies to **this** session (STORY-013-05).
+     *
+     * Both are absent for an ordinary session rather than `false` and `null`, and the schema keeps
+     * them that way: the server states presence, and a client that read `mfaEnrollment === false`
+     * would be reading a field the contract does not promise. `.optional()` here, and the transform
+     * below spreads them only when they are there, so the two facts stay «said» or «not said».
+     *
+     * A timestamp rather than a duration, because a grace period is days long and the answer that
+     * carries it is refreshed at most every fifteen minutes.
+     *
+     * `.catch(undefined)` on both, and that is about what a failure costs rather than about
+     * tolerance. This object is the **whole** session answer: a `safeParse` failure clears the access
+     * token and signs the tab out. A timestamp an older or newer server spells with an offset instead
+     * of `Z` is a banner that cannot be drawn — not a reason to end somebody's session over it.
+     */
+    mfaEnrollment: z.literal(true).optional().catch(undefined),
+    mfaGraceEndsAt: z.iso.datetime().optional().catch(undefined),
   })
-  .transform(({ user, organization }) => ({
+  .transform(({ user, organization, mfaEnrollment, mfaGraceEndsAt }) => ({
     userId: user.id,
     organizationId: organization.id,
+    ...(mfaEnrollment === undefined ? {} : { mfaEnrollment }),
+    ...(mfaGraceEndsAt === undefined ? {} : { mfaGraceEndsAt }),
   }));
 
 export type SessionIdentity = z.output<typeof sessionIdentitySchema>;

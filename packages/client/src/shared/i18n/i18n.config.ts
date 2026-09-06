@@ -12,6 +12,7 @@ import enEmployee from './locales/en/employee.json' with { type: 'json' };
 import enMembers from './locales/en/members.json' with { type: 'json' };
 import enOffboarding from './locales/en/offboarding.json' with { type: 'json' };
 import enNav from './locales/en/nav.json' with { type: 'json' };
+import enOrganization from './locales/en/organization.json' with { type: 'json' };
 import enPagination from './locales/en/pagination.json' with { type: 'json' };
 import enPermission from './locales/en/permission.json' with { type: 'json' };
 import enPermissions from './locales/en/permissions.json' with { type: 'json' };
@@ -28,6 +29,7 @@ import ruEmployee from './locales/ru/employee.json' with { type: 'json' };
 import ruMembers from './locales/ru/members.json' with { type: 'json' };
 import ruOffboarding from './locales/ru/offboarding.json' with { type: 'json' };
 import ruNav from './locales/ru/nav.json' with { type: 'json' };
+import ruOrganization from './locales/ru/organization.json' with { type: 'json' };
 import ruPagination from './locales/ru/pagination.json' with { type: 'json' };
 import ruPermission from './locales/ru/permission.json' with { type: 'json' };
 import ruPermissions from './locales/ru/permissions.json' with { type: 'json' };
@@ -51,6 +53,7 @@ const RESOURCES = {
     members: enMembers,
     offboarding: enOffboarding,
     nav: enNav,
+    organization: enOrganization,
     pagination: enPagination,
     // `permission` — the catalogue's own sentences, addressed by the `descriptionKey` of
     // `PERMISSION_META`; `permissions` below is the screen that renders them. Near-identical names
@@ -72,6 +75,7 @@ const RESOURCES = {
     members: ruMembers,
     offboarding: ruOffboarding,
     nav: ruNav,
+    organization: ruOrganization,
     pagination: ruPagination,
     permission: ruPermission,
     permissions: ruPermissions,

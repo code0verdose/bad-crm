@@ -1,4 +1,5 @@
 import {
+  IconBuilding,
   IconKey,
   IconLayoutDashboard,
   IconShieldLock,
@@ -22,7 +23,12 @@ import { type SharedPermissions } from '@bad-crm/shared';
 export interface NavItem {
   /** A path of the route tree. Widening this to `string` would give up the compile-time check. */
   readonly to:
-    '/dashboard' | '/settings/security' | '/admin/members' | '/admin/teams' | '/admin/roles';
+    | '/dashboard'
+    | '/settings/security'
+    | '/admin/members'
+    | '/admin/teams'
+    | '/admin/roles'
+    | '/admin/organization';
   readonly labelKey: string;
   readonly icon: Icon;
   /**
@@ -80,6 +86,20 @@ export const NAV_SECTIONS: readonly NavSection[] = [
         labelKey: 'nav.adminRoles',
         icon: IconShieldLock,
         permission: 'role:read',
+      },
+      /**
+       * The entry is gated by the capability of the **one tab that exists**, not by
+       * `organization:update` as `ux-architecture.md` plans for the finished screen. Today the
+       * screen is the second-factor policy and nothing else, so somebody holding `organization:update`
+       * alone would follow this link to a refusal — a menu entry that answers «not for you» is the
+       * dead end principle 6 of that document forbids. When the other four tabs land, the guard
+       * moves to the route and the security tab keeps its own.
+       */
+      {
+        to: '/admin/organization',
+        labelKey: 'nav.adminOrganization',
+        icon: IconBuilding,
+        permission: 'organization:manage_security_policy',
       },
     ],
   },

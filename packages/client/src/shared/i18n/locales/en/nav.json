@@ -22,5 +22,6 @@
   "adminMembers": "People",
   "adminTeams": "Teams",
   "adminRoles": "Roles and permissions",
-  "settingsSecurity": "Security"
+  "settingsSecurity": "Security",
+  "adminOrganization": "Organization"
 }

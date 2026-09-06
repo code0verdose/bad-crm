@@ -75,7 +75,22 @@ export const requirePermission =
         ),
       );
 
-    const allowed = SharedPermissions.can(
+    /**
+     * The **capability**, deliberately, and not `can()`.
+     *
+     * `can()` is the whole conjunction of the model — capability and the ACL level a key's catalogue
+     * entry may require — and it refuses any such key when no level is supplied. A `beforeLoad` has
+     * no level to supply and never will: a route addresses a screen, the level belongs to an object,
+     * and resolving one would be the client deciding an authorisation it is not allowed to decide.
+     *
+     * What this guard mirrors is the gate the route actually has on the server, which is
+     * `authorizeCapability` in `require-permission.middleware.ts`; the resource half is applied by
+     * the use-case, over an object this guard has not got. Written as `can()` it silently refused
+     * `organization:manage_security_policy` — the first guarded key with a `requiredLevel` — to the
+     * owner of the organization, with no request made and nothing to see in a log. Every other
+     * guarded key today has `requiredLevel: null`, where the two functions agree exactly.
+     */
+    const allowed = SharedPermissions.effectivePermission(
       {
         isOwner: view.isOwner,
         permissions: known(view.permissions),

@@ -67,6 +67,8 @@ const OWNERS: Readonly<Record<string, string>> = {
   'widgets/reset-mfa/ui/reset-mfa-dialog.component.tsx': 'widgets/reset-mfa.test.tsx',
   'widgets/role-matrix/ui/role-matrix-preview-modal.component.tsx':
     'widgets/role-matrix-preview-modal.test.tsx',
+  'widgets/security-policy/ui/policy-preview-dialog.component.tsx':
+    'widgets/security-policy.test.tsx',
   'widgets/team-detail/ui/team-delete-dialog.component.tsx': 'widgets/team-detail.test.tsx',
   'widgets/team-list/ui/team-create-dialog.component.tsx': 'widgets/team-list.test.tsx',
   'widgets/user-permissions/ui/permission-override-dialog.component.tsx':

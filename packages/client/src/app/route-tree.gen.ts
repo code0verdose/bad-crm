@@ -18,6 +18,7 @@ import { Route as AuthenticatedSplatRouteImport } from './routes/_authenticated/
 import { Route as AuthenticatedDashboardRouteImport } from './routes/_authenticated/dashboard';
 import { Route as InviteTokenRouteImport } from './routes/invite.$token';
 import { Route as ResetPasswordTokenRouteImport } from './routes/reset-password.$token';
+import { Route as AuthenticatedAdminOrganizationRouteImport } from './routes/_authenticated/admin/organization';
 import { Route as AuthenticatedAdminRolesRouteImport } from './routes/_authenticated/admin/roles';
 import { Route as AuthenticatedSettingsSecurityRouteImport } from './routes/_authenticated/settings/security';
 import { Route as AuthenticatedAdminMembersIndexRouteImport } from './routes/_authenticated/admin/members/index';
@@ -71,6 +72,12 @@ const ResetPasswordTokenRoute = ResetPasswordTokenRouteImport.update({
   path: '/reset-password/$token',
   getParentRoute: () => rootRouteImport,
 } as any);
+const AuthenticatedAdminOrganizationRoute =
+  AuthenticatedAdminOrganizationRouteImport.update({
+    id: '/admin/organization',
+    path: '/admin/organization',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any);
 const AuthenticatedAdminRolesRoute = AuthenticatedAdminRolesRouteImport.update({
   id: '/admin/roles',
   path: '/admin/roles',
@@ -128,6 +135,7 @@ export interface FileRoutesByFullPath {
   '/dashboard': typeof AuthenticatedDashboardRoute;
   '/invite/$token': typeof InviteTokenRoute;
   '/reset-password/$token': typeof ResetPasswordTokenRoute;
+  '/admin/organization': typeof AuthenticatedAdminOrganizationRoute;
   '/admin/roles': typeof AuthenticatedAdminRolesRoute;
   '/settings/security': typeof AuthenticatedSettingsSecurityRoute;
   '/admin/members/$userId': typeof AuthenticatedAdminMembersUserIdRoute;
@@ -146,6 +154,7 @@ export interface FileRoutesByTo {
   '/invite/$token': typeof InviteTokenRoute;
   '/reset-password/$token': typeof ResetPasswordTokenRoute;
   '/': typeof AuthenticatedIndexRoute;
+  '/admin/organization': typeof AuthenticatedAdminOrganizationRoute;
   '/admin/roles': typeof AuthenticatedAdminRolesRoute;
   '/settings/security': typeof AuthenticatedSettingsSecurityRoute;
   '/admin/members/$userId': typeof AuthenticatedAdminMembersUserIdRoute;
@@ -166,6 +175,7 @@ export interface FileRoutesById {
   '/invite/$token': typeof InviteTokenRoute;
   '/reset-password/$token': typeof ResetPasswordTokenRoute;
   '/_authenticated/': typeof AuthenticatedIndexRoute;
+  '/_authenticated/admin/organization': typeof AuthenticatedAdminOrganizationRoute;
   '/_authenticated/admin/roles': typeof AuthenticatedAdminRolesRoute;
   '/_authenticated/settings/security': typeof AuthenticatedSettingsSecurityRoute;
   '/_authenticated/admin/members/$userId': typeof AuthenticatedAdminMembersUserIdRoute;
@@ -186,6 +196,7 @@ export interface FileRouteTypes {
     | '/dashboard'
     | '/invite/$token'
     | '/reset-password/$token'
+    | '/admin/organization'
     | '/admin/roles'
     | '/settings/security'
     | '/admin/members/$userId'
@@ -204,6 +215,7 @@ export interface FileRouteTypes {
     | '/invite/$token'
     | '/reset-password/$token'
     | '/'
+    | '/admin/organization'
     | '/admin/roles'
     | '/settings/security'
     | '/admin/members/$userId'
@@ -223,6 +235,7 @@ export interface FileRouteTypes {
     | '/invite/$token'
     | '/reset-password/$token'
     | '/_authenticated/'
+    | '/_authenticated/admin/organization'
     | '/_authenticated/admin/roles'
     | '/_authenticated/settings/security'
     | '/_authenticated/admin/members/$userId'
@@ -307,6 +320,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ResetPasswordTokenRouteImport;
       parentRoute: typeof rootRouteImport;
     };
+    '/_authenticated/admin/organization': {
+      id: '/_authenticated/admin/organization';
+      path: '/admin/organization';
+      fullPath: '/admin/organization';
+      preLoaderRoute: typeof AuthenticatedAdminOrganizationRouteImport;
+      parentRoute: typeof AuthenticatedRoute;
+    };
     '/_authenticated/admin/roles': {
       id: '/_authenticated/admin/roles';
       path: '/admin/roles';
@@ -370,6 +390,7 @@ interface AuthenticatedRouteChildren {
   AuthenticatedSplatRoute: typeof AuthenticatedSplatRoute;
   AuthenticatedDashboardRoute: typeof AuthenticatedDashboardRoute;
   AuthenticatedIndexRoute: typeof AuthenticatedIndexRoute;
+  AuthenticatedAdminOrganizationRoute: typeof AuthenticatedAdminOrganizationRoute;
   AuthenticatedAdminRolesRoute: typeof AuthenticatedAdminRolesRoute;
   AuthenticatedSettingsSecurityRoute: typeof AuthenticatedSettingsSecurityRoute;
   AuthenticatedAdminMembersUserIdRoute: typeof AuthenticatedAdminMembersUserIdRoute;
@@ -384,6 +405,7 @@ const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedSplatRoute: AuthenticatedSplatRoute,
   AuthenticatedDashboardRoute: AuthenticatedDashboardRoute,
   AuthenticatedIndexRoute: AuthenticatedIndexRoute,
+  AuthenticatedAdminOrganizationRoute: AuthenticatedAdminOrganizationRoute,
   AuthenticatedAdminRolesRoute: AuthenticatedAdminRolesRoute,
   AuthenticatedSettingsSecurityRoute: AuthenticatedSettingsSecurityRoute,
   AuthenticatedAdminMembersUserIdRoute: AuthenticatedAdminMembersUserIdRoute,
