@@ -27,11 +27,14 @@ import { createTestApp } from '../support/test-app.util.js';
  * access then shows up as a diff in a committed file, with the direction spelled out — widening is
  * not the same kind of event as narrowing, and «404 became 403» is not cosmetic at all.
  *
- * **What this cannot see yet:** the resource layer. No route in the product is resource-scoped
- * (`requiredLevel` is `null` for every key in the registry today), so every cell here is the
- * capability decision. When the first ACL-bearing domain lands (EPIC-014), the matrix gains a second
- * dimension and the fixtures gain a resource — the shape of this file is chosen to make that an
- * addition rather than a rewrite.
+ * **What this cannot see yet:** the resource layer. Every cell here is the capability decision —
+ * not because every routed key has `requiredLevel: null` (`organization:manage_security_policy`
+ * carries `MANAGER` and sits on three routes), but because no routed key with a level has a
+ * resource reader on its route: the organization has none, the guard calls `authorizeCapability`
+ * only, and nothing on those routes reads the level. The project policy that does read a level
+ * (`GetProjectDetailQuery`) is not on a route yet. The first `project:*` route changes that: the
+ * matrix gains a second dimension and the fixtures gain a resource — the shape of this file is
+ * chosen to make that an addition rather than a rewrite.
  */
 
 const SNAPSHOT = fileURLToPath(new URL('./__snapshots__/permission-matrix.json', import.meta.url));

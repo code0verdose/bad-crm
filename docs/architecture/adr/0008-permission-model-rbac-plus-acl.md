@@ -79,6 +79,22 @@ allow = tenantMatches(RLS)                      # ADR-0004
 > отгруженные endpoint'ы, `requiredLevel = null` — они организационного скоупа, и конъюнкция для
 > них вырождается в capability. Ключ с `requiredLevel != null`, вызванный без уровня, получает
 > `DENY(resource_required)` — то есть модель fail-closed и в этом состоянии тоже.
+>
+> **Уточнено 2026-09-06, после `f156ee9`.** Два места абзацев выше разошлись с кодом. Первое:
+> «ресурсную половину слоя 5 не вызывает ни один маршрут» верно буквально, но уже не означает
+> «не вычисляется ничем»: `GetProjectDetailQuery`
+> (`application/project/use-cases/get-project-detail.query.ts`) решает доступ к проекту через
+> `domain/project/access/project-access.policy.ts` — capability, потом scope и цепочка, сущность
+> читается последней; доказано на живом Postgres в `test/integration/db/project-read-access.test.ts`.
+> Маршрута `project:*` нет — до него второй конъюнкт исполняется в use-case, но не по HTTP. Второе:
+> «у ключей отгруженных endpoint'ов `requiredLevel = null`» было верно на 2026-08-30 и устарело
+> `abe2135` (2026-09-06): `organization:manage_security_policy` несёт `requiredLevel: 'MANAGER'`
+> (`permissions.catalog.ts`) и стоит на трёх маршрутах `route-registry.factory.ts`
+> (`GET`/`PATCH /organization/security-policy`, `GET /organization/mfa-coverage`). Матрица прав при
+> этом осталась одномерной, и держится это не на «у всех null», а на другом: **ни у одного ключа с
+> уровнем, стоящего на маршруте, нет ридера ресурса** — у организации его нет, гвард зовёт только
+> `authorizeCapability`, и `requiredLevel` на этих трёх маршрутах не читает никто. `DENY(resource_required)`
+> они не получают именно поэтому. Первый маршрут `project:*` это изменит.
 
 **Слой 1 — каталог permissions.** Файл `packages/shared/src/permissions/permissions.catalog.ts` —
 единственный источник истины. Сервер и клиент импортируют один и тот же тип, поэтому
