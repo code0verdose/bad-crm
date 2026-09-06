@@ -1,7 +1,7 @@
 ---
 id: STORY-014-03
 epic: EPIC-014
-status: backlog
+status: in-progress
 blocked: false
 priority: must
 estimate: L
@@ -43,8 +43,9 @@ estimate: L
 >
 > Здесь регистрируется **одна** цепочка — `PROJECT → ORGANIZATION`, — и она же становится первым
 > предметом ресурсного слоя, ради которого
-> [STORY-011-06](../../epic-011-rbac-permissions/stories/story-011-06-resource-acl.md) стоит
-> `blocked: true`. Критерии 4, 5, 8, 9, 10, 11 предмет имеют и остаются в силе целиком.
+> [STORY-011-06](../../epic-011-rbac-permissions/stories/story-011-06-resource-acl.md) стояла
+> `blocked: true` (снято kickoff'ом 2026-09-06). Критерии 4, 5, 8, 9, 10, 11 предмет имеют и
+> остаются в силе целиком.
 >
 > **Развилка наследования, которую история не называет.** `Board.projectId` **нуллабелен**
 > (`docs/architecture/data-model.md:1082-1089`): свободная доска команды существует без проекта.
@@ -55,9 +56,12 @@ estimate: L
 > поздно и дорого.
 >
 > **Снапшот матрицы прав.** Критерий 6 предполагает, что подмена 404 на 403 различима в снимке.
-> Сегодня **каждая ячейка снапшота — capability-решение**: `requiredLevel` равен `null` у всех
-> ключей, стоящих на маршрутах, и докстринг говорит это прямо
+> Сегодня **каждая ячейка снапшота — capability-решение**: middleware зовёт только
+> `authorizeCapability`, а use-case с резолвером на маршруте не стоит; докстринг говорит это
 > (`packages/server/test/permissions/permission-matrix.test.ts:29-33`, «What this cannot see yet»).
+> Формулировка «`requiredLevel` равен `null` у всех ключей на маршрутах» неверна:
+> `organization:manage_security_policy` несёт `MANAGER` и стоит на трёх маршрутах — снята
+> 2026-09-06.
 > У `project:*` уровни в каталоге проставлены, поэтому первый такой маршрут делает снимок двумерным:
 > снапшот придётся переснять и, возможно, добавить ось ресурса. Выбор кода 404/403 при этом уже
 > сделан в одном месте и закреплён архитектурным тестом
@@ -68,9 +72,31 @@ estimate: L
 > отсутствует — каталог закрытый, новый код это отдельное решение с переводом на обоих языках.
 > `permission_not_granted`, `insufficient_acl_level`, `acl_resolution_failed` и
 > `resource_not_found` из критериев 6 и 7 — это `DenyReason`
-> (`packages/shared/src/permissions/deny-reason.enums.ts`), они существуют. Аудита **отказов** в
-> доступе в каталоге действий нет вовсе — это открытая половина критерия 2 STORY-011-07 и работа
-> [STORY-016-02](../../epic-016-audit-log/stories/story-016-02-audit-logger-port.md).
+> (`packages/shared/src/permissions/deny-reason.enums.ts`), они существуют. Аудит **отказов** в
+> доступе с 2026-09-06 есть — `access.denied`/`access.denial_burst` в каталоге действий, отбор в
+> `domain/access/denied-access-audit.policy.ts`; формулировка «нет вовсе» держалась здесь до того
+> же дня и снята (адресат был [STORY-016-02](../../epic-016-audit-log/stories/story-016-02-audit-logger-port.md),
+> acceptance 7).
+>
+> **Сделано 2026-09-06 — policy и первое ресурсное чтение.**
+> `domain/project/access/project-access.policy.ts` существует: `decideProjectAccess(actor, key,
+> facts)` — capability через `authorizeWith`, резолвер только после неё, удалённая строка →
+> `missing`, `NONE` на цепочке → `resource_not_found` (критерий 6 — закрытый контур);
+> `canReadProject`; `projectAddressable`/`assertProjectAddressable`. Неявная таблица §5 в policy
+> **не** переписана — её уже применяет резолвер (`implicit-level.policy.ts`), policy берёт готовый
+> `AclScope` и `ProjectScope` из `scope()`. Первое чтение —
+> `application/project/use-cases/get-project-detail.query.ts` (`project:read`, порядок «scope и
+> цепочка → решение → `detail()`»). Из четырёх функций состава сделана та, у которой есть
+> потребитель; `canUpdateProject`, `canManageProject`, `canArchiveProject` приходят со своими
+> use-case'ами, а таблица уровней для `project:update`/`project:delete` уже стоит в
+> `test/unit/domain/project/project-access-policy.test.ts`. Критерии 6 и 7 закрыты **в policy-части**
+> на этом чтении: три неразличимых 404 с контролем на живой базе
+> (`test/integration/db/project-read-access.test.ts`) и 503 при отказе резолвера — пока только
+> двойником `{ status: 'unavailable' }` (`get-project-detail.query.test.ts`), живой отказ базы не
+> воспроизводился. Снапшотная половина критерия 6 («⚠ раскрытие существования» в
+> `permission-matrix`) ждёт маршрута. Маршрута
+> ещё нет — он следующий шаг вместе с описаниями права, спекой и снапшотом матрицы. Открытыми
+> остаются 4, 5, 8, 9, 10, 11 и `visible-projects.policy.ts`.
 
 ## Acceptance (Given/When/Then)
 
@@ -141,13 +167,16 @@ estimate: L
 
 ## Задачи
 
-- [ ] `packages/server/src/domain/project/access/project-access.policy.ts` — `canReadProject`,
-      `canUpdateProject`, `canManageProject`, `canArchiveProject` c `Decision`.
+- [x] `packages/server/src/domain/project/access/project-access.policy.ts` — `decideProjectAccess`
+      и `canReadProject` c `Decision` (2026-09-06); `canUpdateProject`, `canManageProject`,
+      `canArchiveProject` — вместе с их use-case'ами, поверх той же `decideProjectAccess`.
 - [ ] `packages/server/src/domain/project/policies/visible-projects.ts` — единственная функция
       видимости (чистая, на вход — принципалы и записи ACL).
-- [ ] `packages/server/src/application/project/ports/project-access-reader.port.ts` +
-      `infrastructure/persistence/prisma/project-access-reader.adapter.ts` (`projectScope`,
-      `accessibleProjectIds`).
+- [ ] ~~`packages/server/src/application/project/ports/project-access-reader.port.ts`~~ — второй
+      порт не заводится (2026-09-06): ридер проекта живёт в
+      `application/access/ports/project-access-reader.port.ts` и читается только резолвером, policy
+      берёт `scope()` репозитория и `AclScope`. `accessibleProjectIds` — вместе с
+      `visible-projects.policy.ts`, отдельным портом списка, а не ридера доступа.
 - [ ] `packages/server/src/application/access/services/ancestor-chain.service.ts` — регистрация
       цепочек для `BOARD`, `TASK`, `FILE`, `FILE_FOLDER`, `CHANNEL`, `SPRINT` с корнем `PROJECT`.
 - [ ] `packages/server/src/infrastructure/persistence/prisma/soft-delete.extension.ts` — глобальный

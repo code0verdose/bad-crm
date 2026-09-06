@@ -21,10 +21,10 @@ interface FactsRow {
  * `projects.deleted_at`, `project_members.project_role`, `project_members.left_at` — as raw SQL
  * rather than through the generated client, because this adapter was built in the same step as
  * the tables it reads (STORY-011-06 beside EPIC-014's first story) and could not depend on a model
- * that did not yet exist in the committed schema. The step that gives the project context its own
- * access reader (STORY-014-02) is the one to fold this into it and move to the model; the
- * integration test that proves the names (`resource-acl-reader.test.ts`) is what makes that move
- * safe.
+ * that did not yet exist in the committed schema. A move into the project context was planned and
+ * dropped on 2026-09-06 (see the port's docstring): the resolver is this reader's only consumer.
+ * Moving from raw SQL to the generated model is still open, and the integration test that proves
+ * the names (`resource-acl-reader.test.ts`) is what makes that move safe whenever it is made.
  *
  * `LEFT JOIN`, not `JOIN`: a non-member of a public project is a row with `member_role = NULL`,
  * which is exactly the «не участник, но член организации → VIEWER» row of §5. A soft-deleted

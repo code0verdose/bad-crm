@@ -16,8 +16,8 @@
 | EPIC-010 | E2E-харнесс | 🔵 review | M1 | 0/6 |
 | EPIC-011 | Роли, права и ACL | 🔵 review | M2 | 0/11 |
 | EPIC-012 | Сотрудники, приглашения и офбординг | 🔵 review | M2 | 0/9 |
-| EPIC-013 | Двухфакторная аутентификация (TOTP) | 🟡 in-progress | M2 | 0/6 |
-| EPIC-014 | Проект как центральная модель | ⚫ backlog | M2 | 0/7 |
+| EPIC-013 | Двухфакторная аутентификация (TOTP) | 🔵 review | M2 | 0/6 |
+| EPIC-014 | Проект как центральная модель | 🟡 in-progress | M2 | 0/7 |
 | EPIC-015 | Файловое хранилище | ⚫ backlog | M2 | 0/8 |
 | EPIC-016 | Журнал действий (audit log) | 🟡 in-progress | M2 | 0/5 |
 | EPIC-017 | Self-host alpha | ⚫ backlog | M2 | 0/6 |

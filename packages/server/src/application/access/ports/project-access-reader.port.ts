@@ -16,11 +16,14 @@ export interface ProjectAclFacts {
 }
 
 /**
- * Lives under `access` rather than `project` on purpose, for now: it is the half of the project's
- * access reader that the ACL resolver needs, written in the step that builds the resolver
- * (STORY-011-06), while the project context is being created beside it (EPIC-014). The step that
- * gives the project its own access reader and policy (STORY-014-02) is the one to fold this into
- * `application/project/ports/project-access-reader.port.ts` — one reader per context, not two.
+ * Lives under `access` rather than `project` on purpose. It is the half of the project the ACL
+ * resolver needs — written in the step that built the resolver (STORY-011-06) while the project
+ * context was being created beside it (EPIC-014) — and its only consumer is that resolver. The
+ * project's own policy (`domain/project/access/project-access.policy.ts`, STORY-014-03) does not
+ * read it: it takes the resolver's answer and the repository's `scope()`, so «one reader per
+ * context» holds without a second port under `application/project/ports/`. A move was planned here
+ * and dropped for that reason on 2026-09-06; `test/unit/architecture/access-readers.test.ts` holds
+ * the shape of this one wherever it lives.
  */
 export interface ProjectAccessReaderPort {
   aclFacts(projectId: string, userId: string): Promise<ProjectAclFacts | null>;

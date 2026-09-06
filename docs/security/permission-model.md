@@ -1662,15 +1662,16 @@ LIMIT 1;                      -- ближайший узел с записями
 
 Колонка «сегодня» — путь в текущем коде; где стоит «—», файла ещё нет и строка описывает целевую
 форму (примеры ниже с доменом `task` — иллюстрации: домена `task` в продукте нет, первым доменом с
-ACL стал проект — EPIC-014, kickoff 2026-09-06: `ProjectAccessReaderPort`, его адаптер и
-`resolve-acl.query.ts` отгружены, маршрутов `acl:*` ещё нет).
+ACL стал проект — EPIC-014, kickoff 2026-09-06: `ProjectAccessReaderPort`, его адаптер,
+`resolve-acl.query.ts`, policy `domain/project/access/project-access.policy.ts` и первое ресурсное
+чтение `get-project-detail.query.ts` отгружены; маршрутов `acl:*` и `project:*` ещё нет).
 
 | Слой | Роль | Сегодня | Чего здесь нет |
 |---|---|---|---|
 | `packages/shared` | каталог, типы, единственная лестница capability | `permissions/permissions.catalog.ts`, `can.util.ts`, `access-level.enums.ts`, `deny-reason.enums.ts` | I/O, знание о БД |
-| `domain` | правила: `can…(actor, scope): Decision` | `domain/access/{authorize,decision}.util.ts`, `domain/iam/access/*.policy.ts` | запросы, Prisma, HTTP |
+| `domain` | правила: `can…(actor, scope): Decision` | `domain/access/{authorize,decision}.util.ts`, `domain/iam/access/*.policy.ts`, `domain/project/access/project-access.policy.ts` (первая ресурсная: `decideProjectAccess` — `authorizeWith` плюс два правила проекта: удалённая строка → `missing`, `NONE` → `resource_not_found`) | запросы, Prisma, HTTP |
 | `application` | интерфейс «принеси факты о правах» | `application/iam/ports/effective-permissions-reader.port.ts` | реализация |
-| `application` | прочитать scope → policy → выполнить | `application/iam/use-cases/*.{use-case,query}.ts` | сами правила |
+| `application` | прочитать scope → policy → выполнить | `application/iam/use-cases/*.{use-case,query}.ts`, `application/project/use-cases/get-project-detail.query.ts` (порядок «scope и цепочка → решение → `detail()`», счётчик операторов — `test/integration/db/project-read-access.test.ts`) | сами правила |
 | `application` | сборка `Actor` | `application/iam/use-cases/build-actor.query.ts` (кеша нет — §8) | правила |
 | `infrastructure` | SQL | `persistence/prisma/effective-permissions-reader.adapter.ts` | решения о доступе |
 | `infrastructure` | Redis-кеш прав | — (`PermissionCachePort` не заведён) | — |
@@ -2516,9 +2517,10 @@ type RouteDeclaration = GuardedRoute | PublicRoute | SelfServiceRoute;
 Актора в ней нет по построению: `/metrics` читает всё, что дотянется до порта.
 
 **Чего по-прежнему нет.** Алерта на серию (алертинг не наш), экрана и эндпоинта чтения журнала
-(EPIC-016), деградации `INFO` при сбое записи (STORY-016-02, acceptance 9). Сбой самой записи отказа
-не роняет ответ и не откатывает ничего — откатывать нечего, отказ уже состоялся; он считается в
-`audit_write_failed_total`.
+(EPIC-016). *(Деградация `INFO` при сбое записи, которая здесь числилась отсутствующей, сделана
+2026-09-06 — STORY-016-02, acceptance 9; разбор в `docs/runbooks/audit-log.md`, «Сбой записи».)*
+Сбой самой записи отказа не роняет ответ и не откатывает ничего — откатывать нечего, отказ уже
+состоялся; он считается в `audit_write_failed_total`.
 
 **Отдельный режим, который стоит знать оператору: при недоступном Redis журнал отказов молчит
 целиком.** Бюджет спрашивается до записи, а `RateLimitPort.consume` при недоступном сторе отказывает

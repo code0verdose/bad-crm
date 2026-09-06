@@ -25,7 +25,8 @@ export type ProjectVisibility = (typeof PROJECT_VISIBILITIES)[number];
 /**
  * The role a person holds on a project. It is the source of the implicit access level of
  * `permission-model.md` §5 — `LEAD → MANAGER`, `MEMBER → EDITOR`, `REVIEWER → COMMENTER`,
- * `OBSERVER → VIEWER` — but that mapping is the policy's to make, not this list's (STORY-014-02).
+ * `OBSERVER → VIEWER` — but that mapping is made once, in `domain/access/implicit-level.policy.ts`,
+ * not by this list.
  */
 export const PROJECT_ROLES = ['LEAD', 'MEMBER', 'REVIEWER', 'OBSERVER'] as const;
 

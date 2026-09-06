@@ -60,7 +60,7 @@ export interface ProjectMemberRepositoryPort {
   add(
     projectId: string,
     userId: string,
-    projectRole: string,
+    projectRole: ProjectRole,
     allocationPct: number,
   ): Promise<boolean>;
 

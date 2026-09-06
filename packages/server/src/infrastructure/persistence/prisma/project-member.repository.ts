@@ -116,7 +116,7 @@ export class PrismaProjectMemberRepository
   add(
     projectId: string,
     userId: string,
-    projectRole: string,
+    projectRole: ProjectRole,
     allocationPct: number,
   ): Promise<boolean> {
     return this.run('add', async (tx) => {

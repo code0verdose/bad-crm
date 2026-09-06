@@ -4,6 +4,7 @@ import { PrismaClient } from '@prisma/client';
 import { type PoolClient } from 'pg';
 import { afterAll, beforeAll, beforeEach, describe, expect, inject, it } from 'vitest';
 
+import { type ProjectRole } from '@/domain/project/project.enums.js';
 import { ConflictError } from '@/domain/shared/errors/app.errors.js';
 import { PrismaProjectMemberRepository } from '@/infrastructure/persistence/prisma/project-member.repository.js';
 import { PrismaProjectRepository } from '@/infrastructure/persistence/prisma/project.repository.js';
@@ -453,8 +454,12 @@ describe('membership', () => {
   });
 
   it.each(['ADMIN', 'lead', ''])('refuses project role %j', async (projectRole) => {
+    // Past the port's type on purpose: the subject is `ck_project_members_role`, the database's
+    // own copy of the closed list, which a raw statement can reach without the compiler.
     await expect(
-      members((repository) => repository.add(seeded.projectId, seeded.ivanId, projectRole, 50)),
+      members((repository) =>
+        repository.add(seeded.projectId, seeded.ivanId, projectRole as ProjectRole, 50),
+      ),
     ).rejects.toMatchObject({ meta: { code: CHECK_VIOLATION } });
   });
 
