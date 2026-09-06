@@ -6,9 +6,20 @@ import { type Decision } from '@/domain/access/decision.types.js';
 
 export const allow = (): Decision => ({ allowed: true, reason: null });
 
-export const deny = (reason: SharedPermissions.DenyReason): Decision => ({
+/**
+ * A refusal, optionally naming the key it was about.
+ *
+ * The second argument is spread in rather than assigned, because under `exactOptionalPropertyTypes`
+ * an absent key and one present as `undefined` are different types — and «this refusal is not about
+ * a key» has to stay the first of the two, or every reader downstream has to handle both.
+ */
+export const deny = (
+  reason: SharedPermissions.DenyReason,
+  permissionKey?: SharedPermissions.PermissionKey,
+): Decision => ({
   allowed: false,
   reason,
+  ...(permissionKey === undefined ? {} : { permissionKey }),
 });
 
 /**
@@ -26,5 +37,7 @@ export function assertAllowed(
   decision: Decision,
   resource: ErrorResource,
 ): asserts decision is { allowed: true; reason: null } {
-  if (!decision.allowed) throw accessErrorFor(decision.reason, resource);
+  if (!decision.allowed) {
+    throw accessErrorFor(decision.reason, resource, undefined, decision.permissionKey);
+  }
 }

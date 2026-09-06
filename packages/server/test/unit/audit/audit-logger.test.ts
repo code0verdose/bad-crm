@@ -172,6 +172,8 @@ describe('the action catalogue', () => {
       'permission.override.deleted',
       'rls.bypassed',
       'permission.inspected',
+      'access.denied',
+      'access.denial_burst',
     ]);
   });
 

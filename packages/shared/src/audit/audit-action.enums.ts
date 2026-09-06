@@ -7,8 +7,17 @@
  * action is added here deliberately, in the pull request that introduces it.
  *
  * The names are `<subject>.<verb>` in the past tense: the trail records what **happened**, not what
- * was attempted. An attempt that failed is a different record, and today it is not one this list
- * carries.
+ * was attempted.
+ *
+ * **That was once a rule and is now a tendency** (corrected 2026-09-06). This list carries four
+ * entries about something that did not succeed — `user.mfa_setup_failed`,
+ * `user.mfa_recovery_locked_out`, `access.denied` and `access.denial_burst` — and each states why it
+ * earns the exception in its own entry below. What they have in common is that the *attempt* is the
+ * evidence: a run of wrong recovery codes, or a refusal on a key somebody should not have been
+ * reaching for, is what an incident review starts from. A single ordinary miss is still not a
+ * record — it is a counter and a log line. Anything quoting the older, absolute form of this
+ * sentence as the reason not to file some attempt (`docs/security/threat-model.md` RR-09 did) is
+ * quoting a premise that no longer holds; the conclusion may still, on its own merits.
  */
 export const AUDIT_ACTIONS = [
   /** An organization and its first owner were created (STORY-006-01). */
@@ -265,16 +274,46 @@ export const AUDIT_ACTIONS = [
    * the organization is actually administered — the same reasoning that makes `audit.exported`,
    * `vault.escrow_used` and `VaultAccessLog`'s own `VIEW` entry logged reads instead of silent ones.
    *
-   * **It covers the successful branch only, and nothing covers the other one.** An earlier version
-   * of this comment said the refusal was already carried by §10's rule «a denial on a dangerous key
-   * is always filed». That rule is not implemented: this list holds no refusal action of any kind,
-   * `assertAllowed` only throws, and the capability guard refuses before the use-case is entered. A
-   * caller enumerating the roster **without** `permission:override_read` therefore leaves nothing in
-   * the trail — only an HTTP log line naming the actor, the route template and 403, with no subject
-   * and no permission key. Filing refusals is EPIC-016 work; until then this is a stated gap rather
-   * than a rule that happens to live elsewhere.
+   * **It covers the successful branch; the refusal is `access.denied` below** (closed 2026-09-06).
+   * Until then this entry said the refused branch was recorded nowhere, and that was true: §10's
+   * rule «a denial on a dangerous key is always filed» had no implementation. It does now — a caller
+   * enumerating the roster without `permission:override_read` is refused on a key the catalogue
+   * marks dangerous, which is one of the two classes `access.denied` records.
    */
   'permission.inspected',
+  /**
+   * Somebody was refused access, and the refusal was one worth keeping (STORY-016-02, acceptance 7;
+   * the audit half of STORY-011-07, acceptance 2).
+   *
+   * **Not every refusal.** A row per refusal would make the cheapest request an attacker can send
+   * the most expensive one this system answers, so the selection is deliberately narrow and lives in
+   * one place — `domain/access/denied-access-audit.policy.ts`. Recorded are a refusal on a key the
+   * catalogue marks `dangerous` and a refusal of a request that would have changed something; an
+   * ordinary refused `GET` leaves `permission_denied_total{reason}` and nothing else, and an
+   * unauthenticated caller leaves not even a subject to name.
+   *
+   * **The reason in `after` is not always the `DenyReason` the response carried.** `tenant_mismatch`
+   * and `resource_not_found` are spelled identically — `not_found` — because they answer the same
+   * 404 on purpose (invariant 2), and a journal that distinguished them would be the oracle the API
+   * refuses to be, readable by everyone in the organization who may read the trail.
+   *
+   * `after` carries the reason, the permission key (or `null`), the method and which of the two
+   * rules put it here. Never the URL: a path segment of this product can itself be a credential.
+   */
+  'access.denied',
+  /**
+   * A run of refusals from one actor exhausted what one actor may write to the trail in a minute —
+   * one entry standing for the rest of the run (STORY-016-02, acceptance 7).
+   *
+   * The same shape as `user.mfa_recovery_locked_out`, and for the same reason: a record per attempt
+   * is the rate-limiter's counter written twice, and it buries the runs it exists to surface. Here
+   * there is a second reason the pattern is not optional — the entries are written by whoever is
+   * being refused, so an unbounded writer is an amplifier pointed at the installation's own
+   * database. `after` names the budget and the window, and nothing about the individual attempts:
+   * how many were suppressed is not knowable without a second read, and the counter already answers
+   * it.
+   */
+  'access.denial_burst',
 ] as const;
 
 export type AuditAction = (typeof AUDIT_ACTIONS)[number];

@@ -56,6 +56,7 @@ describe('creating a role', () => {
     expect(canCreateRole(noRight, role())).toEqual({
       allowed: false,
       reason: 'permission_not_granted',
+      permissionKey: 'role:create',
     });
   });
 
@@ -203,6 +204,7 @@ describe('a right the organization took away', () => {
     expect(canUpdateRole(denied('role:update'), role(), after())).toEqual({
       allowed: false,
       reason: 'denied_by_override',
+      permissionKey: 'role:update',
     });
   });
 
@@ -239,6 +241,7 @@ describe('each operation asks for its own capability', () => {
     expect(canUpdateRole(creator, role(), after())).toEqual({
       allowed: false,
       reason: 'permission_not_granted',
+      permissionKey: 'role:update',
     });
   });
 
@@ -250,6 +253,7 @@ describe('each operation asks for its own capability', () => {
     expect(canDeleteRole(editor, role(), after())).toEqual({
       allowed: false,
       reason: 'permission_not_granted',
+      permissionKey: 'role:delete',
     });
   });
 

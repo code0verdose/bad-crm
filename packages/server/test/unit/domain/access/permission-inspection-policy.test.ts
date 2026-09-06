@@ -48,7 +48,11 @@ const CASES = [
   {
     name: 'without the capability, nobody',
     actor: actorWith(),
-    expected: { allowed: false, reason: 'permission_not_granted' },
+    expected: {
+      allowed: false,
+      reason: 'permission_not_granted',
+      permissionKey: 'permission:override_read',
+    },
   },
   {
     /**
@@ -57,7 +61,11 @@ const CASES = [
      */
     name: 'reading the catalogue is a different question from reading a person',
     actor: holding('permission:read'),
-    expected: { allowed: false, reason: 'permission_not_granted' },
+    expected: {
+      allowed: false,
+      reason: 'permission_not_granted',
+      permissionKey: 'permission:override_read',
+    },
   },
   {
     /**
@@ -66,7 +74,11 @@ const CASES = [
      */
     name: 'writing exceptions does not imply reading the whole picture',
     actor: holding('permission:override'),
-    expected: { allowed: false, reason: 'permission_not_granted' },
+    expected: {
+      allowed: false,
+      reason: 'permission_not_granted',
+      permissionKey: 'permission:override_read',
+    },
   },
   {
     name: 'a DENY exception on the key itself refuses, and says which layer refused',
@@ -74,7 +86,11 @@ const CASES = [
       permissions: new Set<SharedPermissions.PermissionKey>(['permission:override_read']),
       denied: new Set<SharedPermissions.PermissionKey>(['permission:override_read']),
     }),
-    expected: { allowed: false, reason: 'denied_by_override' },
+    expected: {
+      allowed: false,
+      reason: 'denied_by_override',
+      permissionKey: 'permission:override_read',
+    },
   },
   {
     /**
@@ -86,7 +102,11 @@ const CASES = [
      */
     name: 'one’s own record is not an exemption — /me/permissions is that door',
     actor: actorWith({ userId: SELF }),
-    expected: { allowed: false, reason: 'permission_not_granted' },
+    expected: {
+      allowed: false,
+      reason: 'permission_not_granted',
+      permissionKey: 'permission:override_read',
+    },
   },
 ] as const;
 

@@ -154,9 +154,11 @@ can(actor, key, ref = null):
   этому объекту». Отказ без причины отлаживается только чтением кода.
   **Статус 2026-08-30:** HTTP-половина отгружена (`domain/access/decision.util.ts`,
   `presentation/http/error-handler.middleware.ts`, схема `DenyReason` в `docs/api/openapi.yaml`);
-  **аудитная — нет**: в `packages/shared/src/audit/audit-action.enums.ts` нет ни одного действия
-  про отказ, отказ в доступе в `AuditLog` не пишется. Это открытая половина критерия 2
-  STORY-011-07, вынесенная в [EPIC-016](../../../epics/epic-016-audit-log/epic.md).
+  **аудитная — с 2026-09-06 тоже**: `access.denied` и `access.denial_burst` в
+  `packages/shared/src/audit/audit-action.enums.ts`, отбор — `domain/access/denied-access-audit.policy.ts`
+  (пишется не каждый отказ: опасный ключ и изменяющий запрос, серия свыше десяти в минуту — одной
+  записью, рядовое чтение — только метрика; норматив — `docs/security/permission-model.md`, §10,
+  «Отказы»). Открытым остаётся семейство `denyAccess`, которое `DenyReason` не несёт вовсе.
 - **Приватный ресурс без доступа → 404, а не 403.** Существование объекта само по себе информация.
 
 **Реализация по слоям** (следствие [ADR-0002](0002-hexagonal-backend-express-prisma.md)):

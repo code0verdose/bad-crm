@@ -45,6 +45,7 @@ const harness = (): Harness => {
     mfa_verify_account_attempt: policy,
     mfa_recovery_consume_attempt: policy,
     mfa_admin_reset_attempt: policy,
+    access_denial_audit: policy,
   } satisfies WindowLimiters;
 
   return { adapter: new RedisRateLimiterAdapter(limiters, logger), attempts, penalties, lines };

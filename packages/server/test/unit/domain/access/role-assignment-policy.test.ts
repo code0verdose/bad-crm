@@ -68,6 +68,7 @@ describe('handing a role to somebody', () => {
     expect(canAssignRole(noRight, role(), subject())).toEqual({
       allowed: false,
       reason: 'permission_not_granted',
+      permissionKey: 'role:assign',
     });
   });
 
@@ -133,6 +134,7 @@ describe('taking a role away', () => {
     expect(canRevokeRole(noRight, role(), subject(), 2)).toEqual({
       allowed: false,
       reason: 'permission_not_granted',
+      permissionKey: 'role:revoke',
     });
   });
 

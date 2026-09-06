@@ -59,6 +59,7 @@ describe('inviting somebody', () => {
     expect(canInvite(noRight, draft())).toEqual({
       allowed: false,
       reason: 'permission_not_granted',
+      permissionKey: 'invitation:create',
     });
   });
 
@@ -161,6 +162,7 @@ describe('reopening and closing an invitation', () => {
     expect(canResendInvitation(cannot, pending())).toEqual({
       allowed: false,
       reason: 'permission_not_granted',
+      permissionKey: 'invitation:resend',
     });
   });
 
@@ -170,6 +172,7 @@ describe('reopening and closing an invitation', () => {
     expect(canRevokeInvitation(cannot, pending())).toEqual({
       allowed: false,
       reason: 'permission_not_granted',
+      permissionKey: 'invitation:revoke',
     });
   });
 

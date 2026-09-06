@@ -68,6 +68,7 @@ describe('writing an exception', () => {
     expect(canWriteOverride(noRight, draft(), subject())).toEqual({
       allowed: false,
       reason: 'permission_not_granted',
+      permissionKey: 'permission:override',
     });
   });
 
@@ -155,6 +156,7 @@ describe('removing an exception', () => {
     expect(canRemoveOverride(noRight, draft(), subject())).toEqual({
       allowed: false,
       reason: 'permission_not_granted',
+      permissionKey: 'permission:override',
     });
   });
 

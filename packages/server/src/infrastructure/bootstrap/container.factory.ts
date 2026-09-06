@@ -120,6 +120,10 @@ import { createAuthLookupClient } from '@/infrastructure/persistence/prisma/auth
 import { databaseReadinessProbe } from '@/infrastructure/persistence/prisma/database-readiness.adapter.js';
 import { migrationReadinessProbe } from '@/infrastructure/persistence/prisma/migration-readiness.adapter.js';
 import { shippedMigrationNames } from '@/infrastructure/persistence/prisma/shipped-migrations.util.js';
+import {
+  bestEffortDeniedAccessAudit,
+  RecordDeniedAccessUseCase,
+} from '@/application/access/use-cases/record-denied-access.use-case.js';
 import { type AuditLoggerPort } from '@/application/platform/ports/audit-logger.port.js';
 import { type DatabaseConnection } from '@/infrastructure/persistence/prisma/database.factory.js';
 import {
@@ -299,6 +303,28 @@ export const buildContainer = (input: ContainerInput): AppContainer => {
     metrics,
   );
 
+  /**
+   * The refusal trail, wired here for the same reason `audit` is: it needs the counted logger, and
+   * the error handler that calls it is presentation, which imports no adapters.
+   *
+   * `bestEffortDeniedAccessAudit` is what makes it safe to call from there — the write is started
+   * and the call returns, so a refused caller waits on nothing and a broken Redis or a broken insert
+   * cannot turn their 403 into a 500. That is the opposite of every other audit call site in this
+   * container, and deliberately: those record actions that happened, this one records that nothing
+   * did (`application/access/use-cases/record-denied-access.use-case.ts`).
+   */
+  const deniedAccessAudit = bestEffortDeniedAccessAudit(
+    new RecordDeniedAccessUseCase({
+      rateLimit,
+      unitOfWork:
+        input.database === undefined
+          ? detachedUnitOfWork()
+          : new PrismaUnitOfWork(input.database.base),
+      audit,
+    }),
+    { logger, metrics },
+  );
+
   const identity = buildIdentity({
     env: input.env,
     clock,
@@ -424,6 +450,7 @@ export const buildContainer = (input: ContainerInput): AppContainer => {
       checkReadiness,
       describeApi,
       recordClientError,
+      deniedAccessAudit,
       identity: identity.dependencies,
       // The permission layer. Built here, beside identity, because it needs the same unit of work:
       // «who is this» and «what may they do» are two reads of the same transaction boundary.

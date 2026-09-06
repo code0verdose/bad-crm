@@ -14,4 +14,21 @@ import { type SharedPermissions } from '@bad-crm/shared';
  */
 export type Decision =
   | { readonly allowed: true; readonly reason: null }
-  | { readonly allowed: false; readonly reason: SharedPermissions.DenyReason };
+  | {
+      readonly allowed: false;
+      readonly reason: SharedPermissions.DenyReason;
+      /**
+       * The key the refusal was about, when the refusal was about a key at all.
+       *
+       * Optional because most refusals are not: a last owner, a closed period and a system role are
+       * states, not capabilities, and inventing a key for them would put a value into the trail that
+       * no catalogue entry backs. It is carried rather than re-derived because the one place that
+       * knows it — `authorizeCapability`, which was handed the key — is several layers below the one
+       * that needs it, and the alternative is the transport guessing from an error code.
+       *
+       * What needs it: the denial trail records a refusal on a `dangerous` key **whatever** the
+       * request method (`domain/access/denied-access-audit.policy.ts`), and «is this key dangerous»
+       * is a question only the key answers.
+       */
+      readonly permissionKey?: SharedPermissions.PermissionKey;
+    };

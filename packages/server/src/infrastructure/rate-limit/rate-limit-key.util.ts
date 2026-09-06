@@ -137,6 +137,7 @@ const SUBJECT_RENDERERS: {
   mfa_verify_account_attempt: renderIpUser,
   mfa_recovery_consume_attempt: renderIpUser,
   mfa_admin_reset_attempt: renderUser,
+  access_denial_audit: renderUser,
 };
 
 /**

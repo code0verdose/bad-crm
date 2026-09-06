@@ -159,7 +159,7 @@ await this.audit.record({ ... });   // вне withTransaction
 | `http_requests_total` | counter | `method`, `route`, `status` | EPIC-009 — есть |
 | `http_request_duration_seconds` | histogram | `method`, `route` | EPIC-009 — есть |
 | `auth_rate_limited_total` | counter | `endpoint` | EPIC-009 — есть |
-| `permission_denied_total` | counter | `reason` | STORY-016-02 — есть счётчик; аудит отказов и агрегация серий не сделаны |
+| `permission_denied_total` | counter | `reason` | ✅ счётчик; аудит отказов и агрегация серий закрыты 2026-09-06 (`access.denied`, `access.denial_burst`) |
 | `audit_write_failed_total` | counter | — | STORY-016-02 — есть счётчик; деградация `info`-событий не сделана, сбой по-прежнему роняет транзакцию |
 | `audit_unscoped_total` | counter | — | есть — привилегированное действие, записанное строкой лога вместо строки таблицы. Путь закрыт списком `application/platform/audit/unscoped-audit-actions.constant.ts`; всё, чего в списке нет, отвергается и считается счётчиком выше |
 | `mfa_recovery_failed_total` | counter | — | STORY-013-02 — есть. Резервный код предъявлен на шаге второго фактора и отвергнут. Без меток: исход (нет такого, уже потрачен, малформед) — ровно то различие, которое ответ прячет фиксированной стоимостью сверки, и метка публиковала бы его на `/metrics` |

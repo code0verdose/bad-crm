@@ -1,6 +1,7 @@
 import { type ErrorRequestHandler } from 'express';
 import { ZodError } from 'zod';
 
+import { type DeniedAccessAuditSink } from '@/application/access/use-cases/record-denied-access.use-case.js';
 import { type LoggerPort } from '@/application/platform/ports/logger.port.js';
 import { type MetricsPort } from '@/application/platform/ports/metrics.port.js';
 import { type RequestContextPort } from '@/application/platform/ports/request-context.port.js';
@@ -25,6 +26,19 @@ export interface ErrorHandlerDependencies {
    * than a `noop` handed to a handler that would then pretend to publish.
    */
   readonly metrics?: MetricsPort | undefined;
+  /**
+   * Where a refusal worth keeping is written down. Absent leaves the counter and nothing else.
+   *
+   * Optional for the tests that build this handler on its own, not for a real process: the
+   * composition root always supplies it, and a container built without a database supplies one over
+   * `detachedUnitOfWork()` — which refuses, so each recordable refusal costs a rejected write and an
+   * `audit_write_failed_total` rather than silence. That is the honest behaviour for a process
+   * running without the table its trail lives in.
+   *
+   * A sink whose `record` **returns** rather than a promise to await: the write must not sit between
+   * a refused caller and their 403 (`record-denied-access.use-case.ts` works through why).
+   */
+  readonly deniedAccessAudit?: DeniedAccessAuditSink | undefined;
 }
 
 /** Errors the body parser raises before any of our code runs. */
@@ -88,14 +102,15 @@ const asAppError = (error: unknown): AppError | undefined => {
  *   the process would lose the original error as well.
  */
 export const createErrorHandler = (dependencies: ErrorHandlerDependencies): ErrorRequestHandler => {
-  return (error: unknown, _request, response, next) => {
+  return (error: unknown, request, response, next) => {
     if (response.headersSent) {
       next(error);
 
       return;
     }
 
-    const requestId = dependencies.requestContext.current()?.requestId ?? '';
+    const context = dependencies.requestContext.current();
+    const requestId = context?.requestId ?? '';
     const appError = asAppError(error);
     const status = appError?.status ?? 500;
     const code = appError?.code ?? 'internal_error';
@@ -140,6 +155,42 @@ export const createErrorHandler = (dependencies: ErrorHandlerDependencies): Erro
     // and no others.
     if (appError instanceof AccessRefusedError) {
       dependencies.metrics?.incrementPermissionDenied(appError.reason);
+
+      // And, for the minority of refusals worth keeping, a row — STORY-016-02 acceptance 7, the
+      // audit half of STORY-011-07 acceptance 2. Here for the same structural reason the counter is:
+      // a refusal that reached a client passed through this function, so nothing has to be
+      // remembered at a call site.
+      //
+      // Both identifiers must be present, and «absent» is not a gap to work around: they are `null`
+      // until the authentication guard resolved somebody, so a refusal without them is one that
+      // named nobody — there is no actor to file the entry against and no tenant to file it under.
+      // `audit_logs` is a tenant table; inventing either would be worse than the counter alone.
+      //
+      // Which refusals become rows is decided one layer in, not here: this hands over the facts and
+      // `record-denied-access.use-case.ts` decides. The call returns before the write does, on purpose.
+      if (context?.userId != null && context.organizationId != null) {
+        try {
+          dependencies.deniedAccessAudit?.record({
+            reason: appError.reason,
+            permissionKey: appError.permissionKey,
+            method: request.method,
+            actorUserId: context.userId,
+            organizationId: context.organizationId,
+            ipAddress: request.ip,
+            requestId,
+          });
+        } catch (sinkError) {
+          // Caught, not left to propagate, and this is not a fallback that hides a defect — it is
+          // reported at `error`, the level an operator alerts on. What it protects is the response:
+          // an exception thrown *inside* an error handler is not caught by anything above it, so
+          // Express destroys the connection and the original refusal is lost with it. A broken
+          // trail must not be able to turn every 403 of an installation into a dropped socket.
+          dependencies.logger.error(
+            { requestId, err: sinkError },
+            'denied access sink threw synchronously',
+          );
+        }
+      }
     }
 
     // One place for the header, whatever raised it: the 429 of the rate limiter and the 503 of a

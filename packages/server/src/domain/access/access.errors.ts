@@ -15,10 +15,29 @@ import { AppError, type ErrorDetails } from '@/domain/shared/errors/app.errors.j
 export class AccessRefusedError extends AppError {
   readonly reason: SharedPermissions.DenyReason;
 
-  constructor(code: ErrorCode, reason: SharedPermissions.DenyReason, details?: ErrorDetails) {
+  /**
+   * The key the refusal was about, when there was one — carried, never re-derived.
+   *
+   * It exists for one reader: the denial trail, which records a refusal on a `dangerous` key
+   * whatever the request method. That question cannot be answered from the code or the status —
+   * `role_forbidden` is the same code for `role:read` and `role:assign` — and the only place that
+   * still had the key is several layers below the error handler.
+   *
+   * Not folded into `details`, for the same reason `reason` is not: `details` goes to the log and
+   * never leaves the process, while this value is meant to be written down.
+   */
+  readonly permissionKey: SharedPermissions.PermissionKey | undefined;
+
+  constructor(
+    code: ErrorCode,
+    reason: SharedPermissions.DenyReason,
+    details?: ErrorDetails,
+    permissionKey?: SharedPermissions.PermissionKey,
+  ) {
     super(code, `Access refused: ${reason}`, details);
 
     this.reason = reason;
+    this.permissionKey = permissionKey;
   }
 }
 
@@ -83,4 +102,6 @@ export const accessErrorFor = (
   reason: SharedPermissions.DenyReason,
   resource: ErrorResource,
   details?: ErrorDetails,
-): AccessRefusedError => new AccessRefusedError(CODE_FOR[reason](resource), reason, details);
+  permissionKey?: SharedPermissions.PermissionKey,
+): AccessRefusedError =>
+  new AccessRefusedError(CODE_FOR[reason](resource), reason, details, permissionKey);

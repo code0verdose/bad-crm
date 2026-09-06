@@ -31,6 +31,23 @@ estimate: L
    2026-08-05: было «с разными `type`-URI», но `type` выводится из `code`, а `code` — закрытый
    каталог, по которому клиент выбирает перевод; обоснование — `permission-model.md`, §«Слой 5».
 
+   > **Аудитная половина закрыта 2026-09-06.** «Разные записи `AuditLog`» больше не отложены:
+   > `Decision` несёт `permissionKey` до обработчика ошибок, отбор пишущихся отказов —
+   > `packages/server/src/domain/access/denied-access-audit.policy.ts` (тотальный
+   > `Record<DenyReason, …>`, поэтому «разные причины — разные записи» проверяется компилятором, а
+   > не памятью), запись — `application/access/use-cases/record-denied-access.use-case.ts`.
+   > Доказательства: `test/unit/domain/access/denied-access-audit.policy.test.ts`,
+   > `test/unit/application/record-denied-access.use-case.test.ts`,
+   > `test/unit/http/denied-access-audit-wiring.test.ts`.
+   >
+   > Две оговорки, обе намеренные и обе описаны в `docs/security/permission-model.md`, §10,
+   > «Отказы». Первая: **записываются не все причины** — конфликты состояния (409) и
+   > `acl_resolution_failed` записями не становятся, а `not_authenticated` не имеет ни субъекта,
+   > ни арендатора и остаётся счётчиком. Вторая: `resource_not_found` и `tenant_mismatch` пишутся
+   > **одним** словом `not_found` — иначе журнал стал бы тем оракулом существования, которым не стал
+   > API (инвариант 2). Часть критерия, требующая ACL (`insufficient_acl_level` на живом ресурсе),
+   > по-прежнему ждёт EPIC-014: путь для неё есть и покрыт, проверять его не на чем.
+
 3. **Порядок проверок: capability → ресурс.**
    Given актор без capability и несуществующий `resourceId`;
    When вызывается `can()`;
@@ -169,13 +186,14 @@ estimate: L
 ## Состояние по критериям (сверка по коду, 2026-08-28)
 
 Девять критериев из одиннадцати закрыты и стоят за гейтами. Открытое — ровно то, **у чего сегодня
-нет предмета**: ресурсный слой (критерий 5 целиком, ресурсные половины 3 и 4) и запись отказа в
-журнал (половина критерия 2). Ни одно из открытого не закрыто заглушкой — см. «Что вынесено».
+нет предмета**: ресурсный слой (критерий 5 целиком, ресурсные половины 3 и 4). Запись отказа в
+журнал (аудитная половина критерия 2) была здесь третьим пунктом и **закрыта 2026-09-06**. Ни одно
+из открытого не закрыто заглушкой — см. «Что вынесено».
 
 | # | Критерий | Вердикт | Чем доказано |
 |---|---|---|---|
 | 1 | Policy — чистая функция, 100 % строк и ветвей | **закрыт** | Запрет импортов I/O в `domain` — ESLint (`eslint.config.js:619-634`, `DOMAIN_HAS_NO_IO`) и `test/unit/architecture/layers.test.ts:90`; пороги 100/100 на `src/domain/**/access/*.policy.ts` и `src/domain/access/**` — `packages/server/vitest.config.ts` (блок `thresholds`); табличные тесты — `test/unit/domain/access/*-policy.test.ts`. Запрет часов — `test/unit/architecture/layers.test.ts:143` («keeps domain free of the clock»), ловит обе формы (`Date.now()` и `new Date(...)`) по исходнику со снятыми комментариями, положительный контроль на сам детектор — `:154`. **Ревизия 2026-08-30 (закрыто):** прежняя редакция этой ячейки утверждала, что автоматического запрета нет и правило «держится докстрингом» — оно было закрыто тестом в тот же день 2026-08-28, что и сама сверка, и попало в слепое пятно. В ESLint правила про `Date` по-прежнему нет, и не нужно: чтение часов не требует импорта, поэтому import-based проверки его не видят — гейт по построению архитектурный, а не линтерный |
-| 2 | `Decision` несёт причину; разные `reason` в `problem+json` | **закрыт наполовину** | HTTP-половина закрыта: `deny(reason)` (`domain/access/decision.util.ts:9`), `permission_not_granted` и `insufficient_acl_level` — разные ветви `authorize.util.ts:58,101`, `reason` в теле ответа `presentation/http/error-handler.middleware.ts:119`, схема `DenyReason` в `docs/api/openapi.yaml:3507`, тесты `test/unit/domain/access/authorize.test.ts:107,118`. **Аудитная половина открыта**: `AccessRefusedError` не встречается нигде, кроме error-handler (`src/domain/access/access.errors.ts:15,86` и `error-handler.middleware.ts:129,146`), и в `packages/shared/src/audit/audit-action.enums.ts` нет ни одного действия про отказ — сам файл называет это заявленным пробелом (`:250-255`). Уточнено 2026-08-30: **счётчик отказов и запись в журнале — разные вещи, и путать их нельзя.** Метрика `permission_denied_total{reason}` существует и работает — объявлена `infrastructure/metrics/prom-client.adapter.ts:59`, инкрементится из `error-handler.middleware.ts:130`, покрыта `test/unit/metrics/permission-denied-metric.test.ts`. Она отвечает «сколько и почему», но не «кто, что и над чем»: ни актора, ни ресурса, ни ключа права в ней нет **намеренно** — метка с идентификатором это серия на сущность (`application/platform/ports/metrics.port.ts:46`). Открыт именно журнал. Точный адресат — не весь EPIC-016, а [STORY-016-02](../../epic-016-audit-log/stories/story-016-02-audit-logger-port.md), acceptance 7, где то же расхождение уже записано (`:181-192`) |
+| 2 | `Decision` несёт причину; разные `reason` в `problem+json` | **закрыт** (кроме ресурсной части, ждущей EPIC-014) | HTTP-половина закрыта: `deny(reason)` (`domain/access/decision.util.ts:9`), `permission_not_granted` и `insufficient_acl_level` — разные ветви `authorize.util.ts:58,101`, `reason` в теле ответа `presentation/http/error-handler.middleware.ts:119`, схема `DenyReason` в `docs/api/openapi.yaml:3507`, тесты `test/unit/domain/access/authorize.test.ts:107,118`. **Аудитная половина закрыта 2026-09-06**: действия `access.denied` и `access.denial_burst` в `packages/shared/src/audit/audit-action.enums.ts`, отбор — `domain/access/denied-access-audit.policy.ts`, запись — `application/access/use-cases/record-denied-access.use-case.ts`, вызов из `error-handler.middleware.ts`; доказано `test/unit/domain/access/denied-access-audit.policy.test.ts`, `test/unit/application/record-denied-access.use-case.test.ts`, `test/unit/http/denied-access-audit-wiring.test.ts`. Покрыты отказы, несущие `DenyReason`; семейство `denyAccess` (без причины) по-прежнему вне журнала и вне метрики — это остаток STORY-016-02, а не этого критерия. Уточнено 2026-08-30: **счётчик отказов и запись в журнале — разные вещи, и путать их нельзя.** Метрика `permission_denied_total{reason}` существует и работает — объявлена `infrastructure/metrics/prom-client.adapter.ts:59`, инкрементится из `error-handler.middleware.ts:130`, покрыта `test/unit/metrics/permission-denied-metric.test.ts`. Она отвечает «сколько и почему», но не «кто, что и над чем»: ни актора, ни ресурса, ни ключа права в ней нет **намеренно** — метка с идентификатором это серия на сущность (`application/platform/ports/metrics.port.ts:46`). Журнал закрыт; открытым в этом критерии остаётся только ресурсная часть (уровень ACL на живом объекте), ждущая EPIC-014. Адресат оставшейся работы по семейству `denyAccess` — не весь EPIC-016, а [STORY-016-02](../../epic-016-audit-log/stories/story-016-02-audit-logger-port.md), acceptance 7, где то же расхождение уже записано (`:181-192`) |
 | 3 | Порядок проверок: capability → ресурс | **закрыт** (в том, что имеет предмет) | `authorizeWith` вызывает резолвер только после прохода capability и только для права с ресурсным контекстом (`domain/access/authorize.util.ts:154`); доказано `test/unit/domain/access/authorize.test.ts:231,244,255`. Счётчик SQL из формулировки заменён проверкой свойства кода — таблицы `resource_acls` нет, считать нечего; при её появлении (EPIC-014) утверждение проверяется на живом запросе |
 | 4 | 404 вместо 403 для чужого и несуществующего | **закрыт наполовину** | Выбор кода сделан в одном месте и это закреплено: `tenant_mismatch` и `resource_not_found` → `${resource}_not_found` (`domain/access/access.errors.ts:50,54`), прямое построение `ForbiddenError`/`NotFoundError` вне хелпера запрещено архитектурным тестом (`test/unit/architecture/access-denial.test.ts:36`), «никогда не подтверждает существование чужого ресурса» — `test/unit/domain/access/assert-allowed.test.ts:77`. **Открыто**: теста на порядок «сначала scope, потом `findById`» нет и быть не может — ни одного `*-access-reader` для ресурса не существует |
 | 5 | Access-reader не возвращает сущность | **открыт целиком** | Предмета нет: под `application/**/ports/` нет ни одного ресурсного access-reader'а. Форма ответа уже описана типом `AclScope` (`domain/access/authorize.util.ts:16` — «a scope, never the entity»), и прецедент принципа на capability-стороне есть (`application/iam/ports/effective-permissions-reader.port.ts:6` — «no email, no name, no status»), но самого порта, адаптера и архитектурного теста «reader не возвращает агрегат» нет. Вынесено в EPIC-014 |
@@ -204,14 +222,17 @@ estimate: L
 (`resolved`/`missing`/`unavailable`), `authorizeResource` и `authorizeWith`, ветка обхода уровня
 владельцем и исключение для `family: 'vault'` — всё покрыто табличными тестами на 100 %.
 
-**Аудит отказов → [EPIC-016](../../epic-016-audit-log/epic.md) (журнал действий).** Вторая половина
-критерия 2: «разные записи `AuditLog`». Сегодня в `packages/shared/src/audit/audit-action.enums.ts`
-нет ни одного действия про отказ, и это не пробел, а решение: каталог действий сознательно
-ограничен тем, что **произошло**, а не тем, что было предпринято, — то же обоснование записано в
-`epics/epic-012-employee-management/stories/story-012-07-teams.md`, раздел «Что отложено».
-Первая запись «попытка, которая не удалась» меняет смысл журнала и потому принадлежит эпику,
-который этот журнал строит, а не доменной истории M2. `DenyReason` для такой записи уже существует
-и уже доезжает до клиента — не хватает только приёмника.
+**Аудит отказов — сделан 2026-09-06, вместе с EPIC-016.** Здесь стояло, что действий про отказ в
+`packages/shared/src/audit/audit-action.enums.ts` нет ни одного и что первая запись «попытка,
+которая не удалась» принадлежит эпику журнала. Первое перестало быть верным: в каталоге есть
+`access.denied` и `access.denial_burst`. Второе осталось верным по адресату — работа сделана
+в STORY-016-02, acceptance 7, — но не по срокам: она сделана сейчас, а не отложена.
+
+Оговорка о том, что каталог ограничен свершившимся, тоже потеряла силу как общее правило: она уже
+имела исключения (`user.mfa_setup_failed`, `user.mfa_recovery_locked_out` — обе про то, что **не**
+удалось), и `access.denied` — третье, того же вида. Соседний источник этой же формулировки —
+`epics/epic-012-employee-management/stories/story-012-07-teams.md`, раздел «Что отложено», — на
+2026-09-06 всё ещё говорит старое; его правит история, которая туда придёт.
 
 **Уточнение адресата, ревизия 2026-08-30.** Формулировка выше («эпику, который этот журнал
 строит») читалась как «журнала ещё нет». Это уже неверно: ядро журнала отгружено —
@@ -219,10 +240,11 @@ estimate: L
 таблица `audit_logs` в схеме (`prisma/schema.prisma:718`), рабочий адаптер
 `infrastructure/persistence/prisma/audit-log.adapter.ts` с редактированием полей и fail-closed
 контрактом смонтирован в контейнере (`infrastructure/bootstrap/container.factory.ts:285`), и
-use-case'ы EPIC-011/012 в него уже пишут. Открыт **не журнал, а действие отказа в закрытом
-каталоге** — это STORY-016-02, acceptance 7 (`status: backlog`), где заодно решается, что
-пишется записью, а что остаётся только метрикой. Отслеживать эту половину критерия 2 надо там, а
-не по статусу эпика целиком.
+use-case'ы EPIC-011/012 в него уже пишут. Открыто было **не журнал, а действие отказа в закрытом
+каталоге** — STORY-016-02, acceptance 7, где заодно решалось, что пишется записью, а что остаётся
+только метрикой. **Закрыто 2026-09-06** (врезка под критерием 2). У этой половины критерия 2
+открытых пунктов не осталось; открытым в критерии 2 остаётся только ресурсная его часть, ждущая
+EPIC-014.
 
 **Архитектурный тест «вторая точка вычисления прав» → M3.** Критерий 10 в его автоматической части.
 Сегодня роль выполняет агент `permission-matrix-auditor` в commit-гейте, и это не отговорка: пока

@@ -145,6 +145,35 @@ export const RATE_LIMIT_POLICIES = [
    * `invitation_create` reason from for leaving escalation out.
    */
   'mfa_admin_reset_attempt',
+  /**
+   * How many **audit rows** one actor's refusals may produce in a minute — a budget on writing, not
+   * on requesting. Keyed on the actor; 11 / minute (STORY-016-02, acceptance 7).
+   *
+   * Its own policy rather than a share of `api_request`, because it counts something else entirely:
+   * `api_request` bounds how often somebody may ask, and is spent by every successful request too,
+   * so a caller doing ordinary work would arrive at their first refusal with the budget already
+   * gone. This one is spent only by a refusal the selection policy already decided to record.
+   *
+   * **Why there is a budget at all.** A row is written by whoever is being refused, and refusing is
+   * free to provoke — so without a ceiling the denial trail is an amplifier pointed at the
+   * installation's own append-only, partitioned table, which nothing may delete from.
+   *
+   * And there is no other ceiling to fall back on. `api_request` above reads like an ambient
+   * 300/minute on the whole API, and it is not one: `grep -rn "'api_request'" packages/server/src`
+   * finds three call sites, all inside `identity` use-cases, and no middleware mounts it. So the
+   * counterfactual here is not «three hundred rows a minute» — it is unbounded, and this policy is
+   * the only ceiling there is. Eleven rows, and the eleventh says the rest happened.
+   *
+   * Past the eleventh, a refused mutation still costs one Redis round trip: `rate-limiter-flexible`
+   * is configured without `inMemoryBlockOnConsumed`, so a blocked key is still asked about. That
+   * adds no rows and no transactions, which is what this bounds.
+   *
+   * The eleventh point is the summary, which is why the number is 11 and not 10: acceptance 7 asks
+   * for individual entries and then **one** aggregated entry for a run of more than ten, and the
+   * cheapest way to say «this consumption is the last one» is to let the limiter say it —
+   * `remaining: 0` on the last granted point. Everything past it is refused and stays a counter.
+   */
+  'access_denial_audit',
 ] as const;
 
 export type RateLimitPolicy = (typeof RATE_LIMIT_POLICIES)[number];
@@ -238,6 +267,7 @@ export interface RateLimitSubjects {
   readonly mfa_verify_account_attempt: IpUserSubject;
   readonly mfa_recovery_consume_attempt: IpUserSubject;
   readonly mfa_admin_reset_attempt: UserSubject;
+  readonly access_denial_audit: UserSubject;
 }
 
 /**

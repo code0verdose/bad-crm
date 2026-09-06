@@ -71,6 +71,7 @@ import { type LoggerPort } from '@/application/platform/ports/logger.port.js';
 import { type RequestContextPort } from '@/application/platform/ports/request-context.port.js';
 import { type CheckHealthUseCase } from '@/application/platform/use-cases/check-health.use-case.js';
 import { type CheckReadinessUseCase } from '@/application/platform/use-cases/check-readiness.use-case.js';
+import { type DeniedAccessAuditSink } from '@/application/access/use-cases/record-denied-access.use-case.js';
 import { type RecordClientErrorUseCase } from '@/application/platform/use-cases/record-client-error.use-case.js';
 import { type DescribeApiUseCase } from '@/application/platform/use-cases/describe-api.use-case.js';
 
@@ -213,6 +214,13 @@ export interface HttpServerDependencies {
   readonly checkReadiness: CheckReadinessUseCase;
   readonly describeApi: DescribeApiUseCase;
   readonly recordClientError: RecordClientErrorUseCase;
+  /**
+   * Where a refusal worth keeping is written down (STORY-016-02, acceptance 7).
+   *
+   * Held here rather than by a controller because the caller is the error handler: it is the one
+   * place every refusal passes through, so nothing has to be remembered at an `assertAllowed`.
+   */
+  readonly deniedAccessAudit: DeniedAccessAuditSink;
   readonly identity: IdentityDependencies;
   readonly iam: IamDependencies;
   readonly organization: OrganizationDependencies;

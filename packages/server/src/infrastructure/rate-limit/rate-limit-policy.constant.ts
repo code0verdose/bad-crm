@@ -164,4 +164,22 @@ export const RATE_LIMIT_POLICY: Readonly<Record<RateLimitPolicy, RateLimitPolicy
     windowSeconds: 15 * MINUTE,
     blockSeconds: 15 * MINUTE,
   },
+  /**
+   * Eleven audit rows per actor per minute: ten refusals written out, and an eleventh entry saying
+   * the run kept going (STORY-016-02, acceptance 7).
+   *
+   * The only policy in this table whose refusal is not answered to the client at all — nothing here
+   * shapes a response. Exhausting it means the trail stops repeating itself; the caller is refused
+   * by the permission layer either way, and `permission_denied_total{reason}` keeps counting. That
+   * is also why the block is exactly the window: there is nobody to punish, only a summary that must
+   * not be written twice for one run.
+   *
+   * No escalation, for the same reason as `client_error_report`: a longer silence would hide the
+   * *next* run behind the one already summarised.
+   */
+  access_denial_audit: {
+    points: 11,
+    windowSeconds: 1 * MINUTE,
+    blockSeconds: 1 * MINUTE,
+  },
 };

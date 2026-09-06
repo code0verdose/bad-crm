@@ -60,6 +60,7 @@ describe('the capability layers (1–3)', () => {
     expect(authorizeCapability(actorWith(), ORG_SCOPED)).toEqual({
       allowed: false,
       reason: 'permission_not_granted',
+      permissionKey: ORG_SCOPED,
     });
   });
 
@@ -75,6 +76,7 @@ describe('the capability layers (1–3)', () => {
     expect(authorizeCapability(actor, ORG_SCOPED)).toEqual({
       allowed: false,
       reason: 'denied_by_override',
+      permissionKey: ORG_SCOPED,
     });
   });
 
@@ -101,6 +103,7 @@ describe('the resource layer (4)', () => {
     expect(authorize(holder, RESOURCE_SCOPED)).toEqual({
       allowed: false,
       reason: 'resource_required',
+      permissionKey: RESOURCE_SCOPED,
     });
   });
 
@@ -112,6 +115,7 @@ describe('the resource layer (4)', () => {
     expect(authorize(holder, RESOURCE_SCOPED, scope('COMMENTER'))).toEqual({
       allowed: false,
       reason: 'insufficient_acl_level',
+      permissionKey: RESOURCE_SCOPED,
     });
   });
 
@@ -121,6 +125,7 @@ describe('the resource layer (4)', () => {
     expect(authorize(holder, RESOURCE_SCOPED, scope('NONE'))).toEqual({
       allowed: false,
       reason: 'acl_explicit_none',
+      permissionKey: RESOURCE_SCOPED,
     });
   });
 
@@ -128,6 +133,7 @@ describe('the resource layer (4)', () => {
     expect(authorize(holder, RESOURCE_SCOPED, { status: 'missing' })).toEqual({
       allowed: false,
       reason: 'resource_not_found',
+      permissionKey: RESOURCE_SCOPED,
     });
   });
 
@@ -135,6 +141,7 @@ describe('the resource layer (4)', () => {
     expect(authorize(holder, RESOURCE_SCOPED, { status: 'unavailable' })).toEqual({
       allowed: false,
       reason: 'acl_resolution_failed',
+      permissionKey: RESOURCE_SCOPED,
     });
   });
 
@@ -151,6 +158,7 @@ describe('the resource layer (4)', () => {
     expect(authorize(holder, RESOURCE_SCOPED, foreign)).toEqual({
       allowed: false,
       reason: 'tenant_mismatch',
+      permissionKey: RESOURCE_SCOPED,
     });
   });
 
@@ -160,6 +168,7 @@ describe('the resource layer (4)', () => {
     expect(authorize(actorWith(), RESOURCE_SCOPED, scope('MANAGER'))).toEqual({
       allowed: false,
       reason: 'permission_not_granted',
+      permissionKey: RESOURCE_SCOPED,
     });
   });
 
@@ -198,6 +207,7 @@ describe('the resource layer (4)', () => {
     expect(authorize(owner, RESOURCE_SCOPED, vault)).toEqual({
       allowed: false,
       reason: 'insufficient_acl_level',
+      permissionKey: RESOURCE_SCOPED,
     });
   });
 
@@ -209,6 +219,7 @@ describe('the resource layer (4)', () => {
     expect(authorize(owner, RESOURCE_SCOPED, { status: 'missing' })).toEqual({
       allowed: false,
       reason: 'resource_not_found',
+      permissionKey: RESOURCE_SCOPED,
     });
     expect(
       authorize(owner, RESOURCE_SCOPED, {
@@ -217,7 +228,7 @@ describe('the resource layer (4)', () => {
         level: 'MANAGER',
         family: 'standard',
       }),
-    ).toEqual({ allowed: false, reason: 'tenant_mismatch' });
+    ).toEqual({ allowed: false, reason: 'tenant_mismatch', permissionKey: RESOURCE_SCOPED });
   });
 
   it('ignores a resource passed for an organization-scoped permission', () => {
@@ -237,7 +248,11 @@ describe('the order of the two layers', () => {
 
     const decision = await authorizeWith(actorWith(), RESOURCE_SCOPED, resolve);
 
-    expect(decision).toEqual({ allowed: false, reason: 'permission_not_granted' });
+    expect(decision).toEqual({
+      allowed: false,
+      reason: 'permission_not_granted',
+      permissionKey: RESOURCE_SCOPED,
+    });
     expect(resolve).not.toHaveBeenCalled();
   });
 

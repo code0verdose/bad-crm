@@ -40,13 +40,19 @@ estimate: L
 >   `7942a18`, плюс `test/unit/audit/audit-unscoped-guard.test.ts` и метрика
 >   `audit_unscoped_total`.
 >
-> Открытыми остаются четыре вещи и ни одна из них не про порт: аудит **отказов** в доступе
-> (критерий 7 — сегодня только метрика `permission_denied_total{reason}` в
-> `presentation/http/error-handler.middleware.ts:142`, действия отказа в каталоге нет, агрегата
-> серий нет), деградация `INFO` при сбое записи (критерий 9), замер накладных расходов
-> (критерий 10) и сквозной `requestId` через outbox (половина критерия 4 — outbox в коде нет,
-> `find packages/server/src -iname '*outbox*'` печатает пусто). Плюс недостающие семейства
-> критерия 2 — `acl.*` и `file.*`, — которые ждут EPIC-014 и EPIC-015, а не эту историю.
+> **Аудит отказов (критерий 7) закрыт 2026-09-06** — здесь он числился первым из открытых.
+> Действия `access.denied` и `access.denial_burst` в каталоге, отбор —
+> `packages/server/src/domain/access/denied-access-audit.policy.ts`, запись —
+> `packages/server/src/application/access/use-cases/record-denied-access.use-case.ts`, вызов из
+> общего обработчика ошибок со своим `withTenant`, агрегат серий — на бюджете
+> `access_denial_audit` (11 записей на актора в минуту), а не на планировщике, которого в продукте
+> действительно нет.
+>
+> Открытыми остаются три вещи и ни одна из них не про порт: деградация `INFO` при сбое записи
+> (критерий 9), замер накладных расходов (критерий 10) и сквозной `requestId` через outbox
+> (половина критерия 4 — outbox в коде нет, `find packages/server/src -iname '*outbox*'` печатает
+> пусто). Плюс недостающие семейства критерия 2 — `acl.*` и `file.*`, — которые ждут EPIC-014 и
+> EPIC-015, а не эту историю.
 >
 > Абзацы ниже оставлены как запись состояния на 2026-08-30, а не как утверждение о текущем;
 > расхождения помечены построчно.
@@ -113,6 +119,37 @@ estimate: L
    (`POST/PATCH/DELETE`) — всегда; серия > 10 отказов за минуту от одного актора — одной
    агрегированной записью; отказы на `GET` — **только метрика** `permission_denied_total{reason}`.
 
+   > **Сделано 2026-09-06.** Правило исполнено буквально, тремя фильтрами:
+   > причина (`AUDITED_DENIAL_REASON` — тотальный `Record<DenyReason, string | null>`), класс
+   > запроса (`recordableDenial`) и бюджет на актора (политика `access_denial_audit`, 11 записей в
+   > минуту; одиннадцатая **и есть** агрегированная — `access.denial_burst`). Отказ на `GET` не
+   > стоит даже обращения в Redis — а вот отказ на `GET` по **опасному** ключу пишется, и это не
+   > исключение из правила, а его первый пункт.
+   >
+   > Четыре решения, принятые по ходу, и все они шире буквы критерия:
+   >
+   > - **`not_authenticated` не пишется вовсе.** У него нет ни субъекта, ни организации, а
+   >   `audit_logs.organization_id` — `NOT NULL`. Расширение `AUDIT_ACTIONS_WITHOUT_ORGANIZATION`
+   >   рассматривалось и отвергнуто: оно направило бы единственный неограничиваемый поток —
+   >   неаутентифицированный — в канал журнала ради фразы «кто-то не вошёл».
+   > - **Конфликты состояния (409) и `acl_resolution_failed` записями не становятся.** Первое —
+   >   не отказ в доступе, второе — наш отказ, а не чужой.
+   > - **`resource_not_found` и `tenant_mismatch` пишутся одним словом `not_found`** — иначе журнал
+   >   стал бы оракулом существования чужих строк, которым не стал API (инвариант 2).
+   > - **Запись стоит в общем обработчике ошибок, а не в `assertAllowed` и не в use-case'ах**, и
+   >   открывает **свой** `withTenant` на актора отказа. Разбор альтернатив — в докстринге
+   >   `record-denied-access.use-case.ts`; вопрос «где именно», который эта история носила
+   >   открытым, решён там.
+   >
+   > Сбой записи отказа не роняет ответ и ничего не откатывает — откатывать нечего, отказ уже
+   > состоялся; он считается в `audit_write_failed_total`. Это **не** нарушение критерия 9: тот
+   > говорит про событие, которое произошло.
+   >
+   > Доказательства: `packages/server/test/unit/domain/access/denied-access-audit.policy.test.ts`,
+   > `packages/server/test/unit/application/record-denied-access.use-case.test.ts`,
+   > `packages/server/test/unit/http/denied-access-audit-wiring.test.ts` (там же положительные
+   > контроли: успешный запрос, рядовой отказ на `GET` и не-отказ не пишут ничего).
+
 8. **IP хешируется.**
    Given запись события;
    When сохраняется адрес;
@@ -154,14 +191,21 @@ estimate: L
       (`grep -rc 'audit\.record(' packages/server/src/application`); EPIC-014/015 ещё нет.
 - [ ] Протяжка `requestId` **в конверт outbox-события** — outbox в коде нет. Половина HTTP →
       `RequestContextPort` → аудит работает (`audit-log.adapter.ts` берёт `requestId` из контекста).
-- [ ] `application/access/services/denied-access-audit.service.ts` — правила п. 7 (включая
-      агрегацию серий).
+- [x] Правила п. 7 (включая агрегацию серий) — отгружено 2026-09-06 как
+      `application/access/use-cases/record-denied-access.use-case.ts` плюс отбор в
+      `domain/access/denied-access-audit.policy.ts`. Имя другое, чем планировалось здесь: суффикс
+      `.service.` не входит в закрытый словарь `rules/naming-and-structure.mdc` и отвергается линтом.
+      Агрегация серий не потребовала планировщика — она стоит на бюджете `access_denial_audit`.
 - [x] Тесты п. 1, 2, 5: `test/unit/audit/audit-log-adapter.test.ts`,
       `test/unit/audit/audit-coverage.test.ts`, `test/unit/audit/audit-redaction-corpus.test.ts`,
       `test/integration/db/audit-trail-writes.test.ts`; сверх плана —
       `test/unit/audit/audit-unscoped-guard.test.ts` и гейт адреса
       `test/contract/audit-privileged-ip-address.test.ts`.
-- [ ] Тесты п. 7 и 9: `denied-access-audit.service.spec.ts` и деградация `INFO` при сбое записи.
+- [x] Тесты п. 7 — `test/unit/domain/access/denied-access-audit.policy.test.ts`,
+      `test/unit/application/record-denied-access.use-case.test.ts`,
+      `test/unit/http/denied-access-audit-wiring.test.ts` (положительные контроли: успешный запрос,
+      рядовой отказ на `GET` и не-отказ не пишут ничего).
+- [ ] Тесты п. 9: деградация `INFO` при сбое записи.
 
 ## Что уже сделано — и **не этой историей**
 
@@ -235,8 +279,7 @@ STORY-011-06 заблокирована до EPIC-014) и `file.*` (EPIC-015).
    > `packages/server/test/unit/audit/audit-redaction-corpus.test.ts` читает вызовы из дерева.
    > Whitelist отвергнут осознанно, обоснование — в докстринге `audit-redaction.util.ts`; задача
    > «`audit-field-whitelist.ts`» в списке выше закрыта этим, а не осталась висеть.
-2. **Аудита отказов в доступе (acceptance 7) нет в записи журнала — но метрика уже есть
-   (уточнено 2026-08-30).** Здесь стояло «метрики `permission_denied_total{reason}` нет —
+2. **Аудит отказов в доступе (acceptance 7) — закрыт 2026-09-06; ниже история пункта.** Здесь стояло «метрики `permission_denied_total{reason}` нет —
    `MetricsPort` объявляет три метрики», и это перестало быть правдой: метрика заведена коммитом
    `b0df0c6` (`incrementPermissionDenied(reason)` в порту, `permission_denied_total` с меткой
    `reason` в `prom-client.adapter.ts`), а в самом порту сегодня не три метода, а больше —
@@ -251,26 +294,32 @@ STORY-011-06 заблокирована до EPIC-014) и `file.*` (EPIC-015).
    нет», и комментарий к `permission.inspected` в
    `packages/shared/src/audit/audit-action.enums.ts`) сверены и говорят то же.
 
-   > **Подтверждено открытым 2026-09-06 — и это тот самый пункт, который числится за EPIC-011.**
-   > Аудитная половина критерия 2 STORY-011-07 («отказ в доступе не пишется в `AuditLog`») —
-   > единственная её часть, не зависящая от ресурсного ACL, и по коду она действительно открыта:
-   > `authorizeCapability`/`authorizeResource`
-   > (`packages/server/src/domain/access/authorize.util.ts`) возвращают `Decision` с `DenyReason`,
-   > `assertAllowed` превращает его в ошибку, и единственный, кто её видит, —
-   > `packages/server/src/presentation/http/error-handler.middleware.ts:142`, где стоит
-   > `metrics.incrementPermissionDenied(reason)` и больше ничего. Ни одного действия отказа в
-   > `AUDIT_ACTIONS` нет.
+   > **Закрыто 2026-09-06 — вместе с аудитной половиной критерия 2 STORY-011-07**, той самой её
+   > частью, что не зависела от ресурсного ACL. Абзац выше описывает состояние до этой даты.
    >
-   > **Где запись должна была бы стоять — не там, где стоит метрика.** Обработчик ошибок работает
-   > после того, как транзакция закрыта, а `PrismaAuditLogger` пишет строку в транзакцию,
-   > открытую `withTenant`, и отвергает вызов вне скоупа (`AuditTrailUnscopedError`). То есть
-   > записать отказ из middleware сегодня физически нельзя: у отказа нет ни транзакции, ни (для
-   > `not_authenticated`) организации. Значит, история пишет отдельный путь — свой сток с
-   > собственным `withTenant` на актора отказа (планировавшийся
-   > `application/access/services/denied-access-audit.service.ts`) — и либо заводит действия отказа
-   > в каталоге, либо расширяет `AUDIT_ACTIONS_WITHOUT_ORGANIZATION` для `not_authenticated` с
-   > записанной причиной. Агрегат серий (> 10 в минуту) при этом остаётся отложенным: очереди и
-   > планировщика в продукте нет.
+   > Сделано так, как этот пункт и предполагал, с тремя отличиями от плана. Путь отдельный —
+   > `packages/server/src/application/access/use-cases/record-denied-access.use-case.ts`, со своим
+   > `withTenant` на актора отказа, вызванный из общего обработчика ошибок; действия в каталоге
+   > заведены (`access.denied`, `access.denial_burst`). Отличия:
+   >
+   > 1. **имя файла не `denied-access-audit.service.ts`.** Суффикс `.service.` не входит в закрытый
+   >    словарь `rules/naming-and-structure.mdc` и отвергается линтом (`bad-crm/require-role-suffix`);
+   >    это `use-case`, потому что это одна команда в одной транзакции;
+   > 2. **`AUDIT_ACTIONS_WITHOUT_ORGANIZATION` не расширен.** Альтернатива из этого пункта —
+   >    «либо действия в каталоге, либо лог-сток для `not_authenticated`» — решена в пользу
+   >    первого **и** отказа от второго: неаутентифицированный отказ не пишется вообще, потому что
+   >    у него нет субъекта, а направлять этот поток в канал журнала значило бы отдать
+   >    единственный неограничиваемый источник трафика в самый дорогой сток;
+   > 3. **агрегат серий не отложен.** Он не потребовал ни планировщика, ни очереди: бюджет
+   >    `access_denial_audit` в Redis (11 записей на актора в минуту) даёт «> 10 за минуту — одной
+   >    записью» напрямую — одиннадцатая granted-точка и есть сводка, всё после неё лимитер
+   >    отвергает.
+   >
+   > Мера, ради которой всё это: 5000 отказов подряд от одного актора дают 11 строк
+   > (`test/unit/application/record-denied-access.use-case.test.ts`, «bounds what a refused caller
+   > can make the database write»). Контрфакт — не «300 в минуту по `api_request`»: эта политика
+   > **не** смонтирована как ambient-миддлварь (`grep -rn "'api_request'" packages/server/src` даёт
+   > три вызова, все внутри `identity`), так что без нового бюджета потолка не было бы вообще.
 3. **Разделение по severity при сбое записи (acceptance 9) не сделано.** Сегодня падение вставки
    роняет транзакцию для любого события, включая `INFO`. **Уточнено 2026-08-30:** метрика
    `audit_write_failed_total` в коде **есть** (`incrementAuditWriteFailed` в `MetricsPort`,

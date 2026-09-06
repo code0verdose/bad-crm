@@ -59,14 +59,17 @@ export const authorizeCapability = (actor: Actor | null, key: string): Decision 
   if (actor === null) return deny('not_authenticated');
   if (!SharedPermissions.isPermissionKey(key)) return deny('unknown_permission');
 
+  // The key travels with the refusal from here on. It is what lets the denial trail apply §10's
+  // «a refusal on a dangerous key is always filed» without the transport guessing at a key from an
+  // error code that does not carry one (`domain/access/denied-access-audit.policy.ts`).
   switch (SharedPermissions.capabilityOutcome(actor, key)) {
     case 'OWNER':
     case 'GRANTED':
       return allow();
     case 'DENIED_BY_OVERRIDE':
-      return deny('denied_by_override');
+      return deny('denied_by_override', key);
     case 'NOT_GRANTED':
-      return deny('permission_not_granted');
+      return deny('permission_not_granted', key);
   }
 };
 
@@ -106,10 +109,10 @@ export const authorizeResource = (
   const need = SharedPermissions.requiredLevel(key);
 
   if (need === null) return allow();
-  if (scope === undefined) return deny('resource_required');
-  if (scope.status === 'missing') return deny('resource_not_found');
-  if (scope.status === 'unavailable') return deny('acl_resolution_failed');
-  if (scope.organizationId !== actor.organizationId) return deny('tenant_mismatch');
+  if (scope === undefined) return deny('resource_required', key);
+  if (scope.status === 'missing') return deny('resource_not_found', key);
+  if (scope.status === 'unavailable') return deny('acl_resolution_failed', key);
+  if (scope.organizationId !== actor.organizationId) return deny('tenant_mismatch', key);
 
   // The owner clears the level on everything but the vault — `resolveAcl → MANAGER` in the model.
   // Placed here rather than left to each access reader on purpose: «owner неотзываем» is a stated
@@ -118,9 +121,11 @@ export const authorizeResource = (
   // clear is the tenant check above — a foreign object is never theirs — nor a missing one.
   if (actor.isOwner && scope.family === 'standard') return allow();
 
-  if (scope.level === 'NONE') return deny('acl_explicit_none');
+  if (scope.level === 'NONE') return deny('acl_explicit_none', key);
 
-  return SharedPermissions.atLeast(scope.level, need) ? allow() : deny('insufficient_acl_level');
+  return SharedPermissions.atLeast(scope.level, need)
+    ? allow()
+    : deny('insufficient_acl_level', key);
 };
 
 /**

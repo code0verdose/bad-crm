@@ -87,7 +87,11 @@ describe.each([
   });
 
   it('refuses somebody who holds no key at all', () => {
-    expect(decide(actorWith())).toEqual({ allowed: false, reason: 'permission_not_granted' });
+    expect(decide(actorWith())).toEqual({
+      allowed: false,
+      reason: 'permission_not_granted',
+      permissionKey: key,
+    });
   });
 
   /**
@@ -101,6 +105,7 @@ describe.each([
     expect(decide(actorWith([other]))).toEqual({
       allowed: false,
       reason: 'permission_not_granted',
+      permissionKey: key,
     });
   });
 
@@ -110,7 +115,11 @@ describe.each([
       denied: new Set<SharedPermissions.PermissionKey>([key]),
     };
 
-    expect(decide(denied)).toEqual({ allowed: false, reason: 'denied_by_override' });
+    expect(decide(denied)).toEqual({
+      allowed: false,
+      reason: 'denied_by_override',
+      permissionKey: key,
+    });
   });
 
   it('refuses an anonymous caller', () => {

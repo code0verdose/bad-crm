@@ -153,6 +153,7 @@ export const createHttpServer = (dependencies: HttpServerDependencies): Express 
       // text the endpoint above renders. `undefined` when metrics are off, which is what makes the
       // increment cost nothing on an installation that asked for none.
       metrics: dependencies.metrics?.port,
+      deniedAccessAudit: dependencies.deniedAccessAudit,
     }),
   );
 

@@ -150,6 +150,22 @@ export const AUDIT_ACTION_SEVERITY: Readonly<Record<AuditAction, AuditSeverity>>
   // belong beside the entries an escalation review reads first. It exists so the review can be run
   // at all — a trail, not an alarm.
   'permission.inspected': 'INFO',
+  /**
+   * `WARNING`, and uniformly so — the level belongs to the action, and the selection in front of
+   * this action is what makes one level right for all of it. The routine refusal, the one a
+   * mistimed button produces on a `GET`, never becomes an entry at all: it is a counter. What
+   * reaches this action is a refusal on a key the catalogue calls dangerous or a refusal of a
+   * request that would have changed something — neither is noise, and both are where an escalation
+   * review starts when it asks «what were they reaching for before they got it».
+   *
+   * Not `CRITICAL`: nothing was granted and nothing was taken away. The entries at that level are
+   * the ones where something irreversible already happened.
+   */
+  'access.denied': 'WARNING',
+  // The same level as the entries it stands for — a summary must not read quieter than the thing
+  // summarised, or an installation filtering at `WARNING` would see the first ten refusals of a run
+  // and lose the evidence that it kept going.
+  'access.denial_burst': 'WARNING',
 };
 
 /** The severity of an action, for a caller that has a validated action and nothing else. */
