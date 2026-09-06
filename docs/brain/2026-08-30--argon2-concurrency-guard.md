@@ -37,9 +37,15 @@ tags: [argon2, nodejs, typescript, prometheus, zod, express, vitest]
    подбору паролей и единственный её след, переживающий перезапуск.
 
 6. **Выбрал значение по умолчанию арифметикой, а не на вкус.** Четыре × 19 456 KiB ≈ 76 MiB пиковой
-   памяти. Самый маленький поддерживаемый профиль — `minimal`: 2 GB на всё вместе с PostgreSQL,
-   Redis и MinIO, из них процессу API отведено 0.4–0.6 GB. 76 MiB туда помещаются вместе с кучей,
-   восемь дали бы 152 MiB и потратили бы большую часть бюджета процесса на одно только хеширование.
+   памяти — **на процесс** и **сверх кучи Node**: `@node-rs/argon2` аллоцирует в Rust, поэтому этих
+   байтов нет ни в `--max-old-space-size`, ни в `nodejs_heap_*`. Для масштаба: `hosting.md` §1
+   отводит процессу API 0.4–0.6 GB кучи. Восемь дали бы 152 MiB, то есть больше, чем процесс тратит
+   на всё остальное, на самом маленьком поддерживаемом хосте.
+
+   *Правка 2026-09-06:* исходная формулировка ссылалась на разбивку профиля `minimal` (2 GB на всё
+   вместе с PostgreSQL, Redis и MinIO), которой в `hosting.md` нет: там есть таблица компонентов §1
+   и разбивка 32 GB рекомендованной конфигурации §3.1. Арифметика и обе оговорки записаны теперь в
+   `hosting.md` §3.3.
 
 7. **Доказал красное удалением семафора, а не рассуждением.** Без него нагрузочный тест держит
    1 275 068 416 байт одновременно вместо 79 691 776 и видит пик 64 вместо 4.
@@ -51,8 +57,11 @@ tags: [argon2, nodejs, typescript, prometheus, zod, express, vitest]
    заново: иначе только что пришедший запрос обгоняет ждавшего весь бюджет. Ожидание сверх
    `queueTimeoutMs` → `ServiceUnavailableError` с `retryAfterSeconds = max(1, ceil(ms/1000))`
    (`Retry-After: 0` читается как «повтори сейчас» — тот же пол, что в `rate-limiter.adapter.ts`).
-   Истёкший ждущий **вынимается** из очереди: оставшись в ней, он получил бы слот, которым никто не
-   воспользуется, и потолок протекал бы вниз до нуля. Таймер `unref()`.
+   Истёкший ждущий **помечается** флагом `expired` и остаётся в массиве, а `release` пропускает его
+   на выдаче слота. Не вынимается — потому что вынимать нечем: `indexOf` по уже выданному ждущему
+   даёт `-1`, а `splice(-1, 1)` удалил бы последний элемент, то есть чужого ждущего. Смысл тот же —
+   слот не достаётся тому, кого никто не ждёт, иначе потолок протекал бы вниз до нуля. Таймер
+   `unref()`.
 
 2. `packages/server/src/infrastructure/crypto/limited-password-hasher.adapter.ts` —
    `LimitedPasswordHasher`, декоратор `PasswordHasherPort`. Два следствия декорирования **порта**, а
@@ -62,7 +71,7 @@ tags: [argon2, nodejs, typescript, prometheus, zod, express, vitest]
    сверка `hasher.dummyHash` идёт через тот же порт (STORY-013-06 критерий 3, STORY-013-03
    критерий 8). `needsRehash` и `dummyHash` — сквозные: ничего не вычисляют.
 
-3. `env.schema.ts:335,346` — `AUTH_ARGON2_MAX_CONCURRENCY` (4) и `AUTH_ARGON2_QUEUE_TIMEOUT_MS`
+3. `env.schema.ts:337,354` — `AUTH_ARGON2_MAX_CONCURRENCY` (4) и `AUTH_ARGON2_QUEUE_TIMEOUT_MS`
    (2000) через существующий `argon2Cost` (целое, положительное, `z.coerce`). Обоснование числа
    записано в комментарии схемы, а не только здесь. Отдельно отмечено, что совпадение с шириной
    пула libuv по умолчанию — удобство, а не контроль: `UV_THREADPOOL_SIZE` задаёт оператор, пул
@@ -78,7 +87,7 @@ tags: [argon2, nodejs, typescript, prometheus, zod, express, vitest]
    `argon2_inflight` без меток; `noop-metrics.adapter.ts` — заглушка. Каталог метрик в
    `rules/observability.mdc` дополнен строкой.
 
-6. `container.factory.ts:677` — единственный `hasher` процесса завёрнут в `LimitedPasswordHasher`;
+6. `container.factory.ts:740` — единственный `hasher` процесса завёрнут в `LimitedPasswordHasher`;
    `onInFlightChange` кормит `input.metrics.setArgon2InFlight`.
 
 7. Тесты (написаны первыми, красное показано):

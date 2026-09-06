@@ -318,11 +318,13 @@ const fields = z.object({
    *
    * **The default is arithmetic, not taste.** One computation holds `ARGON2_MEMORY_COST` KiB for
    * its whole duration — 19 456 KiB by default — so the ceiling *is* the peak memory of password
-   * hashing: 4 × 19 456 KiB ≈ **76 MiB**. The smallest supported deployment is the `minimal`
-   * profile of `docs/architecture/stack.md`: 2 GB for app, PostgreSQL, Redis and MinIO together,
-   * of which `docs/runbooks/hosting.md` §2.5 budgets 0.4–0.6 GB for the API process. 76 MiB fits
-   * inside that with the heap; 8 would be 152 MiB and would spend most of the process's budget on
-   * hashing alone, on the profile least able to afford it.
+   * hashing: 4 × 19 456 KiB ≈ **76 MiB**. Two things that number is not: it is not part of the Node
+   * heap (`@node-rs/argon2` allocates in Rust, so it shows up in neither `--max-old-space-size` nor
+   * `nodejs_heap_*`), and it is not an installation-wide figure — this semaphore lives inside one
+   * process, so N API replicas behind a proxy peak at N × 76 MiB. For scale: `docs/runbooks/
+   * hosting.md` §1 budgets 0.4–0.6 GB of heap for one API process, and §3.3 carries the arithmetic
+   * with both caveats. At 8 the same product is 152 MiB, which on the smallest supported host
+   * spends more on hashing than the process spends on everything else.
    *
    * Four is also the width of the default libuv threadpool, where `@node-rs/argon2` runs the async
    * form — so the ceiling does not leave admitted work queued behind threads that do not exist.
@@ -340,8 +342,14 @@ const fields = z.object({
    * A queue without a deadline is the same exhausted memory one layer up — every waiter still holds
    * a socket, a parsed body and a promise chain. Two seconds is chosen against the wait, not against
    * the work: a sign-in costs 50–80 ms, so two seconds is room for a burst several times the
-   * ceiling, and it is still short enough that the browser on the other end has not given up and
-   * retried — which would put a second request into the queue the first one is stuck in.
+   * ceiling.
+   *
+   * **It is a budget per wait, not per request.** A request that hashes once — sign-in,
+   * registration, the password change — waits at most this long in total. A recovery code does not:
+   * `RecoveryCodeMatcher` verifies the candidates one after another, and each verification queues
+   * on its own, so under saturation that request can spend a multiple of this value before it is
+   * answered or refused. Raising the value multiplies that path too; the number is deliberately
+   * small partly for that reason.
    */
   AUTH_ARGON2_QUEUE_TIMEOUT_MS: argon2Cost('AUTH_ARGON2_QUEUE_TIMEOUT_MS', 2_000),
 });
