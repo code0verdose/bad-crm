@@ -156,6 +156,28 @@ const createTeam = async (client: PoolClient, organizationId: string): Promise<{
   return rows[0];
 };
 
+/**
+ * A project of one organization, led by a freshly seeded user of the same one: `fk_projects_lead_id`
+ * is composite, so a lead from anywhere else fails on the key rather than on the policy. The key is
+ * randomised within `ck_projects_key_format` — two tenants may share one, but one tenant may not.
+ */
+const createProject = async (
+  client: PoolClient,
+  organizationId: string,
+): Promise<{ id: string }> => {
+  const lead = await createUser(client, organizationId);
+  const { rows } = await client.query<{ id: string }>(
+    `INSERT INTO projects (organization_id, key, name, lead_id, color, updated_at)
+       VALUES ($1, $2, 'Fixture project', $3, 'indigo', now())
+       RETURNING id`,
+    [organizationId, `P${randomBytes(4).toString('hex').toUpperCase()}`, lead.id],
+  );
+
+  if (rows[0] === undefined) throw new Error('fixture project was not created');
+
+  return rows[0];
+};
+
 const seedUser = async (client: PoolClient, organizationId: string): Promise<SeededParents> => ({
   userId: (await createUser(client, organizationId)).id,
 });
@@ -411,6 +433,47 @@ export const TENANT_ROW_FACTORIES = {
       parentId(parents, 'userId'),
     ],
   },
+
+  /**
+   * A project needs its lead, of the same organization; the factory seeds one because the composite
+   * key `(organization_id, lead_id)` refuses a user from anywhere else — the point of the key and
+   * the reason a shared fixture would weaken the test.
+   */
+  projects: {
+    seed: seedUser,
+    sql: `INSERT INTO projects (organization_id, key, name, lead_id, color, updated_at)
+          VALUES ($1, $2, 'Fixture project', $3, 'indigo', now())`,
+    values: (organizationId, parents) => [
+      organizationId,
+      `P${randomBytes(4).toString('hex').toUpperCase()}`,
+      parentId(parents, 'userId'),
+    ],
+  },
+
+  /**
+   * One membership, and therefore one project **and** one person of the same organization — the
+   * shape of `team_members` above, for the same reason: both composite keys carry
+   * `organization_id`, so a fixture reusing another tenant's project would fail on the key instead
+   * of on the policy.
+   */
+  project_members: {
+    seed: async (client, organizationId) => {
+      const [project, user] = await Promise.all([
+        createProject(client, organizationId),
+        createUser(client, organizationId),
+      ]);
+
+      return { projectId: project.id, userId: user.id };
+    },
+    sql: `INSERT INTO project_members (organization_id, project_id, user_id, updated_at)
+          VALUES ($1, $2, $3, now())`,
+    values: (organizationId, parents) => [
+      organizationId,
+      parentId(parents, 'projectId'),
+      parentId(parents, 'userId'),
+    ],
+  },
+
   /**
    * One grant. Neither end of it is a foreign key — the object and the subject are polymorphic
    * pairs by design (`rules/polymorphic-access.mdc`, 11) — so there is nothing to seed: both ids are

@@ -62,6 +62,33 @@ estimate: M
 >   `test/integration/db/row-factories.util.ts` (`satisfies Record<TenantTableName, …>`, `:414`) —
 >   без них код **не компилируется**.
 
+> **Серверная половина таблицы сделана 2026-09-06** (вместе с `projects`, первый шаг эпика;
+> use-case'ов, policy, `implicitLevel`, маршрутов, спеки и клиента **нет**). Что и где:
+> - `project_members` в миграции `20260906135656_projects_and_project_members`: составные FK
+>   `(organization_id, project_id) → projects` и `(organization_id, user_id) → users` (оба
+>   `CASCADE` на удаление, `NO ACTION` на обновление), `ck_project_members_role` по закрытому списку
+>   `LEAD|MEMBER|REVIEWER|OBSERVER`, `ck_project_members_allocation` (`BETWEEN 0 AND 100`,
+>   `DEFAULT 100`), `uq_project_members (project_id, user_id) WHERE left_at IS NULL`,
+>   `idx_project_members_org_user`, `ENABLE` + `FORCE`, обе политики, явные `GRANT`;
+> - порт `application/project/ports/project-member-repository.port.ts` и реализация
+>   `infrastructure/persistence/prisma/project-member.repository.ts`: `roster` (живые; с
+>   `includeLeft` — все), `membershipOf` (живая строка — источник будущего `implicitLevel`), `leads`
+>   под `FOR UPDATE`, `subject` под `FOR SHARE`, `add` через `ON CONFLICT (project_id, user_id) WHERE
+>   left_at IS NULL DO NOTHING`, `update`, `leave` (`SET left_at = now() … WHERE left_at IS NULL`).
+>
+> **Что держит база, а что остаётся сценарию** (проверено на реальном PostgreSQL в
+> `test/integration/db/project-repository.test.ts`, блок «two requests race»):
+> - двойное добавление одной пары — частичный уникальный индекс + `DO NOTHING`: одна строка, один
+>   `true`, без ошибки; повторный `add` с другой ролью роль **не меняет** — повышение это `update`;
+> - выход и возвращение — условная запись `left_at`, вторая попытка выхода `false`, повторное
+>   вступление создаёт новую строку;
+> - «последний лид» — правило use-case'а (критерий 7), но `leads()` держит живых лидов под
+>   `FOR UPDATE`: два одновременных снятия двух лидов не могут оба насчитать «двоих», один остаётся.
+>
+> Инкремент `permissionsVersion` при смене состава (критерий 1) — в use-case следующего шага; метод
+> `bumpPermissionsVersionOf` сегодня есть только у `TeamRepositoryPort`, и решение, выносить ли его в
+> общий порт, принимается там, а не здесь.
+
 ## Acceptance (Given/When/Then)
 
 1. **Добавление участника.**
@@ -134,10 +161,11 @@ estimate: M
 
 ## Задачи
 
-- [ ] `packages/server/prisma/migrations/*_project_members/migration.sql` — `project_members`
-      (`project_role`, `allocation_pct` + CHECK 0…100, `joined_at`, `left_at`), составной FK
-      `(organization_id, project_id)`, `uq_project_members (project_id, user_id) WHERE left_at IS NULL`,
-      `idx_project_members_org_user`, RLS `ENABLE` + `FORCE` + политики.
+- [x] `packages/server/prisma/migrations/20260906135656_projects_and_project_members/migration.sql` —
+      `project_members` (`project_role`, `allocation_pct` + CHECK 0…100, `joined_at`, `left_at`),
+      составной FK `(organization_id, project_id)`, `uq_project_members (project_id, user_id) WHERE left_at IS NULL`,
+      `idx_project_members_org_user`, RLS `ENABLE` + `FORCE` + политики; порт и репозиторий
+      `project-member-repository.port.ts` / `project-member.repository.ts` (2026-09-06).
 - [ ] `packages/server/src/application/project/use-cases/add-project-member.use-case.ts`,
       `update-project-member.use-case.ts`, `remove-project-member.use-case.ts`.
 - [ ] `packages/server/src/domain/project/access/project-membership.policy.ts` —
@@ -155,7 +183,8 @@ estimate: M
 - [ ] Тесты: `project-membership.policy.spec.ts` (п. 6, 7), `implicit-level.spec.ts` (п. 2, 3),
       интеграционные `project-members-api.spec.ts` (п. 1, 4, 5, 8, 9),
       `membership-invalidates-permissions.spec.ts` (доступ меняется без перелогина),
-      isolation-тест `project_members`.
+      isolation-тест `project_members` — [x] реестровый набор `rls-isolation.test.ts` плюс
+      `project-repository.test.ts` (2026-09-06).
 
 ## Ссылки
 

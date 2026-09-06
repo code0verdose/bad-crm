@@ -140,6 +140,14 @@ updated: 2026-08-12
   middleware), а не расставляется руками по запросам. Иначе первая же забытая выборка покажет
   удалённое.
 
+  *Оговорка по факту кода (2026-09-06).* Такого `$extends` в дереве нет — единственный `$extends`
+  это `tenant-guard.adapter.ts`, — и ни `Team`, ни `Project` им не пользуются: репозитории фильтруют
+  явно, причём **только в списках**; чтение по id возвращает удалённую строку с флагом `isDeleted`,
+  потому что решение «404 для удалённого» принимает policy, а не `WHERE`. Глобальный фильтр это
+  решение сломал бы. Что делать с этим абзацем — переписать под явный фильтр или всё же заводить
+  `$extends` с исключением для чтений по id — вопрос человеку; до ответа абзац остаётся замыслом, а
+  не описанием кода.
+
 ### Деньги
 
 - Хранение — **целые micro-единицы** в `BigInt`: `1 USD = 1_000_000`. Никаких `Float`/`Double`
@@ -893,11 +901,18 @@ salt (`saltB`), а сервер хранит `argon2id(authVerifier, serverSalt)
   к этому объекту»: его выполняет `resolveAcl` **одним** запросом по всей цепочке наследования
   (`Task → Board → Project → Organization` и аналоги, см.
   [`../security/permission-model.md`](../security/permission-model.md) → «Наследование ACL»), то есть
-  это самый горячий путь всей модели прав. Уникальный индекс по четвёрке его не покрывает: он
-  начинается с `resource_type`+`resource_id` без `organization_id` и не годится для tenant-scoped
-  выборки всех грантов объекта.
-- `idx_resource_acl_subject (organization_id, subject_type, subject_id, resource_type)` — обратный
-  запрос «какие проекты видит этот пользователь» без full scan.
+  это самый горячий путь всей модели прав. **Порядок колонок — по замеру, а не по вкусу
+  (2026-09-06, PostgreSQL 16.14):** `enum_eq` не помечен `LEAKPROOF`, и под `FORCE ROW LEVEL
+  SECURITY` планировщик не вычисляет не-leakproof оператор раньше политики — поэтому равенство по
+  enum-колонке для `app_user` **никогда не становится условием индекса**, только фильтром после
+  выборки. Индекс вида `(organization_id, resource_type, resource_id)` на 20 000 строк давал
+  приложению seq scan (347 буферов, 2,2 мс), владельцу таблицы — index scan; с uuid впереди —
+  index scan в 11 буферов и 0,17 мс. Отсюда uuid, enum, uuid, enum. Ловушка 6 в
+  [`../security/rls-design.md`](../security/rls-design.md), план держит
+  `test/integration/db/resource-acl-reader.test.ts`.
+- `idx_resource_acl_subject (organization_id, subject_id, subject_type, resource_type)` — обратный
+  запрос «какие проекты видит этот пользователь» без full scan; порядок колонок — по той же
+  причине, что выше.
 - `idx_resource_acl_expires (expires_at) WHERE expires_at IS NOT NULL` — джоб-чистильщик истёкших
   грантов.
 
@@ -979,6 +994,14 @@ erDiagram
 откате, а `BAD-14` не должен пропадать из-за неудачной транзакции у соседнего проекта. Цена —
 сериализация вставок в рамках одного проекта; при реальных объёмах (единицы задач в секунду)
 это не является узким местом.
+
+**Отгружено 2026-09-06** (`20260906135656_projects_and_project_members`) с двумя оговорками к
+строкам выше. `clientId` и `idx_projects_org_client` **придут вместе с таблицей `clients`**
+(STORY-014-07): uuid-колонка без составного FK на родителя была бы ссылкой, которую ничто не
+проверяет (`rules/tenancy-rls.mdc`, 7), а добавить nullable-колонку позже — чистый expand-шаг.
+`key` хранится нормализованным и держится `ck_projects_key_format` (`^[A-Z][A-Z0-9]{1,9}$`); списки
+`status`/`visibility`/`projectRole` — `TEXT` с `CHECK`, как `teamRole`, не PG-enum. Фильтр
+`deletedAt IS NULL` у `Project` **явный, в репозитории** — см. оговорку в «Мягкое удаление».
 
 **Индексы:** `uq_projects_org_key (organization_id, key) WHERE deleted_at IS NULL`;
 `idx_projects_org_status (organization_id, status) WHERE deleted_at IS NULL`;

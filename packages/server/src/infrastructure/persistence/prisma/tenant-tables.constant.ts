@@ -92,6 +92,27 @@ export const TENANT_TABLES = {
     softDeleted: false,
     rowTimestamps: true,
   },
+  projects: {
+    model: 'Project',
+    tenantColumn: 'organization_id',
+    // DELETE is granted although the product soft-deletes: the physical removal of a project is a
+    // maintenance operation nothing in the application issues, but withholding the privilege would
+    // make the tenant root the only table without it for a *different* reason, and the isolation
+    // suite would read the refusal as «the policy worked» (`rls-design.md`, checklist 10).
+    appUserPrivileges: ['SELECT', 'INSERT', 'UPDATE', 'DELETE'],
+    softDeleted: true,
+    rowTimestamps: true,
+  },
+  project_members: {
+    model: 'ProjectMember',
+    tenantColumn: 'organization_id',
+    // A membership ends by `left_at`, not by DELETE — the row is history (STORY-014-02, 5). The
+    // privilege stays for the same reason as on `projects`: the isolation suite's DELETE control is
+    // what proves the policy, not the privilege, is what refuses the other tenant's row.
+    appUserPrivileges: ['SELECT', 'INSERT', 'UPDATE', 'DELETE'],
+    softDeleted: false,
+    rowTimestamps: true,
+  },
   password_reset_tokens: {
     model: 'PasswordResetToken',
     tenantColumn: 'organization_id',

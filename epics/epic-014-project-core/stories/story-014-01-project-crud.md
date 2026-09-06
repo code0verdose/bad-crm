@@ -68,6 +68,40 @@ estimate: M
 >   закреплён `satisfies Record<TenantTableName, TenantRowFactory>`, `:414`). Без этих двух записей
 >   код **не компилируется** — это не «не забыть», а условие сборки.
 
+> **Серверная половина таблиц сделана 2026-09-06** (первый шаг эпика; use-case'ов, маршрутов,
+> спеки, сериализатора и клиента **нет**). Что и где:
+> - миграция `packages/server/prisma/migrations/20260906135656_projects_and_project_members/` —
+>   `projects` и `project_members` одним expand-шагом: `organization_id NOT NULL`, составные FK
+>   `(organization_id, lead_id) → users` (`NO ACTION` в обе стороны, как владелец организации),
+>   `CHECK` вместо PG-enum на `status`/`visibility`/`project_role`, `ck_projects_key_format`
+>   (`^[A-Z][A-Z0-9]{1,9}$` — ключ хранится **уже нормализованным**, нормализацию делает value-object
+>   этой истории, база отказывает всему остальному), `uq_projects_org_key … WHERE deleted_at IS NULL`,
+>   `idx_projects_org_status … WHERE deleted_at IS NULL`, `idx_projects_org_lead`, `ENABLE` + `FORCE`,
+>   обе политики с идентичными `USING`/`WITH CHECK`, явные `GRANT`, `GRANT SELECT … TO backup_role`;
+> - Prisma-модели `Project`/`ProjectMember`, записи в `tenant-tables.constant.ts` и фабрики в
+>   `row-factories.util.ts` — обе таблицы проходят реестровый isolation-набор с положительным
+>   контролем на чтение, список, счётчик, вставку, правку и удаление своей строки;
+> - `domain/project/project.enums.ts` (закрытые списки; юнит-тест сверяет их с `CHECK` миграции) и
+>   `project.entity.ts` (`ProjectScope` с `visibility`, `ProjectSubject`, `ProjectMembership`);
+> - порт `application/project/ports/project-repository.port.ts` и реализация
+>   `infrastructure/persistence/prisma/project.repository.ts` (`list`, `scope` под `FOR SHARE`,
+>   `detail`, `create`, `update`, `changeVisibility`, `changeStatus`, `softDelete` одним условным
+>   оператором); тесты — `test/unit/persistence/project-repository.test.ts` и
+>   `test/integration/db/project-repository.test.ts`.
+>
+> **Два расхождения с моделью данных, решённые здесь и записанные в `data-model.md` §3.**
+> - `clientId` и `idx_projects_org_client` **отложены до STORY-014-07**: таблицы `clients` нет,
+>   `client` нет в `ERROR_RESOURCES`, а uuid-колонка без составного FK — ссылка, которую никто не
+>   проверяет (`rules/tenancy-rls.mdc`, 7). Nullable-колонка добавляется позже чистым expand-шагом.
+> - Критерий 11 говорит о фильтре `deletedAt IS NULL` через Prisma-`$extends`; механизма в дереве
+>   нет (см. выше), и фильтр сделан **явным в репозитории**: список фильтрует в SQL, чтение по id —
+>   нет (решение о 404 для удалённого проекта принимает policy, как у команд), юнит-тест держит это
+>   на каждом методе. Табличного теста `soft-deleted-invisible-in-all-repositories` не будет — вместо
+>   него проверка в каждом репозитории по месту.
+>
+> Ошибка уникальности ключа сегодня отдаётся как `project_already_exists` (тройка из
+> `ERROR_RESOURCES`); `project_key_taken` из критерия 2 — по-прежнему отдельное решение по каталогу.
+
 ## Acceptance (Given/When/Then)
 
 1. **Создание проекта.**
@@ -140,17 +174,19 @@ estimate: M
 
 ## Задачи
 
-- [ ] `packages/server/prisma/migrations/*_projects/migration.sql` — таблица `projects`
-      (`key`, `name`, `description`, `status`, `visibility`, `lead_id`, `client_id`, `started_at`,
-      `due_at`, `color`, `task_counter`, `deleted_at`), `uq_projects_org_key ... WHERE deleted_at IS NULL`,
-      `idx_projects_org_status ... WHERE deleted_at IS NULL`, `idx_projects_org_client`,
+- [x] `packages/server/prisma/migrations/20260906135656_projects_and_project_members/migration.sql` —
+      таблица `projects` (`key`, `name`, `description`, `status`, `visibility`, `lead_id`,
+      `started_at`, `due_at`, `color`, `task_counter`, `deleted_at`; `client_id` и
+      `idx_projects_org_client` — в STORY-014-07 вместе с `clients`),
+      `uq_projects_org_key ... WHERE deleted_at IS NULL`, `idx_projects_org_status ... WHERE deleted_at IS NULL`,
       RLS `ENABLE` + `FORCE` + `tenant_isolation` (USING = WITH CHECK) + `maintenance_access`.
 - [ ] `packages/server/src/domain/project/project.entity.ts`, `project.errors.ts`,
       `project-key.value.ts` (нормализация и формат).
 - [ ] `packages/server/src/application/project/use-cases/create-project.use-case.ts`,
       `update-project.use-case.ts`, `change-project-visibility.use-case.ts`,
       `delete-project.use-case.ts`.
-- [ ] `packages/server/src/application/project/ports/project-repository.port.ts`.
+- [x] `packages/server/src/application/project/ports/project-repository.port.ts` + реализация
+      `infrastructure/persistence/prisma/project.repository.ts` (2026-09-06).
 - [ ] `packages/server/src/presentation/http/serializers/project.serializer.ts` — уровни
       (базовый / участник / финансовый).
 - [ ] `packages/server/src/presentation/http/validators/project.validator.ts` — Zod `.strict()`,
@@ -163,7 +199,8 @@ estimate: M
 - [ ] i18n: `packages/client/src/app/i18n/{en,ru}/project.json`.
 - [ ] Тесты: `project-key.value.spec.ts`, `project-access.policy.spec.ts` (п. 5, 6),
       интеграционные `projects-api.spec.ts` (п. 2, 4, 7–9, 11), снапшот сериализатора по ролям
-      (п. 10), isolation-тест `projects`.
+      (п. 10); isolation-тест `projects` — [x] реестровый набор `rls-isolation.test.ts` плюс
+      `project-repository.test.ts` (2026-09-06).
 
 ## Ссылки
 

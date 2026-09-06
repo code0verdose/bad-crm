@@ -96,6 +96,8 @@ model Organization {
   sessions            Session[]
   passwordResetTokens PasswordResetToken[]
   mfaRecoveryCodes    MfaRecoveryCode[]
+  projects            Project[]
+  projectMembers      ProjectMember[]
 
   @@map("organizations")
 }
@@ -216,6 +218,8 @@ model User {
   invitationAccepted  Invitation[]             @relation("InvitationAcceptor")
   overridesGranted    UserPermissionOverride[] @relation("OverrideGrantor")
   aclsGranted         ResourceAcl[]            @relation("AclGrantor")
+  leads               Project[]                @relation("ProjectLead")
+  projectMemberships  ProjectMember[]
 
   /// The target every composite foreign key into this table points at. A child referencing
   /// `users (id)` alone would be allowed to name a user of another organization: foreign key checks
@@ -533,6 +537,86 @@ model TeamMember {
   @@unique([teamId, userId], map: "uq_team_members")
   @@index([organizationId, userId], map: "idx_team_members_org_user")
   @@map("team_members")
+}
+
+/// Tenant-scoped table [T]: a project — the space tasks, documents, files and hours attach to
+/// (`docs/architecture/data-model.md` §3).
+///
+/// `clientId` is **not** here yet: the `clients` table arrives with STORY-014-07, and a uuid column
+/// without a composite foreign key to point at would be a reference nothing checks
+/// (rules/tenancy-rls.mdc, 7). Adding a nullable column later is a pure expand step.
+model Project {
+  id             String    @id(map: "pk_projects") @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String    @map("organization_id") @db.Uuid
+  /// Stored normalized — upper-case, `^[A-Z][A-Z0-9]{1,9}$`, held by `ck_projects_key_format` in the
+  /// migration. Part of every task number (`BAD-14`), hence never updated.
+  key            String
+  name           String
+  description    String?
+  /// `ACTIVE` | `ON_HOLD` | `ARCHIVED` | `CLOSED`, constrained by `ck_projects_status`. Text rather
+  /// than a PostgreSQL enum: adding a value to an enum is DDL on a type every user of it depends on.
+  status         String    @default("ACTIVE")
+  /// `PUBLIC_ORG` | `PRIVATE`, constrained by `ck_projects_visibility`. A domain rule the policy
+  /// layer applies inside one organization — not row-level security.
+  visibility     String    @default("PUBLIC_ORG")
+  leadId         String    @map("lead_id") @db.Uuid
+  startedAt      DateTime? @map("started_at") @db.Timestamptz(6)
+  dueAt          DateTime? @map("due_at") @db.Timestamptz(6)
+  color          String
+  /// Incremented by `UPDATE … SET task_counter = task_counter + 1 RETURNING task_counter` in the
+  /// transaction that inserts a task; a sequence would be global and leave holes on rollback
+  /// (`data-model.md`, «Про `taskCounter`»).
+  taskCounter    Int       @default(0) @map("task_counter")
+
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+  deletedAt DateTime? @map("deleted_at") @db.Timestamptz(6)
+
+  organization Organization    @relation(fields: [organizationId], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "fk_projects_organization_id")
+  /// Composite, like every reference in this schema, and `NoAction` both ways like the owner of an
+  /// organization: a person who leads a project is not deleted, the lead is transferred first.
+  lead         User            @relation("ProjectLead", fields: [organizationId, leadId], references: [organizationId, id], onDelete: NoAction, onUpdate: NoAction, map: "fk_projects_lead_id")
+  members      ProjectMember[]
+
+  /// The target the composite foreign key of `project_members` points at (rules/tenancy-rls.mdc, 7).
+  @@unique([organizationId, id], map: "uq_projects_org_id")
+  @@index([organizationId, leadId], map: "idx_projects_org_lead")
+  /// `uq_projects_org_key` and `idx_projects_org_status` are not declared here: both are partial
+  /// (`WHERE deleted_at IS NULL`), which Prisma cannot express, so they live in the migration — and
+  /// stay invisible to `migrate diff`. The partial clause is what lets a key freed by deleting a
+  /// project be used again, while «unique inside the organization» still holds among live ones.
+  @@map("projects")
+}
+
+/// Tenant-scoped table [T]: one person's membership of one project, with the role the implicit
+/// access level derives from (`permission-model.md` §5).
+///
+/// A membership **ends** (`leftAt`) rather than being deleted: the row is history and a link target,
+/// and the partial unique index lets the same person join again as a new row (STORY-014-02,
+/// acceptance 5).
+model ProjectMember {
+  id             String @id(map: "pk_project_members") @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String @map("organization_id") @db.Uuid
+  projectId      String @map("project_id") @db.Uuid
+  userId         String @map("user_id") @db.Uuid
+  /// `LEAD` | `MEMBER` | `REVIEWER` | `OBSERVER`, constrained by `ck_project_members_role`.
+  projectRole    String @default("MEMBER") @map("project_role")
+  /// 0…100, held by `ck_project_members_allocation`; the sum across projects is not limited in M2.
+  allocationPct  Int    @default(100) @map("allocation_pct")
+
+  joinedAt  DateTime  @default(now()) @map("joined_at") @db.Timestamptz(6)
+  leftAt    DateTime? @map("left_at") @db.Timestamptz(6)
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "fk_project_members_organization_id")
+  project      Project      @relation(fields: [organizationId, projectId], references: [organizationId, id], onDelete: Cascade, onUpdate: NoAction, map: "fk_project_members_project_id")
+  user         User         @relation(fields: [organizationId, userId], references: [organizationId, id], onDelete: Cascade, onUpdate: NoAction, map: "fk_project_members_user_id")
+
+  /// `uq_project_members (project_id, user_id) WHERE left_at IS NULL` is partial and therefore lives
+  /// only in the migration; `idx_project_members_org_user` answers «my projects».
+  @@index([organizationId, userId], map: "idx_project_members_org_user")
+  @@map("project_members")
 }
 
 /// Tenant-scoped table [T]: an invitation to join this organization.
