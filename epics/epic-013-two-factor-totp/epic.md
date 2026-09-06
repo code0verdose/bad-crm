@@ -94,12 +94,51 @@ created: 2026-07-26
       ни схемы политики, ни `scope = mfa_enrollment`, ни маршрута
       `PATCH /organization/security-policy` в коде нет (`grep -rn 'mfaRequiredForRoles\|mfa_enrollment'
       packages/server/src packages/shared/src` — пусто).
-- [ ] Все события 2FA (включение, отключение, использование recovery-кода, сброс администратором,
+
+      > **Поправка 2026-09-06: абзац выше описывает состояние до `abe2135`. Первая половина
+      > критерия закрыта, вторая — нет, поэтому пункт остаётся `[ ]`.**
+      > *Закрыто:* политика организации и её экран — `abe2135` (сервер: `mfa-requirement.policy.ts`,
+      > `scope = mfa_enrollment` в `jwt-access-token.adapter.ts:47`, `mfaEnrollmentAllowed` в
+      > `route-registry.types.ts:29`, отказ 403 `mfa_enrollment_required` —
+      > `domain/shared/errors/app.errors.ts:367`) и `1404a62` (клиент: вкладка
+      > `/admin/organization?tab=security`, `widgets/security-policy/`, `widgets/mfa-grace-banner/`,
+      > юнит `units/organization`, e2e `packages/e2e/tests/security/org-2fa-policy.spec.ts`).
+      > *Открыто:* сам **мастер настройки**. Клиент значение `mfaEnrollment` разбирает и хранит
+      > (`units/auth/model/validation/session-identity.schema.ts:41`), но ни один гард по нему не
+      > уводит — `grep -rn 'mfaEnrollment' packages/client/src` даёт только схему, `adoptSession` и
+      > сгенерированный тип; докстринг `adopt-session.util.test.ts:48` говорит это прямо
+      > («`mfaEnrollment` has no screen yet»). Человек с такой сессией видит оболочку, в которой
+      > каждая кнопка отвечает 403. Тот же хвост — критерий 8 STORY-013-04.
+      > Рядом остаются два меньших пункта из «Осталось» STORY-013-05: напоминания сотруднику нет
+      > ручки (ни in-app, ни почтовой), баннер обновляется только перезагрузкой вкладки (тихая
+      > ротация идентичность получает, но в стор не кладёт — `session-refresh.util.ts` против
+      > `auth-session.store.ts:106,122`).
+- [x] Все события 2FA (включение, отключение, использование recovery-кода, сброс администратором,
       серия неудач) попадают в `AuditLog` с корректной `severity` — **почти**: шесть действий заведены
       и пишутся (`packages/shared/src/audit/audit-action.enums.ts:45-95`,
       `audit-severity.enums.ts:44-65`), открыта только **агрегированная запись серии неудач** и метрика
       `mfa_recovery_failed_total` — см. [STORY-013-02](stories/story-013-02-recovery-codes.md), раздел
       «Что отложено».
+
+      > **Закрыто 2026-09-06** (`24ad24f`, «notify owner and count refused recovery codes»). Абзац
+      > выше оставлен как запись состояния: то, что в нём названо открытым, отгружено.
+      > Агрегат серии — `user.mfa_recovery_locked_out`, пишется один раз за серию той неудачей,
+      > которая тратит последнюю единицу бюджета (`consume-recovery-code.use-case.ts:168`), severity
+      > `WARNING` (`audit-severity.enums.ts:56`); тесты — `consume-recovery-code.use-case.test.ts:453,473,484`
+      > (ровно одна запись на серию, положительный контроль и отсутствие второй). Метрика
+      > `mfa_recovery_failed_total` — `prom-client.adapter.ts:79`, проверяется на выводе `/metrics`
+      > в том же файле тестов (строки 399–431).
+      > Перебор списка критерия по коду: включение — `confirm-totp.use-case.ts:285`
+      > (`user.mfa_enabled`), отключение — `disable-totp.use-case.ts:255` (`user.mfa_disabled`),
+      > recovery-код — `consume-recovery-code.use-case.ts:255` (`user.mfa_recovery_code_used`),
+      > сброс администратором — `reset-user-mfa.use-case.ts:248` (`user.mfa_reset_by_admin`,
+      > `CRITICAL`), серия неудач — выше; сверх списка пишутся ещё `user.mfa_setup_failed`
+      > (`confirm-totp.use-case.ts:373`) и `user.mfa_recovery_codes_regenerated`
+      > (`regenerate-recovery-codes.use-case.ts:176`) — семь действий, а не шесть.
+      > Гейт полноты — `packages/server/test/unit/audit/audit-coverage.test.ts`: он перебирает
+      > `AUDIT_ACTIONS` целиком и требует у каждого действия вызов в `src`, поэтому список 2FA
+      > покрыт им без отдельной строки; закрытость каталога и наличие severity у каждого действия —
+      > `audit-logger.test.ts:133,180`.
 - [x] Экраны 2FA соответствуют WCAG 2.1 AA и полностью локализованы EN/RU — axe в
       `packages/e2e/tests/auth/{enable-2fa,login-with-2fa}.spec.ts` и в
       `packages/client/test/widgets/{totp-setup,recovery-codes,disable-totp,reset-mfa}.test.tsx`,
@@ -255,16 +294,41 @@ HTTP-интеграционный тест настоящего отзыва с�
 у трёх историй, которые к тому дню уже были в `review`, и «клиентская половина отложена» у двух,
 клиент которых отгружен, — обе формулировки исправлены.
 
-- [ ] [STORY-013-01 — Включение TOTP по QR-коду](stories/story-013-01-enable-totp.md) —
+**Пересверено 2026-09-06 по коду.** Все шесть историй в `review`
+(`grep -h '^status:' stories/*.md | sort | uniq -c`). Из пяти незакрытых строк состава закрыты
+четыре; открытой осталась STORY-013-05, и ровно из-за того же, из-за чего открыт критерий приёмки
+эпика, — мастера принудительной настройки на клиенте нет. Поэтому статус эпика остаётся
+`in-progress`: закрывать его нечем, пока эта половина не отгружена.
+
+- [x] [STORY-013-01 — Включение TOTP по QR-коду](stories/story-013-01-enable-totp.md) —
       `review`: сервер и клиент отгружены целиком (критерий 10 закрыт `430457e`, e2e `487383e`).
       Открыт один хвост — джоба подчистки просроченных черновиков из критерия 3: планировщика в
       сборке нет, черновик отвергается на чтении, в таблице копится мусор
-- [ ] [STORY-013-02 — Коды восстановления](stories/story-013-02-recovery-codes.md) —
+
+      > **Закрыто 2026-09-06 как строка состава эпика; хвост остаётся и передан по адресу.**
+      > Хвост подтверждён и сегодня: ни `bullmq` в `packages/server/package.json`, ни таблицы
+      > `outbox_event` в `prisma/schema.prisma` (`grep -c 'outbox_event\|OutboxEvent'` → 0), то есть
+      > механизма очереди в сборке нет. Но это долг ADR-0021, а не второго фактора: просроченный
+      > черновик отвергается на чтении (`ConfirmTotpUseCase` требует `draftExpiresAt > now`), и ни
+      > один критерий приёмки этого эпика сметания мусора не требует. Хвост записан в самой истории
+      > («Что отложено», строка 204) и возвращается вместе с механизмом очереди
+- [x] [STORY-013-02 — Коды восстановления](stories/story-013-02-recovery-codes.md) —
       `review`: сервер и клиент отгружены (критерии 2 и 6 закрыты `430457e`). Открыты две вещи из
       критериев 4 и 10: уведомление владельцу учётки при трате кода (`consume-recovery-code.use-case.ts`
       не зовёт `MailDispatchPort`, in-app-канала в продукте нет) и метрика `mfa_recovery_failed_total`
       с агрегированной записью серии неудач (`application/platform/ports/metrics.port.ts` под неё не
       расширен)
+
+      > **Закрыто 2026-09-06** (`24ad24f`). Обе названные вещи отгружены: почтовая половина
+      > уведомления — `renderMfaChangedMail({ reason: 'recovery_code_used' })` после коммита
+      > транзакции, метрика — `prom-client.adapter.ts:79`, агрегат серии —
+      > `user.mfa_recovery_locked_out` (`consume-recovery-code.use-case.ts:168`).
+      > Что у истории **остаётся** открытым и ни одного критерия этого эпика не задевает:
+      > **in-app**-половина уведомления (канала уведомлений в продукте нет вообще — в
+      > `packages/server/src/application` четыре контекста, ни одного `notification`), и счётчик
+      > **по одному лишь адресу**: ключ `mfa_recovery_consume_attempt` — `(ip, userId)`, поэтому один
+      > адрес получает свежий бюджет на каждую следующую жертву. Оба записаны в истории и в
+      > докстринге `IpUserSubject`, а не только здесь
 - [x] [STORY-013-03 — Вход со вторым фактором](stories/story-013-03-login-second-factor.md) —
       `review`: закрыта целиком 2026-08-13. Сервер — `c5a50b6` (`mfaToken` вместо сессии,
       `POST /auth/2fa/verify`, отказ промежуточного токена по всему реестру), клиентский шаг входа
@@ -277,8 +341,29 @@ HTTP-интеграционный тест настоящего отзыва с�
       сброс), клиентский экран отключения и **экран административного сброса (критерий 10) —
       `a5bf8b3`, `widgets/reset-mfa/` на карточке сотрудника**; отложена только политика
       организации (критерии 4, 8 — требуют STORY-013-05), заглушек под неё нет
-- [ ] [STORY-013-05 — Политика организации «2FA обязательна»](stories/story-013-05-org-2fa-policy.md)
-- [ ] [STORY-013-06 — Семафор конкурентности Argon2](stories/story-013-06-argon2-concurrency-guard.md) —
+
+      > **Поправка 2026-09-06: STORY-013-05 вышла, и из двух отложенных критериев закрылся один.**
+      > Критерий 4 (409 `mfa_required_by_policy` при самостоятельном отключении) закрыт `abe2135`:
+      > `disable-totp.use-case.ts:243` бросает `MfaRequiredByPolicyError`, прочитав вердикт
+      > `MfaPolicyQuery`; код 409 — `packages/shared/src/errors/error-code.enums.ts:314`; тест —
+      > блок «the organization policy» в `test/unit/application/disable-totp.use-case.test.ts`.
+      > Критерий 8 (после сброса — принудительная настройка) **остаётся открытым** по той же
+      > причине, что и критерий приёмки эпика: серверная область токена есть, мастера настройки на
+      > клиенте нет. Строка состава помечена `[ ]` из-за него одного.
+      > Отдельно: докстринг `domain/identity/access/mfa-policy.policy.ts:35-43` всё ещё утверждает,
+      > что политики «не существует, STORY-013-05 still backlog», — утверждение протухло, файл вне
+      > этой дельты
+- [ ] [STORY-013-05 — Политика организации «2FA обязательна»](stories/story-013-05-org-2fa-policy.md) —
+      `review`: обе половины отгружены — сервер `abe2135`, экраны `1404a62` (вкладка
+      `/admin/organization?tab=security`, диалог предпросмотра черновика через ту же ручку
+      `GET /organization/mfa-coverage`, баннер обратного отсчёта, гард `beforeLoad`, пять e2e
+      с `axe`). Строка остаётся `[ ]` из-за трёх хвостов, названных в самой истории («Осталось»):
+      мастер принудительной настройки при `mfa_enrollment` (он же критерий приёмки эпика и
+      критерий 8 STORY-013-04), ручка напоминания сотруднику (её нет ни в каком виде — заглушку
+      заводить отказались осознанно) и баннер, не обновляющийся до перезагрузки вкладки. Плюс
+      формальность: DoD истории (строки 250–255) не заполнен ни одним пунктом — гейт по ней
+      не отмечен
+- [x] [STORY-013-06 — Семафор конкурентности Argon2](stories/story-013-06-argon2-concurrency-guard.md) —
       `in-progress`: выделена 2026-08-12 из критерия 9 STORY-013-03 (семафор и `argon2_inflight`
       защищают вход вообще, а не второй фактор, и требуют своего нагрузочного теста). **Отгружена
       семью коммитами** (`76837d8`, `317b6b5` и др., 2026-08-30…09-06): семафор и декоратор порта,
@@ -286,3 +371,9 @@ HTTP-интеграционный тест настоящего отзыва с�
       `argon2_inflight` и `argon2_queued`, вынос десяти сверок резервного кода из транзакции,
       нагрузочный тест с доказательством красного. Все задачи истории `[x]`; открыт только
       commit-гейт в DoD
+
+      > **Закрыто 2026-09-06.** Статус истории — `review`, а не `in-progress` (frontmatter
+      > `story-013-06-argon2-concurrency-guard.md`), и commit-гейт в её DoD отмечен `[x]` с
+      > записью прогона: шесть волн ревью, `turbo run typecheck lint build test` 21/21,
+      > `coverage:baseline` без просадок (server lines −0.18 при допуске 0.5, branches +0.02).
+      > Последние коммиты серии — `fd32ab4`, `22207aa`, `08a7e9e`
