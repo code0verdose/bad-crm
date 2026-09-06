@@ -21,6 +21,7 @@ import {
   ReauthenticationRequiredError,
   ServiceUnavailableError,
 } from '@/domain/shared/errors/app.errors.js';
+import { refundingHashRefusals } from '@/application/platform/rate-limit/hash-refusal-refund.util.js';
 
 export interface RegenerateRecoveryCodesInput {
   readonly actor: { readonly organizationId: string; readonly userId: string };
@@ -115,8 +116,14 @@ export class RegenerateRecoveryCodesUseCase {
     // either credential is judged, for the identical timing reason `ConfirmTotpUseCase` mints early.
     const minted = await this.recoveryCodes.mint();
 
-    const { result, credential } = await this.unitOfWork.withTenant(input.actor, () =>
-      this.regenerate(input, minted),
+    // The scope, not just the verification, because the password check lives inside it: a queue
+    // refusal there rolls the transaction back and must not also cost one of the five reauthentication
+    // attempts the account holder gets in fifteen minutes (`hash-refusal-refund.util.ts`).
+    const { result, credential } = await refundingHashRefusals(
+      this.rateLimit,
+      'mfa_reauth_attempt',
+      { userId: input.actor.userId },
+      () => this.unitOfWork.withTenant(input.actor, () => this.regenerate(input, minted)),
     );
 
     await this.rateLimit.reset('mfa_reauth_attempt', { userId: input.actor.userId });

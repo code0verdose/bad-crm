@@ -18,6 +18,7 @@ import {
   type RateLimitPort,
 } from '@/application/platform/ports/rate-limit.port.js';
 import { type UnitOfWorkPort } from '@/application/platform/ports/unit-of-work.port.js';
+import { refundingHashRefusals } from '@/application/platform/rate-limit/hash-refusal-refund.util.js';
 import { maskIpAddress } from '@/domain/identity/mask-ip-address.util.js';
 import { SECURITY_EVENTS } from '@/domain/identity/security-event.constant.js';
 import {
@@ -196,7 +197,14 @@ export class LoginUseCase {
     }
 
     const candidates = await this.candidates(input);
-    const verified = await this.verifyAll(candidates, input.password);
+    // The point above is returned if the argon2 queue refuses these verifications: a refusal that
+    // never reached the hasher is not an attempt, and charging one for it is how a ten-second load
+    // spike locks somebody out for fifteen minutes with `Retry-After: 2` inviting them into it
+    // (`hash-refusal-refund.util.ts`). The consumption stays **before** the hashing regardless —
+    // that ordering is the KDF budget itself and is not what changed.
+    const verified = await refundingHashRefusals(this.rateLimit, 'auth_attempt', subject, () =>
+      this.verifyAll(candidates, input.password),
+    );
 
     if (verified.length === 0) {
       this.refuse('invalid_credentials', ipMasked);

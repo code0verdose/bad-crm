@@ -23,6 +23,11 @@ export interface WindowLimiter {
   consume(key: string): Promise<LimiterReading>;
   /** Refuses `key` for `secDuration`, replacing whatever was left of the current window. */
   block(key: string, secDuration: number): Promise<LimiterReading>;
+  /**
+   * Gives `points` back inside the window that is already open — the library's own name for
+   * un-consuming, and what `RateLimitPort.refund` is built on.
+   */
+  reward(key: string, points: number): Promise<LimiterReading>;
   delete(key: string): Promise<boolean>;
 }
 

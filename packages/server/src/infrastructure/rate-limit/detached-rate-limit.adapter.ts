@@ -37,4 +37,10 @@ export const detachedRateLimit = (): RateLimitPort => ({
    * been accepted, and turning a correct sign-in into a 503 would be the worse of the two answers.
    */
   reset: (): Promise<void> => Promise.resolve(),
+
+  /**
+   * Silent for the same reason, and for one more: `consume` here never counted anything, so there
+   * is nothing a refund could put back.
+   */
+  refund: (): Promise<void> => Promise.resolve(),
 });

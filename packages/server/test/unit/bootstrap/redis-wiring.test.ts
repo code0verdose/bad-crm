@@ -112,4 +112,14 @@ describe('a container built without Redis', () => {
       }),
     ).resolves.toBeUndefined();
   });
+
+  /** And a refund, for one reason more: `consume` here counted nothing to give back. */
+  it('lets a refund pass silently, because nothing was ever counted', async () => {
+    await expect(
+      detachedRateLimit().refund('auth_attempt', {
+        ipAddress: '203.0.113.42',
+        email: 'ada@example.com',
+      }),
+    ).resolves.toBeUndefined();
+  });
 });

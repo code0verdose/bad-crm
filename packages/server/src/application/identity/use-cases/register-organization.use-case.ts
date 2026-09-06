@@ -18,6 +18,7 @@ import {
   RateLimitedError,
   ValidationError,
 } from '@/domain/shared/errors/app.errors.js';
+import { refundingHashRefusals } from '@/application/platform/rate-limit/hash-refusal-refund.util.js';
 
 export interface RegisterOrganizationInput {
   readonly organization: {
@@ -115,21 +116,31 @@ export class RegisterOrganizationUseCase {
     const locale = input.owner.locale ?? this.defaults.locale;
     const timezone = input.owner.timezone ?? this.defaults.timezone;
 
-    const { organizationId, ownerId } = await this.bootstrap.execute({
-      organization: {
-        name: input.organization.name,
-        slug: input.organization.slug,
-        timezone,
-        defaultCurrency: this.defaults.currency,
-      },
-      owner: {
-        email: input.owner.email,
-        // The only place the plaintext exists in this use-case, and it does not leave this call.
-        passwordHash: await this.hasher.hash(input.owner.password),
-        locale,
-        timezone,
-      },
-    });
+    // The hourly point is returned if the argon2 queue refuses the digest below. Three an hour is
+    // the thinnest budget of any path that hashes, so three refusals during one load spike cost a
+    // team the whole hour — for a registration that never reached the hasher
+    // (`hash-refusal-refund.util.ts`).
+    const { organizationId, ownerId } = await refundingHashRefusals(
+      this.rateLimit,
+      'organization_registration',
+      { ipAddress: input.client.ipAddress },
+      async () =>
+        await this.bootstrap.execute({
+          organization: {
+            name: input.organization.name,
+            slug: input.organization.slug,
+            timezone,
+            defaultCurrency: this.defaults.currency,
+          },
+          owner: {
+            email: input.owner.email,
+            // The only place the plaintext exists in this use-case, and it does not leave this call.
+            passwordHash: await this.hasher.hash(input.owner.password),
+            locale,
+            timezone,
+          },
+        }),
+    );
 
     const session = await this.unitOfWork.withTenant(
       { organizationId, userId: ownerId },

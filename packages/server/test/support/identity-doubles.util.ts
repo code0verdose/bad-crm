@@ -289,6 +289,7 @@ export interface FakeRateLimitOptions {
 export class FakeRateLimit implements RateLimitPort {
   readonly consumed: { policy: RateLimitPolicy; subject: unknown }[] = [];
   readonly cleared: { policy: RateLimitPolicy; subject: unknown }[] = [];
+  readonly refunded: { policy: RateLimitPolicy; subject: unknown }[] = [];
 
   private readonly counters = new Map<string, number>();
 
@@ -322,6 +323,22 @@ export class FakeRateLimit implements RateLimitPort {
     this.options.journal?.push(`rate-limit:reset:${policy}`);
     this.cleared.push({ policy, subject });
     this.counters.delete(this.keyOf(policy, subject));
+
+    return Promise.resolve();
+  }
+
+  /**
+   * Puts one point back, the way the real adapter's `reward` does — and never below zero, because a
+   * counter the store has already forgotten is what `reset` leaves behind, and a double that let the
+   * number go negative would grant a budget the real one does not.
+   */
+  refund<P extends RateLimitPolicy>(policy: P, subject: RateLimitSubjects[P]): Promise<void> {
+    this.options.journal?.push(`rate-limit:refund:${policy}`);
+    this.refunded.push({ policy, subject });
+
+    const key = this.keyOf(policy, subject);
+
+    this.counters.set(key, Math.max(0, (this.counters.get(key) ?? 0) - 1));
 
     return Promise.resolve();
   }

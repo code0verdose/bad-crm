@@ -18,6 +18,7 @@ import {
 } from '@/domain/identity/recovery-code.value.js';
 import { SECURITY_EVENTS } from '@/domain/identity/security-event.constant.js';
 import { RateLimitedError, RecoveryCodeInvalidError } from '@/domain/shared/errors/app.errors.js';
+import { refundingHashRefusals } from '@/application/platform/rate-limit/hash-refusal-refund.util.js';
 
 export interface ConsumeRecoveryCodeInput {
   readonly actor: { readonly organizationId: string; readonly userId: string };
@@ -109,10 +110,8 @@ export class ConsumeRecoveryCodeUseCase {
 
   /** The id of the row that was spent, or throws `RecoveryCodeInvalidError`/`RateLimitedError`. */
   async execute(input: ConsumeRecoveryCodeInput): Promise<string> {
-    const decision = await this.rateLimit.consume('mfa_recovery_consume_attempt', {
-      userId: input.actor.userId,
-      ipAddress: input.ipAddress,
-    });
+    const subject = { userId: input.actor.userId, ipAddress: input.ipAddress };
+    const decision = await this.rateLimit.consume('mfa_recovery_consume_attempt', subject);
 
     if (!decision.allowed) throw new RateLimitedError(decision.retryAfterSeconds);
 
@@ -120,9 +119,19 @@ export class ConsumeRecoveryCodeUseCase {
 
     // Refused before any Argon2id verification runs — shape and alphabet are public facts this
     // costs nothing to check and reveals nothing account-specific (see the class docstring).
-    const spent = isWellFormedRecoveryCode(normalized)
-      ? await this.spend(input.actor, normalized, input.ipAddress)
-      : null;
+    //
+    // The refund matters most here: one attempt costs `RECOVERY_CODE_COUNT` comparisons and each
+    // queues separately, so this is the request a saturated queue refuses first — and it belongs to
+    // somebody who has already lost their authenticator (`hash-refusal-refund.util.ts`).
+    const spent = await refundingHashRefusals(
+      this.rateLimit,
+      'mfa_recovery_consume_attempt',
+      subject,
+      async () =>
+        isWellFormedRecoveryCode(normalized)
+          ? await this.spend(input.actor, normalized, input.ipAddress)
+          : null,
+    );
 
     if (spent === null) {
       this.metrics.incrementMfaRecoveryFailed();
@@ -143,10 +152,7 @@ export class ConsumeRecoveryCodeUseCase {
       throw new RecoveryCodeInvalidError();
     }
 
-    await this.rateLimit.reset('mfa_recovery_consume_attempt', {
-      userId: input.actor.userId,
-      ipAddress: input.ipAddress,
-    });
+    await this.rateLimit.reset('mfa_recovery_consume_attempt', subject);
 
     // After the transaction that spent the row has committed, and never awaited: a notice that
     // could not be delivered must not undo a sign-in that already happened (`MailDispatchPort`).

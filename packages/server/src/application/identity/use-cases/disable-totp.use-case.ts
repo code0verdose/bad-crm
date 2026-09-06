@@ -33,6 +33,7 @@ import {
   ServiceUnavailableError,
 } from '@/domain/shared/errors/app.errors.js';
 import { type MfaPolicyQuery } from '@/application/organization/use-cases/mfa-policy.query.js';
+import { refundingHashRefusals } from '@/application/platform/rate-limit/hash-refusal-refund.util.js';
 
 export interface DisableTotpInput {
   readonly actor: { readonly organizationId: string; readonly userId: string };
@@ -169,10 +170,20 @@ export class DisableTotpUseCase {
     // «Verifying the caller costs Argon2id, and Argon2id may not run inside the transaction».
     const proofs = await this.unitOfWork.withTenant(input.actor, () => this.read(input));
 
-    const [passwordCheck, secondFactor] = await Promise.all([
-      this.verifyPassword(proofs.credential, input.password),
-      this.verifySecondFactor(input.actor, proofs, input.code, now),
-    ]);
+    // Both checks under the refund: `verifySecondFactor` reaches the ten recovery-code comparisons,
+    // each of which queues on its own, so this is the path most likely to meet a saturated queue —
+    // and the least deserving of losing a reauthentication attempt over it
+    // (`hash-refusal-refund.util.ts`).
+    const [passwordCheck, secondFactor] = await refundingHashRefusals(
+      this.rateLimit,
+      'mfa_reauth_attempt',
+      { userId: input.actor.userId },
+      async () =>
+        await Promise.all([
+          this.verifyPassword(proofs.credential, input.password),
+          this.verifySecondFactor(input.actor, proofs, input.code, now),
+        ]),
+    );
 
     if (!passwordCheck.ok || !secondFactor.ok) throw new ReauthenticationRequiredError();
 

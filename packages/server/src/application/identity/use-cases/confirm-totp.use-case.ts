@@ -22,6 +22,7 @@ import {
   ServiceUnavailableError,
   TotpCodeReplayedError,
 } from '@/domain/shared/errors/app.errors.js';
+import { refundingHashRefusals } from '@/application/platform/rate-limit/hash-refusal-refund.util.js';
 
 export interface ConfirmTotpInput {
   readonly actor: { readonly organizationId: string; readonly userId: string };
@@ -164,8 +165,14 @@ export class ConfirmTotpUseCase {
     // refuses everywhere else.
     const minted = await this.recoveryCodes.mint();
 
-    const { result, credential } = await this.unitOfWork.withTenant(input.actor, () =>
-      this.confirm(input, minted),
+    // The scope, not just the verification, because the password check lives inside it: a queue
+    // refusal there rolls the transaction back and must not also cost one of the five enrolment
+    // attempts the account holder gets in fifteen minutes (`hash-refusal-refund.util.ts`).
+    const { result, credential } = await refundingHashRefusals(
+      this.rateLimit,
+      'mfa_setup_attempt',
+      { userId: input.actor.userId },
+      () => this.unitOfWork.withTenant(input.actor, () => this.confirm(input, minted)),
     );
 
     await this.rateLimit.reset('mfa_setup_attempt', { userId: input.actor.userId });

@@ -286,4 +286,44 @@ export interface RateLimitPort {
    * be a worse answer than a counter that expires on its own a few minutes later.
    */
   reset<P extends RateLimitPolicy>(policy: P, subject: RateLimitSubjects[P]): Promise<void>;
+
+  /**
+   * Puts back the **one** point `consume` just took, because the attempt it paid for never happened.
+   *
+   * ## Why this exists, and why it is not "forgiving an attempt"
+   *
+   * Callers spend a point before the expensive work, which is the whole of the KDF defence above:
+   * the budget has to close before an attacker can buy a computation. That ordering has a cost the
+   * paths did not answer for — when the work is then **refused** rather than performed, the caller
+   * has paid for nothing. The refusal that made this a normal mode of operation rather than a rarity
+   * is the argon2 queue (`argon2-semaphore.util.ts`, STORY-013-06): it answers `503` with
+   * `Retry-After: 2` while `auth_attempt` grants five attempts per fifteen minutes and escalates the
+   * block to an hour, so a client that obeys the header comes back inside the same window and, five
+   * disciplined retries into a ten-second load spike, is locked out for a quarter of an hour without
+   * ever having mistyped a password. The defence against exhausting memory had become the mechanism
+   * by which an installation locks its own users out.
+   *
+   * ## Why it cannot be turned into a way around the limiter
+   *
+   * The invariant this preserves is "N points buy at most N argon2id computations", and returning a
+   * point that bought **none** is exactly what keeps it true rather than what breaks it. To collect
+   * a refund an attacker has to make the queue refuse, and the queue refuses only while its slots
+   * and its parked places are full — a state they would have to produce and sustain themselves, at
+   * a cost in requests far above the five attempts they get back, and during which their own guesses
+   * are being refused too. The point is also never returned to a subject that is *blocked*: the
+   * refund runs only on a path that got `allowed: true`, so a blocked caller never reaches the work
+   * that could refuse.
+   *
+   * ## Why it is one point and not `reset`
+   *
+   * `reset` forgets everything, including genuinely wrong passwords from earlier in the window.
+   * This undoes one specific consumption, so a caller whose four earlier guesses were wrong still
+   * has one attempt left, not five.
+   *
+   * Silent when the store is unreachable, for the reason `reset` is: the caller is already carrying
+   * a refusal of its own, and replacing it with a different 5xx would tell them less, not more.
+   *
+   * @see `application/platform/rate-limit/hash-refusal-refund.util.ts` — the one caller shape.
+   */
+  refund<P extends RateLimitPolicy>(policy: P, subject: RateLimitSubjects[P]): Promise<void>;
 }

@@ -95,6 +95,27 @@ export class RedisRateLimiterAdapter implements RateLimitPort {
     }
   }
 
+  async refund<P extends RateLimitPolicy>(policy: P, subject: RateLimitSubjects[P]): Promise<void> {
+    const key = rateLimitKeyOf(policy, subject);
+
+    try {
+      // `reward` is the library's name for "un-consume": it decrements the counter in the window
+      // that is already open, so the point comes back where it was taken from and the window's own
+      // expiry still ends it. The penalty counter is deliberately untouched — nothing escalated,
+      // because escalation happens only on the request that exhausts the budget, and a refunded
+      // point by construction belongs to a request that was admitted.
+      await this.limiters[policy].attempts.reward(key.value, 1);
+    } catch {
+      // Deliberately swallowed, like `reset`'s. The caller is already carrying a 503 of its own and
+      // is about to raise it; replacing that with a different 5xx would tell the client less. The
+      // point that could not be returned expires with its window.
+      this.logger.warn(
+        { policy, subject: key.label },
+        'rate limit point could not be returned after a refused computation',
+      );
+    }
+  }
+
   /**
    * How long the subject is refused for — the same block again, or a longer one.
    *

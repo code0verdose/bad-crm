@@ -17,6 +17,7 @@ import { type UnitOfWorkPort } from '@/application/platform/ports/unit-of-work.p
 import { maskIpAddress } from '@/domain/identity/mask-ip-address.util.js';
 import { SECURITY_EVENTS } from '@/domain/identity/security-event.constant.js';
 import { InvitationNotValidError, RateLimitedError } from '@/domain/shared/errors/app.errors.js';
+import { refundingHashRefusals } from '@/application/platform/rate-limit/hash-refusal-refund.util.js';
 
 export interface AcceptInvitationInput {
   /** The value from the link, as the client lifted it out of the SPA route into the request body. */
@@ -121,7 +122,15 @@ export class AcceptInvitationUseCase {
       this.refuse(ipMasked, 'unresolved');
     }
 
-    const passwordHash = await this.hasher.hash(input.password);
+    // Refunded if the argon2 queue refuses it: ten presentations per fifteen minutes is a generous
+    // budget for somebody following a link out of their mail and a thin one once a load spike starts
+    // spending it for them (`hash-refusal-refund.util.ts`).
+    const passwordHash = await refundingHashRefusals(
+      this.rateLimit,
+      'invitation_accept',
+      { ipAddress: input.client.ipAddress },
+      () => this.hasher.hash(input.password),
+    );
 
     // The two refusals raised **inside** the transaction — revoked between the resolver and the
     // read, and spent or expired by the conditional write — are logged here rather than at their

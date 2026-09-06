@@ -24,6 +24,7 @@ import {
   UnauthenticatedError,
   ValidationError,
 } from '@/domain/shared/errors/app.errors.js';
+import { refundingHashRefusals } from '@/application/platform/rate-limit/hash-refusal-refund.util.js';
 
 export interface ChangePasswordInput {
   readonly actor: { readonly organizationId: string; readonly userId: string };
@@ -157,14 +158,26 @@ export class ChangePasswordUseCase {
       throw new RateLimitedError(decision.retryAfterSeconds);
     }
 
-    if (!(await this.hasher.verify(credential.passwordHash, input.currentPassword))) {
-      this.refuse('invalid_credentials', input, ipMasked);
+    // Both computations under the refund: a queue refusal on either is a request that never reached
+    // the hasher, and charging it an attempt of the same five-in-fifteen-minutes budget the sign-in
+    // uses would lock the account holder out of a form they filled in correctly
+    // (`hash-refusal-refund.util.ts`).
+    const committed = await refundingHashRefusals(
+      this.rateLimit,
+      'auth_attempt',
+      subject,
+      async () => {
+        if (!(await this.hasher.verify(credential.passwordHash, input.currentPassword))) {
+          this.refuse('invalid_credentials', input, ipMasked);
 
-      throw new UnauthenticatedError('invalid_credentials');
-    }
+          throw new UnauthenticatedError('invalid_credentials');
+        }
 
-    const passwordHash = await this.hasher.hash(input.newPassword);
-    const committed = await this.commit(input, passwordHash, ipMasked);
+        const passwordHash = await this.hasher.hash(input.newPassword);
+
+        return await this.commit(input, passwordHash, ipMasked);
+      },
+    );
 
     // Only a change that went through clears the counter. Clearing it earlier would let a wrong
     // current password reset its own limit, which is not a limit.

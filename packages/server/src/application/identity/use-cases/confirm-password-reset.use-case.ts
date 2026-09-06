@@ -21,6 +21,7 @@ import {
   RateLimitedError,
   ValidationError,
 } from '@/domain/shared/errors/app.errors.js';
+import { refundingHashRefusals } from '@/application/platform/rate-limit/hash-refusal-refund.util.js';
 
 export interface ConfirmPasswordResetInput {
   /** The value from the link, as the client lifted it out of the SPA route into the request body. */
@@ -138,10 +139,8 @@ export class ConfirmPasswordResetUseCase {
       ]);
     }
 
-    const decision = await this.rateLimit.consume('api_request', {
-      userId: undefined,
-      ipAddress: input.client.ipAddress,
-    });
+    const subject = { userId: undefined, ipAddress: input.client.ipAddress };
+    const decision = await this.rateLimit.consume('api_request', subject);
 
     if (!decision.allowed) throw new RateLimitedError(decision.retryAfterSeconds);
 
@@ -154,9 +153,15 @@ export class ConfirmPasswordResetUseCase {
     }
 
     const now = this.clock.now();
-    const done = await this.unitOfWork.withTenant(
-      { organizationId: record.organizationId, userId: record.userId },
-      () => this.spend(record, input, now, ipMasked),
+    // The refund covers the whole scope because the hash lives inside it: a queue refusal there
+    // rolls the transaction back, so the token is not spent either, and the caller is left having
+    // paid a point of the ambient budget for a reset that did not happen
+    // (`hash-refusal-refund.util.ts`).
+    const done = await refundingHashRefusals(this.rateLimit, 'api_request', subject, () =>
+      this.unitOfWork.withTenant(
+        { organizationId: record.organizationId, userId: record.userId },
+        () => this.spend(record, input, now, ipMasked),
+      ),
     );
 
     if (done === null) {

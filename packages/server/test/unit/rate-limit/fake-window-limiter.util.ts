@@ -89,6 +89,28 @@ export class FakeWindowLimiter implements WindowLimiter {
     });
   }
 
+  /**
+   * Gives points back inside the window that is open, and never past the start of it.
+   *
+   * The floor is what the real library also produces for the only call this codebase makes — one
+   * point, returned by a request that consumed one — and it keeps the double from expressing a
+   * budget larger than the policy grants, which is the state an assertion about "the sixth attempt
+   * is refused" could otherwise pass against.
+   */
+  async reward(key: string, points: number): Promise<LimiterReading> {
+    if (this.storeFailure !== undefined) throw this.storeFailure;
+
+    const consumed = Math.max((this.consumed.get(key) ?? 0) - points, 0);
+
+    this.consumed.set(key, consumed);
+
+    return Promise.resolve({
+      remainingPoints: this.points - consumed,
+      msBeforeNext: this.msBeforeNextFor(key),
+      consumedPoints: consumed,
+    });
+  }
+
   async delete(key: string): Promise<boolean> {
     if (this.storeFailure !== undefined) throw this.storeFailure;
 

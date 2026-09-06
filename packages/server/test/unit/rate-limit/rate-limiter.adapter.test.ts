@@ -248,3 +248,52 @@ describe('rate limiter — what reaches the log', () => {
     expect(lines.some((line) => line.level === 'warn')).toBe(true);
   });
 });
+
+/**
+ * Returning the one point a refused computation never used (`RateLimitPort.refund`).
+ *
+ * The paths that hash spend a point **before** the work, which is the whole KDF budget — and when
+ * the argon2 queue then refuses that work, the caller has paid for an attempt it never made. Five
+ * such refusals during a load spike used to be a fifteen-minute lock-out, escalating to an hour, for
+ * somebody who never mistyped a password.
+ */
+describe('rate limiter — putting a point back', () => {
+  it('gives the sixth attempt back to a subject whose fifth was refunded', async () => {
+    const { adapter, attempts } = harness();
+
+    await exhaust(adapter);
+    // CONTROL: the budget really is spent, so the admission below is the refund and not a fresh key.
+    await expect(adapter.consume('auth_attempt', SUBJECT)).resolves.toMatchObject({
+      allowed: false,
+    });
+
+    await adapter.refund('auth_attempt', SUBJECT);
+
+    expect(attempts.consumedFor(KEY)).toBe(AUTH.points);
+  });
+
+  it('leaves the penalty counter alone, so nothing escalates on a refusal it did not make', async () => {
+    const { adapter, penalties } = harness();
+    const before = penalties.consumedFor(KEY);
+
+    await adapter.consume('auth_attempt', SUBJECT);
+    await adapter.refund('auth_attempt', SUBJECT);
+
+    expect(penalties.consumedFor(KEY)).toBe(before);
+  });
+
+  it('stays silent about a store it could not reach, because the caller already has a 503', async () => {
+    const { adapter, attempts, lines } = harness();
+
+    await adapter.consume('auth_attempt', SUBJECT);
+    attempts.storeFailure = new Error('connection lost');
+
+    await expect(adapter.refund('auth_attempt', SUBJECT)).resolves.toBeUndefined();
+
+    const written = recordedValues(lines);
+
+    expect(lines.some((line) => line.level === 'warn')).toBe(true);
+    expect(written.toLowerCase()).not.toContain('ada.lovelace');
+    expect(written).not.toContain('203.0.113.42');
+  });
+});
