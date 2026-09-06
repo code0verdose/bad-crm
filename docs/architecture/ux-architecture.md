@@ -1172,6 +1172,7 @@ Error — inline `DataState` с retry, не тост. No-access: без `materia
     --bc-border:         var(--mantine-color-gray-3);
     --bc-text:           var(--mantine-color-gray-9);
     --bc-text-muted:     var(--mantine-color-gray-7);
+    --bc-link:           var(--mantine-color-brand-7);
     --bc-danger-surface: var(--mantine-color-red-0);
   }
 
@@ -1181,6 +1182,7 @@ Error — inline `DataState` с retry, не тост. No-access: без `materia
     --bc-border:         var(--mantine-color-dark-4);
     --bc-text:           var(--mantine-color-dark-0);
     --bc-text-muted:     var(--mantine-color-dark-1);
+    --bc-link:           var(--mantine-color-brand-3);
     --bc-danger-surface: var(--mantine-color-red-9);
   }
 }

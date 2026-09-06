@@ -13,9 +13,14 @@
  * the polymorphic wrapper widens the router type to `AnyRouter`, and with it goes the compile-time
  * check on `params`. A link to a route that does not exist would then be found by a reader clicking
  * it. One class is the cheaper half of that trade.
+ *
+ * The colour is `--bc-link` rather than `--mantine-color-anchor`: the anchor colour is `brand-6`,
+ * measured against white, and this link sits in a striped table where every other row is
+ * `--bc-surface-raised` — 4.39:1 there, below WCAG AA, found by the axe audit in
+ * `packages/e2e/tests/tenancy/cross-tenant-ui.spec.ts` on 2026-09-06.
  */
 .personLink {
-  color: var(--mantine-color-anchor);
+  color: var(--bc-link);
   text-decoration: none;
 }
 

@@ -37,6 +37,15 @@
        4.5:1 that secondary body text owes — so the token is one step darker and the document is
        the thing that has to change. */
     --bc-text-muted: var(--mantine-color-gray-7);
+    /* A link, and one step darker than `--mantine-color-anchor` on purpose.
+       Mantine builds the anchor colour from `primaryShade`, which is chosen so that white reads on
+       a filled button — `brand-6` measures 4.63:1 against white and is fine on `--bc-surface`. But
+       a link is not always on `--bc-surface`: a striped table paints every other row
+       `--bc-surface-raised`, and there the same colour is 4.39:1 — a WCAG AA failure, found by
+       `packages/e2e/tests/tenancy/cross-tenant-ui.spec.ts` on the person links of `/admin/members`
+       on 2026-09-06. `brand-7` clears the bar on both surfaces, which is what the two new cases in
+       `test/theme/tokens.test.ts` now hold it to. */
+    --bc-link: var(--mantine-color-brand-7);
     --bc-danger-surface: var(--mantine-color-danger-0);
     --bc-danger-text: var(--mantine-color-danger-9);
     --bc-warning-surface: var(--mantine-color-warning-0);
@@ -59,6 +68,10 @@
        as `roundRatio` in `test/theme/contrast.util.ts` does. `app/theme/app-theme.config.ts`
        already said 4.03 about the same pair.) */
     --bc-text-muted: var(--mantine-color-dark-1);
+    /* The mirror of the light half, and the shade moves the other way: on a dark surface the link
+       has to be lighter than the anchor colour, not darker, and it owes the same 4.5:1 on
+       `--bc-surface-raised` — the lighter of the two dark surfaces and therefore the harder one. */
+    --bc-link: var(--mantine-color-brand-3);
     --bc-danger-surface: var(--mantine-color-danger-9);
     --bc-danger-text: var(--mantine-color-danger-0);
     --bc-warning-surface: var(--mantine-color-warning-9);

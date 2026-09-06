@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -29,6 +32,7 @@ const REQUIRED_COLOUR_TOKENS = [
   '--bc-border-strong',
   '--bc-text',
   '--bc-text-muted',
+  '--bc-link',
   '--bc-danger-surface',
   '--bc-danger-text',
   '--bc-warning-surface',
@@ -68,6 +72,29 @@ const CONTRAST_CASES: readonly ContrastCase[] = [
     name: 'muted text on the page surface',
     foreground: '--bc-text-muted',
     background: '--bc-surface',
+    minimum: 4.5,
+  },
+  /*
+   * A link is measured on both surfaces, and the raised one is the case that was missing.
+   *
+   * `--bc-surface` alone is what `--mantine-color-anchor` is already tuned for, so a link token
+   * checked only there would have passed while the product shipped the defect: a striped table
+   * paints every other row `--bc-surface-raised`, and the person links of `/admin/members` sat on
+   * it at 4.39:1. Nothing in this repository could see it — jsdom applies no stylesheet, so the
+   * token block could not resolve the pair, and `axe` only meets the colour on a rendered page.
+   * It took an end-to-end audit of a screen that did not exist until EPIC-012
+   * (`packages/e2e/tests/tenancy/cross-tenant-ui.spec.ts`) to report it.
+   */
+  {
+    name: 'link text on the page surface',
+    foreground: '--bc-link',
+    background: '--bc-surface',
+    minimum: 4.5,
+  },
+  {
+    name: 'link text on a raised surface',
+    foreground: '--bc-link',
+    background: '--bc-surface-raised',
     minimum: 4.5,
   },
   /*
@@ -211,7 +238,24 @@ describe.each([
   const ratio = (foreground: string, background: string): number =>
     roundRatio(contrastRatio(foreground, background));
 
-  it('carries its own label on a light-variant surface', () => {
+  /**
+   * **This case does not measure what its name says, and the correction is not a one-line edit.**
+   *
+   * Mantine 9 paints `variant="light"` as `--mantine-color-<c>-light-color` on
+   * `--mantine-color-<c>-light`, and in the light scheme that resolves to **shade 6** on shade 1,
+   * not shade 9 on shade 1. Measured on a rendered page 2026-09-06: the `ErrorState` alert reports
+   * `#c84242` on `#ffe3e3` — `danger-6` on `danger-1` — at **4.02:1**, a WCAG AA failure, while
+   * this assertion sat green throughout.
+   *
+   * So the pair below is real (shade 9 on shade 1 is what a hand-written label on a tinted panel
+   * uses) but it is not the library's, and asserting it has been giving false confidence to every
+   * `variant="light"` surface in the product. Repairing that means moving shade 6 on five palettes
+   * while keeping white legible on it — a design-system change with its own review — so the wrong
+   * assumption is annotated here rather than quietly deleted, and the missing case is added by that
+   * work. `packages/e2e/tests/tenancy/cross-tenant-ui.spec.ts` carries the same note beside the one
+   * screen whose audit is switched off because of it.
+   */
+  it('carries a hand-written label on a light-variant surface', () => {
     expect(ratio(scale[9] as string, scale[1] as string)).toBeGreaterThanOrEqual(4.5);
   });
 
@@ -265,5 +309,49 @@ describe('motion and density', () => {
     const compact = /\[data-bc-density='compact'\]\s*\{([^}]*)\}/.exec(tokensCss())?.[1];
 
     expect(compact).toContain('--bc-row-height');
+  });
+});
+
+/**
+ * The consumers of `--bc-link`, because measuring the token proves nothing about who uses it.
+ *
+ * The token exists for one reason: `--mantine-color-anchor` is `brand-6`, tuned against white, and
+ * a striped table paints every other row `--bc-surface-raised`, where it measures 4.39:1. Both
+ * stylesheets below put a link on exactly that surface.
+ *
+ * Only one of them had a guard. `/admin/members` is audited by `axe` in the end-to-end run, so a
+ * regression there resurfaces; `/admin/teams` is visited by no scenario at all, and reverting its
+ * link to `var(--mantine-color-anchor)` would have passed stylelint (both spellings are legal
+ * tokens), passed the contrast block above (which measures the token, not its consumers) and passed
+ * every other test in this package. This is the assertion that closes that hole, and it is here
+ * rather than in a browser because the property is textual: a stylesheet either names the token or
+ * it does not.
+ */
+describe('the link token is what the striped tables actually use', () => {
+  const LINK_STYLESHEETS = [
+    'src/widgets/member-list/ui/member-list-ui.module.css',
+    'src/widgets/team-list/ui/team-list-ui.module.css',
+  ] as const;
+
+  it.each(LINK_STYLESHEETS)('%s colours its link with --bc-link', (path) => {
+    const css = readFileSync(resolve(import.meta.dirname, '../..', path), 'utf8');
+    const linkRule = /\.\w*[Ll]ink\s*\{([^}]*)\}/.exec(css)?.[1];
+
+    expect(linkRule, `${path}: no link class found`).toBeDefined();
+    expect(linkRule).toContain('var(--bc-link)');
+  });
+
+  /**
+   * CONTROL: the regular expression finds a rule and reads its body, rather than matching nothing
+   * and passing on a `toContain` that was never reached. Without it, renaming the class would turn
+   * both cases above into assertions about `undefined`.
+   */
+  it('CONTROL: rejects a link rule that names the anchor colour instead', () => {
+    const stale = /\.\w*[Ll]ink\s*\{([^}]*)\}/.exec(
+      '.personLink {\n  color: var(--mantine-color-anchor);\n}',
+    )?.[1];
+
+    expect(stale).toBeDefined();
+    expect(stale).not.toContain('var(--bc-link)');
   });
 });

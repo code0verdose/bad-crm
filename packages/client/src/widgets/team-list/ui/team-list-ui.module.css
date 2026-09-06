@@ -13,10 +13,17 @@
  * The team name is a link inside a table cell.
  *
  * Underlined on hover rather than always: a column of permanently underlined names is a column of
- * ruled lines. The colour is the anchor token, so it keeps the contrast the palette was checked for.
+ * ruled lines.
+ *
+ * The colour is `--bc-link` and **not** `--mantine-color-anchor`, which is what this said until
+ * 2026-09-06. The anchor colour is `brand-6`, measured against white; this link sits in a striped
+ * table, where every other row is `--bc-surface-raised` and the same colour drops to 4.39:1 — below
+ * WCAG AA. `--bc-link` clears the bar on both surfaces in both schemes, and
+ * `test/theme/tokens.test.ts` holds this file to it: nothing else visits `/admin/teams`, so without
+ * that assertion the token could be reverted here without a single test noticing.
  */
 .teamLink {
-  color: var(--mantine-color-anchor);
+  color: var(--bc-link);
   text-decoration: none;
 }
 
