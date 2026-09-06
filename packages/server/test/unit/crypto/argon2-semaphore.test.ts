@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { assert, describe, expect, it, vi } from 'vitest';
 
 import { type AppError } from '@/domain/shared/errors/app.errors.js';
 import { createHashSemaphore } from '@/infrastructure/crypto/argon2-semaphore.util.js';
@@ -144,6 +144,48 @@ describe('the bounded wait', () => {
       expect(error?.code).toBe('service_unavailable');
       expect(error?.status).toBe(503);
       expect(error?.retryAfterSeconds).toBe(2);
+
+      held.release();
+      await running;
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  /**
+   * The floor under `Retry-After`, exercised at the only budget that reaches it: zero.
+   *
+   * A sub-second budget does **not** reach it, which is worth writing down because it reads as if it
+   * should. `AUTH_ARGON2_QUEUE_TIMEOUT_MS` is a positive integer, and `Math.ceil(ms / 1000)` is
+   * already 1 for every integer from 1 to 1000 — so no value the env schema admits can produce a
+   * zero, and a case built at 500 ms asserts nothing about the floor at all. What the floor guards
+   * is this utility's own contract: `createHashSemaphore` validates `maxConcurrency` and takes
+   * `queueTimeoutMs` on trust, so a caller that is not the env schema — a future one, or a
+   * loosening of `.positive()` — can hand it a zero. Then `Retry-After: 0` reads as "retry now",
+   * which is exactly the tight loop the refusal exists to break: the queue is refilled by the same
+   * clients in the same millisecond.
+   */
+  it('never asks for less than a second back, even on a zero budget', async () => {
+    vi.useFakeTimers();
+
+    try {
+      const semaphore = createHashSemaphore({ maxConcurrency: 1, queueTimeoutMs: 0 });
+      const held = deferred();
+
+      const running = semaphore.run(async () => held.promise);
+      const settled = semaphore
+        .run(() => Promise.resolve())
+        .then(
+          () => undefined,
+          (error: unknown) => error as AppError,
+        );
+
+      await vi.advanceTimersByTimeAsync(0);
+
+      const error = await settled;
+
+      assert(error !== undefined, 'the queued computation must be refused');
+      expect(error.retryAfterSeconds).toBe(1);
 
       held.release();
       await running;

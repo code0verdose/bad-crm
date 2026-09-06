@@ -1,6 +1,7 @@
-import { describe, expect, it } from 'vitest';
+import { assert, describe, expect, it } from 'vitest';
 
 import { buildContainer } from '@/infrastructure/bootstrap/container.factory.js';
+import { type AppError } from '@/domain/shared/errors/app.errors.js';
 import { type DatabaseConnection } from '@/infrastructure/persistence/prisma/database.factory.js';
 import { createRootLogger } from '@/infrastructure/logging/pino-logger.adapter.js';
 
@@ -144,5 +145,89 @@ describe('wiring the authentication surface', () => {
     expect(() =>
       buildContainer({ env: testEnv({ ARGON2_MEMORY_COST: 1024 }), logger: logger() }),
     ).toThrow(/memoryCost/);
+  });
+});
+
+/**
+ * The concurrency ceiling as a property of the assembled process (STORY-013-06, acceptance 3 and 4).
+ *
+ * ## Why these two live here and not beside the semaphore
+ *
+ * `argon2-semaphore.test.ts` and `limited-password-hasher.adapter.test.ts` both build their subject
+ * themselves, so what they prove is that a `LimitedPasswordHasher` *someone constructed* holds a
+ * ceiling. Neither says anything about the hasher the process hands to its use-cases, and the
+ * difference is not academic: deleting the decorator from `container.factory.ts` outright — the
+ * whole `new LimitedPasswordHasher(...)` reduced to its first argument — left the entire server
+ * suite green. With it gone, sign-in's dummy verification no longer queues, and the
+ * indistinguishability of a known and an unknown address goes with it.
+ *
+ * ## Why through `container.passwordHasher`
+ *
+ * The behavioural door was tried first and is shut: every use-case that reaches the hasher —
+ * sign-in, registration, the reset, accepting an invitation — resolves an account before it hashes,
+ * and a container built without `DATABASE_AUTH_URL` refuses at that step (`detachedAuthLookup`).
+ * Driving one would mean standing up Postgres for a claim that has nothing to do with SQL. The
+ * alternative, exporting `buildIdentity` and calling it with ten hand-built collaborators, rebuilds
+ * the composition root in the test and so re-opens the same hole one level down. So the container
+ * publishes the instance instead, with the reasoning recorded at the field itself.
+ *
+ * Both assertions are wired to real argon2id at the real cost: the ceiling is only interesting
+ * because the computation is expensive, and a fake that returns immediately cannot hold a queue.
+ */
+describe('the argon2 ceiling the process actually hands out', () => {
+  it('refuses a second computation when the process is configured for one at a time', async () => {
+    const container = buildContainer({
+      // A one-millisecond budget rather than fake timers: the queue is entered from inside a real
+      // argon2id computation on the thread pool, and the wait has to expire while that computation
+      // is still running. Any real hash at the OWASP floor is tens of milliseconds.
+      env: testEnv({ AUTH_ARGON2_MAX_CONCURRENCY: 1, AUTH_ARGON2_QUEUE_TIMEOUT_MS: 1 }),
+      logger: logger(),
+    });
+
+    const running = container.passwordHasher.hash('the first computation in the queue');
+    const refused = await container.passwordHasher
+      .hash('the second one, which never gets a slot')
+      .then(
+        () => undefined,
+        (error: unknown) => error as AppError,
+      );
+
+    assert(refused !== undefined, 'the second computation must be refused, not admitted');
+    expect(refused.code).toBe('service_unavailable');
+    expect(refused.status).toBe(503);
+
+    // POSITIVE CONTROL: the ceiling refuses the queue, not the hashing. The first one still
+    // finished, and it finished through the same object.
+    await expect(running).resolves.toMatch(/^\$argon2id\$/);
+  });
+
+  /**
+   * The other half of the wiring, and the one line of the delta no test executed: the callback in
+   * `container.factory.ts` that carries the semaphore's count to `setArgon2InFlight`. The adapter
+   * was tested, the semaphore was tested, and the wire between them was not — so `argon2_inflight`
+   * could sit flat at zero in production with the suite fully green.
+   */
+  it('publishes the in-flight count of that hasher as argon2_inflight', async () => {
+    const container = buildContainer({
+      env: testEnv({ METRICS_ENABLED: true, METRICS_TOKEN: 'm'.repeat(32) }),
+      logger: logger(),
+    });
+
+    const metrics = container.http.metrics;
+
+    assert(metrics !== undefined, 'metrics were enabled, so the port must be mounted');
+
+    const before = await metrics.port.render();
+    const running = container.passwordHasher.hash('a computation to be counted');
+    // Sampled while the hash is on the thread pool: the gauge is set synchronously on admission.
+    const during = await metrics.port.render();
+
+    await running;
+
+    const after = await metrics.port.render();
+
+    expect(before).toContain('argon2_inflight 0');
+    expect(during).toContain('argon2_inflight 1');
+    expect(after).toContain('argon2_inflight 0');
   });
 });

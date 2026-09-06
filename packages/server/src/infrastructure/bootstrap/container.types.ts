@@ -1,4 +1,5 @@
 import { type LoggerPort } from '@/application/platform/ports/logger.port.js';
+import { type PasswordHasherPort } from '@/application/identity/ports/password-hasher.port.js';
 import { type ProcessLifecycleAdapter } from '@/infrastructure/platform/process-lifecycle.adapter.js';
 import { type HttpServerDependencies } from '@/presentation/http/http-server.types.js';
 import { type ServerEnv } from '@/infrastructure/bootstrap/env.schema.js';
@@ -42,5 +43,22 @@ export interface AppContainer {
   readonly shutdownSteps: readonly ShutdownStep[];
   /** Run before the port opens; a rejection is a refusal to start (`api-process.factory.ts`). */
   readonly startupChecks: readonly StartupCheck[];
+  /**
+   * The one hasher every argon2id computation of this process goes through, ceiling included.
+   *
+   * **This field is a seam, and it is published deliberately rather than quietly.** The ceiling of
+   * STORY-013-06 is a property of the *process*, not of any one endpoint, and until this line it had
+   * no observation point outside `buildIdentity`: the hasher was reachable only through a use-case,
+   * and every use-case that touches it needs a database first. A test that builds its own
+   * `LimitedPasswordHasher` proves the wiring of the test, which is the exact hole this closes —
+   * deleting the decorator from `container.factory.ts` left the whole server suite green.
+   *
+   * It is the **same instance** the use-cases received, not a second construction: reading it can
+   * neither create a hasher outside the ceiling nor tune one, which is what makes publishing it
+   * cheaper than the alternative of exporting the slice builder and rebuilding half the composition
+   * root in a test. Nothing in `src/` reads it; if something ever does, it must be for the process's
+   * own hashing and not to build a second path around the queue.
+   */
+  readonly passwordHasher: PasswordHasherPort;
   readonly http: HttpServerDependencies;
 }

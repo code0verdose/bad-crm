@@ -395,6 +395,8 @@ export const buildContainer = (input: ContainerInput): AppContainer => {
     lifecycle,
     shutdownSteps,
     startupChecks,
+    // The instance the use-cases got, not a copy — see `container.types.ts` for why it is published.
+    passwordHasher: identity.identityKit.hasher,
     http: {
       config: {
         appUrl: input.env.APP_URL,
