@@ -12,13 +12,13 @@
  * prove that the comparison ran. The differing locale and currency also make a formatting defect
  * visible in the fixture itself rather than in a screenshot months later.
  *
- * **Roles are absent, and the reason has changed — corrected 2026-08-30.** This said roles «arrive
- * with EPIC-011»; EPIC-011 shipped (`prisma/migrations/20260805100000_roles`,
- * `20260805120000_user_roles`, model `UserRole`), so the obstacle is no longer the schema. What is
- * still missing is the fixture: seeding an `admin@` and a `lead@` means assigning them roles and
- * keeping those assignments in step with `SYSTEM_ROLE_PERMISSIONS`, which is STORY-010-03's work
- * and not a line in this file. The original reasoning holds unchanged — a fixture that names
- * accounts as if they differed in rights, while they do not, is worse than a small one
+ * **Roles are absent here, and they are not coming — settled 2026-09-06 by STORY-010-03.** The
+ * accounts a role scenario signs in as now exist, and they are provisioned by the end-to-end run's
+ * `globalSetup` rather than by this file: an account can only be created by an invitation and its
+ * acceptance, which are HTTP operations, so a script writing to the database directly is the wrong
+ * place for them. See `packages/e2e/fixtures/role-account.ts`, which also records why there are two
+ * of them and not four. The original reasoning survives in that file unchanged — a fixture that
+ * names accounts as if they differed in rights, while they do not, is worse than a small one
  */
 
 /** The password every seeded account signs in with; refused outside development and test. */

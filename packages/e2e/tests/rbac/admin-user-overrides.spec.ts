@@ -1,13 +1,13 @@
-import { expect, request, test as apiTest, type APIRequestContext } from '@playwright/test';
-import { randomUUID } from 'node:crypto';
+import { expect, test as apiTest } from '@playwright/test';
 
+import { test } from '../../fixtures/account.fixture.js';
+import { SEED_ORGANIZATION_A, SEED_ORGANIZATION_B } from '../../fixtures/seed-data.js';
 import {
-  SEED_ORGANIZATION_A,
-  SEED_ORGANIZATION_B,
-  SEED_PASSWORD,
-} from '../../fixtures/seed-data.js';
-import { explainProvisioningRefusal, testAccountEmail } from '../../fixtures/test-account.js';
-import { test } from '../../fixtures/session.fixture.js';
+  apiSessionFor,
+  directoryRow,
+  ownerApiSession,
+  type ApiSession,
+} from '../../fixtures/test-account.js';
 import { audit } from '../support/audit.util.js';
 
 /**
@@ -22,37 +22,6 @@ import { audit } from '../support/audit.util.js';
  * has not been seen red» from `rules/testing.mdc`, and step 6 below is the one assertion this file
  * would be dishonest without.
  */
-
-const apiURL = (): string => process.env['E2E_API_URL'] ?? 'http://localhost:3000';
-const browserOrigin = (): string =>
-  new URL(process.env['E2E_BASE_URL'] ?? 'http://localhost:5173').origin;
-
-interface ApiSession {
-  readonly context: APIRequestContext;
-  /** `authorization` is replaceable: `reauthenticate` re-mints it once the rights behind it change. */
-  readonly headers: { authorization: string; readonly origin: string };
-  readonly userId: string;
-}
-
-/** Signs in over the API, the way `tenancy/cross-tenant-api.spec.ts` does — a bearer token, not a browser. */
-const signInApi = async (email: string, password: string): Promise<ApiSession> => {
-  const context = await request.newContext({
-    baseURL: apiURL(),
-    extraHTTPHeaders: { origin: browserOrigin() },
-  });
-
-  const response = await context.post('/api/v1/auth/login', { data: { email, password } });
-
-  expect(response.ok(), await response.text()).toBe(true);
-
-  const body = (await response.json()) as { accessToken: string; user: { id: string } };
-
-  return {
-    context,
-    headers: { authorization: `Bearer ${body.accessToken}`, origin: browserOrigin() },
-    userId: body.user.id,
-  };
-};
 
 /**
  * What `GET /teams` answers this person with the access token they are holding right now.
@@ -90,79 +59,11 @@ const reauthenticate = async (session: ApiSession): Promise<void> => {
   session.headers.authorization = `Bearer ${accessToken}`;
 };
 
-interface RoleEntry {
-  readonly id: string;
-  readonly key: string;
-}
-
-/** The organization's `developer` system role, by id — provisioned for every organization on bootstrap. */
-const developerRoleId = async (owner: ApiSession): Promise<string> => {
-  const response = await owner.context.get('/api/v1/roles', { headers: owner.headers });
-
-  expect(response.ok(), await response.text()).toBe(true);
-
-  const { items } = (await response.json()) as { items: readonly RoleEntry[] };
-  const developer = items.find((role) => role.key === 'developer');
-
-  if (developer === undefined) {
-    throw new Error('the organization has no `developer` system role — has provisioning run?');
-  }
-
-  return developer.id;
-};
-
 /**
- * Invites somebody with the `developer` role and accepts on their behalf — through the same two
- * endpoints the product's own onboarding uses, never a direct insert.
- *
- * The seed ships only the two organization owners
- * (`packages/server/scripts/seed-data.constant.ts`: «Roles are absent, and that is the state of the
- * product rather than an omission… seeding an admin@ or a lead@ now would create accounts identical
- * in rights to the owner and name them as if they were not»), so a scenario about a role-holding,
- * non-owner colleague has to make one itself.
+ * The address of the colleague this file invented, carried out of the scenario so that `afterAll`
+ * can hold the fixture to the second half of its promise — see the hook at the end of the describe.
  */
-const provisionDeveloperColleague = async (
-  owner: ApiSession,
-  roleId: string,
-): Promise<{ userId: string; email: string }> => {
-  const email = testAccountEmail('override-target');
-
-  const invited = await owner.context.post('/api/v1/invitations', {
-    headers: { ...owner.headers, 'Idempotency-Key': randomUUID() },
-    data: { email, roleId, locale: 'en' },
-  });
-
-  expect(invited.ok(), await explainProvisioningRefusal(invited, 'create')).toBe(true);
-
-  const { inviteUrl } = (await invited.json()) as { inviteUrl: string };
-  // The token is the last path segment of `/invite/$token`
-  // (`packages/server/src/domain/iam/invitation-mail.util.ts`), never a query parameter.
-  const token = new URL(inviteUrl).pathname.split('/').pop();
-
-  if (token === undefined || token === '') {
-    throw new Error(`could not read a token out of the invitation link ${inviteUrl}`);
-  }
-
-  const anonymous = await request.newContext({
-    baseURL: apiURL(),
-    extraHTTPHeaders: { origin: browserOrigin() },
-  });
-
-  try {
-    const accepted = await anonymous.post('/api/v1/invitations/accept', {
-      headers: { 'Idempotency-Key': randomUUID() },
-      data: { token, password: SEED_PASSWORD, locale: 'en' },
-    });
-
-    expect(accepted.ok(), await explainProvisioningRefusal(accepted, 'accept')).toBe(true);
-
-    const { user } = (await accepted.json()) as { user: { id: string } };
-
-    return { userId: user.id, email };
-  } finally {
-    await anonymous.dispose();
-  }
-};
+let provisionedEmail: string | undefined;
 
 test.describe('an owner writes and lifts a personal exception', () => {
   /**
@@ -173,8 +74,13 @@ test.describe('an owner writes and lifts a personal exception', () => {
    * or an exception does — so denying it and then calling the endpoint *as the colleague* is an
    * assertion about the running system, not about a row's label.
    *
-   * **Why the colleague is provisioned through the API rather than the seed.** See
-   * `provisionDeveloperColleague` above.
+   * **Why `temporaryColleague` and not the standing `developer` role account.** This scenario
+   * writes a personal exception on the person it is given and lifts it again, so running it against
+   * the shared account of `fixtures/role-account.ts` would leave every other developer-role scenario
+   * depending on whether this one reached its last line. The fixture invents somebody, and takes
+   * them back out of the directory afterwards — which the hook at the end of this describe holds it
+   * to, because a fixture that provisions and quietly never cleans up passes every test that uses
+   * it.
    *
    * **Why the browser session and the API session are two separate sign-ins for the owner.**
    * `ownerPage` (from `fixtures/session.fixture.ts`) carries the cookie a real administrator would
@@ -196,13 +102,15 @@ test.describe('an owner writes and lifts a personal exception', () => {
    */
   test('denying a role-granted permission takes it away for real, and lifting the exception gives it back', async ({
     ownerPage,
+    temporaryColleague,
   }) => {
     test.slow();
 
-    const owner = await signInApi(SEED_ORGANIZATION_A.owner.email, SEED_PASSWORD);
-    const roleId = await developerRoleId(owner);
-    const { userId, email } = await provisionDeveloperColleague(owner, roleId);
-    const colleague = await signInApi(email, SEED_PASSWORD);
+    const owner = await apiSessionFor(SEED_ORGANIZATION_A.owner.email);
+    const { userId, email } = temporaryColleague;
+    const colleague = await apiSessionFor(email);
+
+    provisionedEmail = email;
 
     try {
       // POSITIVE CONTROL, taken before anything is denied: the role really does grant this
@@ -302,6 +210,43 @@ test.describe('an owner writes and lifts a personal exception', () => {
       await Promise.all([owner.context.dispose(), colleague.context.dispose()]);
     }
   });
+
+  /**
+   * The other half of `temporaryColleague`, and the half that is easy to leave unwritten: the
+   * account is gone once the scenario is over. Playwright tears test-scoped fixtures down before
+   * `afterAll`, so this hook runs after the offboarding the fixture performs.
+   *
+   * «Gone» is what it can mean in a product that deliberately deletes nobody: out of the directory's
+   * working set — `GET /employees` defaults to `status=ACTIVE&status=INVITED` — with every session
+   * revoked in the same transaction (`fixtures/test-account.ts`).
+   */
+  test.afterAll(async () => {
+    expect(
+      provisionedEmail,
+      'the scenario above did not run, so there is nothing to prove was cleaned up',
+    ).toBeDefined();
+
+    const owner = await ownerApiSession(SEED_ORGANIZATION_A);
+
+    try {
+      const working = await directoryRow(owner, provisionedEmail ?? '', {
+        statuses: ['ACTIVE', 'INVITED'],
+      });
+
+      expect(working, 'the temporary colleague is still in the directory').toBeUndefined();
+
+      // CONTROL: the row did not vanish because the lookup is broken — the same query, widened by
+      // one status, still finds the account. Without it the assertion above would pass just as well
+      // for a fixture that provisioned nobody at all.
+      const suspended = await directoryRow(owner, provisionedEmail ?? '', {
+        statuses: ['SUSPENDED'],
+      });
+
+      expect(suspended?.status).toBe('SUSPENDED');
+    } finally {
+      await owner.context.dispose();
+    }
+  });
 });
 
 apiTest.describe('reading a person’s rights is scoped to the reader’s own organization', () => {
@@ -320,8 +265,8 @@ apiTest.describe('reading a person’s rights is scoped to the reader’s own or
     'an owner of another organization gets 404, not 403; their own owner gets 200',
     async () => {
       const [ownerA, ownerB] = await Promise.all([
-        signInApi(SEED_ORGANIZATION_A.owner.email, SEED_PASSWORD),
-        signInApi(SEED_ORGANIZATION_B.owner.email, SEED_PASSWORD),
+        apiSessionFor(SEED_ORGANIZATION_A.owner.email),
+        apiSessionFor(SEED_ORGANIZATION_B.owner.email),
       ]);
 
       try {

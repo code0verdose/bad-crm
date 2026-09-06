@@ -1,12 +1,11 @@
-import { randomUUID } from 'node:crypto';
+import { expect, test } from '@playwright/test';
 
-import { expect, request, test } from '@playwright/test';
-
-import { SEED_ORGANIZATION_A, SEED_PASSWORD } from '../../fixtures/seed-data.js';
+import { SEED_ORGANIZATION_A } from '../../fixtures/seed-data.js';
 import {
-  explainProvisioningRefusal,
   ownerApiSession,
+  provisionColleague,
   sweepTestAccounts,
+  systemRoleId,
   testAccountEmail,
   type ApiSession,
 } from '../../fixtures/test-account.js';
@@ -23,61 +22,21 @@ import {
  * at that moment signed in as.
  */
 
-const apiURL = (): string => process.env['E2E_API_URL'] ?? 'http://localhost:3000';
-const browserOrigin = (): string =>
-  new URL(process.env['E2E_BASE_URL'] ?? 'http://localhost:5173').origin;
-
-/** The `developer` system role, needed only because `POST /invitations` requires one. */
-const developerRoleId = async (owner: ApiSession): Promise<string> => {
-  const response = await owner.context.get('/api/v1/roles', { headers: owner.headers });
-
-  expect(response.ok(), await response.text()).toBe(true);
-
-  const { items } = (await response.json()) as { items: readonly { id: string; key: string }[] };
-  const developer = items.find((role) => role.key === 'developer');
-
-  if (developer === undefined) {
-    throw new Error('the organization has no `developer` system role — has provisioning run?');
-  }
-
-  return developer.id;
-};
-
-/** Invites somebody and accepts on their behalf — the two endpoints onboarding really uses. */
-const provisionMarkedColleague = async (owner: ApiSession, roleId: string): Promise<string> => {
-  const email = testAccountEmail('sweep');
-
-  const invited = await owner.context.post('/api/v1/invitations', {
-    headers: { ...owner.headers, 'Idempotency-Key': randomUUID() },
-    data: { email, roleId, locale: 'en' },
+/**
+ * Invites somebody and accepts on their behalf, through the two endpoints onboarding really uses.
+ *
+ * The same provisioning `temporaryColleague` performs, and deliberately not that fixture: this
+ * scenario is about the sweep, so the account has to still be there when the sweep runs — a fixture
+ * that offboards it on the way out would leave nothing to sweep and the test would pass on an empty
+ * directory.
+ */
+const provisionMarkedColleague = async (owner: ApiSession): Promise<string> => {
+  const { email } = await provisionColleague(owner, {
+    email: testAccountEmail('sweep'),
+    roleId: await systemRoleId(owner, 'developer'),
   });
 
-  expect(invited.ok(), await explainProvisioningRefusal(invited, 'create')).toBe(true);
-
-  const { inviteUrl } = (await invited.json()) as { inviteUrl: string };
-  const token = new URL(inviteUrl).pathname.split('/').pop();
-
-  if (token === undefined || token === '') {
-    throw new Error(`could not read a token out of the invitation link ${inviteUrl}`);
-  }
-
-  const anonymous = await request.newContext({
-    baseURL: apiURL(),
-    extraHTTPHeaders: { origin: browserOrigin() },
-  });
-
-  try {
-    const accepted = await anonymous.post('/api/v1/invitations/accept', {
-      headers: { 'Idempotency-Key': randomUUID() },
-      data: { token, password: SEED_PASSWORD, locale: 'en' },
-    });
-
-    expect(accepted.ok(), await explainProvisioningRefusal(accepted, 'accept')).toBe(true);
-
-    return email;
-  } finally {
-    await anonymous.dispose();
-  }
+  return email;
 };
 
 /** Who the directory lists under `q`, on its default `status=ACTIVE&status=INVITED`. */
@@ -99,7 +58,7 @@ test.describe('the sweep the run ends with', () => {
     const owner = await ownerApiSession(SEED_ORGANIZATION_A);
 
     try {
-      const email = await provisionMarkedColleague(owner, await developerRoleId(owner));
+      const email = await provisionMarkedColleague(owner);
 
       // Positive control, and not a formality: a sweep asserted only by absence would pass just as
       // well against an invitation that was never accepted, or a directory that lists nobody.

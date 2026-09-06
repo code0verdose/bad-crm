@@ -35,7 +35,9 @@ import { SEED_PASSWORD, type SeedOrganization } from './seed-data.js';
  *
  * The seeded owners are safe from this by two independent facts, neither of them a promise made
  * here: they carry no marker, and `last_owner_required` refuses the operation on the last owner of
- * an organization anyway.
+ * an organization anyway. The standing role accounts of `role-account.ts` are safe by the first of
+ * those alone, and deliberately so: a sweep that took them would make the next run spend the
+ * invitation budget putting them back.
  */
 
 /**
@@ -66,41 +68,65 @@ const apiURL = (): string => process.env['E2E_API_URL'] ?? 'http://localhost:300
 const browserOrigin = (): string =>
   new URL(process.env['E2E_BASE_URL'] ?? 'http://localhost:5173').origin;
 
+/**
+ * A type alias rather than an interface, and the difference matters here: only an alias gets the
+ * implicit index signature that lets it be passed where Playwright asks for `{ [key: string]: string }`.
+ * `authorization` is replaceable so that a caller whose rights changed can re-mint the token in place.
+ */
+export type ApiHeaders = { authorization: string; readonly origin: string };
+
 export interface ApiSession {
   readonly context: APIRequestContext;
-  readonly headers: Record<string, string>;
+  readonly headers: ApiHeaders;
+  /** Who this token belongs to — the subject of the calls a role control makes about itself. */
+  readonly userId: string;
 }
 
-/** Signs a seeded owner in over the API and hands back a context ready to carry the bearer token. */
-export const ownerApiSession = async (organization: SeedOrganization): Promise<ApiSession> => {
+/**
+ * Signs an account in over the API and hands back a context ready to carry the bearer token.
+ *
+ * A bearer token rather than the cookie jar `session.fixture.ts` mints, and the difference is not
+ * cosmetic: this is the credential a *caller* uses, and a scenario asking «what does the API answer
+ * this person» must not ask it through the browser context of somebody else's page.
+ */
+export const apiSessionFor = async (
+  email: string,
+  password: string = SEED_PASSWORD,
+): Promise<ApiSession> => {
   const context = await request.newContext({
     baseURL: apiURL(),
     extraHTTPHeaders: { origin: browserOrigin() },
   });
 
-  const response = await context.post('/api/v1/auth/login', {
-    data: { email: organization.owner.email, password: SEED_PASSWORD },
-  });
+  const response = await context.post('/api/v1/auth/login', { data: { email, password } });
 
   if (!response.ok()) {
     await context.dispose();
 
     throw new Error(
       [
-        `Could not sign in ${organization.owner.email}: HTTP ${String(response.status())}.`,
+        `Could not sign in ${email}: HTTP ${String(response.status())}.`,
         await response.text(),
         'Run `pnpm db:seed` against the stack this run points at.',
       ].join('\n'),
     );
   }
 
-  const { accessToken } = (await response.json()) as { accessToken: string };
+  const { accessToken, user } = (await response.json()) as {
+    accessToken: string;
+    user: { id: string };
+  };
 
   return {
     context,
     headers: { authorization: `Bearer ${accessToken}`, origin: browserOrigin() },
+    userId: user.id,
   };
 };
+
+/** The seeded owner of an organization — the account that provisions and sweeps everything below. */
+export const ownerApiSession = async (organization: SeedOrganization): Promise<ApiSession> =>
+  apiSessionFor(organization.owner.email);
 
 /**
  * Turns a 429 during provisioning into the sentence that explains it.
@@ -147,10 +173,149 @@ export const explainProvisioningRefusal = async (
   ].join('\n');
 };
 
-interface DirectoryRow {
+export type EmployeeStatus = 'ACTIVE' | 'SUSPENDED' | 'INVITED';
+
+export interface DirectoryRole {
+  readonly id: string;
+  readonly key: string;
+}
+
+export interface DirectoryRow {
+  readonly userId: string;
+  readonly email: string;
+  readonly status: EmployeeStatus;
+  readonly roles: readonly DirectoryRole[];
+}
+
+/**
+ * One person of the caller's organization, by address, or nothing.
+ *
+ * `q` is a substring match over name, e-mail, job title and department, so the answer is filtered
+ * again here on the exact address — a prefix of one fixture address is a prefix of the next one.
+ *
+ * Statuses are named rather than defaulted: the endpoint's own default hides suspended accounts,
+ * which is right for a directory screen and wrong for a fixture asking «does this account already
+ * exist», where a hidden account is the difference between reactivating one and inviting a second.
+ */
+export const directoryRow = async (
+  reader: ApiSession,
+  email: string,
+  options: { readonly statuses?: readonly EmployeeStatus[] } = {},
+): Promise<DirectoryRow | undefined> => {
+  const query = new URLSearchParams({ q: email, perPage: '100' });
+
+  for (const status of options.statuses ?? (['ACTIVE', 'SUSPENDED', 'INVITED'] as const)) {
+    query.append('status', status);
+  }
+
+  const response = await reader.context.get(`/api/v1/employees?${query.toString()}`, {
+    headers: reader.headers,
+  });
+
+  if (!response.ok()) {
+    throw new Error(
+      `Could not read the directory: HTTP ${String(response.status())}.\n${await response.text()}`,
+    );
+  }
+
+  const { items } = (await response.json()) as { items: readonly DirectoryRow[] };
+
+  return items.find((row) => row.email === email);
+};
+
+/** The organization's system role of this key, by id — provisioned for every organization. */
+export const systemRoleId = async (reader: ApiSession, key: string): Promise<string> => {
+  const response = await reader.context.get('/api/v1/roles', { headers: reader.headers });
+
+  if (!response.ok()) {
+    throw new Error(
+      `Could not list roles: HTTP ${String(response.status())}.\n${await response.text()}`,
+    );
+  }
+
+  const { items } = (await response.json()) as { items: readonly DirectoryRole[] };
+  const role = items.find((candidate) => candidate.key === key);
+
+  if (role === undefined) {
+    throw new Error(`the organization has no \`${key}\` role — has provisioning run?`);
+  }
+
+  return role.id;
+};
+
+export interface ProvisionedAccount {
   readonly userId: string;
   readonly email: string;
 }
+
+/**
+ * Invites somebody with a role and accepts on their behalf — the product's own two endpoints, never
+ * a direct insert.
+ *
+ * There is no «create user» in the contract, and there should not be: an account exists because
+ * somebody accepted an invitation, and a harness that reached past that would be testing a path the
+ * product does not have. The cost is two rate-limited operations per account, which is the whole
+ * reason the role accounts of `role-account.ts` are provisioned once and kept rather than made
+ * fresh each run — see `explainProvisioningRefusal` above for the arithmetic.
+ */
+export const provisionColleague = async (
+  owner: ApiSession,
+  options: { readonly email: string; readonly roleId: string },
+): Promise<ProvisionedAccount> => {
+  const invited = await owner.context.post('/api/v1/invitations', {
+    headers: { ...owner.headers, 'Idempotency-Key': randomUUID() },
+    data: { email: options.email, roleId: options.roleId, locale: 'en' },
+  });
+
+  if (!invited.ok()) {
+    throw new Error(
+      `Could not invite ${options.email}: HTTP ${String(invited.status())}.\n${await explainProvisioningRefusal(invited, 'create')}`,
+    );
+  }
+
+  const { inviteUrl } = (await invited.json()) as { inviteUrl: string };
+  // The token is the last path segment of `/invite/$token`
+  // (`packages/server/src/domain/iam/invitation-mail.util.ts`), never a query parameter.
+  const token = new URL(inviteUrl).pathname.split('/').pop();
+
+  if (token === undefined || token === '') {
+    throw new Error(`could not read a token out of the invitation link ${inviteUrl}`);
+  }
+
+  const anonymous = await request.newContext({
+    baseURL: apiURL(),
+    extraHTTPHeaders: { origin: browserOrigin() },
+  });
+
+  try {
+    const accepted = await anonymous.post('/api/v1/invitations/accept', {
+      headers: { 'Idempotency-Key': randomUUID() },
+      data: { token, password: SEED_PASSWORD, locale: 'en' },
+    });
+
+    if (!accepted.ok()) {
+      throw new Error(
+        `Could not accept the invitation for ${options.email}: HTTP ${String(accepted.status())}.\n${await explainProvisioningRefusal(accepted, 'accept')}`,
+      );
+    }
+
+    const { user } = (await accepted.json()) as { user: { id: string } };
+
+    return { userId: user.id, email: options.email };
+  } finally {
+    await anonymous.dispose();
+  }
+};
+
+/** Offboards one account — the only removal the contract offers. Answers whether it was accepted. */
+export const offboardAccount = async (owner: ApiSession, userId: string): Promise<boolean> => {
+  const response = await owner.context.post(`/api/v1/users/${userId}/deactivate`, {
+    headers: { ...owner.headers, 'Idempotency-Key': randomUUID() },
+    data: { reason: 'end-to-end run finished' },
+  });
+
+  return response.ok();
+};
 
 /**
  * Offboards the accounts this harness created, and answers with how many.
@@ -189,12 +354,7 @@ export const sweepTestAccounts = async (
   let refused = 0;
 
   for (const row of marked) {
-    const response = await owner.context.post(`/api/v1/users/${row.userId}/deactivate`, {
-      headers: { ...owner.headers, 'Idempotency-Key': randomUUID() },
-      data: { reason: 'end-to-end run finished' },
-    });
-
-    if (response.ok()) swept += 1;
+    if (await offboardAccount(owner, row.userId)) swept += 1;
     else refused += 1;
   }
 

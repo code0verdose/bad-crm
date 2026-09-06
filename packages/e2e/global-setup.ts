@@ -1,3 +1,6 @@
+import { SEED_ORGANIZATION_A } from './fixtures/seed-data.js';
+import { ensureRoleAccounts } from './fixtures/role-account.js';
+import { ownerApiSession } from './fixtures/test-account.js';
 import { apiURL } from './playwright.config.js';
 
 /**
@@ -31,7 +34,7 @@ const probe = async (url: string): Promise<{ ok: boolean; detail: string }> => {
   }
 };
 
-const globalSetup = async (): Promise<void> => {
+const waitForReady = async (): Promise<void> => {
   const url = `${apiURL}/ready`;
   const deadline = Date.now() + READY_TIMEOUT_MS;
   let last = 'not probed';
@@ -52,6 +55,34 @@ const globalSetup = async (): Promise<void> => {
       'Start it with `pnpm docker:up` and `pnpm dev`, or point E2E_API_URL at a running instance.',
     ].join('\n'),
   );
+};
+
+/**
+ * Gives the installation the non-owner accounts the role fixtures sign in as.
+ *
+ * Here rather than in a fixture, for the reason `role-account.ts` sets out: creating an account
+ * costs an `invitation_accept`, ten of which are allowed per fifteen minutes from one address, so
+ * the operation has to happen **once for the whole run** — and once for the whole database, which
+ * the deterministic addresses make possible. On every run after the first this is two directory
+ * lookups.
+ *
+ * Only organization A. Organization B exists so that isolation scenarios have a second tenant to be
+ * refused by, and those compare owner against owner; four more accounts there would be provisioning
+ * with no assertion behind it.
+ */
+const provisionRoleAccounts = async (): Promise<void> => {
+  const owner = await ownerApiSession(SEED_ORGANIZATION_A);
+
+  try {
+    await ensureRoleAccounts(owner, SEED_ORGANIZATION_A);
+  } finally {
+    await owner.context.dispose();
+  }
+};
+
+const globalSetup = async (): Promise<void> => {
+  await waitForReady();
+  await provisionRoleAccounts();
 };
 
 export default globalSetup;
