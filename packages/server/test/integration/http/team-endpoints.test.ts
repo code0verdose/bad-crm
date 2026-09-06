@@ -14,9 +14,11 @@ import { createAuthApp, type AuthApp, type AuthAppOptions } from '../../support/
  * the permission version of the people concerned is bumped in the same transaction, so a folded view
  * minted before the change stops being trusted.
  *
- * Acceptance 3, 4 and 6 are not covered and cannot be: they describe a team as the subject of a
- * `ResourceAcl`, and neither the table nor `resolveAcl` exists (STORY-011-06, blocked). See the story
- * file, «Расхождение с этой спекой».
+ * Acceptance 3, 4 and 6 are not covered here: they describe a team as the subject of a
+ * `ResourceAcl`, and that half lives in `test/integration/db/resource-acl-reader.test.ts` since
+ * 2026-09-06 (the reader matches a TEAM grant for a member and not for an outsider). The HTTP half
+ * — a grant through `POST /acl` — waits for the route (STORY-011-06, next step). See the story file,
+ * «Расхождение с этой спекой».
  */
 
 const PASSWORD = 'correct-horse-battery';

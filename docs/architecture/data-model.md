@@ -815,17 +815,19 @@ salt (`saltB`), а сервер хранит `argon2id(authVerifier, serverSalt)
 | `RolePermission` | [T] | `roleId`, `permissionKey` → `Permission.key` | только **ALLOW**, DENY не существует |
 | `UserRole` | [T] | `userId`, `roleId`, `grantedById`, `grantedAt`, `expiresAt?` | join |
 | `UserPermissionOverride` | [T] | `userId`, `permissionKey`, `effect ALLOW\|DENY`, `reason` (обязателен, `ck_user_permission_overrides_reason`: `length(btrim(reason)) >= 10`), `grantedById`, `grantedAt`, `expiresAt?` | точечное исключение |
-| `ResourceAcl` — **таблицы ещё нет** | [T] | `resourceType ORGANIZATION\|PROJECT\|BOARD\|TASK\|DOC_PAGE\|KB_SPACE\|KB_NOTE\|FILE\|FILE_FOLDER\|CHANNEL\|VAULT\|DASHBOARD`, `resourceId`, `subjectType USER\|ROLE\|TEAM`, `subjectId`, `accessLevel`, `grantedById`, `expiresAt?` | полиморфная |
+| `ResourceAcl` | [T] | `resourceType ORGANIZATION\|PROJECT\|BOARD\|TASK\|DOC_PAGE\|KB_SPACE\|KB_NOTE\|FILE\|FILE_FOLDER\|CHANNEL\|VAULT\|DASHBOARD`, `resourceId`, `subjectType USER\|ROLE\|TEAM`, `subjectId`, `accessLevel`, `grantedById`, `expiresAt?` | полиморфная |
 
-**`ResourceAcl` пока не существует — это единственная строка таблицы в будущем времени.** Остальные
-пять отгружены (EPIC-011, миграции `20260805090000_permission_catalog` …
-`20260805130000_user_permission_overrides`); ACL на
-ресурс — [STORY-011-06](../../epics/epic-011-rbac-permissions/stories/story-011-06-resource-acl.md),
-помеченная `blocked: true`: доступ *к ресурсу* нужен домену с наследованием, а первым таким доменом
-станет проект (EPIC-014). Пока миграции нет, всё, что ниже сказано про `ResourceAcl` — её поля,
-уникальность по четвёрке, три индекса, слой 3 модели разрешения и `resolveAcl` на узлах цепочки —
-это **проект**, а не описание схемы. По той же причине отложены три критерия STORY-012-07 (команда
-как субъект гранта), и заглушек они не получили.
+**`ResourceAcl` отгружена 2026-09-06** — миграция `20260906135729_resource_acl`, таблица
+`resource_acl`, три PostgreSQL-enum'а (`acl_resource_type`, `acl_subject_type`, `access_level`),
+модель `ResourceAcl` в `schema.prisma`; до этого дня строка стояла в будущем времени и была
+единственной такой в таблице ([STORY-011-06](../../epics/epic-011-rbac-permissions/stories/story-011-06-resource-acl.md),
+разблокирована kickoff'ом EPIC-014). Резолвер —
+`application/access/use-cases/resolve-acl.query.ts`, правило разрешения —
+`domain/access/acl-resolution.policy.ts`, неявные уровни — `domain/access/implicit-level.policy.ts`,
+единственный запрос ридера — `infrastructure/persistence/prisma/acl-reader.adapter.ts`. Команда как
+субъект гранта (`subjectType = TEAM`) работает через подзапрос к `team_members` в том же запросе;
+критерии 3, 4 и 6 STORY-012-07 упираются теперь только в маршрут. **Маршрутов `acl:*` пока нет** —
+это следующий шаг EPIC-014 вместе с первым `project:*`-маршрутом.
 
 **Почему `Permission` — [G] и без tenancy.** Каталог прав определяется **кодом**, а не данными:
 право `vault_item:decrypt` существует потому, что в приложении есть соответствующий use-case. Тенант
@@ -881,10 +883,14 @@ salt (`saltB`), а сервер хранит `argon2id(authVerifier, serverSalt)
   `20260806100000_index_user_roles_org_role` — с замером).
 - `uq_user_permission_overrides (user_id, permission_key)`,
   `idx_upo_expires (expires_at) WHERE expires_at IS NOT NULL` — джоб-чистильщик.
-- `uq_resource_acl (resource_type, resource_id, subject_type, subject_id)` — **уникальность по
-  четвёрке** (требование модели: один субъект не может иметь два разных уровня на один объект).
-- `idx_resource_acl_resource (organization_id, resource_type, resource_id)` — **прямой** запрос
-  «кто имеет доступ к этому объекту»: его выполняет `resolveAcl` на каждом узле цепочки наследования
+- `uq_resource_acl (organization_id, resource_id, resource_type, subject_id, subject_type)` — **один
+  индекс на две работы**, отгружен 2026-09-06 в этой форме вместо пары «уникальность по четвёрке +
+  `idx_resource_acl_resource`» из ревизии 2026-07-26. (а) **Уникальность**: один субъект не может
+  иметь два разных уровня на один объект — внутри организации ключ по-прежнему четвёрка;
+  `organization_id` в ключе потому, что ни `resource_id`, ни `subject_id` не FK, и без него
+  совпавшая пара uuid в чужой организации отвергала бы вставку по строке, которую арендатор не
+  видит, — 409 из ниоткуда и слабый оракул чужих данных. (б) **Прямой запрос** «кто имеет доступ
+  к этому объекту»: его выполняет `resolveAcl` **одним** запросом по всей цепочке наследования
   (`Task → Board → Project → Organization` и аналоги, см.
   [`../security/permission-model.md`](../security/permission-model.md) → «Наследование ACL»), то есть
   это самый горячий путь всей модели прав. Уникальный индекс по четвёрке его не покрывает: он

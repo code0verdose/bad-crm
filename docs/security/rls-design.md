@@ -1048,6 +1048,21 @@ GRANT EXECUTE ON FUNCTION app_current_org() TO app_user;
 и в той же транзакции, у нас нет, а `guardedClient` этого не увидит. В проекте разрешена **только**
 интерактивная форма через `withTenant`.
 
+**6. Enum-колонка под RLS не бывает условием индекса.** Замерено 2026-09-06 на PostgreSQL 16.14
+при проектировании `resource_acl`: `SELECT proleakproof FROM pg_proc WHERE proname = 'enum_eq'`
+печатает `f`. Планировщик не вычисляет не-leakproof оператор раньше политики строки — иначе
+через ошибку или тайминг оператора можно было бы узнать значение чужой строки, — поэтому для
+`app_user` равенство по enum-колонке всегда остаётся `Filter` после выборки и **никогда** не
+попадает в `Index Cond`. Владелец таблицы, которого политика не касается, тем же запросом получает
+index scan — так что на dev-подключении под суперпользователем ловушка невидима. Индекс
+`(organization_id, resource_type, resource_id)` на 20 000 строк давал приложению seq scan
+(347 буферов, 2,2 мс), с uuid впереди `(organization_id, resource_id, resource_type, …)` — index scan
+в 11 буферов и 0,17 мс. Правило: в составном индексе `[T]`-таблицы enum-колонка стоит **после**
+uuid-колонок, а если запрос должен отбирать по enum первым — колонка объявляется `TEXT` с `CHECK`
+(`texteq` leakproof), как `team_role` и `project_role`. Проверять план — как `app_user` внутри
+`withTenant`, не владельцем. `uuid_eq`, `texteq`, `timestamptz_gt` — leakproof; полный список:
+`SELECT proname FROM pg_proc WHERE NOT proleakproof AND proname LIKE '%\_eq'`.
+
 ---
 
 ## Автоматизация: как невозможно забыть

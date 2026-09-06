@@ -8,6 +8,7 @@ import {
   type TeamSummary,
 } from '@/application/iam/ports/team-repository.port.js';
 import { type TeamScope, type TeamSubject } from '@/domain/iam/access/team-access.policy.js';
+import { bumpPermissionsVersionOf } from '@/infrastructure/persistence/prisma/permissions-version.util.js';
 import { TenantScopedRepository } from '@/infrastructure/persistence/prisma/tenant-scoped.repository.js';
 
 /**
@@ -303,14 +304,8 @@ export class PrismaTeamRepository extends TenantScopedRepository implements Team
   }
 
   bumpPermissionsVersionOf(userIds: readonly string[]): Promise<void> {
-    return this.run('bumpPermissionsVersionOf', async (tx) => {
-      if (userIds.length === 0) return;
-
-      await tx.$executeRaw`
-        UPDATE users
-           SET permissions_version = permissions_version + 1
-         WHERE organization_id = ${this.organizationId('bumpPermissionsVersionOf')}::uuid
-           AND id = ANY(${[...userIds]}::uuid[])`;
-    });
+    return this.run('bumpPermissionsVersionOf', (tx) =>
+      bumpPermissionsVersionOf(tx, this.organizationId('bumpPermissionsVersionOf'), userIds),
+    );
   }
 }

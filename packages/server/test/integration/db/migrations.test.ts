@@ -191,6 +191,29 @@ describe('prisma migrate deploy', () => {
         'ROTATED',
       ],
     ],
+    // The three enums of the ACL row (STORY-011-06). The resource list is the polymorphic-access
+    // table of `data-model.md` verbatim, and `ACL_RESOURCE_TYPES` in packages/shared is held to
+    // the same twelve by its own test — so a label added in one place and not the other fails
+    // somewhere.
+    [
+      'acl_resource_type',
+      [
+        'BOARD',
+        'CHANNEL',
+        'DASHBOARD',
+        'DOC_PAGE',
+        'FILE',
+        'FILE_FOLDER',
+        'KB_NOTE',
+        'KB_SPACE',
+        'ORGANIZATION',
+        'PROJECT',
+        'TASK',
+        'VAULT',
+      ],
+    ],
+    ['acl_subject_type', ['ROLE', 'TEAM', 'USER']],
+    ['access_level', ['COMMENTER', 'EDITOR', 'MANAGER', 'NONE', 'VIEWER']],
   ])('created the enum %s with exactly the labels the model declares', async (name, labels) => {
     const { rows } = await pools.owner.query<{ label: string }>(
       `SELECT e.enumlabel AS label

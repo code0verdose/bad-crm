@@ -331,12 +331,14 @@ model ResourceAcl {
   subjectType    AclSubjectType  // USER | ROLE | TEAM
   subjectId      String
   accessLevel    AccessLevel     // NONE | VIEWER | COMMENTER | EDITOR | MANAGER
-  grantedById    String
+  grantedById    String?         // `ON DELETE SET NULL`: грант переживает выдавшего, «кто дал» — в журнале
   grantedAt      DateTime        @default(now())
   expiresAt      DateTime?
-  @@unique([resourceType, resourceId, subjectType, subjectId], map: "uq_resource_acl")
-  @@index([organizationId, subjectType, subjectId, resourceType], map: "idx_resource_acl_subject")
-  @@index([organizationId, resourceType, resourceId], map: "idx_resource_acl_resource")
+  // uuid раньше enum — `enum_eq` не leakproof, под RLS enum не бывает условием индекса
+  // (`data-model.md`, индексы `ResourceAcl`; `rls-design.md`, ловушка 6); уникальный индекс
+  // обслуживает и резолвер, отдельного индекса ресурса нет
+  @@unique([organizationId, resourceId, resourceType, subjectId, subjectType], map: "uq_resource_acl")
+  @@index([organizationId, subjectId, subjectType, resourceType], map: "idx_resource_acl_subject")
 }
 
 enum AclResourceType {
@@ -1628,8 +1630,19 @@ ORDER BY c.depth
 LIMIT 1;                      -- ближайший узел с записями
 ```
 
-Индекс `idx_resource_acl_resource (organization_id, resource_type, resource_id)` покрывает join;
-`LIMIT 1` после `ORDER BY depth` реализует правило «ближайший побеждает» на стороне БД.
+Индекс `uq_resource_acl (organization_id, resource_id, resource_type, subject_id, subject_type)`
+покрывает join — uuid впереди enum'а, потому что под RLS равенство по enum не бывает условием
+индекса ([`../architecture/data-model.md`](../architecture/data-model.md), индексы `ResourceAcl`);
+он же держит уникальность, отдельного индекса ресурса нет.
+
+**Как это сделано в коде (2026-09-06) — с одним отличием от эскиза выше.** Запрос
+`acl-reader.adapter.ts` — тот же `WITH chain(...) VALUES ... JOIN resource_acl`, один round-trip на
+любую глубину, субъекты (`USER`, роли через `user_roles`, команды через `team_members`) сопоставляются
+внутри того же оператора. Но `GROUP BY … LIMIT 1` в нём **нет**: запрос отдаёт все живые строки на
+цепочке с глубиной узла (`ORDER BY depth`), а правила «ближайший», «`NONE` бьёт всё», «максимум» и
+«просроченные не в счёт» применяет чистая функция `domain/access/acl-resolution.policy.ts` — так
+правило живёт в одном месте, с табличным тестом на 100 %, а не половиной в SQL и половиной в коде.
+Цена — несколько лишних строк в ответе, на цепочке из четырёх узлов это единицы.
 
 **Списки — отдельная задача.** Проверять `can()` построчно для 200 задач нельзя (200 резолвов ACL).
 Для списков `*.query.ts` строит **множество доступных родителей один раз**
@@ -1649,7 +1662,8 @@ LIMIT 1;                      -- ближайший узел с записями
 
 Колонка «сегодня» — путь в текущем коде; где стоит «—», файла ещё нет и строка описывает целевую
 форму (примеры ниже с доменом `task` — иллюстрации: домена `task` в продукте нет, первым доменом с
-ACL станет проект, EPIC-014).
+ACL стал проект — EPIC-014, kickoff 2026-09-06: `ProjectAccessReaderPort`, его адаптер и
+`resolve-acl.query.ts` отгружены, маршрутов `acl:*` ещё нет).
 
 | Слой | Роль | Сегодня | Чего здесь нет |
 |---|---|---|---|
@@ -1662,7 +1676,7 @@ ACL станет проект, EPIC-014).
 | `infrastructure` | Redis-кеш прав | — (`PermissionCachePort` не заведён) | — |
 | `presentation` | fail-fast по capability | `presentation/http/middleware/require-permission.middleware.ts` | ACL (не знает `resourceId`) |
 | `client` | видимость элементов | `units/iam/service/hooks/use-can.hook.ts`, `units/iam/ui/can.component.tsx` | безопасность |
-| `domain` | ACL-политика и access-reader'ы | — (STORY-011-06, blocked до EPIC-014) | — |
+| `domain` / `application` / `infrastructure` | ACL: правило разрешения, неявные уровни, policy выдачи; порт ридера и резолвер; один SQL | `domain/access/{acl-resolution,implicit-level,acl-management}.policy.ts`, `application/access/ports/{acl-reader,acl-repository,project-access-reader}.port.ts`, `application/access/use-cases/resolve-acl.query.ts`, `persistence/prisma/acl-reader.adapter.ts` | маршруты `acl:*` (следующий шаг EPIC-014); access-reader'ы доменов кроме проекта |
 
 ### (а) Domain — чистые policy-функции
 
@@ -2018,7 +2032,7 @@ GET /api/v1/users/{userId}/permissions        → permission:override_read
 | `Actor` (capability) | Redis | `perm:{userId}:{permissionsVersion}` | 60 c | сменой версии (ключ становится недостижимым) | — нет; отказ по замеру 2026-09-06 (врезка выше), а не «ещё не дошли руки» |
 | `Actor` | память процесса | — | время запроса | конец запроса | ✅ на запрос приходится ровно одна сборка: гвард кладёт `Actor` в `res.locals`, контроллер читает `readActor()`, а маршрут без capability (`selfService`) собирает его один раз сам — `AsyncLocalStorage` здесь не используется |
 | `permissionsVersion` | чтение из БД на каждый запрос | — | — | — | ✅ читается в составе фактов на каждый гвард |
-| Уровень ACL ресурса | **не кешируется** между запросами | — | — | мемоизация в пределах одного запроса | неприменимо: ACL нет (STORY-011-06) |
+| Уровень ACL ресурса | **не кешируется** между запросами | — | — | мемоизация в пределах одного запроса | ✅ резолв на запрос (`resolve-acl.query.ts`), кеша нет; мемоизации в пределах запроса тоже нет — пока один ресурс на запрос |
 | Каталог permissions | статический импорт | — | вечно | релиз | ✅ |
 
 **`permissionsVersion` читается всегда** — по первичному ключу, единицы микросекунд и index-only
@@ -2042,7 +2056,7 @@ scan. Именно поэтому TTL не выполняет роль инва�
 | `Role` удалена | всем бывшим носителям | ✅ |
 | `UserPermissionOverride` создан / изменён / удалён | этому пользователю | ✅ |
 | `UserPermissionOverride` истёк | этому пользователю | — (та же причина) |
-| `ResourceAcl` создан / изменён / удалён | субъекту (`USER`), всем носителям роли (`ROLE`), всем членам команды (`TEAM`) | — (STORY-011-06, blocked) |
+| `ResourceAcl` создан / изменён / удалён | субъекту (`USER`), всем носителям роли (`ROLE`), всем членам команды (`TEAM`) | ✅ `grant-acl.use-case.ts`, `revoke-acl.use-case.ts` — `AclRepositoryPort.subjectUserIds` + один `UPDATE` (маршрута ещё нет) |
 | `TeamMember` добавлен / удалён | этому пользователю | ✅ |
 | `ProjectMember` добавлен / удалён / `leftAt` | этому пользователю | — (проектов нет, EPIC-014) |
 | `User.status → SUSPENDED`, `deletedAt` | этому пользователю (плюс отзыв сессий) | ✅ |
@@ -2358,7 +2372,7 @@ type RouteDeclaration = GuardedRoute | PublicRoute | SelfServiceRoute;
 | `role.assigned`, `role.revoked` | `USER_ROLE` | `{ userId, roleKey, expiresAt }` | `warning` | ✅ |
 | `permission.override.created`, `.updated`, `.deleted` | `USER_PERMISSION_OVERRIDE` | `{ userId, permissionKey, effect, reason, expiresAt }` | `warning` | ✅ |
 | `permission.override.expired` | `USER_PERMISSION_OVERRIDE` | `after: null`, `actorType = SYSTEM` | `info` | — (нужен джоб истечения, которого нет — §3, слой 3) |
-| `acl.granted`, `acl.updated`, `acl.revoked` | `RESOURCE_ACL` | `{ resourceType, resourceId, subjectType, subjectId, accessLevel, expiresAt }` | `warning` | — (STORY-011-06, blocked) |
+| `acl.granted`, `acl.revoked` | `RESOURCE_ACL` | `{ resourceType, resourceId, subjectType, subjectId, accessLevel, expiresAt }`; замена гранта — тот же `acl.granted` с `before` | `warning` | ✅ (`acl.updated` не заводилось: замена уровня это тот же грант с записанным `before`, как у `permission.override.updated` наоборот — одно действие, а не два) |
 | `organization.ownership_transferred` | `ORGANIZATION` | `before: { ownerId }` / `after: { ownerId, previousOwnerRoleKey }` | `critical` | ✅ |
 | `rls.bypassed` | `ORGANIZATION` | намеренный обход изоляции арендатора | `critical` | ✅ |
 | `user.impersonation_started`, `.ended` | `USER` | `{ targetUserId, requestId }` | `critical` | — (`user:impersonate` не реализован) |
@@ -2533,8 +2547,8 @@ type RouteDeclaration = GuardedRoute | PublicRoute | SelfServiceRoute;
 персональные исключения с причинами — являются.
 
 **Экран объяснения** (`permission:explain`) — прямое требование риска R-15, и его **ещё нет**: он
-отвечает на «почему человек дотягивается до **этого объекта**», а объектного слоя в продукте нет
-(STORY-011-06, blocked до EPIC-014). Целевая форма: по паре (пользователь, право) показывать цепочку
+отвечает на «почему человек дотягивается до **этого объекта**», а объектный слой в продукте появился
+только 2026-09-06 (STORY-011-06) и на маршрут ещё не выведен. Целевая форма: по паре (пользователь, право) показывать цепочку
 решения — какая роль дала, какой оверрайд перебил, какой узел ACL сработал и какая запись
 `ResourceAcl` его создала (с `grantedById` и `reason`); сервер отдаёт то же самое эндпоинтом
 `GET /api/v1/permissions/explain?userId&key&resourceId`, который обязан использовать **тот же** код
@@ -2624,10 +2638,10 @@ actor.organizationId` в policy — не замена RLS, а способ ве�
 | 8 | `overview.md`, контекст `identity-and-access` | сущности `Capability`, `Membership` | `Permission`, `Role`, `UserRole`, `UserPermissionOverride`, `ResourceAcl` | остаток раннего наброска; имена не совпадают с data-model | ✅ закрыто |
 
 Дополнительно требуется от `data-model.md` и уже там зафиксировано (ревизия 2026-07-26):
-индекс `idx_resource_acl_resource (organization_id, resource_type, resource_id)` — прямой запрос
-«кто имеет доступ к этому объекту», который `resolveAcl` выполняет на **каждом** узле цепочки
-наследования; уникальный индекс по четвёрке его не покрывает, потому что начинается с
-`resource_type` без `organization_id`.
+индекс `uq_resource_acl (organization_id, resource_id, resource_type, subject_id, subject_type)` —
+прямой запрос «кто имеет доступ к этому объекту», который `resolveAcl` выполняет одним запросом по
+всей цепочке наследования (он же уникальный; отдельного `idx_resource_acl_resource` нет — ревизия
+2026-09-06).
 
 **Раздвоенная цепочка ACL у досок.** С появлением свободных (непроектных) досок
 (`Board.projectId` нуллабелен, EPIC-018) цепочка наследования у доски и её задач зависит от того,

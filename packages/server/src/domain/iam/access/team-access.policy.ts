@@ -22,10 +22,11 @@ export interface TeamSubject {
  *
  * **All five decisions are capability-only, and that is the model rather than an omission.** Every
  * `team:*` key carries `requiredLevel: null` in the catalogue, so there is no resource level to
- * consult: a team is an org-structure container, not a group of access. The `ResourceAcl` that would
- * make one the subject of a grant — and would give these keys a level — is STORY-011-06, which is
- * blocked until a resource layer exists (`permission-model.md` §12, open question 3). Writing the
- * conjunction here today would mean a branch nothing can reach and no test can prove.
+ * consult: a team is an org-structure container, not a group of access. `ResourceAcl` exists since
+ * 2026-09-06 (STORY-011-06) and a team can be the *subject* of a grant — but that makes the team
+ * receive access to some object, not an object anybody needs a level on. These keys stay
+ * `requiredLevel: null`, and writing the conjunction here would still mean a branch nothing can
+ * reach and no test can prove.
  *
  * The functions exist as named decisions rather than as `authorizeCapability(actor, 'team:update')`
  * spelled at each call site for the reason `rules/permissions.mdc`, 3 gives: the authority is the

@@ -277,6 +277,14 @@ denyAccess(...)` стоит **до** `audit.record`: промах (`404 user_not
   исходников и выводит требование из того, что реально пишется в точке вызова, плюс severity
   действия (`SharedAudit.AUDIT_ACTION_SEVERITY`).
 
+> **2026-09-06 — `ResourceAcl` появилась (STORY-011-06).** Команда стала субъектом гранта: ридер
+> сопоставляет `TEAM`-записи через `team_members` в том же запросе, и это доказано на живом
+> Postgres (`test/integration/db/resource-acl-reader.test.ts`: член команды получает запись,
+> посторонний — нет). Критерии 3, 4 и 6 упираются теперь только в маршрут `POST /acl` и закроются
+> его шагом; критерий 5 (каскад снятия грантов при удалении команды) — правка
+> `delete-team.use-case.ts`, там же. Severity `team.member_*` пересматривать пока рано: членство
+> даёт доступ только при наличии гранта, а грант — своё действие `WARNING`.
+
 **Что остаётся и почему это не пробел.** `AddTeamMemberUseCase` и `RemoveTeamMemberUseCase`
 (`manage-team-members.use-case.ts:78,148`) адрес по-прежнему не пишут, и гейт на них **намеренно**
 не срабатывает: `team.member_added`/`team.member_role_changed` — действия уровня `INFO`, членство

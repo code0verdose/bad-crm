@@ -212,9 +212,10 @@ export const AUDIT_ACTIONS = [
    * A team was created, renamed or removed (STORY-012-07).
    *
    * A `Team` is an org-structure container and **not** a group of access: no permission is derived
-   * from membership today, and the resource ACL that would make one the subject of a grant does not
-   * exist yet (STORY-011-06, blocked). The entries are therefore about the shape of the
-   * organization, which is why two of them read at `INFO` and only the deletion does not.
+   * from membership as such. Since 2026-09-06 a team can be the subject of a `ResourceAcl` grant
+   * (STORY-011-06, `acl.granted` below), and then membership carries that grant — the grant is the
+   * privileged action and is filed at `WARNING`; joining a team is still the shape of the
+   * organization, which is why two of these three read at `INFO` and only the deletion does not.
    */
   'team.created',
   'team.updated',
@@ -254,6 +255,17 @@ export const AUDIT_ACTIONS = [
   'permission.override.created',
   'permission.override.updated',
   'permission.override.deleted',
+  /**
+   * A grant on one object was written or replaced, or taken away (STORY-011-06).
+   *
+   * Beside the override events rather than beside the role ones, because that is what it is: layer 4
+   * of the model is the other place a right is given to one subject about one thing, and the
+   * escalation review that reads `permission.override.*` has to see both. `after` names the object
+   * as a (type, id) pair, the subject the same way, the level and the expiry — never a row of the
+   * object itself, which the trail has no business copying.
+   */
+  'acl.granted',
+  'acl.revoked',
   /**
    * Row level security was bypassed on purpose — a migration path, a support action, a background
    * job that must see every tenant.

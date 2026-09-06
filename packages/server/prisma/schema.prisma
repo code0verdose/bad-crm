@@ -89,6 +89,7 @@ model Organization {
   rolePermissions     RolePermission[]
   userRoles           UserRole[]
   permissionOverrides UserPermissionOverride[]
+  resourceAcls        ResourceAcl[]
   auditLogs           AuditLog[]
   users               User[]
   invitations         Invitation[]
@@ -214,6 +215,7 @@ model User {
   invitationsSent     Invitation[]             @relation("InvitationAuthor")
   invitationAccepted  Invitation[]             @relation("InvitationAcceptor")
   overridesGranted    UserPermissionOverride[] @relation("OverrideGrantor")
+  aclsGranted         ResourceAcl[]            @relation("AclGrantor")
 
   /// The target every composite foreign key into this table points at. A child referencing
   /// `users (id)` alone would be allowed to name a user of another organization: foreign key checks
@@ -399,9 +401,10 @@ model MfaRecoveryCode {
 
 /// Tenant-scoped table [T]: an org-structure container — «who works together».
 ///
-/// **Not a group of access** (STORY-012-07, acceptance 10). Nothing is granted by belonging to one:
-/// the `ResourceAcl` that would make a team the subject of a grant is STORY-011-06, blocked until a
-/// resource layer exists, and separate access groups (`subjectType = GROUP`) are open question 3 of
+/// **Not a group of access** (STORY-012-07, acceptance 10). Nothing is granted by belonging to one
+/// *as such*: since 2026-09-06 a team can be the **subject** of a `ResourceAcl` grant (STORY-011-06),
+/// and then membership carries that grant — but the grant is the thing that gives, the team only
+/// names who receives. Separate access groups (`subjectType = GROUP`) remain open question 3 of
 /// `permission-model.md` §12.
 ///
 /// **There is no `lead_id`, and there will not be one.** `data-model.md` §1 and STORY-012-07 both
@@ -843,4 +846,118 @@ model UserPermissionOverride {
   /// `idx_upo_expires` is not declared here: it is partial (`WHERE expires_at IS NOT NULL`), which
   /// Prisma cannot express, so it lives in the migration.
   @@map("user_permission_overrides")
+}
+
+/// What a `ResourceAcl` row may be about. Mirrors `ACL_RESOURCE_TYPES` in `packages/shared`
+/// (`permissions/acl-subject.enums.ts`), and the two are asserted equal in `migrations.test.ts`.
+///
+/// A PostgreSQL enum rather than text with a CHECK, unlike `team_role` next door — and the
+/// difference is deliberate (`rules/polymorphic-access.mdc`, 2): a discriminator of a polymorphic
+/// pair is the one column whose whole job is «a value nobody reviewed cannot get in», and the list
+/// is closed and complete by design (`data-model.md`, «Полиморфные связи»). The cost — adding a
+/// label is DDL on the type — is the point.
+enum AclResourceType {
+  ORGANIZATION
+  PROJECT
+  BOARD
+  TASK
+  DOC_PAGE
+  KB_SPACE
+  KB_NOTE
+  FILE
+  FILE_FOLDER
+  CHANNEL
+  VAULT
+  DASHBOARD
+
+  @@map("acl_resource_type")
+}
+
+/// Who a grant is for. `ROLE` has no route yet and is kept for the reason the shared list gives.
+enum AclSubjectType {
+  USER
+  ROLE
+  TEAM
+
+  @@map("acl_subject_type")
+}
+
+/// The scale of layer 4, in rank order — `ACCESS_LEVELS` in `packages/shared`.
+enum AccessLevel {
+  NONE
+  VIEWER
+  COMMENTER
+  EDITOR
+  MANAGER
+
+  @@map("access_level")
+}
+
+/// Tenant-scoped table [T]: one grant, on one object, to one subject (layer 4 of the permission
+/// model — STORY-011-06).
+///
+/// **Polymorphic on both ends and on purpose** (`rules/polymorphic-access.mdc`, 11): the mechanism
+/// has to work for kinds of object that do not exist yet, so `(resourceType, resourceId)` carries no
+/// foreign key and `(subjectType, subjectId)` carries none either. Two consequences the schema
+/// answers rather than a comment:
+///
+/// - `organizationId` is a column of this row and not derived from the object: without a key the
+///   database cannot know the object exists, let alone which tenant it belongs to, and the policy
+///   compares this column (`rules/polymorphic-access.mdc`, 5);
+/// - a grant on a deleted object is harmless and is cleaned by schedule, not by cascade. There is
+///   no cascade in the other direction either — not in the database (no key to hang it on) and,
+///   as of 2026-09-06, not in a use-case: `delete-custom-role.use-case.ts` and
+///   `delete-team.use-case.ts` leave `resource_acl` untouched. Removing a role's grants
+///   (STORY-011-06, acceptance 13) and a team's (STORY-012-07, acceptance 5) is the next step,
+///   alongside the `acl:*` routes; `idx_resource_acl_subject` is already the index it will use.
+///
+/// One opinion per (object, subject): `uq_resource_acl`. Two different levels for the same subject
+/// on the same object would be a conflict the resolution rules were written to make impossible.
+///
+/// `grantedById` is the one real reference, composite like every reference in this schema and
+/// `SET NULL` on the way out: the grant outlives the person who made it, and the trail — not this
+/// column — is where «who gave this» is kept.
+model ResourceAcl {
+  id             String          @id(map: "pk_resource_acl") @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String          @map("organization_id") @db.Uuid
+  resourceType   AclResourceType @map("resource_type")
+  resourceId     String          @map("resource_id") @db.Uuid
+  subjectType    AclSubjectType  @map("subject_type")
+  subjectId      String          @map("subject_id") @db.Uuid
+  accessLevel    AccessLevel     @map("access_level")
+
+  grantedById String?   @map("granted_by_id") @db.Uuid
+  grantedAt   DateTime  @default(now()) @map("granted_at") @db.Timestamptz(6)
+  /// A grant that ends on its own. Filtered where the level is resolved, not only by the cleaner.
+  expiresAt   DateTime? @map("expires_at") @db.Timestamptz(6)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "fk_resource_acl_organization_id")
+  /// `SetNull` here is the column-list form `ON DELETE SET NULL ("granted_by_id")` in the
+  /// migration — the bare form would null `organization_id` too and fail on NOT NULL, the same
+  /// trap `sessions.rotated_from_id` documents. `migrate diff` models no column list and is
+  /// content either way.
+  grantedBy    User?        @relation("AclGrantor", fields: [organizationId, grantedById], references: [organizationId, id], onDelete: SetNull, onUpdate: NoAction, map: "fk_resource_acl_granted_by_id")
+
+  /// One index for two jobs — one opinion per (object, subject) inside the tenant, and the hot
+  /// path of the whole model: the resolver joins the ancestor chain against it, one query per
+  /// decision (`permission-model.md`, «Как это выполняется в БД»).
+  ///
+  /// Each uuid comes **before** the enum that qualifies it, and the migration records the
+  /// measurement behind the order: `enum_eq` is not leakproof, so under row-level security an
+  /// equality on `resourceType` can only ever be a filter for `app_user`, never an index
+  /// condition — an index led by the enum is an index only the table owner can use.
+  /// `organizationId` is in the key so that a coincident pair of uuids in another tenant cannot
+  /// refuse this tenant's insert on a row it cannot see.
+  @@unique([organizationId, resourceId, resourceType, subjectId, subjectType], map: "uq_resource_acl")
+  /// The reverse question — «which projects does this subject see» — for the list path that
+  /// computes the accessible set once (`permission-model.md`, «Списки — отдельная задача»). The
+  /// same order for the same reason.
+  @@index([organizationId, subjectId, subjectType, resourceType], map: "idx_resource_acl_subject")
+  /// `idx_resource_acl_expires` is not declared here: it is partial (`WHERE expires_at IS NOT NULL`),
+  /// which Prisma cannot express, so it lives in the migration — the same arrangement as
+  /// `idx_upo_expires`.
+  @@map("resource_acl")
 }

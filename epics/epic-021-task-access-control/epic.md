@@ -105,6 +105,12 @@ Organization`: даёт приватные задачи, UI выдачи дос�
   subject_type, subject_id, resource_type)` — обратный запрос «какие проекты видит пользователь»;
   `idx_resource_acl_resource (organization_id, resource_type, resource_id)` — покрывает join
   резолвера.
+- **Ревизия 2026-09-06 (STORY-011-06, таблица отгружена):** отдельного `idx_resource_acl_resource`
+  нет — резолвер обслуживает `uq_resource_acl (organization_id, resource_id, resource_type,
+  subject_id, subject_type)`, а `idx_resource_acl_subject` стоит как `(organization_id, subject_id,
+  subject_type, resource_type)`; порядок колонок изменён по замеру — под RLS равенство по enum не
+  бывает условием индекса (`docs/security/rls-design.md`, ловушка 6). Две строки выше и пункт
+  «Закрыто (2026-07-26)» ниже описывают проект на 2026-07-26, не текущую схему.
 - Новых таблиц эпик не вводит.
 - **Закрыто (2026-07-26):** `ResourceAcl.resourceType` содержит все 12 значений, включая `TASK`, —
   приватная задача выразима. Перечень синхронизирован между группой 2 и разделом «Полиморфные

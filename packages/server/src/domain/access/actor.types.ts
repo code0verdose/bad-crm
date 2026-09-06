@@ -22,9 +22,14 @@ export interface Actor extends SharedPermissions.CapabilityView {
   /**
    * Keys of the roles held, for explaining a decision rather than making one.
    *
-   * No policy reads this and none may: «is a manager» is not a permission, and a check written
+   * No policy decides by this and none may: «is a manager» is not a permission, and a check written
    * against a role name is the second point of truth invariant 2 forbids. It exists so the interface
    * can say *why* — «because you are a manager» is actionable, «you have the permission» is not.
+   *
+   * One sanctioned reader, and it does not grant: `implicit-level.policy.ts` answers `NONE` for the
+   * keys in `IMPLICIT_LEVEL_NONE_ROLES` (`guest`, §5's last row) — the role for which silence is
+   * silence, so that a capability alone never reaches an object. Taking something away by role
+   * name is the model's own rule; giving by role name would be the violation.
    */
   readonly roleKeys: readonly string[];
 }

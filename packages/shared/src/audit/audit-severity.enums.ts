@@ -114,10 +114,11 @@ export const AUDIT_ACTION_SEVERITY: Readonly<Record<AuditAction, AuditSeverity>>
    */
   'user.reactivated': 'WARNING',
   /**
-   * `INFO`: a team is an org-structure container and grants nothing. The resource ACL that would
-   * make one the subject of a grant does not exist (STORY-011-06, blocked), so creating or renaming
-   * one moves no rights — filing it at `WARNING` beside `role.created` would put an event that
-   * changes nobody's access into the list an escalation review reads first.
+   * `INFO`: a team is an org-structure container and grants nothing by itself. Since 2026-09-06 a
+   * team can be the subject of a `ResourceAcl` grant (STORY-011-06), but the grant is its own
+   * action (`acl.granted`, `WARNING` below); creating or renaming a team still moves no rights —
+   * filing it at `WARNING` beside `role.created` would put an event that changes nobody's access
+   * into the list an escalation review reads first.
    */
   'team.created': 'INFO',
   'team.updated': 'INFO',
@@ -143,6 +144,11 @@ export const AUDIT_ACTION_SEVERITY: Readonly<Record<AuditAction, AuditSeverity>>
   'permission.override.created': 'WARNING',
   'permission.override.updated': 'WARNING',
   'permission.override.deleted': 'WARNING',
+  // The same level as an override, and the story asks for it by name (STORY-011-06, acceptance 1):
+  // a grant on an object is a right given to somebody, and the revocation is the row a reviewer
+  // reads to learn when it stopped.
+  'acl.granted': 'WARNING',
+  'acl.revoked': 'WARNING',
   // Row-level security deliberately bypassed. Nothing in normal operation raises it, and an
   // untraced bypass is indistinguishable from an intrusion.
   'rls.bypassed': 'CRITICAL',

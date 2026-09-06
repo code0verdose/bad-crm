@@ -170,6 +170,8 @@ describe('the action catalogue', () => {
       'permission.override.created',
       'permission.override.updated',
       'permission.override.deleted',
+      'acl.granted',
+      'acl.revoked',
       'rls.bypassed',
       'permission.inspected',
       'access.denied',

@@ -133,26 +133,104 @@ estimate: L
 
 ## Задачи
 
-- [ ] `packages/server/prisma/migrations/*_resource_acl/migration.sql` — таблица `resource_acl`,
-      enum `AclResourceType` (включая `ORGANIZATION`, `TASK`, `KB_NOTE`, `FILE`, `CHANNEL`,
-      `DASHBOARD` — расхождение №5 §12), `AclSubjectType`, `AccessLevel`; `uq_resource_acl`,
-      `idx_resource_acl_subject`, `idx_resource_acl_resource`; RLS `ENABLE` + `FORCE` + политики.
-- [ ] `packages/server/src/domain/access/acl-resolution.ts` — чистая функция
-      `resolveFromChain(entriesByDepth, implicit): AccessLevel` (правила «ближайший», `NONE`,
-      максимум) — без I/O, покрытие 100 %.
-- [ ] `packages/server/src/domain/access/implicit-level.ts` — таблица `implicitLevel` из §5.
-- [ ] `packages/server/src/application/access/ports/acl-reader.port.ts` +
-      `packages/server/src/infrastructure/persistence/prisma/acl-reader.adapter.ts` и
-      `sql/resolve-acl.query.sql` (один round-trip).
-- [ ] `packages/server/src/application/access/services/ancestor-chain.service.ts` — построение
-      цепочки по типам ресурсов (`Task→Board→Project`, `File→FileFolder(path)→Project`, …).
-- [ ] `packages/server/src/application/access/use-cases/grant-acl.use-case.ts`,
-      `revoke-acl.use-case.ts`; массовый инкремент версий по субъекту (USER / все носители ROLE /
-      все члены TEAM).
-- [ ] `packages/server/src/presentation/http/routes/registry.ts` — `acl:read`, `acl:grant`, `acl:revoke`.
-- [ ] Тесты: `acl-resolution.spec.ts` (12 краевых случаев §5), `implicit-level.spec.ts` (13 строк),
-      интеграционные `resolve-acl-single-query.spec.ts` (счётчик SQL), `acl-list-consistency.spec.ts`
-      (п. 12), isolation-тест `resource_acl`.
+- [x] `packages/server/prisma/migrations/20260906135729_resource_acl/migration.sql` — таблица
+      `resource_acl`, enum'ы `acl_resource_type` (все двенадцать значений — расхождение №5 §12),
+      `acl_subject_type` (`USER | ROLE | TEAM`), `access_level`; `uq_resource_acl` (пять колонок,
+      он же индекс резолвера), `idx_resource_acl_subject`, `idx_resource_acl_expires`; RLS
+      `ENABLE` + `FORCE` + обе политики, `GRANT`, `backup_role`, `updated_at`-триггер. Запись в
+      `tenant-tables.constant.ts` и `ROW_FACTORIES`; генерируемый `rls-isolation.test.ts` покрывает
+      таблицу с положительным контролем на `INSERT`. **Порядок колонок индексов отличается от
+      §«Индексы» `data-model.md` в редакции до 2026-09-06** — см. «Сделано», п. 1.
+- [x] `domain/access/acl-resolution.policy.ts` — `resolveFromChain(entries, implicit, now)`,
+      правила 1–4, без I/O, 100/100 (имя — `.policy.ts`, потому что маска порога
+      `src/domain/**/access/*.policy.ts` и словарь суффиксов не знают `acl-resolution.ts`).
+- [x] `domain/access/implicit-level.policy.ts` — таблица §5: девять строк с предметом, шесть без
+      предмета — не заведены (см. «Сделано», п. 3).
+- [x] `application/access/ports/acl-reader.port.ts` + `persistence/prisma/acl-reader.adapter.ts` —
+      один round-trip; SQL живёт в адаптере (Prisma `$queryRaw` с `Prisma.join` по узлам), не в
+      отдельном `.sql`-файле: у проекта нет загрузчика файлов SQL, а строка в адаптере проверяется
+      тем же рекордером, что и остальные.
+- [x] Построение цепочки — **реестр** в `application/access/use-cases/resolve-acl.query.ts`
+      (`ORGANIZATION`, `PROJECT → ORGANIZATION`), а не отдельный `ancestor-chain.service.ts`:
+      суффикса `.service.ts` в словаре нет, и цепочек сегодня две. Тип без записи в реестре →
+      `unavailable` (503), не уровень.
+- [x] `application/access/use-cases/grant-acl.use-case.ts`, `revoke-acl.use-case.ts`; инкремент
+      версий по субъекту — `AclRepositoryPort.subjectUserIds` + один `UPDATE … = ANY($n::uuid[])`.
+- [ ] `presentation/http/routes/registry.ts` — `acl:read`, `acl:grant`, `acl:revoke` — **следующий
+      шаг**, вместе с первым `project:*`-маршрутом (спека, `AWAITING_A_ROUTE`, снапшот матрицы,
+      описания прав на двух языках — четыре гейта разом). Use-case'ы в контейнер пока не собраны:
+      собирать нечего, пока нет маршрута.
+- [x] Тесты: `test/unit/domain/access/{acl-resolution-policy,implicit-level-policy,acl-management-policy,acl-error-resource}.test.ts`,
+      `test/unit/application/{resolve-acl.query,grant-acl.use-case,revoke-acl.use-case}.test.ts`,
+      `test/unit/persistence/{acl-reader,resource-acl-repository,project-access-reader}.test.ts`,
+      интеграционный `test/integration/db/resource-acl-reader.test.ts` (счётчик SQL из лога
+      драйвера, `EXPLAIN` на 20 000 строк, изоляция, `TEAM`/`ROLE`-субъекты, факты проекта против
+      таблиц EPIC-014). `acl-list-consistency` (п. 12) — не написан, списков нет.
+
+## Сделано (2026-09-06) — таблица, правило, резолвер, команды; без маршрута
+
+Критерии приёмки по факту кода, не по борду:
+
+| # | Критерий | Состояние |
+|---|---|---|
+| 1 | выдача записи: `ResourceAcl`, бамп всем членам команды, `acl.granted` `WARNING` | **use-case закрыт** (`grant-acl.use-case.test.ts`); `POST /api/v1/acl` — ждёт маршрута |
+| 2 | ближайшая явная запись побеждает | закрыт (`acl-resolution-policy.test.ts`; на живом Postgres — порядок по глубине в `resource-acl-reader.test.ts`) |
+| 3 | `NONE` — явный запрет на узле и ниже | правило закрыто; **код ответа расходится**: история говорит 404, а `access.errors.ts` (STORY-011-07, прошёл гейты) отвечает `acl_explicit_none` как **403** `${resource}_forbidden`, и `assert-allowed.test.ts` это закрепляет. Не правил молча — решение за человеком: либо история приводится к коду (внутри своей организации 403 не оракул), либо `CODE_FOR` и тест меняются отдельным коммитом |
+| 4 | максимум на одном узле | закрыт (домен + интеграция: `TEAM=EDITOR` и `USER=VIEWER` на одном узле) |
+| 5 | просроченные не учитываются | закрыт дважды — фильтр `expires_at > now()` в SQL (не индексом: `expires_at` в индексе join'а нет, просроченные строки объекта читаются и отбрасываются фильтром, их единицы на объект) и правило в policy с `ClockPort` |
+| 6 | `implicitLevel` вместо «разрешено всем» | закрыт для девяти строк §5 с предметом; шесть строк (`CHANNEL` ×4, личный ресурс ×2) — без предмета, перечислены по имени в тесте, заглушек нет. **Строк в таблице пятнадцать, а не тринадцать**, как написано в критерии |
+| 7 | владелец обходит ACL, кроме vault | закрыт **не здесь**: обход живёт в `authorizeResource` (STORY-011-07), резолвер владельца не трогает, `family` для `VAULT` — `vault` (`ACL_RESOURCE_FAMILY`). Vault-ветки в реестре цепочек нет, тип отвечает `unavailable` |
+| 8 | один запрос, а не N | закрыт: счётчик из лога драйвера на цепочке в четыре узла; `EXPLAIN` держит `Index Scan using uq_resource_acl` |
+| 9 | оборванная иерархия → 404 + `logger.warn` с id | закрыт (`resolve-acl.query.test.ts`: `missing`, ридер не вызывается, `warn` с `resourceType`/`resourceId`) |
+| 10 | ошибка резолва → `acl_resolution_failed`, 503 | закрыт (`unavailable` из резолвера → `service_unavailable`) |
+| 11 | выдача шире собственного уровня → 403 | закрыт конъюнкцией `authorize` (`insufficient_acl_level` для `EDITOR` на объекте); отдельной ветки в `canGrantAcl` нет — `acl:grant` требует `MANAGER`, верх шкалы, шире которого выдать нечего, и тест-пин на `requiredLevel` в `acl-management-policy.test.ts` держит это на случай правки каталога. Единственная своя ветка `canGrantAcl` — `self_lockout` |
+| 12 | списки не резолвят построчно | **открыт**: списков ещё нет; «множество доступных родителей один раз» — отдельная задача при первом списочном маршруте с ACL |
+| 13 | удаление роли снимает её записи ACL | **открыт**: `delete-custom-role.use-case.ts` не трогался; `idx_resource_acl_subject` под это уже есть |
+
+Что ещё решено по ходу и почему:
+
+1. **Индексы ведут uuid-колонкой, а не enum'ом.** `enum_eq` не leakproof; под `FORCE RLS` для
+   `app_user` равенство по enum никогда не становится `Index Cond`. Замер на 20 000 строк:
+   `(organization_id, resource_type, resource_id)` — seq scan, 347 буферов, 2,2 мс;
+   `(organization_id, resource_id, resource_type)` — index scan, 11 буферов, 0,17 мс. Владелец
+   таблицы тем же запросом получал index scan, поэтому на dev-подключении это невидимо.
+   `data-model.md` (индексы), `rls-design.md` (ловушка 6) и `rules/polymorphic-access.mdc` (п. 9)
+   переписаны по замеру. Enum как тип колонки сохранён — правило 2 `polymorphic-access.mdc`.
+   По итогу ревью индекс ресурса **слит с уникальным**: `uq_resource_acl (organization_id,
+   resource_id, resource_type, subject_id, subject_type)` держит и уникальность, и резолвер;
+   `organization_id` в ключе снимает 409 по совпавшей паре uuid чужой организации (находка
+   security-auditor L-2). `granted_by_id` — `ON DELETE SET NULL ("granted_by_id")` в форме со
+   списком колонок: голый `SET NULL` обнулял бы и `organization_id` и падал на NOT NULL
+   (находка db-reviewer, замер). **Тот же дефект у закоммиченных `fk_user_roles_granted_by_id` и
+   `fk_upo_granted_by_id`** — им нужна repair-миграция, отдельная задача.
+2. **`ROLE` как субъект сохранён** вопреки постановке «USER и TEAM»: `data-model.md` и §2
+   `permission-model.md` называют три субъекта, критерий 13 написан против `ROLE`, а enum в
+   PostgreSQL расширяется дорого. Резолвер сопоставляет роли через `user_roles` с учётом
+   `expires_at` в том же запросе.
+3. **Шесть строк §5 без предмета не заведены.** `ImplicitLevelFacts` — union из двух членов
+   (`ORGANIZATION`, `PROJECT`); добавление `CHANNEL` без ветки не компилируется. Не `it.todo`:
+   обещание принадлежит эпику, который заведёт канал.
+4. **Правило разрешения — в домене, не в SQL.** Запрос отдаёт все живые строки цепочки с
+   глубиной; `GROUP BY … LIMIT 1` из эскиза §6 не используется, чтобы правило жило в одном месте
+   с табличным тестом. `permission-model.md` §6 дополнен абзацем об этом.
+5. **`acl.updated` не заведён**: замена уровня — тот же `acl.granted` с `before`. `AUDIT_ACTIONS`
+   расширен двумя действиями, `AUDIT_RESOURCE_TYPES` — `RESOURCE_ACL`.
+6. **Ошибки без нового ресурса `acl`.** Отказ на объекте кодируется ресурсом объекта
+   (`project_forbidden`/`project_not_found`), отсутствие субъекта — ресурсом субъекта
+   (`team_not_found`): новый код в `ERROR_RESOURCES` потребовал бы правки `openapi.yaml` и обоих
+   файлов локалей — это шаг маршрута. Полная карта — `domain/access/acl-error-resource.util.ts`.
+7. **`guest` читается из `actor.roleKeys`** — единственное санкционированное чтение ролей
+   policy (§5, последняя строка; `IMPLICIT_LEVEL_NONE_ROLES`). Докстринг `actor.types.ts` уточнён.
+8. **`ProjectAccessReaderPort` лежит в `application/access/ports/`**, а не в `project/`: контекст
+   проекта создавался параллельно этим шагом. STORY-014-02 сворачивает его в access-reader проекта.
+   Адаптер — raw SQL по именам `data-model.md` §3; имена доказаны интеграционным тестом против
+   миграции `20260906135656_projects_and_project_members`.
+
+Следующему шагу: маршруты `acl:*` (спека, реестр, снапшот матрицы, описания прав, сборка use-case'ов
+в контейнере), критерий 13 в `delete-custom-role.use-case.ts` и каскад в `delete-team.use-case.ts`
+(критерий 5 STORY-012-07), критерий 12 при первом списке, решение по коду ответа для критерия 3,
+перенос `ProjectRole`/`ProjectVisibility` из `implicit-level.policy.ts` на `domain/project/project.enums.ts`
+(файл того же дня, ещё не в истории на момент этого коммита).
 
 ## Ссылки
 

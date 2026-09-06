@@ -411,6 +411,21 @@ export const TENANT_ROW_FACTORIES = {
       parentId(parents, 'userId'),
     ],
   },
+  /**
+   * One grant. Neither end of it is a foreign key — the object and the subject are polymorphic
+   * pairs by design (`rules/polymorphic-access.mdc`, 11) — so there is nothing to seed: both ids are
+   * random, which also keeps `uq_resource_acl` exercised rather than tripped by the second tenant.
+   * `granted_by_id`, the one real reference, is left NULL: the fixture is about the policy on this
+   * row, and a grantor of the same organization would only move the refusal to the users table.
+   */
+  resource_acl: {
+    seed: noParents,
+    sql: `INSERT INTO resource_acl
+            (organization_id, resource_type, resource_id, subject_type, subject_id, access_level,
+             updated_at)
+          VALUES ($1, 'PROJECT', $2, 'USER', $3, 'EDITOR', now())`,
+    values: (organizationId) => [organizationId, randomUUID(), randomUUID()],
+  },
 } satisfies Record<TenantTableName, TenantRowFactory>;
 
 /**

@@ -51,17 +51,19 @@ export interface DeleteTeamInput {
  * this team, and as what, the moment before it stopped existing.
  *
  * Every former member's permission version is bumped in the same transaction, in **one** statement.
- * Nothing they could do changes today — membership grants nothing until `ResourceAcl` exists
- * (STORY-011-06, blocked) — and the bump is still not decoration: `permissionsVersion` is the
+ * Since 2026-09-06 a team can be the subject of a `ResourceAcl` grant (STORY-011-06), so the
+ * bump is what makes the grant stop applying on the next request — and even before that day it
+ * was not decoration: `permissionsVersion` is the
  * mechanism by which a folded view stops being trusted, and a version that only started moving in
  * the release that made membership matter would leave every token minted before it trusting a
  * membership that had already been revoked.
  *
- * **What this deliberately does not do is cascade over `ResourceAcl`.** Acceptance 5 of the story
- * asks for it and there is nothing to cascade over: the table does not exist, and neither does
- * `resolveAcl`. A branch written for it now would be a refusal code nothing can reach, or a field
- * nobody can observe — an obligation with no test behind it. See the story file, «Расхождение с этой
- * спекой».
+ * **What this does not do yet is cascade over `ResourceAcl`.** Acceptance 5 of STORY-012-07 asks
+ * for a disbanded team's grants to be removed in the same transaction; the table and the resolver
+ * exist (see above), but no `AclRepositoryPort` is wired here and the rows stay. That criterion is
+ * open and closes together with the `acl:*` routes — until then a stale `TEAM` row is harmless:
+ * the reader matches team subjects through `team_members`, which this transaction empties, so the
+ * grant already resolves for nobody. `idx_resource_acl_subject` is the index the cascade will use.
  */
 export class DeleteTeamUseCase {
   constructor(

@@ -21,6 +21,8 @@ export const AUDIT_RESOURCE_TYPES = [
   'INVITATION',
   /** A team: an org-structure container, not a group of access (STORY-012-07, acceptance 10). */
   'TEAM',
+  /** One grant on one object (`resource_acl`): the row, not the object it is about (STORY-011-06). */
+  'RESOURCE_ACL',
 ] as const;
 
 export type AuditResourceType = (typeof AUDIT_RESOURCE_TYPES)[number];

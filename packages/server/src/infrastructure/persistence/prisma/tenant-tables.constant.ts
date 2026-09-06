@@ -101,6 +101,16 @@ export const TENANT_TABLES = {
     softDeleted: false,
     rowTimestamps: true,
   },
+  resource_acl: {
+    model: 'ResourceAcl',
+    tenantColumn: 'organization_id',
+    // UPDATE, because a re-grant replaces the level in place (`ON CONFLICT … DO UPDATE`); DELETE,
+    // because a revocation removes the row: a grant that ended is not a grant with a flag, and a
+    // filter everybody has to remember is a filter somebody forgets.
+    appUserPrivileges: ['SELECT', 'INSERT', 'UPDATE', 'DELETE'],
+    softDeleted: false,
+    rowTimestamps: true,
+  },
   role_permissions: {
     model: 'RolePermission',
     tenantColumn: 'organization_id',

@@ -3,3 +3,4 @@ export * from './can.util.js';
 export * from './permissions.catalog.js';
 export * from './deny-reason.enums.js';
 export * from './system-roles.enums.js';
+export * from './acl-subject.enums.js';
