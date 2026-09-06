@@ -263,8 +263,10 @@ flowchart TD
 Конвенции:
 
 - Файлы — `src/app/routes/**`, file-based, дерево генерируется в `routeTree.gen.ts`.
-- Гарды — переиспользуемые функции юнита, который владеет решением, а не общего `app/`. Существуют
-  два: `redirectIfAuthed` и `requireSession` в `units/auth/lib/guards` (сессия — забота `units/auth`)
+- Гарды — переиспользуемые функции юнита, который владеет решением, а не общего `app/`. Их
+  **четыре** (уточнено 2026-09-06; до мастера настройки второго фактора здесь было написано «два»):
+  `redirectIfAuthed`, `requireSession`, `requireFullSession` и `requireEnrolment` в
+  `units/auth/lib/guards` (сессия — забота `units/auth`)
   и `requirePermission({ permission, whenDenied })` в `units/iam/service/guards`
   (`IamService.IamGuards.requirePermission`), потому что права приехали с EPIC-011 и живут в
   `units/iam`. Гард сессии бросает `redirect({ to: '/login', search: { redirect } })`; гард права —
@@ -302,7 +304,8 @@ flowchart TD
 
 | Маршрут | Файл route | Гард (beforeLoad) | Search-params (Zod) | Основной виджет |
 |---|---|---|---|---|
-| — (pathless layout) | `routes/_authenticated.tsx` | `requireSession` | — | `AppShellWidget` |
+| — (pathless layout) | `routes/_authenticated.tsx` | `requireFullSession` | — | `AppShellWidget` |
+| `/mfa-enrolment` | `routes/mfa-enrolment.tsx` | `requireEnrolment` | — | `TotpSetup` (без оболочки) |
 | `/` | `routes/_authenticated/index.tsx` | `requireSession` → `redirect('/dashboard')` | — | — |
 | `/dashboard` | `routes/_authenticated/dashboard.tsx` | `requireSession` | `dashboardSearchSchema`: `range`, `from?`, `to?`, `project?`, `scope=me\|team\|org` | `DashboardWidget` |
 | `/search` | `routes/_authenticated/search.tsx` | `requireSession` | `globalSearchSchema`: `q`, `type[]`, `project?`, `page` | `GlobalSearchResultsWidget` |
