@@ -504,6 +504,35 @@ describe('the end-to-end job', () => {
     expect(firstUpload).toBeGreaterThan(scrubIndex);
   });
 
+  /**
+   * «26 passed» is not a report. A scenario that stops being executed makes it «24», which reads as
+   * a smaller suite rather than as a lost gate — so the run says which scenarios failed, which were
+   * flaky, and whether tenant isolation held, in the place a reviewer already looks.
+   */
+  describe('the job summary', () => {
+    const summaryStep = (): WorkflowStep | undefined =>
+      e2eSteps().find((step) => (step.run ?? '').includes('scripts/ci/e2e-summary.ts'));
+
+    it('is written from the run', () => {
+      expect(summaryStep()).toBeDefined();
+    });
+
+    /** A green run needs no summary; a red one is the whole reason there is one. */
+    it('is written whether the run passed or failed', () => {
+      expect(summaryStep()?.if ?? '').toContain('always');
+    });
+
+    it('comes after the scenarios it summarises', () => {
+      const scenarios = e2eSteps().findIndex((step) => (step.run ?? '').includes('test:e2e'));
+      const summary = e2eSteps().findIndex((step) =>
+        (step.run ?? '').includes('scripts/ci/e2e-summary.ts'),
+      );
+
+      expect(scenarios).toBeGreaterThanOrEqual(0);
+      expect(summary).toBeGreaterThan(scenarios);
+    });
+  });
+
   it('collects the container logs when the run failed', () => {
     const failureSteps = e2eSteps().filter((step) => (step.if ?? '').includes('failure'));
 

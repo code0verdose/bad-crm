@@ -31,7 +31,9 @@ interface PlaywrightConfig {
     trace?: string;
     screenshot?: string;
     video?: string;
+    proxy?: { server?: string; bypass?: string };
   };
+  reporter?: [string, Record<string, unknown>?][];
   projects?: { name?: string }[];
 }
 
@@ -144,6 +146,74 @@ describe('the Playwright configuration', () => {
 
     expect(config.globalSetup).toBeTruthy();
     expect(readRepoFile('packages/e2e/global-setup.ts')).toContain('/ready');
+  });
+});
+
+/**
+ * The network sandbox: NFR-9 as a property of the run rather than a promise in a document.
+ *
+ * A self-hosted installation has to work inside a closed perimeter, and the way that promise breaks
+ * is never loud — a font, an icon CDN, an analytics beacon pulled in by a dependency. Every one of
+ * them is green on a machine with internet and red on the customer's, and nobody finds out until
+ * the customer does.
+ *
+ * So the browser of every scenario is pointed at a proxy that does not exist, with the installation
+ * itself bypassed. Anything the product reaches for outside the two addresses this run was given
+ * fails, and it fails inside the test that caused it. The proof that the mechanism can go red at
+ * all is not here — it is a scenario, `tests/network/offline.spec.ts`, because only a live browser
+ * can demonstrate it.
+ */
+describe('the network sandbox', () => {
+  it('sends everything outside the installation to a proxy that does not answer', async () => {
+    const { use } = await configWith(LOCAL);
+
+    expect(use?.proxy?.server).toBeTruthy();
+  });
+
+  it('bypasses the installation, or there would be nothing left to test', async () => {
+    const bypass = (await configWith(LOCAL)).use?.proxy?.bypass ?? '';
+
+    expect(bypass.split(',')).toContain('localhost');
+  });
+
+  /**
+   * The bypass follows the addresses the run was given. A stand on another host is still a run
+   * against an installation, and hard-coding `localhost` would sandbox it into a wall of failures
+   * that say nothing about the product.
+   */
+  it('bypasses whichever addresses the run was pointed at', async () => {
+    const bypass =
+      (
+        await configWith({
+          ...LOCAL,
+          E2E_BASE_URL: 'http://app.example:8080',
+          E2E_API_URL: 'http://api.example:3000',
+        })
+      ).use?.proxy?.bypass ?? '';
+
+    expect(bypass).toContain('app.example');
+    expect(bypass).toContain('api.example');
+  });
+});
+
+/**
+ * The job summary is built from a file, not from scraped console output: a reporter line changes
+ * with the version of Playwright, the JSON report is a contract.
+ */
+describe('the machine-readable report', () => {
+  const reporterNames = (config: PlaywrightConfig): string[] =>
+    (config.reporter ?? []).map(([name]) => name);
+
+  it('is written in CI, where something reads it', async () => {
+    expect(reporterNames(await configWith({ ...LOCAL, CI: 'true' }))).toContain('json');
+  });
+
+  it('names a file rather than flooding the log', async () => {
+    const json = (await configWith({ ...LOCAL, CI: 'true' })).reporter?.find(
+      ([name]) => name === 'json',
+    );
+
+    expect(json?.[1]?.['outputFile']).toBeTruthy();
   });
 });
 

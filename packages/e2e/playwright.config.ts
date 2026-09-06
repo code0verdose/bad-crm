@@ -49,6 +49,33 @@ const projects = [
     : []),
 ];
 
+/**
+ * The addresses this run is allowed to reach, and nothing else.
+ *
+ * NFR-9: a self-hosted installation has to work inside a perimeter with no way out. The way that
+ * promise breaks is quiet — a web font, an icon CDN, a telemetry beacon a dependency brings with
+ * it — and it is green on every machine that has internet and red on the customer's. So the browser
+ * is pointed at a proxy that does not exist, with the installation bypassed: anything the product
+ * reaches for beyond the two addresses this run was given fails, and it fails inside the scenario
+ * that caused it rather than in a support ticket.
+ *
+ * `127.0.0.1` and `::1` are listed beside the hostnames because a bypass list matches what the
+ * request asks for, not what it resolves to.
+ */
+const sandbox = {
+  // Port 1 answers nothing anywhere; the request fails at connect rather than hanging.
+  server: 'http://127.0.0.1:1',
+  bypass: [
+    ...new Set([
+      new URL(baseURL).hostname,
+      new URL(apiURL).hostname,
+      'localhost',
+      '127.0.0.1',
+      '::1',
+    ]),
+  ].join(','),
+};
+
 export default defineConfig({
   testDir: './tests',
   outputDir: './test-results',
@@ -89,8 +116,18 @@ export default defineConfig({
   timeout: numberFrom(process.env['E2E_TEST_TIMEOUT_MS'], 30_000),
   expect: { timeout: numberFrom(process.env['E2E_EXPECT_TIMEOUT_MS'], 5_000) },
 
+  /**
+   * In CI the run also writes a JSON report: `scripts/ci/e2e-summary.ts` turns it into the job
+   * summary — which scenarios failed, which were flaky, and whether tenant isolation held. Scraping
+   * the console for that would tie the gate to a reporter's formatting; the JSON is a contract.
+   */
   reporter: isCI
-    ? [['github'], ['html', { open: 'never' }], ['list']]
+    ? [
+        ['github'],
+        ['html', { open: 'never' }],
+        ['json', { outputFile: 'test-results/report.json' }],
+        ['list'],
+      ]
     : [['list'], ['html', { open: 'never' }]],
 
   use: {
@@ -103,6 +140,8 @@ export default defineConfig({
     trace: 'on-first-retry',
     screenshot: 'only-on-failure',
     video: 'retain-on-failure',
+
+    proxy: sandbox,
   },
 
   projects,

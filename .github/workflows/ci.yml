@@ -463,6 +463,17 @@ jobs:
       - name: Run the end-to-end scenarios
         run: pnpm turbo run test:e2e
 
+      # «26 passed» tells a reviewer nothing about what this job is for. A scenario that stops being
+      # executed — a rename, a file left out of the index — makes the number 24, and a smaller total
+      # reads as a smaller suite rather than as a lost gate. So the run states which scenarios failed
+      # and which were flaky, and states tenant isolation as a verdict of its own: it is invariant
+      # No. 1 and a release gate in the PRD, and its **absence** is a third value, not a quiet pass.
+      #
+      # Always, because the run that failed is the one whose summary is worth reading.
+      - name: Summarise the run
+        if: always()
+        run: pnpm tsx scripts/ci/e2e-summary.ts packages/e2e/test-results/report.json
+
       - name: Collect the container logs
         if: failure()
         run: |
