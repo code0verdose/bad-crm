@@ -246,8 +246,17 @@ test.describe('enabling two-factor authentication with a TOTP app', () => {
       // — the operation requires both (acceptance 2).
       const code = currentTotpCode(secret);
 
-      await page.getByRole('textbox', { name: 'Code from the app' }).fill(code);
-      await page.getByRole('textbox', { name: 'Your current password' }).fill(SEED_PASSWORD);
+      // Scoped to the region rather than the page. Four fields on this screen are labelled «Your
+      // current password» — enrolment, disabling, regenerating codes and the change-password form —
+      // and that is correct: each sits in a `section` with its own `aria-labelledby` heading, so a
+      // reader navigating by region is never in doubt about which password is being asked for. The
+      // page-wide locator was unambiguous only for as long as the change-password form did not
+      // exist; it landed 2026-09-05 and this step began failing on strict mode, which is Playwright
+      // reporting the same fact from the other side.
+      const enrolment = page.getByRole('region', { name: 'Two-factor authentication' });
+
+      await enrolment.getByRole('textbox', { name: 'Code from the app' }).fill(code);
+      await enrolment.getByRole('textbox', { name: 'Your current password' }).fill(SEED_PASSWORD);
 
       const [confirmResponse] = await Promise.all([
         page.waitForResponse(
