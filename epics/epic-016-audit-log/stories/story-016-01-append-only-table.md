@@ -13,6 +13,18 @@ estimate: M
 изменить или удалить из приложения, **чтобы** запись в нём была доказательством, а не мнением, —
 даже если код приложения окажется скомпрометирован.
 
+> **Сверено 2026-09-06.** Шесть критериев закрыты целиком (1, 3, 4, 5, 6, 8) — миграцией
+> `20260805110000_audit_logs` и тестами `test/integration/db/audit-log-append-only.test.ts` и
+> `rls-isolation.test.ts`. Открыты: п. 9 (замер вставки под нагрузкой), половина п. 2 и п. 7
+> (`EXPLAIN`-pruning и использование индексов не доказаны прогоном) и половина п. 10 (метрика
+> `audit_log_partition_bytes` не экспортируется — `docs/runbooks/audit-log.md` это признаёт;
+> оценка объёма там есть). Все они отложены осознанно и объяснены в «Отклонениях»: на пустой
+> таблице `EXPLAIN` покажет одну партицию просто потому, что данных нет.
+>
+> Статус `review` верен: это фаза 1 эпика, и она сделана в той части, которую можно доказать без
+> объёма. `done` ждёт commit-гейта. П. 4 закрыт тестом с другим именем —
+> `test/integration/db/audit-log-append-only.test.ts`, а не `test/structure/audit-log-grants.spec.ts`.
+
 ## Acceptance (Given/When/Then)
 
 1. **Схема таблицы.**
@@ -81,20 +93,30 @@ estimate: M
 
 ## Задачи
 
-- [ ] `packages/server/prisma/migrations/*_audit_logs/migration.sql` — создание партиционированной
-      таблицы, дефолтная партиция-страховка, индексы, RLS `ENABLE` + `FORCE` + политики
-      `tenant_isolation` и `maintenance_access`, явные `GRANT INSERT, SELECT` и
+Отметки проставлены 2026-09-06 по факту кода; расхождения имён с планом — в разделе «Отклонения»
+ниже, он остаётся верным.
+
+- [x] `packages/server/prisma/migrations/20260805110000_audit_logs/migration.sql` —
+      партиционированная таблица, дефолтная партиция-страховка, три индекса, RLS `ENABLE` + `FORCE`,
+      политики `tenant_isolation` и `maintenance_access`, `GRANT SELECT, INSERT` и
       `REVOKE UPDATE, DELETE, TRUNCATE` для `app_user`.
-- [ ] `packages/server/prisma/sql/create-audit-partition.sql` — функция создания партиции с
-      применением политик и грантов.
-- [ ] `packages/server/src/application/platform/jobs/ensure-audit-partitions.job.ts`.
-- [ ] `packages/server/src/infrastructure/persistence/prisma/tenant-tables.ts` — регистрация
-      `audit_logs` (+ `ROW_FACTORIES` для isolation-теста).
-- [ ] `packages/server/test/integration/rls/rls-isolation.test.ts` — партиционированный случай.
-- [ ] `packages/server/test/structure/audit-log-grants.spec.ts` (п. 3, 4, 5, 8).
-- [ ] `packages/server/test/integration/audit/audit-partition-pruning.spec.ts` (п. 2, 7 — через
-      `EXPLAIN`).
-- [ ] `docs/runbooks/audit-log.md` — оценка объёма, создание партиций, права ролей.
+- [x] Функция создания партиции с политиками и грантами — `create_audit_partition(date)` в той же
+      миграции, а не отдельным `prisma/sql/create-audit-partition.sql`: одна функция на все три
+      источника партиции (миграция, команда обслуживания, оператор).
+- [x] Команда обслуживания вместо фоновой задачи — `packages/server/scripts/ensure-audit-partitions.ts`
+      и `scripts/audit-partitions.util.ts` (обоснование — в «Отклонениях»).
+- [x] Регистрация `audit_logs` в `infrastructure/persistence/prisma/tenant-tables.constant.ts:55`.
+- [x] Isolation-тест партиционированного случая — `test/integration/db/rls-isolation.test.ts` плюс
+      `test/integration/db/audit-log-append-only.test.ts`, который перечисляет **каждую** партицию
+      через общий каталог (`PARTITION_ROW_SECURITY_SQL`), а не родителя.
+- [x] Структурная проверка грантов (п. 3, 4, 5, 8) — в том же
+      `test/integration/db/audit-log-append-only.test.ts`: попытки `UPDATE`/`DELETE`/`DETACH` ролью
+      `app_user` и чтение `information_schema.role_table_grants` после них. Отдельного
+      `test/structure/audit-log-grants.spec.ts` нет — проверка живёт там, где есть живой Postgres.
+- [ ] `audit-partition-pruning.spec.ts` (п. 2 в части `EXPLAIN`, п. 9, п. 10) — не написан
+      осознанно, см. «Отклонения».
+- [x] `docs/runbooks/audit-log.md` — оценка объёма, создание партиций, права ролей. Метрика
+      `audit_log_partition_bytes` (п. 10) ещё не экспортируется, и runbook это прямо говорит.
 
 ## Отклонения от плана задач (2026-08-05)
 

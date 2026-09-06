@@ -13,6 +13,16 @@ estimate: M
 периоду и открывать карточку события с состоянием до и после, **чтобы** разбор инцидента занимал
 минуты и заканчивался ссылкой, которую можно отправить владельцу.
 
+> **Сверено 2026-09-06: не начата, статус `backlog` верен.** Ни одного артефакта истории в дереве
+> нет — нет `application/platform/queries/list-audit-events.query.ts`, нет маршрута `/admin/audit`
+> ни на сервере, ни в клиенте, нет юнита `packages/client/src/units/audit` (`ls
+> packages/client/src/units` печатает auth, dashboard, employee, iam, organization, team), нет
+> `audit.json` в локалях. Попутно приехало ровно одно: права `audit:read`, `audit:read_security`,
+> `audit:export`, `audit:manage_retention` уже есть в каталоге
+> (`packages/shared/src/permissions/permissions.catalog.ts:326`) — их завёл EPIC-011 вместе с
+> закрытым каталогом. Ни одно из них не объявлено ни на одном endpoint'е, потому что endpoint'ов
+> нет.
+
 ## Acceptance (Given/When/Then)
 
 1. **Состояние фильтров в URL.**

@@ -13,6 +13,11 @@ estimate: M
 **чтобы** приложить его к аудиту заказчика или к разбору инцидента, — и чтобы сам факт выгрузки
 тоже остался в журнале.
 
+> **Сверено 2026-09-06: не начата, статус `backlog` верен.** Нет `start-audit-export.use-case.ts`,
+> нет `infrastructure/export/**`, нет лимитера, нет действия `audit.exported` в `AUDIT_ACTIONS`.
+> Право `audit:export` в каталоге есть (EPIC-011), endpoint'а — нет. Зависимость истории от
+> `FileStoragePort` не удовлетворена: EPIC-015 (файлы) ещё не начат.
+
 ## Acceptance (Given/When/Then)
 
 1. **Экспорт по фильтру.**

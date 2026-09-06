@@ -13,6 +13,14 @@ estimate: M
 записи архивируются предсказуемой процедурой, **чтобы** база не росла бесконечно, но и не теряла
 данные, которые могут понадобиться на аудите через год.
 
+> **Сверено 2026-09-06: не начата, статус `backlog` верен.** Колонки `audit_retention_months` нет
+> ни в `prisma/schema.prisma`, ни в миграциях (`grep -rn 'audit_retention' packages` печатает
+> пусто), скрипта `scripts/audit-retention.ts` нет, `infrastructure/archive/**` нет, раздела
+> «Ретенция» в `docs/runbooks/audit-log.md` нет. Отгружена только та половина, что принадлежит
+> STORY-016-01: `DETACH` ролью `app_user` уже отвергается, и это доказано —
+> `packages/server/test/integration/db/audit-log-append-only.test.ts:249`. То есть п. 3 этой
+> истории закрыт заранее, всё остальное — нет.
+
 ## Acceptance (Given/When/Then)
 
 1. **Настройка срока хранения.**

@@ -1,7 +1,7 @@
 ---
 id: STORY-016-02
 epic: EPIC-016
-status: backlog
+status: in-progress
 blocked: false
 priority: must
 estimate: L
@@ -12,6 +12,44 @@ estimate: L
 **Как** администратор системы (P5) **я хочу**, чтобы каждое привилегированное действие оставляло
 запись с актором, объектом, состоянием до и после и идентификатором запроса, **чтобы** на вопрос
 «кто это сделал и что было раньше» отвечал журнал, а не реконструкция по косвенным признакам.
+
+> **Статус поднят `backlog` → `in-progress` 2026-09-06, по сверке с кодом.** `backlog` означает «не
+> начата», а из десяти критериев приёмки пять закрыты целиком (1, 3, 5, 6, 8), три закрыты
+> наполовину (2 — недостают `acl.*` и `file.*`; 4 — нет outbox-половины; 9 — fail-closed работает,
+> деградации `INFO` нет) и два открыты (7, 10). Собственный вклад истории отгружен более чем наполовину — врезка ниже («Что уже
+> сделано — и **не этой историей**») это уже не покрывает, потому что писалась до трёх коммитов
+> аудита:
+>
+> - **критерий 5 (секреты в `before`/`after`) закрыт — но не whitelist'ом, которого просила
+>   история.** `4463e0d` завёл deny-list `application/platform/audit/audit-redaction.util.ts`,
+>   который прогоняется на каждой записи, и корпус-тест
+>   `test/unit/audit/audit-redaction-corpus.test.ts`, читающий вызовы из дерева. Обоснование отказа
+>   от whitelist'а записано в докстринге самого файла (allow-list молча пустеет на забытом действии
+>   и дрейфует от вызовов). Файла `audit-field-whitelist.ts` нет и не будет — задача в списке ниже
+>   закрыта другим решением, а не осталась несделанной;
+> - **критерий 8 (адрес) закрыт вместе с гейтом против регресса.** Гейт —
+>   `test/contract/audit-privileged-ip-address.test.ts` плюс
+>   `test/contract/support/audit-record-call.util.ts`: он выводит из severity действия и из текста
+>   вызова, обязан ли этот вызов нести адрес, вместо списка имён руками;
+> - **`session.refresh_reuse_detected` отгружен** — действие есть в
+>   `packages/shared/src/audit/audit-action.enums.ts`, вызов в
+>   `application/identity/use-cases/refresh-session.use-case.ts:178`, тест
+>   `test/unit/application/refresh-session.use-case.test.ts:271`. Пункт 5 раздела «Что реально
+>   открыто» описывает снятое состояние;
+> - **отказ вместо деградации (`AuditTrailUnscopedError`, `AUDIT_ACTIONS_WITHOUT_ORGANIZATION`)** —
+>   `7942a18`, плюс `test/unit/audit/audit-unscoped-guard.test.ts` и метрика
+>   `audit_unscoped_total`.
+>
+> Открытыми остаются четыре вещи и ни одна из них не про порт: аудит **отказов** в доступе
+> (критерий 7 — сегодня только метрика `permission_denied_total{reason}` в
+> `presentation/http/error-handler.middleware.ts:142`, действия отказа в каталоге нет, агрегата
+> серий нет), деградация `INFO` при сбое записи (критерий 9), замер накладных расходов
+> (критерий 10) и сквозной `requestId` через outbox (половина критерия 4 — outbox в коде нет,
+> `find packages/server/src -iname '*outbox*'` печатает пусто). Плюс недостающие семейства
+> критерия 2 — `acl.*` и `file.*`, — которые ждут EPIC-014 и EPIC-015, а не эту историю.
+>
+> Абзацы ниже оставлены как запись состояния на 2026-08-30, а не как утверждение о текущем;
+> расхождения помечены построчно.
 
 ## Acceptance (Given/When/Then)
 
@@ -96,22 +134,34 @@ estimate: L
 
 ## Задачи
 
-- [ ] `packages/server/src/application/platform/ports/audit-logger.port.ts` +
-      `packages/shared/src/audit/audit-event.types.ts` (типизированный union `action` →
-      обязательные поля `before`/`after`).
-- [ ] `packages/server/src/infrastructure/persistence/prisma/audit-logger.adapter.ts` — вставка в
-      текущей транзакции (`UnitOfWorkPort`).
-- [ ] `packages/server/src/application/platform/audit/audit-field-whitelist.ts` — whitelist полей на
-      каждый тип события.
-- [ ] `packages/server/src/infrastructure/security/ip-hash.util.ts`.
-- [ ] Подключение `AuditLoggerPort` во все существующие use-cases EPIC-011/012/013/014/015.
-- [ ] `packages/server/src/presentation/http/middleware/request-id.middleware.ts` — протяжка
-      `requestId` в контекст и в конверт outbox-события.
-- [ ] `packages/server/src/application/access/services/denied-access-audit.service.ts` — правила
-      п. 7 (включая агрегацию серий).
-- [ ] Тесты: `audit-logger.adapter.spec.ts` (п. 1, 9), `audit-coverage.spec.ts` (п. 2 — табличный
-      по списку событий), `audit-redaction-corpus.spec.ts` (п. 5), `request-id-propagation.spec.ts`
-      (п. 4), `denied-access-audit.service.spec.ts` (п. 7).
+Отметки проставлены 2026-09-06 по факту кода; там, где реализация разошлась с планом задачи, рядом
+стоит, чем она закрыта.
+
+- [x] `packages/server/src/application/platform/ports/audit-logger.port.ts` — есть (STORY-009-06).
+      `packages/shared/src/audit/audit-event.types.ts` не заведён: union «действие → обязательные
+      поля» заменён закрытым списком `AUDIT_ACTIONS` + `AUDIT_ACTION_SEVERITY`
+      (`Record<AuditAction, …>`, действие без уровня не компилируется).
+- [x] Адаптер вставки в текущей транзакции — отгружен как
+      `packages/server/src/infrastructure/persistence/prisma/audit-log.adapter.ts` (имя разошлось
+      с планом); транзакция берётся из `withTenant` через AsyncLocalStorage, а не из
+      `UnitOfWorkPort`.
+- [x] ~~`audit-field-whitelist.ts`~~ — закрыто deny-list'ом
+      `application/platform/audit/audit-redaction.util.ts` (`4463e0d`), см. врезку к пункту 1
+      раздела «Что реально открыто».
+- [x] Хеш адреса — `infrastructure/crypto/address-hasher.adapter.ts` (тот же, что у сессий);
+      отдельного `infrastructure/security/ip-hash.util.ts` нет и не нужно.
+- [x] Подключение `AuditLoggerPort` в существующие use-cases — 44 вызова
+      (`grep -rc 'audit\.record(' packages/server/src/application`); EPIC-014/015 ещё нет.
+- [ ] Протяжка `requestId` **в конверт outbox-события** — outbox в коде нет. Половина HTTP →
+      `RequestContextPort` → аудит работает (`audit-log.adapter.ts` берёт `requestId` из контекста).
+- [ ] `application/access/services/denied-access-audit.service.ts` — правила п. 7 (включая
+      агрегацию серий).
+- [x] Тесты п. 1, 2, 5: `test/unit/audit/audit-log-adapter.test.ts`,
+      `test/unit/audit/audit-coverage.test.ts`, `test/unit/audit/audit-redaction-corpus.test.ts`,
+      `test/integration/db/audit-trail-writes.test.ts`; сверх плана —
+      `test/unit/audit/audit-unscoped-guard.test.ts` и гейт адреса
+      `test/contract/audit-privileged-ip-address.test.ts`.
+- [ ] Тесты п. 7 и 9: `denied-access-audit.service.spec.ts` и деградация `INFO` при сбое записи.
 
 ## Что уже сделано — и **не этой историей**
 
@@ -178,6 +228,13 @@ STORY-011-06 заблокирована до EPIC-014) и `file.*` (EPIC-015).
    дисциплиной вызывающего и комментарием в `audit-logger.port.ts` — то есть свойством, которое
    ничто не проверяет. `test/unit/logging/redaction.test.ts` покрывает **логи**, а не аудит:
    `REDACTED_PATHS` к колонкам `before`/`after` не применяется.
+
+   > **Закрыто 2026-09-06, другим решением.** Deny-list
+   > `packages/server/src/application/platform/audit/audit-redaction.util.ts` (коммит `4463e0d`)
+   > прогоняется в `PrismaAuditLogger.record` до записи и до лог-стока, корпус-тест
+   > `packages/server/test/unit/audit/audit-redaction-corpus.test.ts` читает вызовы из дерева.
+   > Whitelist отвергнут осознанно, обоснование — в докстринге `audit-redaction.util.ts`; задача
+   > «`audit-field-whitelist.ts`» в списке выше закрыта этим, а не осталась висеть.
 2. **Аудита отказов в доступе (acceptance 7) нет в записи журнала — но метрика уже есть
    (уточнено 2026-08-30).** Здесь стояло «метрики `permission_denied_total{reason}` нет —
    `MetricsPort` объявляет три метрики», и это перестало быть правдой: метрика заведена коммитом
@@ -193,6 +250,27 @@ STORY-011-06 заблокирована до EPIC-014) и `file.*` (EPIC-015).
    к записи, а не к метрике; сами эти два места (`docs/security/permission-model.md`, раздел «Чего
    нет», и комментарий к `permission.inspected` в
    `packages/shared/src/audit/audit-action.enums.ts`) сверены и говорят то же.
+
+   > **Подтверждено открытым 2026-09-06 — и это тот самый пункт, который числится за EPIC-011.**
+   > Аудитная половина критерия 2 STORY-011-07 («отказ в доступе не пишется в `AuditLog`») —
+   > единственная её часть, не зависящая от ресурсного ACL, и по коду она действительно открыта:
+   > `authorizeCapability`/`authorizeResource`
+   > (`packages/server/src/domain/access/authorize.util.ts`) возвращают `Decision` с `DenyReason`,
+   > `assertAllowed` превращает его в ошибку, и единственный, кто её видит, —
+   > `packages/server/src/presentation/http/error-handler.middleware.ts:142`, где стоит
+   > `metrics.incrementPermissionDenied(reason)` и больше ничего. Ни одного действия отказа в
+   > `AUDIT_ACTIONS` нет.
+   >
+   > **Где запись должна была бы стоять — не там, где стоит метрика.** Обработчик ошибок работает
+   > после того, как транзакция закрыта, а `PrismaAuditLogger` пишет строку в транзакцию,
+   > открытую `withTenant`, и отвергает вызов вне скоупа (`AuditTrailUnscopedError`). То есть
+   > записать отказ из middleware сегодня физически нельзя: у отказа нет ни транзакции, ни (для
+   > `not_authenticated`) организации. Значит, история пишет отдельный путь — свой сток с
+   > собственным `withTenant` на актора отказа (планировавшийся
+   > `application/access/services/denied-access-audit.service.ts`) — и либо заводит действия отказа
+   > в каталоге, либо расширяет `AUDIT_ACTIONS_WITHOUT_ORGANIZATION` для `not_authenticated` с
+   > записанной причиной. Агрегат серий (> 10 в минуту) при этом остаётся отложенным: очереди и
+   > планировщика в продукте нет.
 3. **Разделение по severity при сбое записи (acceptance 9) не сделано.** Сегодня падение вставки
    роняет транзакцию для любого события, включая `INFO`. **Уточнено 2026-08-30:** метрика
    `audit_write_failed_total` в коде **есть** (`incrementAuditWriteFailed` в `MetricsPort`,
@@ -209,6 +287,14 @@ STORY-011-06 заблокирована до EPIC-014) и `file.*` (EPIC-015).
    Это **единственный** пункт списка acceptance 2, чей домен уже отгружен, а действия в каталоге нет;
    всё остальное недостающее ждёт своего домена. Лог ротируется и не защищён
    `REVOKE UPDATE, DELETE` — событие безопасности в нём не заменяет журнал.
+
+   > **Закрыто 2026-09-06.** Действие `session.refresh_reuse_detected` есть в
+   > `packages/shared/src/audit/audit-action.enums.ts`, запись — в
+   > `packages/server/src/application/identity/use-cases/refresh-session.use-case.ts:178` (внутри той
+   > же транзакции, что и отзыв семьи), доказательство —
+   > `packages/server/test/unit/application/refresh-session.use-case.test.ts:271` и
+   > `packages/server/test/unit/audit/audit-logger.test.ts:139`. Пункт списка acceptance 2 больше не
+   > открыт; открытыми там остаются только `acl.*` и `file.*`, чьих доменов нет.
 6. **Адрес доходит до записи в меньшинстве вызовов.** Остальные передают `ipAddress: undefined`, то
    есть пишут `ip_hash = NULL`, и «тот же адрес снова» по журналу не отвечается. Числа здесь
    намеренно не записаны — печатают команды:
@@ -221,6 +307,15 @@ STORY-011-06 заблокирована до EPIC-014) и `file.*` (EPIC-015).
 
    Причина отложена осознанно и описана в `application/iam/use-cases/reset-user-mfa.use-case.ts`
    (комментарий про `ipAddress: undefined` в `application/iam/**`) — эта история её закрывает.
+
+   > **Закрыто 2026-09-06.** «Меньшинство» перевернулось: команды выше печатают сегодня 44 вызова,
+   > 23 с адресом из запроса и 13 с `undefined` (остальные — без поля вовсе). Важнее числа то, что
+   > остаток теперь не дисциплина, а гейт:
+   > `packages/server/test/contract/audit-privileged-ip-address.test.ts` вместе с
+   > `packages/server/test/contract/support/audit-record-call.util.ts` выводит из severity действия
+   > и из текста вызова, обязан ли этот вызов нести адрес, и падает на следующем, который забудет.
+   > `ipAddress: undefined` там, где актор системный или действие `INFO`, — не дефект, а то, что
+   > гейт разрешает по имени.
 7. **Сквозной `requestId` через outbox (acceptance 4) непроверяем в принципе:** outbox в коде нет
    (`find packages/server/src -iname '*outbox*'` печатает пусто). Проверить можно только участок
    HTTP → `RequestContextPort` → аудит; часть про job проверяется, когда появится очередь.
