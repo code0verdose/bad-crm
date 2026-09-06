@@ -31,16 +31,22 @@ import { ConflictError } from '@/domain/shared/errors/app.errors.js';
  * Pure, like every file in this directory (`rules/hexagonal-backend.mdc`): no I/O, no `Date.now()`,
  * nothing the caller could not have computed from the two ids already in hand.
  *
- * **What this file does not contain.** STORY-013-04's task list also names
- * `assertNotRequiredByPolicy` — refusing a *self-service* disable while an organization's mandatory-
- * 2FA policy still applies to the caller's role. That policy does not exist yet: it is
- * [STORY-013-05](../../../../../epics/epic-013-two-factor-totp/stories/story-013-05-org-2fa-policy.md),
- * still `backlog`. A function with nothing to read — no policy row, no per-role flag — would either
- * always allow (dead code, `rules/commit-hygiene.mdc`, rule 1) or hard-code a refusal nothing in this
- * delta can turn off, and this codebase has already paid for that mistake twice: a `deny` reason
- * published in the error catalogue, translated into both locales and thrown by nothing
- * (`docs/brain/` records both). It is not written here; STORY-013-05 adds it beside the policy row it
- * reads.
+ * **What this file does not contain, and why it still does not.** STORY-013-04's task list also
+ * names `assertNotRequiredByPolicy` — refusing a *self-service* disable while an organization's
+ * mandatory-2FA policy still applies to the caller's role. This docstring used to say that policy
+ * did not exist and that STORY-013-05 was `backlog`; both stopped being true with `abe2135`
+ * (corrected 2026-09-06). The refusal exists and is enforced — `DisableTotpUseCase` asks
+ * `policies.gateFor` and throws `MfaRequiredByPolicyError` when the caller is `covered`
+ * (`application/identity/use-cases/disable-totp.use-case.ts:243`) — it simply does not live here.
+ *
+ * That placement is deliberate rather than left over, and the line is not between `domain` and the
+ * rest — `evaluateMfaRequirement` is a pure function in *this very directory*
+ * (`mfa-requirement.policy.ts`), with the same ban on I/O and on reading a clock. The line is what
+ * each rule needs to be **handed**. The two checks below need two ids and nothing else, so a caller
+ * can make them from what it already has. Deciding whether the policy still covers somebody needs
+ * the organization's settings row and the subject's unexpired role grants, so somebody has to fetch
+ * them first: that is the use-case's job, through `policies.gateFor`, and the rule it feeds lives
+ * next door rather than here.
  */
 export const assertNotSelfReset = (actor: Actor, subjectUserId: string): void => {
   if (actor.userId === subjectUserId) {
