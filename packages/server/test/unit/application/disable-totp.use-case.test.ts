@@ -4,10 +4,7 @@ import { DisableTotpUseCase } from '@/application/identity/use-cases/disable-tot
 import { RecoveryCodeMatcher } from '@/application/identity/use-cases/recovery-code-matcher.use-case.js';
 import { MfaPolicyQuery } from '@/application/organization/use-cases/mfa-policy.query.js';
 import { type FieldEncryptionPort } from '@/application/platform/ports/field-encryption.port.js';
-import {
-  type TenantScope,
-  type UnitOfWorkPort,
-} from '@/application/platform/ports/unit-of-work.port.js';
+import { type TenantScope } from '@/application/platform/ports/unit-of-work.port.js';
 import {
   MfaRequiredByPolicyError,
   RateLimitedError,
@@ -43,7 +40,11 @@ const IP_ADDRESS = '203.0.113.7';
 
 interface HarnessOptions {
   /** Substituted only by the race case below, which needs a rival to write between the scopes. */
-  readonly unitOfWork?: UnitOfWorkPort;
+  /**
+   * Typed as the double, not as the port: the harness hands it straight back, and the one case that
+   * substitutes a rival reads `onScopeClosed` off it — a seam only the double has.
+   */
+  readonly unitOfWork?: FakeUnitOfWork;
   /** Substituted only by the broken-port case below. */
   readonly fields?: FieldEncryptionPort;
 }

@@ -4,10 +4,7 @@ import { assert, describe, expect, it } from 'vitest';
 
 import { ConsumeRecoveryCodeUseCase } from '@/application/identity/use-cases/consume-recovery-code.use-case.js';
 import { RecoveryCodeMatcher } from '@/application/identity/use-cases/recovery-code-matcher.use-case.js';
-import {
-  type TenantScope,
-  type UnitOfWorkPort,
-} from '@/application/platform/ports/unit-of-work.port.js';
+import { type TenantScope } from '@/application/platform/ports/unit-of-work.port.js';
 import { RateLimitedError, RecoveryCodeInvalidError } from '@/domain/shared/errors/app.errors.js';
 
 import { createPromMetrics } from '@/infrastructure/metrics/prom-client.adapter.js';
@@ -35,7 +32,11 @@ interface HarnessOptions {
   readonly locale?: string;
   readonly limits?: { readonly mfa_recovery_consume_attempt: number };
   /** Substituted only by the race case below, which needs a rival to write between the scopes. */
-  readonly unitOfWork?: UnitOfWorkPort;
+  /**
+   * Typed as the double, not as the port: the harness hands it straight back, and the one case that
+   * substitutes a rival reads `onScopeClosed` off it — a seam only the double has.
+   */
+  readonly unitOfWork?: FakeUnitOfWork;
 }
 
 /**
