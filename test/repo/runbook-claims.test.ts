@@ -300,10 +300,6 @@ const PENDING: Readonly<Record<string, string>> = {
     'EPIC-017 together with `api` and `worker`.',
 
   // ── metrics the runbooks already mark as absent in their own prose ───────────────────────────
-  'audit-log.md · metric · audit_log_partition_bytes':
-    'Named in «Объём и рост» as the metric an alert on partition growth would use, and the same ' +
-    'paragraph says ' +
-    '«Её ещё нет (2026-08-30)». The audit partitions exist; nothing exports their size yet.',
   'hosting.md · metric · outbox_lag_seconds':
     'The age of the oldest unprocessed outbox event. There is no outbox and no queue in the tree — ' +
     'ADR-0021 is a decision taken ahead of the epic that implements it — and the alert table says ' +

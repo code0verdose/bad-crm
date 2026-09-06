@@ -41,6 +41,7 @@ import { noopMetrics } from '@/infrastructure/metrics/noop-metrics.adapter.js';
 import { RecordClientErrorUseCase } from '@/application/platform/use-cases/record-client-error.use-case.js';
 import { pinoAuditLogger } from '@/infrastructure/logging/pino-audit.adapter.js';
 import { PrismaAuditLogger } from '@/infrastructure/persistence/prisma/audit-log.adapter.js';
+import { createAuditLogBytesReader } from '@/infrastructure/persistence/prisma/audit-log-size.adapter.js';
 import { PrismaEffectivePermissionsReader } from '@/infrastructure/persistence/prisma/effective-permissions-reader.adapter.js';
 import { PrismaUserRoleRepository } from '@/infrastructure/persistence/prisma/user-role.repository.js';
 import { AssignRoleUseCase } from '@/application/iam/use-cases/assign-role.use-case.js';
@@ -273,8 +274,21 @@ export const buildContainer = (input: ContainerInput): AppContainer => {
    * none of that. «The counter exists but nobody scrapes it» is not the same as off.
    *
    * Built before the audit trail because the trail is wrapped in it, not the other way round.
+   *
+   * The size of that trail is the one series here that has to be *asked for* — nothing on the
+   * request path knows it — so the reader is handed in and the adapter decides how often to use it
+   * (`prom-client.adapter.ts`). It reads through `database.base`: the statement is raw and has no
+   * tenant to be scoped to, and `guarded` exists to refuse exactly the tenant-scoped queries this
+   * is not one of. A container built without a database — the HTTP suites do that — publishes one
+   * series fewer rather than a zero.
    */
-  const metrics = input.env.METRICS_ENABLED ? createPromMetrics() : noopMetrics;
+  const metrics = input.env.METRICS_ENABLED
+    ? createPromMetrics(
+        database === undefined
+          ? {}
+          : { readAuditLogBytes: createAuditLogBytesReader(database.base) },
+      )
+    : noopMetrics;
 
   /**
    * The audit trail: a row in `audit_logs`, written inside the transaction that caused it.

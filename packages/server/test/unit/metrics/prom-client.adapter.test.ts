@@ -192,3 +192,80 @@ describe('metrics switched off', () => {
     await expect(noopMetrics.render()).resolves.toBe('');
   });
 });
+
+/**
+ * The one series here that has to be asked for.
+ *
+ * Every other metric is counted as the process works; the disk the audit trail occupies is knowable
+ * only by asking the database, so the gauge pulls it during `collect`. Three properties make that
+ * safe to publish, and all three are ways this endpoint has gone wrong in other products: a query
+ * per scrape, a blank exposition after one database hiccup, and a zero published as if it were a
+ * reading.
+ */
+describe('the size of the audit trail', () => {
+  it('publishes the bytes the reader answers', async () => {
+    const metrics = createPromMetrics({ readAuditLogBytes: () => Promise.resolve(11_476_992) });
+
+    await expect(metrics.render()).resolves.toContain('audit_log_partition_bytes 11476992');
+  });
+
+  it('asks the database once for two scrapes inside the window', async () => {
+    let reads = 0;
+    const metrics = createPromMetrics({
+      readAuditLogBytes: () => {
+        reads += 1;
+
+        return Promise.resolve(1_024);
+      },
+    });
+
+    await metrics.render();
+    await metrics.render();
+
+    // The scrape interval belongs to whoever is scraping — two Prometheus servers at 15 s, a
+    // dashboard on a refresh loop — and without this the database load of the installation would be
+    // a property of their configuration rather than of ours.
+    expect(reads).toBe(1);
+  });
+
+  it('publishes no such series at all when there is nothing to read it from', async () => {
+    const metrics = createPromMetrics();
+
+    await expect(metrics.render()).resolves.not.toContain('audit_log_partition_bytes');
+  });
+
+  it('keeps every other metric when the reading fails', async () => {
+    const metrics = createPromMetrics({
+      readAuditLogBytes: () => Promise.reject(new Error('connection reset')),
+    });
+
+    metrics.incrementAuditWriteFailed();
+
+    const rendered = await metrics.render();
+
+    // A rejecting `collect` takes the whole exposition text with it — including the metrics an
+    // operator is reading to work out why the database is unreachable.
+    expect(rendered).toContain('audit_write_failed_total 1');
+    // And no zero: «no audit trail on disk» is a claim, and it would be a false one. A gauge is
+    // born holding zero and renders it whether or not anything set it, so «nothing was read» has to
+    // be published as no sample rather than as a reading.
+    expect(rendered).not.toMatch(/^audit_log_partition_bytes /m);
+  });
+
+  it('brings the series back once a later reading succeeds', async () => {
+    let attempt = 0;
+    const metrics = createPromMetrics({
+      readAuditLogBytes: () => {
+        attempt += 1;
+
+        return attempt === 1
+          ? Promise.reject(new Error('connection reset'))
+          : Promise.resolve(2_048);
+      },
+    });
+
+    await expect(metrics.render()).resolves.not.toMatch(/^audit_log_partition_bytes /m);
+    // CONTROL for the removal above: it is a missing reading, not a metric that was thrown away.
+    await expect(metrics.render()).resolves.toContain('audit_log_partition_bytes 2048');
+  });
+});

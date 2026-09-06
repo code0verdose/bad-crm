@@ -1,7 +1,11 @@
 import request from 'supertest';
-import { describe, expect, it } from 'vitest';
+import { assert, describe, expect, it } from 'vitest';
 
-import { createTestApp } from '../../support/test-app.util.js';
+import { buildContainer } from '../../../src/infrastructure/bootstrap/container.factory.js';
+import { type AppContainer } from '../../../src/infrastructure/bootstrap/container.types.js';
+import { createRootLogger } from '../../../src/infrastructure/logging/pino-logger.adapter.js';
+import { type DatabaseConnection } from '../../../src/infrastructure/persistence/prisma/database.factory.js';
+import { createTestApp, testEnv } from '../../support/test-app.util.js';
 
 const TOKEN = 'example-only-not-a-real-metrics-token-0123456789';
 
@@ -61,5 +65,47 @@ describe('an installation with metrics switched on', () => {
 
     expect(rendered.text).toContain('route="/health"');
     expect(rendered.text).toContain('http_request_duration_seconds_count');
+  });
+});
+
+/**
+ * The one series on this endpoint that has to be *asked for*, wired through the composition root.
+ *
+ * `createTestApp` builds a container with no database — that is the whole point of the harness — so
+ * the suites above prove only that an installation without one publishes no such series. The
+ * production shape is the other branch, and a wiring mistake there is invisible in every other test:
+ * the endpoint answers, every counter is where it was, and the one number an operator installed the
+ * metric for is silently absent.
+ */
+describe('the size of the audit trail, wired', () => {
+  const withDatabase = (): AppContainer =>
+    buildContainer({
+      env: testEnv({ METRICS_ENABLED: true, METRICS_TOKEN: TOKEN }),
+      logger: createRootLogger({ level: 'silent', version: '0.0.0' }, { write: () => undefined }),
+      database: {
+        base: { $queryRaw: () => Promise.resolve([{ bytes: '11476992' }]) },
+        guarded: {},
+        close: () => Promise.resolve(),
+      } as unknown as DatabaseConnection,
+    });
+
+  it('reads the trail through the composition root when there is a database', async () => {
+    const { metrics } = withDatabase().http;
+
+    assert(metrics !== undefined, 'metrics are enabled in this container');
+
+    await expect(metrics.port.render()).resolves.toContain('audit_log_partition_bytes 11476992');
+  });
+
+  /** CONTROL: the same wiring without a database publishes no reading rather than a zero. */
+  it('CONTROL: publishes no such series without one', async () => {
+    const { container } = createTestApp({ METRICS_ENABLED: true, METRICS_TOKEN: TOKEN });
+    const { metrics } = container.http;
+
+    // Narrowed rather than read optionally: `expect(x?.y).not.toMatch(...)` is satisfied by the
+    // absence of the whole registry, which is the one outcome that must not pass for this claim.
+    assert(metrics !== undefined, 'metrics are enabled in this container');
+
+    await expect(metrics.port.render()).resolves.not.toMatch(/^audit_log_partition_bytes /m);
   });
 });
