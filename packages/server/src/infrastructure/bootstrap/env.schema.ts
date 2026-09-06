@@ -427,7 +427,8 @@ const fields = z.object({
    * 60 s the refusal reaches nobody either: that is nginx's default `proxy_read_timeout`, so the
    * proxy has already answered 504 while the request goes on holding a socket, a parsed body and a
    * promise chain — the unbounded queue this deadline exists to prevent, wearing a number. The upper
-   * bound also keeps the delay five orders of magnitude below `setTimeout`'s 2^31−1 ms limit, past
+   * bound also keeps the delay four orders of magnitude below `setTimeout`'s 2^31−1 ms limit
+   * (2 147 483 647 ÷ 60 000 ≈ 35 800×), past
    * which Node clamps an overflowing delay **down to 1 ms** and one extra digit turns into an
    * installation that refuses every queued sign-in with nothing in the log to say why.
    */

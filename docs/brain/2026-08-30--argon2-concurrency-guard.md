@@ -71,15 +71,19 @@ tags: [argon2, nodejs, typescript, prometheus, zod, express, vitest]
    сверка `hasher.dummyHash` идёт через тот же порт (STORY-013-06 критерий 3, STORY-013-03
    критерий 8). `needsRehash` и `dummyHash` — сквозные: ничего не вычисляют.
 
-3. `env.schema.ts:337,354` — `AUTH_ARGON2_MAX_CONCURRENCY` (4) и `AUTH_ARGON2_QUEUE_TIMEOUT_MS`
-   (2000) через существующий `argon2Cost` (целое, положительное, `z.coerce`). Обоснование числа
+3. `env.schema.ts:382,434` — `AUTH_ARGON2_MAX_CONCURRENCY` (4) и `AUTH_ARGON2_QUEUE_TIMEOUT_MS`
+   (2000) через `boundedInt` с диапазонами **1–64** и **100–60 000 мс** и собственным `rangeError`,
+   называющим интервал. *(Исправлено 2026-09-06: до `76837d8` обе шли через `argon2Cost` — «целое,
+   положительное», — и следующая волна объявила это дефектом: `0` читался бы как «без предела», а
+   `1000` стартовал бы молча и давал пик 18.5 GiB. Строки 337/354 тоже разъехались — на 337 сегодня
+   `REGISTRATION_OPEN`.)* Обоснование числа
    записано в комментарии схемы, а не только здесь. Отдельно отмечено, что совпадение с шириной
    пула libuv по умолчанию — удобство, а не контроль: `UV_THREADPOOL_SIZE` задаёт оператор, пул
    делится со всеми `fs`/`dns`, и порт ничего про него не обещает.
 
 4. `app.errors.ts:41` — `readonly retryAfterSeconds?: number` поднят на `AppError`;
    `ServiceUnavailableError` получил третий необязательный аргумент.
-   `error-handler.middleware.ts:135` теперь ставит `Retry-After` из **одного** места для 429
+   `error-handler.middleware.ts:148-149` теперь ставит `Retry-After` из **одного** места для 429
    лимитера и 503 очереди — вместо `instanceof RateLimitedError`. Второй механизм для того же
    заголовка — способ отгрузить одну из двух ошибок без него.
 
@@ -87,7 +91,7 @@ tags: [argon2, nodejs, typescript, prometheus, zod, express, vitest]
    `argon2_inflight` без меток; `noop-metrics.adapter.ts` — заглушка. Каталог метрик в
    `rules/observability.mdc` дополнен строкой.
 
-6. `container.factory.ts:740` — единственный `hasher` процесса завёрнут в `LimitedPasswordHasher`;
+6. `container.factory.ts:742` — единственный `hasher` процесса завёрнут в `LimitedPasswordHasher`;
    `onInFlightChange` кормит `input.metrics.setArgon2InFlight`.
 
 7. Тесты (написаны первыми, красное показано):
@@ -102,6 +106,20 @@ tags: [argon2, nodejs, typescript, prometheus, zod, express, vitest]
      неверный пароль) дают одинаковое число проходов через очередь.
    - `test/integration/http/error-handler.test.ts` — `Retry-After` на 429 и на 503, и CONTROL: 503
      без названного срока заголовка не выдумывает.
+
+   *(Дополнено 2026-09-06 — список выше отстал на три волны и описывал первую.)*
+   - `test/unit/crypto/argon2-semaphore.test.ts` дорос до потолка **длины** очереди: отказ
+     `queue_full` сразу, а не парковка, `queueCapacityOf`, и второй gauge `argon2_queued` (глубина;
+     `argon2_inflight` по построению стоит на пределе и на вопрос «насколько глубоко» не отвечает).
+     Каталог метрик и `hosting.md` §9.1 (сигнал 13) дополнены им же;
+     `test/unit/metrics/prom-client.adapter.test.ts` и `test/unit/bootstrap/identity-wiring.test.ts`
+     — показания и разводка.
+   - `test/unit/application/hashing-outside-transaction.test.ts` — гейт на то, что путь резервного
+     кода не считает Argon2id внутри открытой транзакции (десять ожиданий по 2 с при бюджете 5 с
+     давали `500` вместо `503`). Свойство сформулировано **узко**, только про этот путь: три пути
+     (`confirm-totp`, `regenerate-recovery-codes`, `confirm-password-reset`) сознательно оставлены
+     с одним вычислением внутри транзакции — числа и условие пересмотра в докстринге теста и в
+     STORY-013-06.
 
 8. Замеры доказательства красного (семафор снят из декоратора, всё остальное на месте):
    `peakHeld` 1 275 068 416 против 79 691 776 байт, пик 64 против 4 на стенде и 12 против 4 на

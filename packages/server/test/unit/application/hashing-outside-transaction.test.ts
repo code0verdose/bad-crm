@@ -144,14 +144,39 @@ const buildHarness = ({ saturated }: { readonly saturated: boolean }) => {
 };
 
 /**
- * The property: an argon2id computation may not run inside an open transaction.
+ * The property, stated as narrowly as it is proved: **a recovery-code path may not run its argon2id
+ * verifications inside an open transaction.** It is not the general rule "no argon2id inside any
+ * transaction" — three paths in `src` deliberately keep one computation inside their transaction,
+ * and the exposure is bounded and recorded below.
  *
  * Before STORY-013-06 a verification held its connection for the 50–80 ms it took to compute. With
- * the ceiling in place it may first wait `AUTH_ARGON2_QUEUE_TIMEOUT_MS` for a slot — and a recovery
- * code costs a fixed ten of them, each queueing separately, which is ten waits inside one
- * transaction whose whole budget is five seconds. The failure is qualitative, not a slow path: the
- * driver kills the transaction and the sign-in is answered `500 internal_error` instead of the
+ * the ceiling in place it may first wait `AUTH_ARGON2_QUEUE_TIMEOUT_MS` (2 000 ms by default) for a
+ * slot — and a recovery code costs a fixed `RECOVERY_CODE_COUNT` of them, each queueing separately,
+ * which is ten sequential waits, up to ~20 s, inside one transaction whose whole budget is five
+ * seconds (`tenant.context.ts`, `DEFAULT_TIMEOUT_MS`). The failure is qualitative, not a slow path:
+ * the driver kills the transaction and the sign-in is answered `500 internal_error` instead of the
  * `503` with a `Retry-After` the queue produced and the client knows how to obey.
+ *
+ * ## The three paths that keep one computation inside, and why that is accepted
+ *
+ * `ConfirmTotpUseCase` (`verifyPassword`, inside `confirm`), `RegenerateRecoveryCodesUseCase`
+ * (`verifyPassword`, inside `regenerate`) and `ConfirmPasswordResetUseCase` (`hasher.hash`, inside
+ * `spend`) each pay **exactly one** computation inside their transaction — the password branch and
+ * the `dummyHash` branch are exclusive, so the count does not depend on whether the account exists.
+ * The first two run it inside a `Promise.all` beside a non-argon2 check, so the waits overlap rather
+ * than add. Worst case under a saturated queue is therefore one wait of `AUTH_ARGON2_QUEUE_TIMEOUT_MS`
+ * (2 000 ms) plus one computation (50–80 ms) ≈ 2.1 s against a 5 s budget — the transaction survives
+ * and the caller gets the `503`, which is what the recovery-code path could not do at ten waits.
+ *
+ * For `ConfirmPasswordResetUseCase` moving the hash out would be a regression, not a cleanup: the
+ * hash sits **after** the reset token is spent on purpose, so a link presented a second time buys no
+ * argon2id at all. Hoisting it ahead of the spend would hand an attacker replaying a used link a
+ * free computation per request — the exact cost this ceiling exists to ration.
+ *
+ * Raising `AUTH_ARGON2_QUEUE_TIMEOUT_MS` past ~4 900 ms would put a single wait over the transaction
+ * budget and turn these three into the same failure. That is what keeps the bound checkable: the
+ * schema caps the variable at 60 000 ms, so an operator can configure it there, and this comment is
+ * the record that the three paths were left in on the numbers above rather than overlooked.
  */
 describe('a saturated argon2 queue during a recovery-code sign-in', () => {
   it('refuses with the 503 the queue raised, not with a killed transaction', async () => {

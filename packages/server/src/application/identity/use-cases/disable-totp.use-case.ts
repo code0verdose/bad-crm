@@ -115,7 +115,7 @@ type SecondFactorCheck =
  *
  * **Verifying the caller costs Argon2id, and Argon2id may not run inside that transaction.** Since
  * STORY-013-06 every hash and every verification first queues for one of
- * `AUTH_ARGON2_CONCURRENCY` slots and may wait `AUTH_ARGON2_QUEUE_TIMEOUT_MS` for it. A recovery
+ * `AUTH_ARGON2_MAX_CONCURRENCY` slots and may wait `AUTH_ARGON2_QUEUE_TIMEOUT_MS` for it. A recovery
  * code costs `RECOVERY_CODE_COUNT` verifications, each queueing separately: ten waits, on a pinned
  * pool connection, inside a transaction whose budget is five seconds (`tenant.context.ts`). Under
  * the saturation the ceiling exists for, the transaction is killed first and the caller is answered
