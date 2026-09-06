@@ -33,6 +33,18 @@ const argsFor = (
   ...(search === undefined ? {} : { search }),
 });
 
+/**
+ * The same arguments, for a session the organization's policy has scoped to enrolment.
+ *
+ * `mfaEnrollment` is **absent** rather than `false` on an ordinary session — the server states
+ * presence and the schema keeps it that way — so the two helpers differ by whether the field is
+ * there at all, which is the distinction both guards below actually branch on.
+ */
+const scopedArgs = (status: AuthModel.SessionStatus): AuthLib.GuardArgs => ({
+  context: { auth: { status, mfaEnrollment: true } },
+  location: LOCATION,
+});
+
 const thrownBy = (guard: () => void): unknown => {
   try {
     guard();
@@ -160,6 +172,8 @@ describe('where the guards live', () => {
   it('reaches them through the auth unit barrel', () => {
     expect(typeof AuthLib.requireSession).toBe('function');
     expect(typeof AuthLib.redirectIfAuthed).toBe('function');
+    expect(typeof AuthLib.requireFullSession).toBe('function');
+    expect(typeof AuthLib.requireEnrolment).toBe('function');
   });
 
   it('holds them in units/auth/lib/guards', () => {
@@ -167,6 +181,10 @@ describe('where the guards live', () => {
     expect(existsSync(`${CLIENT_SRC}/units/auth/lib/guards/redirect-if-authed.guard.ts`)).toBe(
       true,
     );
+    expect(existsSync(`${CLIENT_SRC}/units/auth/lib/guards/require-full-session.guard.ts`)).toBe(
+      true,
+    );
+    expect(existsSync(`${CLIENT_SRC}/units/auth/lib/guards/require-enrolment.guard.ts`)).toBe(true);
   });
 
   it('leaves nothing behind in app/guards', () => {
@@ -181,5 +199,112 @@ describe('where the guards live', () => {
    */
   it('leaves nothing behind in units/session either', () => {
     expect(existsSync(`${CLIENT_SRC}/units/session`)).toBe(false);
+  });
+});
+
+/**
+ * The gate on the protected half, for a session the organization's second-factor policy has scoped
+ * to enrolment (STORY-013-05, acceptance 3; STORY-013-04, acceptance 8).
+ *
+ * It is the same guard `_authenticated` already carried, with one more question after the session
+ * one — and mounting it there rather than listing routes is the point: the server refuses every
+ * route outside a three-entry whitelist with 403 `mfa_enrollment_required`, so a screen this guard
+ * forgot would not be a screen with a missing check, it would be a screen where every control
+ * answers 403 with no explanation of what is wanted.
+ */
+describe('requireFullSession', () => {
+  it('lets an ordinary session through', () => {
+    expect(() => {
+      AuthLib.requireFullSession(argsFor('authenticated'));
+    }).not.toThrow();
+  });
+
+  it('still sends an anonymous visitor to the login screen, keeping where they were going', () => {
+    const thrown = thrownBy(() => {
+      AuthLib.requireFullSession(argsFor('anonymous'));
+    });
+
+    expect(isRedirect(thrown)).toBe(true);
+    expect(thrown).toMatchObject({
+      options: { to: '/login', search: { redirect: '/dashboard?range=7d' } },
+    });
+  });
+
+  it('sends a session scoped to enrolment to the wizard', () => {
+    const thrown = thrownBy(() => {
+      AuthLib.requireFullSession(scopedArgs('authenticated'));
+    });
+
+    expect(isRedirect(thrown)).toBe(true);
+    expect(thrown).toMatchObject({ options: { to: AuthModel.MFA_ENROLMENT_PATH } });
+  });
+
+  /**
+   * The session check comes first, and the order is not cosmetic: a scoped session that has since
+   * been signed out has to meet `/login` with its destination remembered, not a wizard it can no
+   * longer talk to.
+   */
+  it('answers the session question before the scope one', () => {
+    const thrown = thrownBy(() => {
+      AuthLib.requireFullSession({
+        context: { auth: { status: 'anonymous', mfaEnrollment: true } },
+        location: LOCATION,
+      });
+    });
+
+    expect(thrown).toMatchObject({ options: { to: '/login' } });
+  });
+
+  it('waits rather than redirecting while the session is still unknown', () => {
+    expect(() => {
+      AuthLib.requireFullSession(argsFor('unknown'));
+    }).not.toThrow();
+  });
+});
+
+/**
+ * The mirror, on the wizard itself — and the half that makes the enrolment screen a room rather
+ * than a trap.
+ *
+ * It is what carries somebody **out** once the enrolment is done: confirming rotates the session,
+ * the new access token is no longer scoped, the router re-checks its guards, and this one finds a
+ * session that has no business here any more.
+ */
+describe('requireEnrolment', () => {
+  it('keeps a scoped session on the wizard', () => {
+    expect(() => {
+      AuthLib.requireEnrolment(scopedArgs('authenticated'));
+    }).not.toThrow();
+  });
+
+  it('sends an ordinary session into the application', () => {
+    const thrown = thrownBy(() => {
+      AuthLib.requireEnrolment(argsFor('authenticated'));
+    });
+
+    expect(isRedirect(thrown)).toBe(true);
+    expect(thrown).toMatchObject({ options: { href: AuthModel.POST_LOGIN_PATH } });
+  });
+
+  it('sends an anonymous visitor to the login screen', () => {
+    const thrown = thrownBy(() => {
+      AuthLib.requireEnrolment(argsFor('anonymous'));
+    });
+
+    expect(isRedirect(thrown)).toBe(true);
+    expect(thrown).toMatchObject({
+      options: { to: '/login', search: { redirect: '/dashboard?range=7d' } },
+    });
+  });
+
+  /**
+   * `unknown` waits here for the same reason it waits everywhere else, and here the wrong guess
+   * costs more than a flash: read as «not scoped», it would bounce somebody who *is* scoped into
+   * the shell, where every control answers 403.
+   */
+  it('waits rather than redirecting while the session is still unknown', () => {
+    expect(() => {
+      AuthLib.requireEnrolment(argsFor('unknown'));
+    }).not.toThrow();
   });
 });

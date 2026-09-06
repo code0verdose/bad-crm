@@ -19,7 +19,20 @@ import { type SessionStatus } from '@units/auth/model';
  * itself whether a URL is safe to navigate to.
  */
 export interface GuardArgs {
-  readonly context: { readonly auth: { readonly status: SessionStatus } };
+  readonly context: {
+    readonly auth: {
+      readonly status: SessionStatus;
+      /**
+       * Whether the organization's second-factor policy has scoped this session to enrolment.
+       *
+       * **Absent rather than `false`** for every ordinary session, because that is what the server
+       * says and what the schema preserves — `requireFullSession` and `requireEnrolment` therefore
+       * branch on presence, and a guard that read it as a boolean would be reading a value the
+       * contract never promises (`model/validation/session-identity.schema.ts`).
+       */
+      readonly mfaEnrollment?: true | undefined;
+    };
+  };
   readonly location: { readonly href: string };
   readonly search?: { readonly redirect?: string | undefined } | undefined;
 }

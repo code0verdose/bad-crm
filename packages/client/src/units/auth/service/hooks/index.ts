@@ -4,6 +4,7 @@ export * from './use-confirm-password-reset.hook.js';
 export * from './use-invitation-acceptance.hook.js';
 export * from './use-login.hook.js';
 export * from './use-logout.hook.js';
+export * from './use-mfa-enrolment.hook.js';
 export * from './use-mfa-grace-countdown.hook.js';
 export * from './use-password-change.hook.js';
 export * from './use-recovery-codes.hook.js';

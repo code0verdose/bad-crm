@@ -29,6 +29,13 @@ export interface RouterAuthState {
    * the last render. A test may pass a plain value — the shape is what the guards are typed on.
    */
   readonly status: AuthTypes.SessionState['status'];
+  /**
+   * Whether the organization's second-factor policy has scoped this session to enrolment.
+   *
+   * Absent on every ordinary session — see `units/auth/lib/guards/guard-args.types.ts`, which is
+   * the shape the guards are typed on and which this context has to satisfy.
+   */
+  readonly mfaEnrollment?: true | undefined;
 }
 
 export interface AppRouterContext {

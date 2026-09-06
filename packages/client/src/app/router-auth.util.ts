@@ -21,4 +21,15 @@ export const routerAuth: RouterAuthState = {
   get status() {
     return AuthService.authSession.read().status;
   },
+
+  /**
+   * Read off the same snapshot for the same reason, and **absent** rather than `false` whenever the
+   * organization's policy says nothing: the field exists only on an authenticated identity, and
+   * `requireFullSession` branches on presence because that is what the contract states.
+   */
+  get mfaEnrollment() {
+    const session = AuthService.authSession.read();
+
+    return session.status === 'authenticated' ? session.mfaEnrollment : undefined;
+  },
 };

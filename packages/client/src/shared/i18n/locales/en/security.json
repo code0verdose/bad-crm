@@ -222,5 +222,10 @@
       "others": "Other sessions closed: {{count}}",
       "othersNone": "There was nothing else open — this is the only session."
     }
+  },
+  "enrolment": {
+    "title": "Set up two-factor authentication",
+    "reason": "Your organization requires two-factor authentication for your role, and the time allowed to arrange it has run out. Until an authenticator app is paired with this account, signing out is the only other thing it can do.",
+    "signOut": "Sign out instead"
   }
 }

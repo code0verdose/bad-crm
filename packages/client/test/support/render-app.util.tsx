@@ -18,6 +18,13 @@ export interface RenderAppOptions {
   /** What the session bootstrap has decided so far. */
   readonly status?: SessionStatusFixture;
   /**
+   * Whether the organization's second-factor policy has scoped this session to enrolment.
+   *
+   * Absent by default, which is the shape an ordinary session has on the wire — the server states
+   * presence rather than sending `false`, and the guards branch on presence for that reason.
+   */
+  readonly mfaEnrollment?: true;
+  /**
    * The i18next instance to mount with. Defaults to the suite's `cimode` one, which is what almost
    * every case wants; the pseudo-locale check is the exception, and it needs a real catalogue to
    * render rather than keys.
@@ -52,6 +59,7 @@ export interface RenderedApp extends RenderResult {
 export const renderApp = ({
   path = '/',
   status = 'unknown',
+  mfaEnrollment,
   i18n = i18next,
   language = 'cimode',
 }: RenderAppOptions = {}): RenderedApp => {
@@ -62,7 +70,10 @@ export const renderApp = ({
     logError: vi.fn(),
   });
   const router = createAppRouter(
-    { queryClient, auth: { status } },
+    {
+      queryClient,
+      auth: { status, ...(mfaEnrollment === undefined ? {} : { mfaEnrollment }) },
+    },
     createMemoryHistory({ initialEntries: [path] }),
   );
 

@@ -1123,3 +1123,51 @@ describe('the organization security tab in a pseudo locale', () => {
     return await screen.findByRole('dialog');
   };
 });
+
+/**
+ * The forced-enrolment screen, which the two routes above cannot reach.
+ *
+ * It is the screen with the least room for a missing `t()` and the least chance of one being
+ * noticed: somebody meeting it is locked to it — every other route answers 403 — and the whole
+ * client suite runs in `cimode`, where a component that forgot `t()` renders identically to one that
+ * remembered. Both of its own sentences are new, and so is the button that is the only way off it;
+ * a key rendered raw here would be a person stuck on a page reading `security.enrolment.reason`.
+ *
+ * `renderApp` with a scoped session rather than a mounted page, because the *guard* is what puts
+ * this screen on screen — and asserting through it means the case also fails if the redirect stops
+ * working.
+ */
+describe('the forced enrolment screen in a pseudo locale', () => {
+  const mount = async (): Promise<HTMLElement> => {
+    const { container } = renderApp({
+      path: '/dashboard',
+      status: 'authenticated',
+      mfaEnrollment: true,
+      i18n: await pseudoInstance(),
+      language: 'pseudo',
+    });
+    await screen.findByRole('heading', { level: 1 });
+
+    return container;
+  };
+
+  it('shows nothing that did not come from the catalogue', async () => {
+    const unmarked = textNodes(await mount()).filter(
+      (text) => !isPseudoLocalised(text) && !NOT_A_SENTENCE.test(text) && !PROPER_NOUNS.has(text),
+    );
+
+    expect(unmarked).toEqual([]);
+  });
+
+  /**
+   * CONTROL: the walker has to be looking at the wizard rather than at the shell it was redirected
+   * away from — a guard that stopped redirecting would otherwise make the case above assert about
+   * `/dashboard`, which is already covered and would pass.
+   */
+  it('CONTROL: is looking at the wizard it names', async () => {
+    const container = await mount();
+
+    expect(textNodes(container).filter(isPseudoLocalised).length).toBeGreaterThan(3);
+    expect(container.querySelector('header')).toBeNull();
+  });
+});

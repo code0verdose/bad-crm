@@ -5,4 +5,6 @@
  */
 export * from './guard-args.types.js';
 export * from './redirect-if-authed.guard.js';
+export * from './require-enrolment.guard.js';
+export * from './require-full-session.guard.js';
 export * from './require-session.guard.js';

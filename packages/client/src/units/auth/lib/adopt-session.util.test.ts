@@ -45,8 +45,10 @@ describe('adopting a session from the wire', () => {
    *
    * Both fields are **absent** on an ordinary session rather than `false` and `null`, so they are
    * carried through as absent too: a consumer that read `mfaEnrollment === false` would be reading a
-   * value the contract never promises. `mfaEnrollment` has no screen yet — the enrolment gate is the
-   * open half of that story — and is asserted here so that the field survives until one exists.
+   * value the contract never promises. `mfaEnrollment` is what `requireFullSession` reads off the
+   * session store to send such a session to `/mfa-enrolment` (this said «has no screen yet» until
+   * the wizard shipped on 2026-09-06), so what is asserted here is the first link of that chain:
+   * the field survives being parsed off the wire at all.
    */
   it('carries the second-factor verdict when the answer states one', () => {
     expect(
