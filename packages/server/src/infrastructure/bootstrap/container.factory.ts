@@ -749,6 +749,7 @@ const buildIdentity = (input: {
       maxConcurrency: input.env.AUTH_ARGON2_MAX_CONCURRENCY,
       queueTimeoutMs: input.env.AUTH_ARGON2_QUEUE_TIMEOUT_MS,
       onInFlightChange: (inFlight) => input.metrics.setArgon2InFlight(inFlight),
+      onQueuedChange: (queued) => input.metrics.setArgon2Queued(queued),
     }),
   );
   const refreshTokens = new Sha256RefreshTokenAdapter();

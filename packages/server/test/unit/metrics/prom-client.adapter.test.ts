@@ -100,6 +100,24 @@ describe('the prom-client adapter', () => {
     await expect(metrics.render()).resolves.toContain('argon2_inflight 0');
   });
 
+  /**
+   * The second half of the same picture. `argon2_inflight` stops moving once the ceiling is reached
+   * — four of four reads identically with one request waiting behind it and with five hundred — so
+   * it cannot say how deep the saturation is, which is the number that separates a busy minute from
+   * a flood and says how close the queue is to shedding load it could have served.
+   */
+  it('publishes how many computations are waiting for a slot, and lets it fall', async () => {
+    const metrics = createPromMetrics();
+
+    metrics.setArgon2Queued(17);
+
+    await expect(metrics.render()).resolves.toContain('argon2_queued 17');
+
+    metrics.setArgon2Queued(0);
+
+    await expect(metrics.render()).resolves.toContain('argon2_queued 0');
+  });
+
   it('declares the gauge without labels, so it cannot grow a series per caller', async () => {
     const metrics = createPromMetrics();
 

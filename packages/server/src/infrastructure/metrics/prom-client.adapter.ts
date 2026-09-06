@@ -86,6 +86,12 @@ export const createPromMetrics = (): MetricsPort => {
     registers: [registry],
   });
 
+  const argon2Queued = new Gauge({
+    name: 'argon2_queued',
+    help: 'Computations waiting for one of those slots right now, against the derived queue bound.',
+    registers: [registry],
+  });
+
   return {
     observeHttpRequest: ({
       method,
@@ -113,6 +119,9 @@ export const createPromMetrics = (): MetricsPort => {
     },
     setArgon2InFlight: (inFlight: number): void => {
       argon2InFlight.set(inFlight);
+    },
+    setArgon2Queued: (queued: number): void => {
+      argon2Queued.set(queued);
     },
     render: () => registry.metrics(),
     contentType: registry.contentType,

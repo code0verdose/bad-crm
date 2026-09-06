@@ -395,12 +395,29 @@ const fields = z.object({
    * the work: a sign-in costs 50–80 ms, so two seconds is room for a burst several times the
    * ceiling.
    *
-   * **It is a budget per wait, not per request.** A request that hashes once — sign-in,
-   * registration, the password change — waits at most this long in total. A recovery code does not:
+   * **It is a budget per wait, not per request.** A request that hashes once — a sign-in against a
+   * single candidate, registration — waits at most this long in total. Several paths hash more than
+   * once and multiply it: the password change verifies the old digest and hashes the new one (two),
+   * a sign-in with the same address in several organizations verifies each candidate, and a
+   * transparent re-hash adds one more. A recovery code is the extreme case:
    * `RecoveryCodeMatcher` verifies the candidates one after another, and each verification queues
    * on its own, so under saturation that request can spend a multiple of this value before it is
    * answered or refused. Raising the value multiplies that path too; the number is deliberately
    * small partly for that reason.
+   *
+   * That granularity was measured against the alternative — one slot held for a whole recovery
+   * attempt — and deliberately kept: holding it lets a ten-computation job block the queue and
+   * drives a sign-in's p95 from 383 ms to 1 866 ms at 32 concurrent attempts. The table and the
+   * conditions are in `argon2-semaphore.util.ts`.
+   *
+   * **It also sets how many requests may be queued at once**, together with the ceiling:
+   * `AUTH_ARGON2_MAX_CONCURRENCY × this ÷ the cost of one computation` is everything that could
+   * still reach a slot before its own deadline, and arrivals past that are refused immediately
+   * rather than parked to be refused later (`queueCapacityOf`). Raising this value therefore buys
+   * both a longer wait and a deeper queue — at the defaults, 534 parked requests, about 14 MB; at
+   * the top of both ranges, 256 000 and ~6.9 GB, which no host this product documents has and which
+   * the file-descriptor limit reaches first. The bound follows what can be served, not what fits in
+   * memory: raise this and the ceiling together only against a memory budget you computed.
    *
    * ## Why the range is 100–60 000 ms
    *

@@ -1,7 +1,10 @@
 import { assert, describe, expect, it, vi } from 'vitest';
 
 import { type AppError } from '@/domain/shared/errors/app.errors.js';
-import { createHashSemaphore } from '@/infrastructure/crypto/argon2-semaphore.util.js';
+import {
+  createHashSemaphore,
+  type HashSemaphore,
+} from '@/infrastructure/crypto/argon2-semaphore.util.js';
 
 /**
  * The ceiling on how many argon2id computations may exist at once (STORY-013-06).
@@ -159,9 +162,10 @@ describe('the bounded wait', () => {
    * should. `AUTH_ARGON2_QUEUE_TIMEOUT_MS` is a positive integer, and `Math.ceil(ms / 1000)` is
    * already 1 for every integer from 1 to 1000 — so no value the env schema admits can produce a
    * zero, and a case built at 500 ms asserts nothing about the floor at all. What the floor guards
-   * is this utility's own contract: `createHashSemaphore` validates `maxConcurrency` and takes
-   * `queueTimeoutMs` on trust, so a caller that is not the env schema — a future one, or a
-   * loosening of `.positive()` — can hand it a zero. Then `Retry-After: 0` reads as "retry now",
+   * is this utility's own contract: `createHashSemaphore` rejects a budget that is not a whole
+   * number of milliseconds but **admits zero**, because "never wait" is degenerate rather than
+   * incoherent, so a caller that is not the env schema can still hand it one. Then
+   * `Retry-After: 0` would read as "retry now",
    * which is exactly the tight loop the refusal exists to break: the queue is refilled by the same
    * clients in the same millisecond.
    */
@@ -245,6 +249,277 @@ describe('the bounded wait', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+/**
+ * The other end of the same resource: a deadline bounds how *long* a waiter stays, and until
+ * STORY-013-06's second pass nothing bounded how *many* of them there were. A parked request costs
+ * ~27 KB of resident memory (measured: 500 of them through a `node:http` server added 26.2 MB RSS
+ * for both ends of every socket in one process), so an unbounded queue is the exhausted memory the
+ * ceiling exists to prevent, one layer up and in units nobody was counting.
+ *
+ * The bound is derived, not chosen: `maxConcurrency / cost` computations complete per second, so
+ * `maxConcurrency × queueTimeoutMs / cost` is everything that can still be admitted before its own
+ * deadline. A waiter past that position is refused now instead of holding a socket for the whole
+ * budget in order to be refused then.
+ */
+describe('the bounded queue', () => {
+  /**
+   * The derivation the implementation must follow, restated rather than imported: a test that read
+   * the same function would pass whatever that function did, including returning a constant.
+   */
+  const capacityFor = (maxConcurrency: number, queueTimeoutMs: number): number =>
+    Math.ceil((maxConcurrency * queueTimeoutMs) / 15);
+
+  /**
+   * Sends arrivals one at a time until one is refused **without any timer being advanced**, and
+   * reports how many were taken before that. The count is measured off the semaphore, not computed
+   * by the test, which is what makes it able to fail: a capacity that ignored either knob, or was a
+   * constant, lands on a different number.
+   */
+  const probeCapacity = async (
+    maxConcurrency: number,
+    queueTimeoutMs: number,
+  ): Promise<{
+    refusal: AppError | undefined;
+    taken: number;
+    release: () => void;
+    semaphore: HashSemaphore;
+  }> => {
+    const semaphore = createHashSemaphore({ maxConcurrency, queueTimeoutMs });
+    const gate = deferred();
+    // Well past any capacity these cases configure, so a bound that vanished fails the assertion
+    // instead of hanging the suite.
+    const hardStop = 5_000;
+
+    let refusal: AppError | undefined;
+    let taken = 0;
+
+    while (refusal === undefined && taken < hardStop) {
+      let outcome: AppError | undefined;
+
+      void semaphore
+        .run(async () => gate.promise)
+        .catch((error: unknown) => {
+          outcome = error as AppError;
+        });
+
+      // Admission and the immediate refusal both settle within the microtask queue; a wait that
+      // merely *expires* cannot, because no timer moves in this loop.
+      await Promise.resolve();
+      await Promise.resolve();
+
+      if (outcome === undefined) taken += 1;
+      else refusal = outcome;
+    }
+
+    return {
+      refusal,
+      taken,
+      semaphore,
+      release: () => {
+        gate.release();
+      },
+    };
+  };
+
+  it('refuses the arrival that no longer fits instead of parking it', async () => {
+    vi.useFakeTimers();
+
+    try {
+      const { refusal, release } = await probeCapacity(1, 300);
+
+      // Refused *now*: no timer was advanced, so this cannot be the deadline firing.
+      expect(refusal?.status).toBe(503);
+      expect(refusal?.code).toBe('service_unavailable');
+      expect(refusal?.retryAfterSeconds).toBe(1);
+
+      release();
+      await vi.runAllTimersAsync();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  /**
+   * Both refusals are the same 503 to the client and must not be the same line in the log: an
+   * operator reading `details` has to tell "waited and never got in" from "was never let into the
+   * queue", because they call for different actions — more capacity against the first, a look at
+   * where the traffic comes from against the second.
+   */
+  it('says in the log which of the two refusals it was', async () => {
+    vi.useFakeTimers();
+
+    try {
+      const { refusal, release } = await probeCapacity(1, 300);
+
+      assert(refusal !== undefined, 'the arrival past the cap must be refused');
+      expect(refusal.details).toMatchObject({
+        dependency: 'password-hashing',
+        refusal: 'queue_full',
+      });
+      expect(refusal.details).not.toHaveProperty('waitedMs');
+
+      release();
+      await vi.runAllTimersAsync();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('says the other one too, when the wait is what ran out', async () => {
+    vi.useFakeTimers();
+
+    try {
+      const semaphore = createHashSemaphore({ maxConcurrency: 1, queueTimeoutMs: 2_000 });
+      const held = deferred();
+      const running = semaphore.run(async () => held.promise);
+      const settled = semaphore
+        .run(() => Promise.resolve())
+        .then(
+          () => undefined,
+          (error: unknown) => error as AppError,
+        );
+
+      await vi.advanceTimersByTimeAsync(2_000);
+
+      const error = await settled;
+
+      expect(error?.details).toMatchObject({
+        dependency: 'password-hashing',
+        refusal: 'wait_expired',
+        waitedMs: 2_000,
+      });
+
+      held.release();
+      await running;
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  /**
+   * The bound in both directions, which is the half a "past the cap it refuses" case leaves open:
+   * the waiter one place *below* the derived length is still parked. Without it the suite passes on
+   * any capacity smaller than the derivation — including one, which refuses traffic every default
+   * installation is supposed to absorb.
+   *
+   * Reading the count off the semaphore is also what makes the derivation itself falsifiable: a
+   * `queueCapacityOf` that dropped either knob, or returned a constant, gives a different number in
+   * at least one of these three rows.
+   */
+  it.each([
+    { maxConcurrency: 1, queueTimeoutMs: 300 },
+    { maxConcurrency: 4, queueTimeoutMs: 300 },
+    { maxConcurrency: 1, queueTimeoutMs: 2_000 },
+  ])(
+    'takes exactly the ceiling plus the derived queue length ($maxConcurrency slots, $queueTimeoutMs ms)',
+    async ({ maxConcurrency, queueTimeoutMs }) => {
+      vi.useFakeTimers();
+
+      try {
+        const { taken, refusal, release } = await probeCapacity(maxConcurrency, queueTimeoutMs);
+
+        expect(taken).toBe(maxConcurrency + capacityFor(maxConcurrency, queueTimeoutMs));
+        expect(refusal?.details).toMatchObject({ refusal: 'queue_full' });
+
+        release();
+        await vi.runAllTimersAsync();
+      } finally {
+        vi.useRealTimers();
+      }
+    },
+  );
+
+  /**
+   * The other argument the capacity divides. Until it started doing so, a non-integer budget only
+   * cost a `setTimeout` Node clamps to 1 ms; now it makes the capacity `NaN`, `queued >= NaN` is
+   * always `false`, and the length bound is off with nothing in the log to say so.
+   */
+  it('refuses a budget it cannot divide a capacity by', () => {
+    expect(() => createHashSemaphore({ maxConcurrency: 4, queueTimeoutMs: Number.NaN })).toThrow(
+      RangeError,
+    );
+    expect(() => createHashSemaphore({ maxConcurrency: 4, queueTimeoutMs: -1 })).toThrow(
+      RangeError,
+    );
+  });
+
+  /**
+   * A waiter whose deadline fired has given its place back. Counting the array instead of the live
+   * waiters would keep the queue "full" of requests that left — the ceiling leaking downwards, the
+   * same failure the expired-waiter skip in `release` was written for, only in the other dimension.
+   */
+  it('gives the place of a timed-out waiter back to the next arrival', async () => {
+    vi.useFakeTimers();
+
+    try {
+      const { refusal, release, semaphore } = await probeCapacity(1, 300);
+
+      expect(refusal).toBeDefined();
+
+      // Every parked waiter runs out of budget here, and none of them is holding a place any more.
+      await vi.advanceTimersByTimeAsync(300);
+
+      const admitted = semaphore
+        .run(() => Promise.resolve('let in'))
+        .catch((error: unknown) => {
+          throw error;
+        });
+
+      release();
+      await vi.advanceTimersByTimeAsync(0);
+
+      await expect(admitted).resolves.toBe('let in');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('publishes how many are waiting, as it rises and falls', async () => {
+    const queued: number[] = [];
+    const semaphore = createHashSemaphore({
+      maxConcurrency: 1,
+      queueTimeoutMs: 5_000,
+      onQueuedChange: (waiting) => queued.push(waiting),
+    });
+    const gate = deferred();
+
+    const flood = [
+      semaphore.run(async () => gate.promise),
+      semaphore.run(async () => gate.promise),
+      semaphore.run(async () => gate.promise),
+    ];
+
+    await Promise.resolve();
+    expect(Math.max(...queued)).toBe(2);
+
+    gate.release();
+    await Promise.all(flood);
+
+    expect(queued.at(-1)).toBe(0);
+  });
+
+  /** The queue gauge is an observer too: a broken one may not cost the slot it was announcing. */
+  it('does not lose a slot when the queue gauge throws', async () => {
+    const semaphore = createHashSemaphore({
+      maxConcurrency: 1,
+      queueTimeoutMs: 5_000,
+      onQueuedChange: () => {
+        throw new Error('gauge is broken');
+      },
+    });
+    const gate = deferred();
+
+    const first = semaphore.run(async () => gate.promise);
+    const second = semaphore.run(() => Promise.resolve('behind'));
+
+    await Promise.resolve();
+    gate.release();
+
+    await expect(second).resolves.toBe('behind');
+    await first;
   });
 });
 

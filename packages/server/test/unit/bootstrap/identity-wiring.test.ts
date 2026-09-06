@@ -230,4 +230,35 @@ describe('the argon2 ceiling the process actually hands out', () => {
     expect(during).toContain('argon2_inflight 1');
     expect(after).toContain('argon2_inflight 0');
   });
+
+  /**
+   * And the other wire, for the same reason: the depth gauge is only worth declaring if the process
+   * feeds it. A ceiling of one makes the second computation a waiter, which is the whole state
+   * `argon2_queued` exists to make visible — `argon2_inflight` reads `1` either way.
+   */
+  it('publishes the depth of that hasher queue as argon2_queued', async () => {
+    const container = buildContainer({
+      env: testEnv({
+        METRICS_ENABLED: true,
+        METRICS_TOKEN: 'm'.repeat(32),
+        AUTH_ARGON2_MAX_CONCURRENCY: 1,
+      }),
+      logger: logger(),
+    });
+
+    const metrics = container.http.metrics;
+
+    assert(metrics !== undefined, 'metrics were enabled, so the port must be mounted');
+
+    const running = container.passwordHasher.hash('the computation holding the only slot');
+    const waiting = container.passwordHasher.hash('the one that has to queue behind it');
+    const during = await metrics.port.render();
+
+    await Promise.all([running, waiting]);
+
+    const after = await metrics.port.render();
+
+    expect(during).toContain('argon2_queued 1');
+    expect(after).toContain('argon2_queued 0');
+  });
 });

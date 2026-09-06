@@ -108,6 +108,19 @@ export interface MetricsPort {
    * verify) and the question needs neither, while `/metrics` is read by whatever reaches the port.
    */
   setArgon2InFlight(inFlight: number): void;
+  /**
+   * How many computations are **waiting** for one of those slots right now (STORY-013-06).
+   *
+   * The companion of the gauge above, and not derivable from it: `argon2_inflight` stops moving the
+   * moment the ceiling is reached, so four of four reads the same with one request behind it and
+   * with five hundred. Depth is what tells a busy minute from a flood, and — since the queue now has
+   * a length as well as a deadline (`argon2-semaphore.util.ts`) — how close an installation is to
+   * refusing arrivals outright. Without it an operator learns about saturation from the users who
+   * stopped being let in.
+   *
+   * Unlabelled, for the same reason as its companion.
+   */
+  setArgon2Queued(queued: number): void;
   /** The exposition format, rendered on demand. */
   render(): Promise<string>;
   readonly contentType: string;
