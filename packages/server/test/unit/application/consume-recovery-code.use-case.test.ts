@@ -4,6 +4,10 @@ import { assert, describe, expect, it } from 'vitest';
 
 import { ConsumeRecoveryCodeUseCase } from '@/application/identity/use-cases/consume-recovery-code.use-case.js';
 import { RecoveryCodeMatcher } from '@/application/identity/use-cases/recovery-code-matcher.use-case.js';
+import {
+  type TenantScope,
+  type UnitOfWorkPort,
+} from '@/application/platform/ports/unit-of-work.port.js';
 import { RateLimitedError, RecoveryCodeInvalidError } from '@/domain/shared/errors/app.errors.js';
 
 import { createPromMetrics } from '@/infrastructure/metrics/prom-client.adapter.js';
@@ -30,12 +34,37 @@ const APP_URL = 'https://crm.example.test';
 interface HarnessOptions {
   readonly locale?: string;
   readonly limits?: { readonly mfa_recovery_consume_attempt: number };
+  /** Substituted only by the race case below, which needs a rival to write between the scopes. */
+  readonly unitOfWork?: UnitOfWorkPort;
+}
+
+/**
+ * A unit of work that lets a rival request land between the read scope and the write scope.
+ *
+ * `spend` reads the candidates in one transaction, compares them holding none and writes in a
+ * second (see its docstring) — so «somebody else spent this row in the meantime» is a state this
+ * command can genuinely be in, and `markUsed` answering `false` is how it finds out. A double that
+ * opened a single scope could not express the meantime at all.
+ */
+class RacingUnitOfWork extends FakeUnitOfWork {
+  /** Assigned after the harness is built, because the rival writes through its repositories. */
+  rival: (() => Promise<void>) | undefined;
+
+  private opened = 0;
+
+  override async withTenant<T>(scope: TenantScope, work: () => Promise<T>): Promise<T> {
+    this.opened += 1;
+
+    if (this.opened === 2 && this.rival !== undefined) await this.rival();
+
+    return await super.withTenant(scope, work);
+  }
 }
 
 const buildHarness = (options: HarnessOptions = {}) => {
   const codes = new FakeRecoveryCodes();
   const hasher = new FakePasswordHasher();
-  const unitOfWork = new FakeUnitOfWork();
+  const unitOfWork = options.unitOfWork ?? new FakeUnitOfWork();
   const rateLimit = new FakeRateLimit(
     options.limits === undefined ? {} : { limits: options.limits },
   );
@@ -453,5 +482,31 @@ describe('the counter and the record of a series', () => {
     expect(
       harness.audit.events.filter((event) => event.action === 'user.mfa_recovery_locked_out'),
     ).toEqual([]);
+  });
+});
+
+describe('a concurrent request racing the same recovery code', () => {
+  it('answers recovery_code_invalid, not a sign-in, when the row was spent in the meantime', async () => {
+    const unitOfWork = new RacingUnitOfWork();
+    const harness = buildHarness({ unitOfWork });
+    const id = harness.seedCode(VALID_CODE);
+
+    // The row this call matched is spent by somebody else after the comparison and before the
+    // write. `markUsed`'s conditional UPDATE answers `false`, and the answer folds into the one
+    // refusal this endpoint has — telling the two apart would confirm the code was real.
+    unitOfWork.rival = async (): Promise<void> => {
+      await harness.codes.markUsed(USER_ID, id, harness.clock.now());
+    };
+
+    await expect(
+      harness.useCase.execute({ actor: ACTOR, code: VALID_CODE, ipAddress: IP_ADDRESS }),
+    ).rejects.toBeInstanceOf(RecoveryCodeInvalidError);
+
+    // The loser of the race hands out nothing a winner would have got: no trail entry saying a code
+    // was used, and no notice to the account owner about a sign-in that did not happen.
+    expect(harness.audit.events.map((event) => event.action)).not.toContain(
+      'user.mfa_recovery_code_used',
+    );
+    expect(harness.dispatcher.dispatched).toEqual([]);
   });
 });

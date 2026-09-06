@@ -3,6 +3,11 @@ import { describe, expect, it } from 'vitest';
 import { DisableTotpUseCase } from '@/application/identity/use-cases/disable-totp.use-case.js';
 import { RecoveryCodeMatcher } from '@/application/identity/use-cases/recovery-code-matcher.use-case.js';
 import { MfaPolicyQuery } from '@/application/organization/use-cases/mfa-policy.query.js';
+import { type FieldEncryptionPort } from '@/application/platform/ports/field-encryption.port.js';
+import {
+  type TenantScope,
+  type UnitOfWorkPort,
+} from '@/application/platform/ports/unit-of-work.port.js';
 import {
   MfaRequiredByPolicyError,
   RateLimitedError,
@@ -36,7 +41,45 @@ const PASSWORD = 'correct-horse-battery';
 const TOTP_CODE = '123456';
 const IP_ADDRESS = '203.0.113.7';
 
-const buildHarness = () => {
+interface HarnessOptions {
+  /** Substituted only by the race case below, which needs a rival to write between the scopes. */
+  readonly unitOfWork?: UnitOfWorkPort;
+  /** Substituted only by the broken-port case below. */
+  readonly fields?: FieldEncryptionPort;
+}
+
+/**
+ * A unit of work that lets a rival request land between the read scope and the write scope.
+ *
+ * That window is the whole point of the three-phase shape this command runs in (see the use-case's
+ * own docstring): the rows are read in one transaction, the proofs are judged holding none, and the
+ * write opens a second. Whatever another request did in the meantime is decided by the conditional
+ * statements `commit` issues — which is what these cases exercise. A double that opened one scope
+ * could not express «in the meantime» at all.
+ */
+class RacingUnitOfWork extends FakeUnitOfWork {
+  /** Assigned after the harness is built, because the rival writes through its repositories. */
+  rival: (() => Promise<void>) | undefined;
+
+  private opened = 0;
+
+  override async withTenant<T>(scope: TenantScope, work: () => Promise<T>): Promise<T> {
+    this.opened += 1;
+
+    if (this.opened === 2 && this.rival !== undefined) await this.rival();
+
+    return await super.withTenant(scope, work);
+  }
+}
+
+/** A field-encryption port that breaks the contract `FieldEncryptionPort.decrypt` states. */
+class NullDecryptingFields extends FakeFieldEncryption {
+  override decrypt(): string | null {
+    return null;
+  }
+}
+
+const buildHarness = (options: HarnessOptions = {}) => {
   const account = authUser();
   const users = new FakeUsers([
     {
@@ -57,11 +100,15 @@ const buildHarness = () => {
 
   const enrollment = new FakeTotpEnrollment();
   const totp = new ScriptedTotp();
-  const fields = new FakeFieldEncryption();
+  const fields = options.fields ?? new FakeFieldEncryption();
   const recoveryCodeRows = new FakeRecoveryCodes();
-  const matcher = new RecoveryCodeMatcher(recoveryCodeRows, new FakePasswordHasher());
+  // Kept apart from `hasher` on purpose: the password verification and the recovery-code
+  // comparisons are then countable separately, which is what «malformed code buys no argon2id»
+  // needs to say anything at all.
+  const matcherHasher = new FakePasswordHasher();
+  const matcher = new RecoveryCodeMatcher(recoveryCodeRows, matcherHasher);
   const hasher = new FakePasswordHasher();
-  const unitOfWork = new FakeUnitOfWork();
+  const unitOfWork = options.unitOfWork ?? new FakeUnitOfWork();
   const rateLimit = new FakeRateLimit();
   const clock = new FakeClock();
   const logger = new RecordingLogger();
@@ -117,6 +164,7 @@ const buildHarness = () => {
     fields,
     recoveryCodeRows,
     hasher,
+    matcherHasher,
     unitOfWork,
     rateLimit,
     clock,
@@ -434,6 +482,98 @@ describe('a concurrent request racing the TOTP counter', () => {
     const state = await harness.enrollment.find(USER_ID);
 
     expect(state).toMatchObject({ enabledAt: expect.any(Date) });
+  });
+});
+
+describe('a concurrent request racing the recovery code', () => {
+  it('refuses reauthentication_required when the code was spent between the read and the write', async () => {
+    const unitOfWork = new RacingUnitOfWork();
+    const harness = buildHarness({ unitOfWork });
+
+    await harness.enableTotp();
+    harness.seedRecoveryCode('ABCDE23456');
+
+    // Somebody else — a second disable, or a sign-in presenting the same sheet — spends the row
+    // after this call matched it and before this call writes. `markUsed` is the conditional
+    // `UPDATE ... WHERE used_at IS NULL` that decides the winner, and it answers `false` here.
+    // The already-used case a few blocks above never reaches this statement: `listUnused` does not
+    // return a spent row, so that request is refused at the comparison instead.
+    unitOfWork.rival = async (): Promise<void> => {
+      await harness.recoveryCodeRows.markUsed(USER_ID, 'ABCDE23456', harness.clock.now());
+    };
+
+    await expect(
+      harness.useCase.execute({
+        actor: ACTOR,
+        password: PASSWORD,
+        code: 'ABCDE23456',
+        ipAddress: IP_ADDRESS,
+      }),
+    ).rejects.toBeInstanceOf(ReauthenticationRequiredError);
+
+    // The loser of the race changes nothing: 2FA is still on, and the batch was not deleted.
+    const state = await harness.enrollment.find(USER_ID);
+
+    expect(state).toMatchObject({ enabledAt: expect.any(Date) });
+    expect(harness.recoveryCodeRows.rows.size).toBe(1);
+    expect(harness.audit.events).toEqual([]);
+  });
+});
+
+describe('a recovery code that is not of the shape this system issues', () => {
+  it('is refused without buying a single argon2id comparison', async () => {
+    const harness = buildHarness();
+
+    await harness.enableTotp();
+    harness.seedRecoveryCode('ABCDE23456');
+
+    // Nine characters where a code has ten — the typo, and equally the cheapest thing an attacker
+    // can send. The point of the branch is the cost, not the answer: a malformed code must not buy
+    // `RECOVERY_CODE_COUNT` verifications of the ration this ceiling exists to protect.
+    await expect(
+      harness.useCase.execute({
+        actor: ACTOR,
+        password: PASSWORD,
+        code: 'ABCDE2345',
+        ipAddress: IP_ADDRESS,
+      }),
+    ).rejects.toBeInstanceOf(ReauthenticationRequiredError);
+
+    expect(harness.matcherHasher.verified).toEqual([]);
+
+    // CONTROL for that probe: a code of the right shape that simply belongs to nobody does reach
+    // the matcher, so the empty list above is the refusal and not a hasher nothing ever calls.
+    const control = buildHarness();
+
+    await control.enableTotp();
+    control.seedRecoveryCode('ABCDE23456');
+
+    await control.useCase
+      .execute({ actor: ACTOR, password: PASSWORD, code: 'ZZZZZ99999', ipAddress: IP_ADDRESS })
+      .catch(() => undefined);
+
+    expect(control.matcherHasher.verified.length).toBeGreaterThan(0);
+  });
+});
+
+describe('a field-encryption port that breaks its own contract', () => {
+  it('answers 503 rather than handing an empty secret to the TOTP verifier', async () => {
+    const harness = buildHarness({ fields: new NullDecryptingFields() });
+
+    await harness.enableTotp();
+
+    await expect(
+      harness.useCase.execute({
+        actor: ACTOR,
+        password: PASSWORD,
+        code: TOTP_CODE,
+        ipAddress: IP_ADDRESS,
+      }),
+    ).rejects.toThrow('A dependency is unavailable');
+
+    // The half that makes the guard worth its lines: the verifier is never asked to judge a code
+    // against `''`, which a `null` reaching `base32Secret` unguarded would have handed it.
+    expect(harness.totp.verifyCalls).toEqual([]);
   });
 });
 

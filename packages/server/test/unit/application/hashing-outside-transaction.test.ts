@@ -7,6 +7,7 @@ import {
   type UnitOfWorkPort,
 } from '@/application/platform/ports/unit-of-work.port.js';
 import { ConsumeRecoveryCodeUseCase } from '@/application/identity/use-cases/consume-recovery-code.use-case.js';
+import { DisableTotpUseCase } from '@/application/identity/use-cases/disable-totp.use-case.js';
 import { RecoveryCodeMatcher } from '@/application/identity/use-cases/recovery-code-matcher.use-case.js';
 import { ServiceUnavailableError } from '@/domain/shared/errors/app.errors.js';
 
@@ -15,6 +16,7 @@ import { LimitedPasswordHasher } from '@/infrastructure/crypto/limited-password-
 import { createPromMetrics } from '@/infrastructure/metrics/prom-client.adapter.js';
 
 import {
+  disabledMfaPolicy,
   FakeAuditLogger,
   FakeClock,
   FakeMailDispatcher,
@@ -25,7 +27,12 @@ import {
   RecordingLogger,
   USER_ID,
 } from '../../support/identity-doubles.util.js';
-import { FakeRecoveryCodes } from '../../support/mfa-doubles.util.js';
+import {
+  FakeFieldEncryption,
+  FakeRecoveryCodes,
+  FakeTotpEnrollment,
+  ScriptedTotp,
+} from '../../support/mfa-doubles.util.js';
 
 const ACTOR = { organizationId: ORGANIZATION_ID, userId: USER_ID };
 const VALID_CODE = 'ABCDE23456';
@@ -143,6 +150,80 @@ const buildHarness = ({ saturated }: { readonly saturated: boolean }) => {
   return { useCase, unitOfWork, inner };
 };
 
+/** The password `DisableTotpUseCase` verifies alongside the recovery code. */
+const PASSWORD = 'correct-horse-battery';
+
+/**
+ * The same rig around `DisableTotpUseCase`, presenting a recovery code as the second factor.
+ *
+ * It is the identical path and the identical cost — `RECOVERY_CODE_COUNT` verifications through the
+ * same `RecoveryCodeMatcher` — plus the password verification `POST /auth/2fa/disable` always pays,
+ * so eleven queueing computations rather than ten. Both hashers are the one instrumented instance:
+ * the property is about every argon2id call this command makes, not only the matcher's.
+ */
+const buildDisableHarness = ({ saturated }: { readonly saturated: boolean }) => {
+  const codes = new FakeRecoveryCodes();
+  const unitOfWork = new BudgetedUnitOfWork(TRANSACTION_BUDGET_MS);
+  const inner = new ScopeWatchingHasher(unitOfWork);
+  const semaphore = createHashSemaphore({ maxConcurrency: 1, queueTimeoutMs: QUEUE_TIMEOUT_MS });
+
+  if (saturated) {
+    void semaphore.run(() => new Promise<void>(() => {})).catch(() => undefined);
+  }
+
+  const hasher = new LimitedPasswordHasher(inner, semaphore);
+  const users = new FakeUsers();
+
+  users.credentials.set(USER_ID, {
+    email: 'ada@example.com',
+    passwordHash: `$argon2id$hashed:${PASSWORD}`,
+    locale: 'en',
+  });
+
+  const enrollment = new FakeTotpEnrollment();
+  const fields = new FakeFieldEncryption();
+  const clock = new FakeClock();
+
+  const useCase = new DisableTotpUseCase(
+    enrollment,
+    new ScriptedTotp(),
+    fields,
+    codes,
+    new RecoveryCodeMatcher(codes, hasher),
+    users,
+    hasher,
+    unitOfWork,
+    new FakeRateLimit(),
+    clock,
+    new RecordingLogger(),
+    new FakeAuditLogger(),
+    new FakeMailDispatcher(),
+    APP_URL,
+    disabledMfaPolicy(clock),
+  );
+
+  const enable = async (): Promise<void> => {
+    const secretEnc = fields.encrypt('THESECRET') ?? '';
+
+    await enrollment.beginDraft(USER_ID, secretEnc, new Date(clock.now().getTime() + 60_000));
+    await enrollment.commitEnrollment(USER_ID, 1, clock.now());
+  };
+
+  for (let index = 0; index < 10; index += 1) {
+    const id = randomUUID();
+
+    codes.rows.set(id, {
+      id,
+      userId: USER_ID,
+      codeHash:
+        index === 0 ? `$argon2id$hashed:${VALID_CODE}` : `$argon2id$hashed:OTHER${index}XXXX`,
+      usedAt: null,
+    });
+  }
+
+  return { useCase, unitOfWork, inner, enable };
+};
+
 /**
  * The property, stated as narrowly as it is proved: **a recovery-code path may not run its argon2id
  * verifications inside an open transaction.** It is not the general rule "no argon2id inside any
@@ -156,6 +237,15 @@ const buildHarness = ({ saturated }: { readonly saturated: boolean }) => {
  * seconds (`tenant.context.ts`, `DEFAULT_TIMEOUT_MS`). The failure is qualitative, not a slow path:
  * the driver kills the transaction and the sign-in is answered `500 internal_error` instead of the
  * `503` with a `Retry-After` the queue produced and the client knows how to obey.
+ *
+ * ## Both entry points onto that path are held here
+ *
+ * Two use-cases judge a presented recovery code, and both were split into read → verify → write by
+ * the same commit for the same reason: `ConsumeRecoveryCodeUseCase` (signing in with a recovery
+ * code) and `DisableTotpUseCase` (turning 2FA off with one instead of a live TOTP code, which pays
+ * the ten comparisons *plus* the password verification the command always requires). Holding only
+ * the first would leave the second free to be folded back into one transaction with the whole suite
+ * still green — which is exactly what happened before these blocks were paired.
  *
  * ## The three paths that keep one computation inside, and why that is accepted
  *
@@ -196,6 +286,38 @@ describe('a saturated argon2 queue during a recovery-code sign-in', () => {
 
     // CONTROL for the probe: it observed the ten verifications it exists to judge, so an empty
     // list cannot pass for «none of them was inside a scope».
+    expect(inner.verifiedInsideScope.length).toBeGreaterThan(0);
+    expect(inner.verifiedInsideScope).not.toContain(true);
+  });
+});
+
+describe('a saturated argon2 queue while 2FA is disabled with a recovery code', () => {
+  it('refuses with the 503 the queue raised, not with a killed transaction', async () => {
+    const { useCase, enable } = buildDisableHarness({ saturated: true });
+
+    await enable();
+
+    await expect(
+      useCase.execute({
+        actor: ACTOR,
+        password: PASSWORD,
+        code: VALID_CODE,
+        ipAddress: '203.0.113.7',
+      }),
+    ).rejects.toBeInstanceOf(ServiceUnavailableError);
+  });
+
+  it('never asks the hasher for a verification while a transaction is open', async () => {
+    const { useCase, inner, enable } = buildDisableHarness({ saturated: false });
+
+    await enable();
+
+    await useCase
+      .execute({ actor: ACTOR, password: PASSWORD, code: VALID_CODE, ipAddress: '203.0.113.7' })
+      .catch(() => undefined);
+
+    // CONTROL for the probe, as above: the eleven verifications it exists to judge were observed,
+    // so an empty list cannot pass for «none of them was inside a scope».
     expect(inner.verifiedInsideScope.length).toBeGreaterThan(0);
     expect(inner.verifiedInsideScope).not.toContain(true);
   });
