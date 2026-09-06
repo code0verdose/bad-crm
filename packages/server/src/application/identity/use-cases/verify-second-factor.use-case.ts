@@ -20,6 +20,7 @@ import { type ClockPort } from '@/application/platform/ports/clock.port.js';
 import { type FieldEncryptionPort } from '@/application/platform/ports/field-encryption.port.js';
 import { type LoggerPort } from '@/application/platform/ports/logger.port.js';
 import { type RateLimitPort } from '@/application/platform/ports/rate-limit.port.js';
+import { refundingHashRefusals } from '@/application/platform/rate-limit/hash-refusal-refund.util.js';
 import { type UnitOfWorkPort } from '@/application/platform/ports/unit-of-work.port.js';
 import { maskIpAddress } from '@/domain/identity/mask-ip-address.util.js';
 import { SECURITY_EVENTS } from '@/domain/identity/security-event.constant.js';
@@ -192,9 +193,35 @@ export class VerifySecondFactorUseCase {
       throw new RateLimitedError(perAccount.retryAfterSeconds);
     }
 
-    const completed = await this.unitOfWork.withTenant(
-      { organizationId: claims.organizationId, userId: claims.userId },
-      () => this.completeSignIn(input, claims, ipMasked),
+    // Both budgets under the refund, one wrapper each, because both were spent above and neither is
+    // ever reset on this path.
+    //
+    // This use-case hashes nothing itself, which is why it was missed: the recovery branch below
+    // delegates to `ConsumeRecoveryCodeUseCase`, and *that* hashes up to ten times. It gives back
+    // its own `mfa_recovery_consume_attempt` point on a queue refusal and re-throws — so without the
+    // two wrappers here, the same refusal still cost the caller one point of each budget above.
+    // Five obedient retries of a `Retry-After: 2` then exhausted `mfa_verify_attempt`, which revokes
+    // the pending token outright and sends somebody who has already lost their phone back to the
+    // password screen, having typed no wrong code at all.
+    //
+    // Nesting is safe because the three policies are distinct and each carries its own subject: a
+    // refusal walks out through three wrappers and is refunded once on each of three separate
+    // counters, never twice on the same one.
+    const completed = await refundingHashRefusals(
+      this.rateLimit,
+      'mfa_verify_attempt',
+      { jti: claims.jti },
+      async () =>
+        await refundingHashRefusals(
+          this.rateLimit,
+          'mfa_verify_account_attempt',
+          { userId: claims.userId, ipAddress: input.client.ipAddress },
+          async () =>
+            await this.unitOfWork.withTenant(
+              { organizationId: claims.organizationId, userId: claims.userId },
+              () => this.completeSignIn(input, claims, ipMasked),
+            ),
+        ),
     );
 
     const { session, kind, account, organization } = completed;

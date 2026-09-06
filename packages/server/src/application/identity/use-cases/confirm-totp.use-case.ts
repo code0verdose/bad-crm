@@ -158,21 +158,24 @@ export class ConfirmTotpUseCase {
       throw new RateLimitedError(decision.retryAfterSeconds);
     }
 
-    // Minted before the transaction opens — see the class docstring, «Enabling and issuing recovery
-    // codes are one transaction — the hashing is not». Minted even though the TOTP check has not run
-    // yet: skipping it when a guess looks likely to fail would make the elapsed time of a confirm
-    // attempt depend on whether it was going to succeed, which is the same timing leak this codebase
-    // refuses everywhere else.
-    const minted = await this.recoveryCodes.mint();
-
-    // The scope, not just the verification, because the password check lives inside it: a queue
-    // refusal there rolls the transaction back and must not also cost one of the five enrolment
-    // attempts the account holder gets in fifteen minutes (`hash-refusal-refund.util.ts`).
+    // The mint **and** the scope, because a queue refusal must not cost one of the five enrolment
+    // attempts the account holder gets in fifteen minutes (`hash-refusal-refund.util.ts`) — and the
+    // mint is where a refusal is likeliest to arrive: ten Argon2id computations queued one after
+    // another, against one for the password check inside the transaction.
     const { result, credential } = await refundingHashRefusals(
       this.rateLimit,
       'mfa_setup_attempt',
       { userId: input.actor.userId },
-      () => this.unitOfWork.withTenant(input.actor, () => this.confirm(input, minted)),
+      async () => {
+        // Minted before the transaction opens — see the class docstring, «Enabling and issuing
+        // recovery codes are one transaction — the hashing is not». Minted even though the TOTP
+        // check has not run yet: skipping it when a guess looks likely to fail would make the
+        // elapsed time of a confirm attempt depend on whether it was going to succeed, which is the
+        // same timing leak this codebase refuses everywhere else.
+        const minted = await this.recoveryCodes.mint();
+
+        return await this.unitOfWork.withTenant(input.actor, () => this.confirm(input, minted));
+      },
     );
 
     await this.rateLimit.reset('mfa_setup_attempt', { userId: input.actor.userId });

@@ -7,6 +7,8 @@ import { IssueSessionUseCase } from '@/application/identity/use-cases/issue-sess
 import { RecoveryCodeMatcher } from '@/application/identity/use-cases/recovery-code-matcher.use-case.js';
 import { VerifySecondFactorUseCase } from '@/application/identity/use-cases/verify-second-factor.use-case.js';
 import { SECURITY_EVENTS } from '@/domain/identity/security-event.constant.js';
+import { type HashSemaphore } from '@/infrastructure/crypto/argon2-semaphore.util.js';
+import { LimitedPasswordHasher } from '@/infrastructure/crypto/limited-password-hasher.adapter.js';
 import { noopMetrics } from '@/infrastructure/metrics/noop-metrics.adapter.js';
 import {
   type AppError,
@@ -15,6 +17,7 @@ import {
   MfaTokenExpiredError,
   RateLimitedError,
   RecoveryCodeInvalidError,
+  ServiceUnavailableError,
 } from '@/domain/shared/errors/app.errors.js';
 
 import {
@@ -38,6 +41,10 @@ import {
   USER_ID,
 } from '../../support/identity-doubles.util.js';
 import {
+  idleHashSemaphore,
+  saturatedHashSemaphore,
+} from '../../support/hash-semaphore-doubles.util.js';
+import {
   FakeFieldEncryption,
   FakeRecoveryCodes,
   FakeTotpEnrollment,
@@ -52,10 +59,24 @@ const SECRET = 'JBSWY3DPEHPK3PXP';
 const PERMISSIONS_VERSION = 7;
 const LAST_COUNTER = 42;
 
-const buildHarness = (rateLimitOptions: Omit<FakeRateLimitOptions, 'journal'> = {}) => {
+const buildHarness = (
+  rateLimitOptions: Omit<FakeRateLimitOptions, 'journal'> = {},
+  /**
+   * The Argon2id ceiling the recovery branch's ten comparisons queue on.
+   *
+   * Injected rather than fixed because the interesting case is not a wrong code but a **refused**
+   * one: under a saturated queue the branch never reaches a comparison, and the two budgets this
+   * use-case spent before delegating have to come back (`hash-refusal-refund.util.ts`).
+   */
+  semaphore: HashSemaphore = idleHashSemaphore(),
+) => {
   const clock = new FakeClock();
   const journal: string[] = [];
+  // The double stays reachable for the assertions that read what it was asked to compare; the
+  // ceiling wraps it exactly as `main.ts` wraps the real one, around the port rather than inside a
+  // use-case.
   const hasher = new FakePasswordHasher(journal);
+  const limitedHasher = new LimitedPasswordHasher(hasher, semaphore);
   const rateLimit = new FakeRateLimit({ ...rateLimitOptions, journal });
   const unitOfWork = new FakeUnitOfWork();
   const logger = new RecordingLogger();
@@ -107,7 +128,7 @@ const buildHarness = (rateLimitOptions: Omit<FakeRateLimitOptions, 'journal'> = 
 
   const dispatcher = new FakeMailDispatcher();
   const consumeRecoveryCode = new ConsumeRecoveryCodeUseCase(
-    new RecoveryCodeMatcher(codes, hasher),
+    new RecoveryCodeMatcher(codes, limitedHasher),
     codes,
     users,
     unitOfWork,
@@ -887,5 +908,62 @@ describe('a secret that cannot be decrypted', () => {
     expect(test.logger.lines.filter((line) => line.level === 'error')[0]?.fields).toMatchObject({
       event: SECURITY_EVENTS.totpSecretUndecryptable,
     });
+  });
+});
+
+/**
+ * The queue refusing a recovery code, on the one path in the product that exists for somebody who
+ * has already lost their phone.
+ *
+ * This use-case spends **two** budgets before it delegates — `mfa_verify_attempt` on the token's
+ * `jti` and `mfa_verify_account_attempt` on `ip+userId` — and only then reaches
+ * `ConsumeRecoveryCodeUseCase`, which hashes up to ten times. A refusal there used to give back
+ * only the inner use-case's own point: the two outer ones stayed spent, nothing resets them, and
+ * five obedient retries of a `Retry-After: 2` therefore exhausted `mfa_verify_attempt` — which
+ * revokes the pending token outright and sends the account holder back to the password screen —
+ * without a single wrong code having been typed.
+ */
+describe('a recovery code the argon2 queue refused', () => {
+  it('spends neither of the two budgets it consumed before delegating', async () => {
+    const test = buildHarness({}, saturatedHashSemaphore());
+    const token = await pendingToken(test);
+
+    test.seedRecoveryCode();
+
+    await expect(
+      test.verify.execute({ mfaToken: token, code: RECOVERY_CODE, client: CLIENT }),
+    ).rejects.toBeInstanceOf(ServiceUnavailableError);
+
+    // CONTROL: both budgets really were consulted, so an assertion about what came back cannot pass
+    // against a use-case that never called the limiter at all.
+    expect(test.rateLimit.consumed.map((entry) => entry.policy)).toEqual([
+      'mfa_verify_attempt',
+      'mfa_verify_account_attempt',
+      'mfa_recovery_consume_attempt',
+    ]);
+    expect(test.rateLimit.refunded.map((entry) => entry.policy)).toEqual([
+      'mfa_recovery_consume_attempt',
+      'mfa_verify_account_attempt',
+      'mfa_verify_attempt',
+    ]);
+  });
+
+  it('leaves the pending token alive through five refusals, so no password is asked for again', async () => {
+    const test = buildHarness({ limits: { mfa_verify_attempt: 5 } }, saturatedHashSemaphore());
+    const token = await pendingToken(test);
+
+    test.seedRecoveryCode();
+
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      await expect(
+        test.verify.execute({ mfaToken: token, code: RECOVERY_CODE, client: CLIENT }),
+      ).rejects.toBeInstanceOf(ServiceUnavailableError);
+    }
+
+    // The token survives, and the sixth presentation is judged on the code rather than refused:
+    // an unrefunded budget would have revoked it on the fifth and answered `MfaTokenExpiredError`.
+    await expect(
+      test.verify.execute({ mfaToken: token, code: 'WRONGCODE1', client: CLIENT }),
+    ).rejects.toBeInstanceOf(RecoveryCodeInvalidError);
   });
 });

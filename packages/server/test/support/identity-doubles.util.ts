@@ -328,17 +328,31 @@ export class FakeRateLimit implements RateLimitPort {
   }
 
   /**
-   * Puts one point back, the way the real adapter's `reward` does — and never below zero, because a
-   * counter the store has already forgotten is what `reset` leaves behind, and a double that let the
-   * number go negative would grant a budget the real one does not.
+   * Puts one point back — and, like the real adapter, declines to when there is none to put.
+   *
+   * Two cases are no-ops rather than decrements, and both are `RedisRateLimiterAdapter.refund`'s
+   * behaviour rather than a simplification. A counter that is **not there** is left alone: the
+   * library's `reward` would otherwise create one holding minus one with a fresh window, so the
+   * adapter reads before it decrements. A counter **above** the budget belongs to a subject that is
+   * already blocked, and giving a point back there only re-arms the escalation against them.
+   *
+   * The earlier version clamped at zero and claimed in its docstring that production did the same.
+   * It did not, and the claim is why nothing in this suite could see the defect: a double that
+   * misdescribes production is the instrument every test using it reads its answer from.
+   *
+   * The call is recorded either way — what a caller asked for is what the use-case tests assert.
    */
   refund<P extends RateLimitPolicy>(policy: P, subject: RateLimitSubjects[P]): Promise<void> {
     this.options.journal?.push(`rate-limit:refund:${policy}`);
     this.refunded.push({ policy, subject });
 
     const key = this.keyOf(policy, subject);
+    const counted = this.counters.get(key);
+    const limit = this.options.limits?.[policy] ?? Number.POSITIVE_INFINITY;
 
-    this.counters.set(key, Math.max(0, (this.counters.get(key) ?? 0) - 1));
+    if (counted === undefined || counted > limit) return Promise.resolve();
+
+    this.counters.set(key, counted - 1);
 
     return Promise.resolve();
   }

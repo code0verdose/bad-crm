@@ -21,11 +21,26 @@ export interface LimiterReading {
  */
 export interface WindowLimiter {
   consume(key: string): Promise<LimiterReading>;
+  /**
+   * What the store holds for `key`, or `null` when it holds nothing.
+   *
+   * Read before a refund and for nothing else. `reward` below cannot be asked "only if there is
+   * something to give back" — it is an unconditional increment by a negative number — so the
+   * question has to be asked separately, and the answer decides whether the decrement happens at
+   * all (`rate-limiter.adapter.ts`, `refund`).
+   */
+  get(key: string): Promise<LimiterReading | null>;
   /** Refuses `key` for `secDuration`, replacing whatever was left of the current window. */
   block(key: string, secDuration: number): Promise<LimiterReading>;
   /**
-   * Gives `points` back inside the window that is already open — the library's own name for
-   * un-consuming, and what `RateLimitPort.refund` is built on.
+   * Adds `-points` to the counter — the library's own name for un-consuming, and what
+   * `RateLimitPort.refund` is built on.
+   *
+   * **Not "gives points back inside the window that is already open", which is what this said until
+   * a reading of `RateLimiterRedis._upsert` showed otherwise.** The decrement is an `incrby` behind
+   * `set key 0 EX ttl NX`, so against a key that is not there it *creates* one holding a negative
+   * count with a full fresh window. The caller is responsible for not asking when there is nothing
+   * to give back.
    */
   reward(key: string, points: number): Promise<LimiterReading>;
   delete(key: string): Promise<boolean>;

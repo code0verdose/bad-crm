@@ -97,21 +97,63 @@ export class RedisRateLimiterAdapter implements RateLimitPort {
 
   async refund<P extends RateLimitPolicy>(policy: P, subject: RateLimitSubjects[P]): Promise<void> {
     const key = rateLimitKeyOf(policy, subject);
+    const attempts = this.limiters[policy].attempts;
+    /** Which of the three commands was in flight, so a swallowed failure still says what is left. */
+    let stage: 'read' | 'return' | 'clean' = 'read';
 
     try {
-      // `reward` is the library's name for "un-consume": it decrements the counter in the window
-      // that is already open, so the point comes back where it was taken from and the window's own
-      // expiry still ends it. The penalty counter is deliberately untouched — nothing escalated,
-      // because escalation happens only on the request that exhausts the budget, and a refunded
-      // point by construction belongs to a request that was admitted.
-      await this.limiters[policy].attempts.reward(key.value, 1);
+      const current = await attempts.get(key.value);
+
+      // Nothing left to give back, and asking anyway would hand out an attempt nobody paid for.
+      // `reward` is `incrby -1` behind `set key 0 EX ttl NX` (`RateLimiterRedis._upsert`), so
+      // against an absent key it *creates* one holding minus one with a **full fresh window** — the
+      // next window then opens with six attempts instead of five. The key is absent whenever the
+      // window expired under the queued request, or a parallel success of the same subject cleared
+      // it with `reset` while this one was still waiting for a slot.
+      if (current === null) return;
+
+      // Already blocked, so there is no attempt to return — only harm. `block` writes exactly
+      // `points + 1`; decrementing that to `points` buys nobody an admission, because the next
+      // `consume` lands on `points + 1` again, and `refuse` reads that as "just exhausted" and takes
+      // a second penalty point. The refund would lengthen the lock-out of the subject it is meant to
+      // spare.
+      if (current.consumedPoints > RATE_LIMIT_POLICY[policy].points) return;
+
+      // The penalty counter is deliberately untouched — nothing escalated, because escalation
+      // happens only on the request that exhausts the budget, and a refunded point by construction
+      // belongs to a request that was admitted.
+      stage = 'return';
+      const returned = await attempts.reward(key.value, 1);
+
+      // A `reset` that landed between the read and the decrement leaves behind the negative counter
+      // the read was there to prevent. Deleting it restores "no key", which is what the window it
+      // belonged to has already become.
+      //
+      // The read and the decrement are two commands, so this repairs one of the two orderings the
+      // guards above cannot see and not the other: a `block` landing in the same gap still gets its
+      // point back and can still lengthen itself once more. Closing that too would mean moving the
+      // whole sequence into a Lua script on the server; it has not been done, and the port's
+      // docstring says so rather than promising otherwise.
+      if (returned.consumedPoints < 0) {
+        stage = 'clean';
+        await attempts.delete(key.value);
+      }
     } catch {
       // Deliberately swallowed, like `reset`'s. The caller is already carrying a 503 of its own and
-      // is about to raise it; replacing that with a different 5xx would tell the client less. The
-      // point that could not be returned expires with its window.
+      // is about to raise it; replacing that with a different 5xx would tell the client less.
+      //
+      // `stage` is the operator's half of the message, and it is not decoration: the three failures
+      // say different things about what is in the store. `read` is the only certain one — nothing
+      // had been written yet, so the point stayed spent and expires with its window. `return` is
+      // genuinely unknown: a driver that times out or loses the connection after sending `incrby`
+      // raises here all the same, so the decrement may or may not have landed, and if the key had
+      // meanwhile been cleared it may have landed as a counter of minus one with a fresh window.
+      // `clean` is the case where that counter certainly exists and certainly was not removed — the
+      // next window there opens an attempt richer. A single sentence covering all three would claim
+      // certainty twice where there is none.
       this.logger.warn(
-        { policy, subject: key.label },
-        'rate limit point could not be returned after a refused computation',
+        { policy, subject: key.label, stage },
+        'returning a rate limit point after a refused computation did not complete',
       );
     }
   }

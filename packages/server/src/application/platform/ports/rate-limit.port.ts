@@ -305,14 +305,27 @@ export interface RateLimitPort {
    *
    * ## Why it cannot be turned into a way around the limiter
    *
-   * The invariant this preserves is "N points buy at most N argon2id computations", and returning a
-   * point that bought **none** is exactly what keeps it true rather than what breaks it. To collect
-   * a refund an attacker has to make the queue refuse, and the queue refuses only while its slots
-   * and its parked places are full — a state they would have to produce and sustain themselves, at
-   * a cost in requests far above the five attempts they get back, and during which their own guesses
-   * are being refused too. The point is also never returned to a subject that is *blocked*: the
-   * refund runs only on a path that got `allowed: true`, so a blocked caller never reaches the work
-   * that could refuse.
+   * The invariant this preserves is "N points buy at most N *attempts*" — not "N computations",
+   * which the ordering never delivered and which `hash-refusal-refund.util.ts` now states path by
+   * path. A refused request never *answered* the credential it was given, so it was not an attempt;
+   * returning its point is what keeps the count of attempts honest rather than what breaks it. To
+   * collect a refund an attacker has to make the queue refuse — either by filling its parked places
+   * or by keeping every slot busy past a waiter's deadline (`argon2-semaphore.util.ts` distinguishes
+   * the two as `queue_full` and `wait_expired`). Both are states they have to produce and sustain
+   * themselves, and during which their own guesses are being refused too. What makes the refund
+   * worthless to them is not its price but its arithmetic: it returns exactly the point this request
+   * spent, and never more.
+   *
+   * The point is not returned to a subject that is *blocked*, and the adapter checks that rather
+   * than assuming it from the call site. "The refund only runs after `allowed: true`" is true of one
+   * request and says nothing about the others: a parallel request of the same subject can exhaust
+   * the budget and escalate the block while this one is still parked in the queue. Handing a point
+   * back then would make the next `consume` read as "just exhausted" a second time and lengthen the
+   * block — against the caller the refund exists to spare. The check is a read followed by a
+   * decrement, not one atomic operation, so a block that lands **between** the two slips past it:
+   * the read saw an unblocked counter, the decrement runs anyway, and that subject can have its
+   * block lengthened once more. Closing the gap would take the whole sequence into a Lua script on
+   * the server, and it has not been done.
    *
    * ## Why it is one point and not `reset`
    *
@@ -322,6 +335,9 @@ export interface RateLimitPort {
    *
    * Silent when the store is unreachable, for the reason `reset` is: the caller is already carrying
    * a refusal of its own, and replacing it with a different 5xx would tell them less, not more.
+   * Silent, too, when there is nothing to return — a window that expired or was cleared by a
+   * parallel success leaves no counter, and creating one to hold a negative count would open the
+   * next window with an extra attempt.
    *
    * @see `application/platform/rate-limit/hash-refusal-refund.util.ts` — the one caller shape.
    */

@@ -258,18 +258,92 @@ describe('rate limiter — what reaches the log', () => {
  * somebody who never mistyped a password.
  */
 describe('rate limiter — putting a point back', () => {
-  it('gives the sixth attempt back to a subject whose fifth was refunded', async () => {
+  it('gives the fifth attempt back, so a sixth is admitted', async () => {
     const { adapter, attempts } = harness();
 
     await exhaust(adapter);
     // CONTROL: the budget really is spent, so the admission below is the refund and not a fresh key.
+    expect(attempts.consumedFor(KEY)).toBe(AUTH.points);
+
+    await adapter.refund('auth_attempt', SUBJECT);
+
+    expect(attempts.consumedFor(KEY)).toBe(AUTH.points - 1);
+    await expect(adapter.consume('auth_attempt', SUBJECT)).resolves.toMatchObject({
+      allowed: true,
+    });
+  });
+
+  /**
+   * `reward` is not "decrement": it is `incrby -1` behind `set key 0 EX ttl NX`
+   * (`rate-limiter-flexible@11`, `RateLimiterRedis._upsert` and its Lua script). Against a key that
+   * is **not there** it therefore creates one, holding minus one, with a full fresh window — and the
+   * next window opens with six attempts instead of five. Reaching that needs nothing exotic: a
+   * parallel request of the same subject signs in successfully and clears the counter with `reset`
+   * while this one is still parked in the argon2 queue.
+   */
+  it('creates no counter for a window that has already been cleared', async () => {
+    const { adapter, attempts } = harness();
+
+    await adapter.consume('auth_attempt', SUBJECT);
+    // The parallel success: `reset` deletes the key the queued request is about to refund into.
+    await adapter.reset('auth_attempt', SUBJECT);
+
+    await adapter.refund('auth_attempt', SUBJECT);
+
+    expect(attempts.consumedFor(KEY)).toBe(0);
+    expect(attempts.hasCounterFor(KEY)).toBe(false);
+  });
+
+  it('removes the negative counter a reset racing the refund would leave behind', async () => {
+    const { adapter, attempts } = harness();
+
+    await adapter.consume('auth_attempt', SUBJECT);
+    // The read says one point is there; the delete lands between the read and the decrement, which
+    // is the one ordering the guard above cannot see.
+    attempts.clearBetweenReadAndReward = true;
+
+    await adapter.refund('auth_attempt', SUBJECT);
+
+    expect(attempts.hasCounterFor(KEY)).toBe(false);
+  });
+
+  /**
+   * A refund that arrives after the subject was blocked, which the same parallelism produces: this
+   * request took its point and queued, others exhausted the budget and escalated, and only then did
+   * the queue refuse this one.
+   *
+   * A blocked key holds `points + 1` — exactly what `block` writes. Decrementing it to `points`
+   * buys nobody an attempt, because the next `consume` lands on `points + 1` again; what it does buy
+   * is a second reading of "just exhausted", which is the test `refuse` answers by taking another
+   * penalty point and lengthening the block. The refund would extend the lock-out of the subject it
+   * exists to spare.
+   */
+  it('returns nothing to a subject already blocked, so the block is not escalated twice', async () => {
+    const { adapter, attempts, penalties } = harness();
+
+    await exhaust(adapter);
     await expect(adapter.consume('auth_attempt', SUBJECT)).resolves.toMatchObject({
       allowed: false,
     });
 
+    // CONTROL: the refusal really did escalate once, so an assertion that nothing escalates again
+    // cannot pass against a penalty counter nobody ever touched.
+    const escalations = penalties.consumedFor(KEY);
+    const blocked = attempts.consumedFor(KEY);
+
+    expect(escalations).toBe(1);
+    expect(blocked).toBe(AUTH.points + 1);
+
     await adapter.refund('auth_attempt', SUBJECT);
 
-    expect(attempts.consumedFor(KEY)).toBe(AUTH.points);
+    // Nothing was given back, so the next refusal is not read as "just exhausted" a second time.
+    expect(attempts.consumedFor(KEY)).toBe(blocked);
+
+    await expect(adapter.consume('auth_attempt', SUBJECT)).resolves.toMatchObject({
+      allowed: false,
+    });
+
+    expect(penalties.consumedFor(KEY)).toBe(escalations);
   });
 
   it('leaves the penalty counter alone, so nothing escalates on a refusal it did not make', async () => {

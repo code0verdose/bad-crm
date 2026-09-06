@@ -112,18 +112,23 @@ export class RegenerateRecoveryCodesUseCase {
 
     if (!decision.allowed) throw new RateLimitedError(decision.retryAfterSeconds);
 
-    // Minted before the transaction opens — see the class docstring's last section. Minted before
-    // either credential is judged, for the identical timing reason `ConfirmTotpUseCase` mints early.
-    const minted = await this.recoveryCodes.mint();
-
-    // The scope, not just the verification, because the password check lives inside it: a queue
-    // refusal there rolls the transaction back and must not also cost one of the five reauthentication
-    // attempts the account holder gets in fifteen minutes (`hash-refusal-refund.util.ts`).
+    // The mint **and** the scope, because a queue refusal must not cost one of the five
+    // reauthentication attempts the account holder gets in fifteen minutes
+    // (`hash-refusal-refund.util.ts`) — and the mint is where a refusal is likeliest to arrive: ten
+    // Argon2id computations queued one after another, against one for the password check inside the
+    // transaction.
     const { result, credential } = await refundingHashRefusals(
       this.rateLimit,
       'mfa_reauth_attempt',
       { userId: input.actor.userId },
-      () => this.unitOfWork.withTenant(input.actor, () => this.regenerate(input, minted)),
+      async () => {
+        // Minted before the transaction opens — see the class docstring's last section. Minted
+        // before either credential is judged, for the identical timing reason `ConfirmTotpUseCase`
+        // mints early.
+        const minted = await this.recoveryCodes.mint();
+
+        return await this.unitOfWork.withTenant(input.actor, () => this.regenerate(input, minted));
+      },
     );
 
     await this.rateLimit.reset('mfa_reauth_attempt', { userId: input.actor.userId });

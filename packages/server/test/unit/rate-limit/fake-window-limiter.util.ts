@@ -19,6 +19,9 @@ export class FakeWindowLimiter implements WindowLimiter {
   /** Set to make every call reject the way a driver does when the store is unreachable. */
   storeFailure: Error | undefined;
 
+  /** Set to make `get` clear the key on its way out — the `reset` that races a refund. */
+  clearBetweenReadAndReward = false;
+
   private readonly consumed = new Map<string, number>();
   private readonly expiresAt = new Map<string, number>();
 
@@ -90,17 +93,52 @@ export class FakeWindowLimiter implements WindowLimiter {
   }
 
   /**
-   * Gives points back inside the window that is open, and never past the start of it.
+   * What the store holds for `key`, or `null` when the key is gone or its window has run out.
    *
-   * The floor is what the real library also produces for the only call this codebase makes — one
-   * point, returned by a request that consumed one — and it keeps the double from expressing a
-   * budget larger than the policy grants, which is the state an assertion about "the sixth attempt
-   * is refused" could otherwise pass against.
+   * Absence and expiry are the same answer here because they are the same answer in Redis: a key
+   * whose TTL elapsed is a key that is not there.
+   */
+  async get(key: string): Promise<LimiterReading | null> {
+    if (this.storeFailure !== undefined) throw this.storeFailure;
+
+    const expiry = this.expiresAt.get(key);
+
+    if (!this.consumed.has(key) || expiry === undefined || expiry <= this.now()) {
+      return Promise.resolve(null);
+    }
+
+    const consumed = this.consumed.get(key) ?? 0;
+    const reading = {
+      remainingPoints: this.points - consumed,
+      msBeforeNext: this.msBeforeNextFor(key),
+      consumedPoints: consumed,
+    };
+
+    // The race the adapter's own guard cannot close, made reproducible: a `reset` that lands after
+    // the read and before the decrement.
+    if (this.clearBetweenReadAndReward) await this.delete(key);
+
+    return reading;
+  }
+
+  /**
+   * Adds `-points` to the counter, **including below zero and including onto a key that is not
+   * there** — which is what `rate-limiter-flexible` does, not a liberty this double takes.
+   *
+   * This used to clamp at zero and say in this very docstring that the real adapter does the same.
+   * It does not: `RateLimiterRedis._upsert` runs `incrby` behind `set key 0 EX ttl NX`, so a reward
+   * against an absent key creates one holding minus one **with a full fresh window**, and the next
+   * window opens one attempt richer. The clamp made that unreachable, which is precisely why no test
+   * in this suite could see it. A double that describes production wrongly is not a weaker test — it
+   * is the instrument every other test is measured with.
    */
   async reward(key: string, points: number): Promise<LimiterReading> {
     if (this.storeFailure !== undefined) throw this.storeFailure;
 
-    const consumed = Math.max((this.consumed.get(key) ?? 0) - points, 0);
+    // `set … NX` opens a fresh window for a key that was not there, and only for such a key.
+    if (!this.consumed.has(key)) this.expiresAt.set(key, this.now() + this.windowMs);
+
+    const consumed = (this.consumed.get(key) ?? 0) - points;
 
     this.consumed.set(key, consumed);
 
@@ -122,6 +160,11 @@ export class FakeWindowLimiter implements WindowLimiter {
   /** What the store holds for `key` right now — the observable result the assertions read. */
   consumedFor(key: string): number {
     return this.consumed.get(key) ?? 0;
+  }
+
+  /** Whether a counter exists at all, which `consumedFor` cannot say: absent and zero both read 0. */
+  hasCounterFor(key: string): boolean {
+    return this.consumed.has(key);
   }
 
   msBeforeNextFor(key: string): number {

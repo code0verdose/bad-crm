@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
+import { type RecoveryCodeGeneratorPort } from '@/application/identity/ports/recovery-code-generator.port.js';
+import { CsprngRecoveryCodeGenerator } from '@/infrastructure/crypto/csprng-recovery-code-generator.adapter.js';
+import { LimitedPasswordHasher } from '@/infrastructure/crypto/limited-password-hasher.adapter.js';
 import { GenerateRecoveryCodesUseCase } from '@/application/identity/use-cases/generate-recovery-codes.use-case.js';
 import { RegenerateRecoveryCodesUseCase } from '@/application/identity/use-cases/regenerate-recovery-codes.use-case.js';
 import {
@@ -21,6 +24,7 @@ import {
   RecordingLogger,
   USER_ID,
 } from '../../support/identity-doubles.util.js';
+import { hashSemaphoreRefusingAfter } from '../../support/hash-semaphore-doubles.util.js';
 import {
   FakeFieldEncryption,
   FakeRecoveryCodeGenerator,
@@ -34,7 +38,13 @@ const CURRENT_PASSWORD = 'correct-horse-battery';
 const TOTP_CODE = '123456';
 const IP_ADDRESS = '203.0.113.7';
 
-const buildHarness = () => {
+const buildHarness = (
+  /**
+   * How the ten recovery-code hashes are produced — a double by default, a real batch under a
+   * ceiling when a case is about the mint being refused halfway.
+   */
+  generator: RecoveryCodeGeneratorPort = new FakeRecoveryCodeGenerator(),
+) => {
   const account = authUser();
   const users = new FakeUsers([
     {
@@ -57,7 +67,6 @@ const buildHarness = () => {
   const totp = new ScriptedTotp();
   const fields = new FakeFieldEncryption();
   const recoveryCodeRows = new FakeRecoveryCodes();
-  const generator = new FakeRecoveryCodeGenerator();
   const generateRecoveryCodes = new GenerateRecoveryCodesUseCase(recoveryCodeRows, generator);
   const hasher = new FakePasswordHasher();
   const unitOfWork = new FakeUnitOfWork();
@@ -388,5 +397,42 @@ describe('an account with no credential row at all', () => {
       digest: harness.hasher.dummyHash,
       password: CURRENT_PASSWORD,
     });
+  });
+});
+
+/**
+ * The queue refusing one of the ten hashes a fresh batch of recovery codes costs.
+ *
+ * `mint()` is not one computation, it is ten queued one after another
+ * (`csprng-recovery-code-generator.adapter.ts`) — by a wide margin the likeliest moment in this flow
+ * to meet a saturated ceiling. It used to run one line *above* the refund wrapper, so a refusal on
+ * the fourth of ten raised a `503` and kept the point, and five such refusals during a spike locked
+ * the account holder out for fifteen minutes without a single wrong credential.
+ */
+describe('a batch the argon2 queue refused halfway', () => {
+  const refusingMint = (admitted: number): RecoveryCodeGeneratorPort =>
+    new CsprngRecoveryCodeGenerator(
+      new LimitedPasswordHasher(new FakePasswordHasher(), hashSemaphoreRefusingAfter(admitted)),
+    );
+
+  it('gives back the attempt the mint never finished spending', async () => {
+    const harness = buildHarness(refusingMint(3));
+
+    await expect(
+      harness.useCase.execute({
+        actor: ACTOR,
+        currentPassword: CURRENT_PASSWORD,
+        totpCode: TOTP_CODE,
+        ipAddress: IP_ADDRESS,
+      }),
+    ).rejects.toBeInstanceOf(ServiceUnavailableError);
+
+    // CONTROL: the point really was taken, so the refund below is an undo and not an absent call.
+    expect(harness.rateLimit.consumed).toEqual([
+      { policy: 'mfa_reauth_attempt', subject: { userId: USER_ID } },
+    ]);
+    expect(harness.rateLimit.refunded).toEqual([
+      { policy: 'mfa_reauth_attempt', subject: { userId: USER_ID } },
+    ]);
   });
 });
