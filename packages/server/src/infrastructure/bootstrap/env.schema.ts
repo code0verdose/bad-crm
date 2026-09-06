@@ -95,6 +95,33 @@ const argon2Cost = (variable: string, fallback: number) =>
     .default(fallback);
 
 /**
+ * A whole number inside an inclusive range, with the range in the message at both ends.
+ *
+ * The message matters as much as the bound. A value outside the interval is almost never a decision
+ * — it is a typo, a copied line, or the belief that `0` means "no limit" — and `must be positive`
+ * leaves the operator with a process that will not start and no idea what number would do. Every
+ * refusal here names the interval it wanted, and `rangeError` is where a variable that has a
+ * *common* mistake attached says so out loud.
+ */
+const boundedInt = (variable: string, { min, max, fallback, rangeError }: BoundedIntOptions) => {
+  const error = rangeError ?? `${variable} must be between ${min} and ${max}`;
+
+  return z.coerce
+    .number({ error: `${variable} must be a number` })
+    .int({ error: `${variable} must be a whole number` })
+    .min(min, { error })
+    .max(max, { error })
+    .default(fallback);
+};
+
+interface BoundedIntOptions {
+  readonly min: number;
+  readonly max: number;
+  readonly fallback: number;
+  readonly rangeError?: string;
+}
+
+/**
  * Boolean out of a shell variable, which is always a string.
  *
  * The fallback is applied inside the transform rather than through `.default()`: in Zod 4 a default
@@ -333,8 +360,32 @@ const fields = z.object({
    * any of it.
    *
    * Raise it on a host with memory to spare; the arithmetic above is how to decide by how much.
+   *
+   * ## Why the range is 1–64, and why `0` is not "no limit"
+   *
+   * The same arithmetic sets the upper bound. 64 slots is 64 × 19 456 KiB ≈ **1.19 GiB**, already
+   * about twice the 0.4–0.6 GB §1 gives the entire API process and more than half of everything the
+   * `minimal` profile has — and, at 50–80 ms a computation, roughly a thousand sign-ins a second for
+   * a product sized at 5–50 people. Past that the number stops describing any host this product
+   * documents, so it is a typo or a misreading rather than a capacity decision, and letting it
+   * through is worse than refusing it: `AUTH_ARGON2_MAX_CONCURRENCY=1000` starts silently and peaks
+   * at 18.5 GiB, which is the out-of-memory kill this variable exists to prevent, now with an
+   * operator who believes a ceiling is in place. Raising `ARGON2_MEMORY_COST` moves the memory the
+   * bound implies but not the bound — the product is the operator's to recompute (§3.3).
+   *
+   * `0` is refused rather than read as "unlimited". Everywhere else in operations that is what a
+   * zero means, and here it would switch off a control whose whole purpose is that it cannot be
+   * switched off by accident; taken literally it is worse still — a ceiling of zero admits nobody.
+   * The message therefore carries the interval, because the alternative is an operator watching a
+   * container restart with `must be positive` and no number to try.
    */
-  AUTH_ARGON2_MAX_CONCURRENCY: argon2Cost('AUTH_ARGON2_MAX_CONCURRENCY', 4),
+  AUTH_ARGON2_MAX_CONCURRENCY: boundedInt('AUTH_ARGON2_MAX_CONCURRENCY', {
+    min: 1,
+    max: 64,
+    fallback: 4,
+    rangeError:
+      'AUTH_ARGON2_MAX_CONCURRENCY must be between 1 and 64 — 0 does not mean "no limit", and the ceiling cannot be switched off',
+  }),
 
   /**
    * How long a request may wait for one of those slots before it is refused 503.
@@ -350,8 +401,24 @@ const fields = z.object({
    * on its own, so under saturation that request can spend a multiple of this value before it is
    * answered or refused. Raising the value multiplies that path too; the number is deliberately
    * small partly for that reason.
+   *
+   * ## Why the range is 100–60 000 ms
+   *
+   * Both ends fail identically — every waiter refused at once — which is why neither may be left
+   * open. Below 100 ms the budget is shorter than the work it waits on: one computation costs
+   * 50–80 ms, so no slot could plausibly free inside the wait and the queue admits nobody. Above
+   * 60 s the refusal reaches nobody either: that is nginx's default `proxy_read_timeout`, so the
+   * proxy has already answered 504 while the request goes on holding a socket, a parsed body and a
+   * promise chain — the unbounded queue this deadline exists to prevent, wearing a number. The upper
+   * bound also keeps the delay five orders of magnitude below `setTimeout`'s 2^31−1 ms limit, past
+   * which Node clamps an overflowing delay **down to 1 ms** and one extra digit turns into an
+   * installation that refuses every queued sign-in with nothing in the log to say why.
    */
-  AUTH_ARGON2_QUEUE_TIMEOUT_MS: argon2Cost('AUTH_ARGON2_QUEUE_TIMEOUT_MS', 2_000),
+  AUTH_ARGON2_QUEUE_TIMEOUT_MS: boundedInt('AUTH_ARGON2_QUEUE_TIMEOUT_MS', {
+    min: 100,
+    max: 60_000,
+    fallback: 2_000,
+  }),
 });
 
 type EnvFields = z.infer<typeof fields>;

@@ -291,3 +291,81 @@ describe('what the ceiling publishes', () => {
     expect(readings.at(-1)).toBe(0);
   });
 });
+
+/**
+ * The gauge is an observer of the ceiling, never a participant in it.
+ *
+ * `Gauge.set` of a finite number does not throw today, which is the only reason this is not an
+ * incident already — but the cost is not symmetric with the guard. Publication sits in the middle
+ * of accounting for a slot at both ends, and an exception escaping from there is the one failure
+ * this whole utility exists to prevent: a slot counted with nobody running it. It never comes back,
+ * `AUTH_ARGON2_MAX_CONCURRENCY` of them close the door for good, and the only cure is a restart.
+ */
+describe('a gauge that throws', () => {
+  const throwingGauge = (): (() => never) => {
+    return () => {
+      throw new Error('gauge is broken');
+    };
+  };
+
+  it('does not cost the slot whose arrival it was announcing', async () => {
+    const semaphore = createHashSemaphore({
+      maxConcurrency: 1,
+      queueTimeoutMs: 5_000,
+      onInFlightChange: throwingGauge(),
+    });
+
+    // Two in a row through the same single slot: the second can only run if the first gave its slot
+    // back, so this fails on a lost slot as well as on the escaping exception.
+    await expect(semaphore.run(() => Promise.resolve('first'))).resolves.toBe('first');
+    await expect(semaphore.run(() => Promise.resolve('second'))).resolves.toBe('second');
+  });
+
+  /**
+   * The other end of the same connection, and the damage there is different in kind. `release` runs
+   * inside `run`'s `finally`, and an exception thrown out of a `finally` **replaces** whatever the
+   * block was carrying: a completed sign-in becomes a 500, and a genuine failure disappears behind
+   * the gauge's.
+   */
+  it('keeps the outcome of the computation when it throws on the way down', async () => {
+    const readings: number[] = [];
+    const semaphore = createHashSemaphore({
+      maxConcurrency: 1,
+      queueTimeoutMs: 5_000,
+      onInFlightChange: (inFlight) => {
+        readings.push(inFlight);
+
+        if (inFlight === 0) throw new Error('gauge is broken');
+      },
+    });
+
+    await expect(semaphore.run(() => Promise.resolve('kept'))).resolves.toBe('kept');
+    await expect(semaphore.run(() => Promise.reject(new Error('boom')))).rejects.toThrow('boom');
+
+    // And the readings kept coming: a throwing gauge is not silently unsubscribed from either.
+    expect(readings).toEqual([1, 0, 1, 0]);
+  });
+
+  /**
+   * The hand-over path publishes nothing — `inFlight` is unchanged when a slot moves from one
+   * computation to the next — so this asserts the consequence rather than the mechanism: a queue
+   * that was entered while the gauge was throwing still drains.
+   */
+  it('still hands a freed slot to the waiter behind it', async () => {
+    const semaphore = createHashSemaphore({
+      maxConcurrency: 1,
+      queueTimeoutMs: 5_000,
+      onInFlightChange: throwingGauge(),
+    });
+    const held = deferred();
+
+    const running = semaphore.run(async () => held.promise);
+    const queued = semaphore.run(() => Promise.resolve('behind'));
+
+    await Promise.resolve();
+    held.release();
+
+    await expect(queued).resolves.toBe('behind');
+    await running;
+  });
+});

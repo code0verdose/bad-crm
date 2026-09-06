@@ -1,5 +1,5 @@
 import type { ZodError } from 'zod';
-import { describe, expect, it } from 'vitest';
+import { assert, describe, expect, it } from 'vitest';
 
 import { EnvValidationError, toEnvIssues } from '../../src/infrastructure/bootstrap/env.errors.js';
 import {
@@ -259,6 +259,49 @@ describe('AUTH_ARGON2_MAX_CONCURRENCY', () => {
       );
     },
   );
+
+  /**
+   * The ceiling has a ceiling, exercised on both sides of it.
+   *
+   * Without an upper bound the variable defeats itself in silence: `AUTH_ARGON2_MAX_CONCURRENCY=1000`
+   * starts, logs nothing, and peaks at 1000 × 19 456 KiB ≈ 18.5 GiB — the out-of-memory kill the
+   * story exists to prevent, now with the operator believing a limit is in place. 64 is where the
+   * arithmetic stops describing any host this product documents: 64 × 19 456 KiB ≈ 1.19 GiB **per
+   * process and on top of the heap** (`docs/runbooks/hosting.md` §3.3), against the 0.4–0.6 GB that
+   * §1 budgets for the whole API process and the 2 GB the `minimal` profile has in total. It is
+   * also ~1000 sign-ins a second at 60 ms each, for a product sized at 5–50 people — so a larger
+   * number is a typo or a misreading, not a capacity decision.
+   */
+  it.each(['1', '64'])('accepts %o, the edge of the documented range', (value) => {
+    expect(
+      loadEnv(withEnv({ AUTH_ARGON2_MAX_CONCURRENCY: value })).AUTH_ARGON2_MAX_CONCURRENCY,
+    ).toBe(Number(value));
+  });
+
+  it.each(['65', '1000'])('rejects %o, which would switch the ceiling off in silence', (value) => {
+    expect(issuePathsOf(withEnv({ AUTH_ARGON2_MAX_CONCURRENCY: value }))).toContain(
+      'AUTH_ARGON2_MAX_CONCURRENCY',
+    );
+  });
+
+  /**
+   * `0` is the shape of the mistake worth naming: everywhere else in operations it means "no limit",
+   * and here it means a process that admits nobody. Rejected either way — but the message has to
+   * carry the range and say that switching the ceiling off is not on offer, or the operator meets
+   * only a restart loop.
+   */
+  it('tells the operator the range instead of only that the number was wrong', () => {
+    const result = serverEnvSchema.safeParse(withEnv({ AUTH_ARGON2_MAX_CONCURRENCY: '0' }));
+
+    assert(!result.success, 'a ceiling of zero must be refused');
+
+    const message = toEnvIssues(result.error as ZodError).find(
+      (issue) => issue.variable === 'AUTH_ARGON2_MAX_CONCURRENCY',
+    )?.message;
+
+    expect(message).toContain('1');
+    expect(message).toContain('64');
+  });
 });
 
 /**
@@ -273,6 +316,35 @@ describe('AUTH_ARGON2_QUEUE_TIMEOUT_MS', () => {
   });
 
   it.each(['0', '-1', 'soon'])('rejects %o instead of waiting forever', (value) => {
+    expect(issuePathsOf(withEnv({ AUTH_ARGON2_QUEUE_TIMEOUT_MS: value }))).toContain(
+      'AUTH_ARGON2_QUEUE_TIMEOUT_MS',
+    );
+  });
+
+  /**
+   * Both ends of the budget, and both ends fail the same way — every waiter refused at once — which
+   * is why neither may be left open.
+   *
+   * **Below 100 ms** nobody can be admitted at all: one argon2id computation costs 50–80 ms at the
+   * configured parameters, so a budget shorter than the work it is waiting on runs out before any
+   * slot could plausibly free. **Above 60 s** the refusal reaches nobody: 60 s is nginx's default
+   * `proxy_read_timeout`, so a longer wait is answered by the proxy's own 504 while the request goes
+   * on holding a socket, a parsed body and a promise chain — the unbounded queue by another name.
+   * The upper bound also puts the timer five orders of magnitude below `setTimeout`'s 2^31−1 ms
+   * ceiling, where Node clamps an overflowing delay **down to 1 ms** and silently turns one mistyped
+   * digit into an installation that refuses every queued sign-in.
+   */
+  it.each(['100', '60000'])('accepts %o, the edge of a wait that can work', (value) => {
+    expect(
+      loadEnv(withEnv({ AUTH_ARGON2_QUEUE_TIMEOUT_MS: value })).AUTH_ARGON2_QUEUE_TIMEOUT_MS,
+    ).toBe(Number(value));
+  });
+
+  it.each([
+    ['99', 'is shorter than the computation it waits on'],
+    ['60001', 'outlives the proxy that would answer first'],
+    ['2147483648', 'overflows the timer and is clamped down to a millisecond'],
+  ])('rejects %o, which %s', (value) => {
     expect(issuePathsOf(withEnv({ AUTH_ARGON2_QUEUE_TIMEOUT_MS: value }))).toContain(
       'AUTH_ARGON2_QUEUE_TIMEOUT_MS',
     );

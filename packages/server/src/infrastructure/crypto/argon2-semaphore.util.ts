@@ -6,6 +6,9 @@ import { ServiceUnavailableError } from '@/domain/shared/errors/app.errors.js';
  * `onInFlightChange` is where `argon2_inflight` is fed from. A callback rather than a `MetricsPort`
  * dependency: the semaphore has no business knowing what publishes the number, and an installation
  * with `METRICS_ENABLED=false` passes nothing at all instead of a no-op adapter.
+ *
+ * It is an observer, never a participant: whatever it throws is dropped, and the reading with it.
+ * See `publish` below for why the boundary is drawn there and not around it.
  */
 export interface HashSemaphoreOptions {
   readonly maxConcurrency: number;
@@ -84,8 +87,30 @@ export const createHashSemaphore = ({
   const waiting: Waiter[] = [];
   let inFlight = 0;
 
+  /**
+   * Announces `inFlight`, and cannot fail.
+   *
+   * The guard is on the function rather than on its call sites, because every call site publishes
+   * from the middle of accounting for a slot, and the two ends fail differently. Through `acquire`
+   * the increment has happened and `run` has not yet entered the `try`, so an escaping exception
+   * leaves a slot counted with nobody holding it — the leak is permanent, `maxConcurrency` of them
+   * refuse every sign-in until the process is restarted, and it is precisely the failure this
+   * utility exists to prevent. Through `release` the decrement has already happened, so the count
+   * survives, but the throw comes out of `run`'s `finally` and **replaces** what the block was
+   * carrying: a completed hash turns into a 500, and a genuine failure vanishes behind the gauge's.
+   * Guarding here holds for call sites that do not exist yet; guarding each caller makes it
+   * something every future one has to remember.
+   *
+   * The reading is dropped rather than reported, because there is nowhere to report it to: taking a
+   * callback instead of a `MetricsPort` is the whole point of the option, and the semaphore has no
+   * logger. A gauge that missed a sample is a smaller failure than a door that admits nobody.
+   */
   const publish = (): void => {
-    onInFlightChange?.(inFlight);
+    try {
+      onInFlightChange?.(inFlight);
+    } catch {
+      // Deliberately swallowed — see above. Metrics do not get to close the door.
+    }
   };
 
   const acquire = async (): Promise<void> => {
