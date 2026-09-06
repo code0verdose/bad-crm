@@ -521,6 +521,60 @@ describe('the bounded queue', () => {
     await expect(second).resolves.toBe('behind');
     await first;
   });
+
+  /**
+   * Both refusals announced as they happen, which is what a gauge cannot do.
+   *
+   * `argon2_inflight` and `argon2_queued` are sampled: a spike shorter than the scrape interval
+   * (15–60 s) leaves nothing behind on `/metrics` at all, and signal 13's «> 0 for a minute» cannot
+   * fire for the spikes that refuse the most sign-ins. A refusal is an event, so it is counted where
+   * it happens and the count survives until somebody reads it.
+   */
+  it('announces each refusal, and by which of the two rules it was made', async () => {
+    const refusals: string[] = [];
+    // Capacity `ceil(1 × 15 / 15)` = one waiter, so the second arrival is refused on the length
+    // bound and the first on its deadline — both rules exercised by the same flood.
+    const semaphore = createHashSemaphore({
+      maxConcurrency: 1,
+      queueTimeoutMs: 15,
+      onRefusal: (refusal) => refusals.push(refusal),
+    });
+    const gate = deferred();
+
+    const held = semaphore.run(async () => gate.promise);
+    const turnedAway = await Promise.allSettled([
+      semaphore.run(() => Promise.resolve('never')),
+      semaphore.run(() => Promise.resolve('never either')),
+    ]);
+
+    gate.release();
+    await held;
+
+    // CONTROL: both arrivals really were refused, so the list below cannot be two readings of one.
+    expect(turnedAway.map((outcome) => outcome.status)).toEqual(['rejected', 'rejected']);
+    expect([...refusals].sort()).toEqual(['queue_full', 'wait_expired']);
+  });
+
+  /** An observer, like the two gauges: a broken counter may not turn a 503 into a 500. */
+  it('still refuses when the refusal counter throws', async () => {
+    const semaphore = createHashSemaphore({
+      maxConcurrency: 1,
+      queueTimeoutMs: 0,
+      onRefusal: () => {
+        throw new Error('counter is broken');
+      },
+    });
+    const gate = deferred();
+
+    const held = semaphore.run(async () => gate.promise);
+
+    await expect(semaphore.run(() => Promise.resolve('never'))).rejects.toMatchObject({
+      code: 'service_unavailable',
+    });
+
+    gate.release();
+    await held;
+  });
 });
 
 /**

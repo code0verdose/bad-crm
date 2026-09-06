@@ -118,6 +118,30 @@ describe('the prom-client adapter', () => {
     await expect(metrics.render()).resolves.toContain('argon2_queued 0');
   });
 
+  /**
+   * The one thing neither gauge can answer: **how many** sign-ins were refused.
+   *
+   * Both gauges are sampled, and a refusal is an event — a burst that opens and closes between two
+   * scrapes leaves both of them reading zero, so «argon2_queued > 0 for a minute» (hosting.md §9.1,
+   * signal 13) is unfirable for exactly the spikes that turn users away. `http_requests_total`
+   * cannot stand in either: its `503` bucket mixes these with the refusal an unreachable Redis
+   * raises, which is a different fault with a different remedy.
+   *
+   * Two label values, both from a closed union, and nothing identifying beside them.
+   */
+  it('counts each refusal by the rule that made it', async () => {
+    const metrics = createPromMetrics();
+
+    metrics.incrementArgon2Refused('queue_full');
+    metrics.incrementArgon2Refused('wait_expired');
+    metrics.incrementArgon2Refused('wait_expired');
+
+    const rendered = await metrics.render();
+
+    expect(rendered).toContain('argon2_refused_total{refusal="queue_full"} 1');
+    expect(rendered).toContain('argon2_refused_total{refusal="wait_expired"} 2');
+  });
+
   it('declares the gauge without labels, so it cannot grow a series per caller', async () => {
     const metrics = createPromMetrics();
 
@@ -160,6 +184,10 @@ describe('metrics switched off', () => {
     noopMetrics.incrementPermissionDenied('permission_not_granted');
     noopMetrics.incrementAuditWriteFailed();
     noopMetrics.setArgon2InFlight(4);
+    noopMetrics.setArgon2Queued(2);
+    noopMetrics.incrementAuditUnscoped();
+    noopMetrics.incrementMfaRecoveryFailed();
+    noopMetrics.incrementArgon2Refused('queue_full');
 
     await expect(noopMetrics.render()).resolves.toBe('');
   });

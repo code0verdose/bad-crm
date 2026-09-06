@@ -17,6 +17,7 @@ export const noopMetrics: MetricsPort = {
   incrementMfaRecoveryFailed: () => undefined,
   setArgon2InFlight: () => undefined,
   setArgon2Queued: () => undefined,
+  incrementArgon2Refused: () => undefined,
   render: () => Promise.resolve(''),
   contentType: 'text/plain; charset=utf-8',
 };

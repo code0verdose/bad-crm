@@ -2,6 +2,7 @@ import { type SharedPermissions } from '@bad-crm/shared';
 import { Counter, Gauge, Histogram, Registry, collectDefaultMetrics } from 'prom-client';
 
 import {
+  type Argon2Refusal,
   type HttpRequestObservation,
   type MetricsPort,
 } from '@/application/platform/ports/metrics.port.js';
@@ -92,6 +93,15 @@ export const createPromMetrics = (): MetricsPort => {
     registers: [registry],
   });
 
+  // A counter beside the two gauges, and not a third gauge: gauges are sampled, and a burst shorter
+  // than the scrape interval leaves both of them reading zero. See `incrementArgon2Refused`.
+  const argon2Refused = new Counter({
+    name: 'argon2_refused_total',
+    help: 'Requests the argon2 ceiling turned away, by the rule that turned them away.',
+    labelNames: ['refusal'] as const,
+    registers: [registry],
+  });
+
   return {
     observeHttpRequest: ({
       method,
@@ -122,6 +132,9 @@ export const createPromMetrics = (): MetricsPort => {
     },
     setArgon2Queued: (queued: number): void => {
       argon2Queued.set(queued);
+    },
+    incrementArgon2Refused: (refusal: Argon2Refusal): void => {
+      argon2Refused.inc({ refusal });
     },
     render: () => registry.metrics(),
     contentType: registry.contentType,

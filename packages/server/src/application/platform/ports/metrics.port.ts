@@ -18,6 +18,15 @@ export interface HttpRequestObservation {
 }
 
 /**
+ * Why the argon2 ceiling refused a request — a closed set, because it is a metric label.
+ *
+ * Declared here rather than beside the semaphore that raises it: `infrastructure` may import from
+ * `application` and not the other way round (`rules/hexagonal-backend.mdc`), and the label's shape
+ * is part of what this port promises. The semaphore imports it back.
+ */
+export type Argon2Refusal = 'queue_full' | 'wait_expired';
+
+/**
  * What the process publishes about itself.
  *
  * A port rather than a direct `prom-client` call, for the same reason the logger is one: the
@@ -121,6 +130,27 @@ export interface MetricsPort {
    * Unlabelled, for the same reason as its companion.
    */
   setArgon2Queued(queued: number): void;
+  /**
+   * One request the argon2 ceiling turned away, by the rule that turned it away (STORY-013-06).
+   *
+   * **The one number the two gauges above cannot produce.** Both are sampled, and Prometheus samples
+   * every 15–60 s; a burst that opens and closes between two scrapes leaves both of them reading
+   * zero, so the alert on signal 13 («`argon2_queued` above zero for a minute», `hosting.md` §9.1)
+   * is by construction unfirable for exactly the spikes that refuse the most sign-ins. A counter is
+   * monotonic: it does not need to be observed while the thing is happening. It is also what answers
+   * «how many sign-ins did we refuse last night», which is a question about a total and not about an
+   * instant.
+   *
+   * `http_requests_total{status="503"}` is not a substitute: it merges these refusals with the one
+   * an unreachable Redis raises, and those two faults have different remedies (capacity or traffic
+   * on one side, a broken dependency on the other).
+   *
+   * **Labelled, unlike the audit counters, and the label is the whole point.** The two rules answer
+   * different cases: `wait_expired` says the host is slower than the traffic, `queue_full` says the
+   * arrivals outran anything that budget could drain. Two values from a closed union, nothing
+   * identifying beside them — the constraint every label on this port is held to.
+   */
+  incrementArgon2Refused(refusal: Argon2Refusal): void;
   /** The exposition format, rendered on demand. */
   render(): Promise<string>;
   readonly contentType: string;

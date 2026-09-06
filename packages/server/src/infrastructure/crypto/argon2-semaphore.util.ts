@@ -1,3 +1,4 @@
+import { type Argon2Refusal } from '@/application/platform/ports/metrics.port.js';
 import { ServiceUnavailableError } from '@/domain/shared/errors/app.errors.js';
 
 /**
@@ -23,6 +24,19 @@ export interface HashSemaphoreOptions {
    * an installation is to shedding load it could otherwise have served.
    */
   readonly onQueuedChange?: (queued: number) => void;
+  /**
+   * Where `argon2_refused_total` is fed from, and the reason a pair of gauges was not enough.
+   *
+   * Both gauges are read by a scrape, and a scrape happens every 15–60 s. A spike that saturates the
+   * ceiling and drains again between two of them leaves both of them reading zero — so the refusals
+   * it made are invisible on `/metrics` entirely, and the alert on depth cannot fire for exactly the
+   * bursts that turned the most sign-ins away. A refusal is an event; it is counted when it happens
+   * and the count waits to be read.
+   *
+   * An observer on the same terms as the gauges: whatever it throws is dropped, because a broken
+   * counter must not turn a `503` the caller can act on into a `500` it cannot.
+   */
+  readonly onRefusal?: (refusal: Argon2Refusal) => void;
 }
 
 export interface HashSemaphore {
@@ -180,6 +194,7 @@ export const createHashSemaphore = ({
   queueTimeoutMs,
   onInFlightChange,
   onQueuedChange,
+  onRefusal,
 }: HashSemaphoreOptions): HashSemaphore => {
   if (!Number.isInteger(maxConcurrency) || maxConcurrency < 1) {
     throw new RangeError(`argon2 concurrency must be a whole number of at least 1`);
@@ -244,6 +259,15 @@ export const createHashSemaphore = ({
     }
   };
 
+  /** The refusal counter, guarded for the same reason and at the same boundary as the gauges. */
+  const publishRefusal = (refusal: Argon2Refusal): void => {
+    try {
+      onRefusal?.(refusal);
+    } catch {
+      // Deliberately swallowed — see `publish`. A counter does not get to change the answer.
+    }
+  };
+
   const acquire = async (): Promise<void> => {
     if (inFlight < maxConcurrency) {
       inFlight += 1;
@@ -259,6 +283,8 @@ export const createHashSemaphore = ({
       // `queue_full` says arrivals outran anything that budget could ever drain and answers a case
       // for looking at where they come from. One shared code with no discriminator would make the
       // two indistinguishable at exactly the moment an operator needs to tell them apart.
+      publishRefusal('queue_full');
+
       throw new ServiceUnavailableError(
         {
           dependency: 'password-hashing',
@@ -288,6 +314,7 @@ export const createHashSemaphore = ({
         waiter.expired = true;
         queued -= 1;
         publishQueued();
+        publishRefusal('wait_expired');
 
         reject(
           new ServiceUnavailableError(
