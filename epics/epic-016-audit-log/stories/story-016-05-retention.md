@@ -1,7 +1,7 @@
 ---
 id: STORY-016-05
 epic: EPIC-016
-status: backlog
+status: review
 blocked: false
 priority: should
 estimate: M
@@ -13,96 +13,116 @@ estimate: M
 записи архивируются предсказуемой процедурой, **чтобы** база не росла бесконечно, но и не теряла
 данные, которые могут понадобиться на аудите через год.
 
-> **Сверено 2026-09-06: не начата, статус `backlog` верен.** Колонки `audit_retention_months` нет
-> ни в `prisma/schema.prisma`, ни в миграциях (`grep -rn 'audit_retention' packages` печатает
-> пусто), скрипта `scripts/audit-retention.ts` нет, `infrastructure/archive/**` нет, раздела
-> «Ретенция» в `docs/runbooks/audit-log.md` нет. Отгружена только та половина, что принадлежит
-> STORY-016-01: `DETACH` ролью `app_user` уже отвергается, и это доказано —
-> `packages/server/test/integration/db/audit-log-append-only.test.ts:249`. То есть п. 3 этой
-> истории закрыт заранее, всё остальное — нет.
+> **Сверено с кодом 2026-09-06, дважды.** Утром — «не начата» (см. историю файла: `34a6b75`).
+> Вечером отгружена **операторская половина**, и это ровно та половина, которую можно было
+> отгрузить, не выдумывая: команда `pnpm db:audit-retention` (`packages/server/scripts/
+> audit-retention.ts` + `audit-retention.commands.ts` + `audit-retention.util.ts`), переменная
+> `AUDIT_RETENTION_MONTHS`, правка `01-grants.sql` и `rls-catalog.util.ts` под отсоединённый
+> месяц, раздел «Ретенция» в `docs/runbooks/audit-log.md`, тесты — юнит и на живом Postgres
+> (`test/integration/db/audit-retention.test.ts`). Критерии ниже помечены по факту кода; чего
+> нет — с причиной, а не с заглушкой.
+>
+> **Что в этой истории оказалось устаревшим к моменту реализации** (написана 2026-08-05):
+>
+> - «Запускается отдельным job'ом деплоя/крона» и «`audit_retention_failed_total`, алерт»,
+>   «экспортируются метрики» — носителя периодических задач в продукте нет (`bullmq` не
+>   подключён, планировщика нет; установлено дважды 2026-09-06 и записано в `audit-log.md`), а
+>   команда обслуживания — не процесс API и метрик не отдаёт. Ретенция — cron хоста, как и
+>   `db:audit-partitions`, вывод команды и код возврата — её наблюдаемость.
+> - «`DETACH` → выгрузка в архив (сжатый дамп в объектное хранилище) → `DROP`» одной процедурой —
+>   объектного хранилища ещё нет (EPIC-015), а главное, так процедура не строится: `DROP` в том
+>   же запуске, что и `DETACH`, — это удаление раньше бэкапа. Отгружено два шага с ручным
+>   подтверждением между ними; архив до EPIC-015 — обычный `pg_dump` по рунбуку.
+> - Событие `audit.retention_applied` с `actorType = SYSTEM` — писать некуда: `organization_id`
+>   в журнале `NOT NULL`, а у операции организации нет. Единственное действие без организации в
+>   каталоге — `rls.bypassed`; расширять список ради операции, след которой виден в `pg_class` и
+>   в логе cron, не стали (решение записано в рунбуке).
+> - `DETACH PARTITION` подразумевался безобидным. **Замерено:** `CONCURRENTLY` PostgreSQL 16
+>   отвергает при DEFAULT-партиции, обычная форма берёт `ACCESS EXCLUSIVE` на родителе; сам
+>   оператор — 1 мс на 100 000 строк, но очередь за ним — все вставки журнала. Отсюда
+>   `lock_timeout` и правило «не одновременно с `pg_dump`».
+> - `01-grants.sql` после отсоединения **выдавал бы** `app_user` `SELECT, INSERT, UPDATE,
+>   DELETE` на отсоединённый месяц (классификация по каталогу; замерено до правки) — ловушка,
+>   которой история не знала, и которая делала бы ретенцию дырой в append-only. Закрыто.
 
 ## Acceptance (Given/When/Then)
 
-1. **Настройка срока хранения.**
+1. **Настройка срока хранения.** *Отложено: ждёт ручки и экран журнала (STORY-016-03).* Порог
+   сегодня — переменная оператора `AUDIT_RETENTION_MONTHS` (`12`–`600`, не задана = не
+   отсоединять ничего), а не поле организации: в мультиарендной инсталляции физическая ретенция
+   на организацию из общей партиции невозможна (п. 5), поэтому порог инсталляции первичен и
+   останется даже когда появится порог организации.
    Given владелец с правом `audit:manage_retention` (**только `owner`**, `dangerous`);
    When `PATCH /api/v1/organization/audit-retention` с `{ retentionMonths: 24 }`;
-   Then значение сохраняется, минимально допустимое (например 12 месяцев) валидируется Zod,
+   Then значение сохраняется, минимально допустимое (12 месяцев) валидируется Zod,
    изменение пишется в `AuditLog` с `severity = critical` и before/after.
 
-2. **Негативный сценарий — нет права.**
+2. **Негативный сценарий — нет права.** *Отложено вместе с п. 1.*
    Given администратор с `audit:read_security`, но без `audit:manage_retention`;
    When он меняет срок;
-   Then 403 `permission_not_granted` — снижение ретенции равносильно уничтожению улик и доступно
-   только владельцу (§4.10 `permission-model.md`).
+   Then 403 `permission_not_granted`.
 
-3. **Архивация выполняется `app_migrator`, а не приложением.**
+3. **Архивация выполняется `app_migrator`, а не приложением.** ✅ **Закрыто 2026-09-06.**
    Given партиция старше срока хранения;
-   When выполняется процедура ретенции;
-   Then она запускается отдельной операцией под ролью `app_migrator`: `DETACH PARTITION` →
-   выгрузка в архив (сжатый дамп в объектное хранилище или на диск) → `DROP`; приложение под
-   `app_user` не может выполнить ни одну из этих команд (структурный тест).
+   When выполняется `pnpm db:audit-retention`;
+   Then под ролью `app_migrator` (`DATABASE_MIGRATION_URL`) она отсоединяется `DETACH
+   PARTITION`; выгрузка — `pg_dump` по рунбуку; `DROP` — второй явный вызов `-- --drop
+   <таблица>`, только для уже отсоединённой; приложение под `app_user` не может выполнить ни
+   `DETACH`, ни `DROP` — доказано на живом Postgres с положительным контролем
+   (`test/integration/db/audit-retention.test.ts`: `app_user` — `42501`, `app_migrator` — сделано).
 
-4. **`DELETE` на миллионах строк запрещён.**
-   Given реализация ретенции;
-   When она ревьюится и тестируется;
-   Then в коде нет `DELETE FROM audit_logs` — только операции с партициями; наличие такого запроса
-   ломает тест и вердикт агента `db-reviewer`.
+4. **`DELETE` на миллионах строк запрещён.** ✅ **Закрыто 2026-09-06.**
+   `DELETE FROM audit_logs` отсутствует в `src/`, `scripts/` и `prisma/` — структурный тест
+   `test/unit/audit/audit-retention.test.ts` («no code deletes rows of the audit trail»).
 
-5. **Ретенция уважает разные сроки у организаций.**
-   Given мультиарендная инсталляция с разными `retentionMonths`;
-   When партиция содержит строки нескольких организаций;
-   Then партиция отцепляется только когда её период старше **максимального** срока среди
-   организаций; для организаций с меньшим сроком применяется маскирование доступа (журнал перестаёт
-   отдаваться в UI за пределами их срока) — компромисс явно задокументирован, потому что физическое
-   удаление по одной организации из общей партиции невозможно.
+5. **Ретенция уважает разные сроки у организаций.** *Отложено: ждёт п. 1.* Компромисс
+   задокументирован уже сейчас (`audit-log.md`, «Ретенция»): команда не знает организаций и не
+   принимает `organizationId`, отсоединяется месяц целиком; порог на организацию и маскирование
+   чтения — поверх этой команды, когда появится экран.
 
-6. **Архив восстановим.**
-   Given заархивированная партиция;
-   When выполняется процедура восстановления из runbook;
-   Then данные возвращаются в отдельную таблицу и доступны для чтения; процедура проверяется на
-   копии данных перед мажорным релизом (аналог требования NFR-5 для бэкапов).
+6. **Архив восстановим.** *Частично.* Процедура восстановления отсоединённого месяца из дампа
+   описана (`audit-log.md`, «Ретенция»: `pg_restore -t`, затем `pnpm db:grants`; при
+   необходимости `ATTACH PARTITION` обратно), но **автоматически не прогонялась** — рунбук так и
+   говорит и требует проверки на копии по NFR-5. Что проверено на контейнере: отсоединённый месяц
+   читается `backup_role` целиком, то есть в дамп попадает.
 
-7. **Негативный сценарий — потеря архива.**
-   Given архивация завершилась ошибкой загрузки в хранилище;
-   When процедура доходит до `DROP PARTITION`;
-   Then удаление **не выполняется**: fail-closed, метрика `audit_retention_failed_total`, алерт;
-   партиция остаётся отцепленной, но живой до успешной архивации.
+7. **Негативный сценарий — потеря архива.** ✅ **Закрыто по существу, иначе, чем написано.**
+   Fail-closed достигнут не проверкой загрузки, а разделением шагов: команда **никогда** не
+   удаляет в том запуске, где отсоединяет; `--drop` берёт явное имя, отказывает всему списку
+   целиком, если хоть одна таблица ещё присоединена или не существует, и `--drop-all` нет
+   намеренно. Метрика `audit_retention_failed_total` — не экспортируется (см. врезку); отказ
+   виден в выводе (`FAILED <таблица>: <причина>`) и в коде возврата `1`.
 
-8. **Наблюдаемость.**
-   Given процедура ретенции;
-   When она отрабатывает;
-   Then экспортируются метрики: число обработанных партиций, объём архива, длительность; событие
-   `audit.retention_applied` пишется с `actorType = SYSTEM`.
+8. **Наблюдаемость.** *Заменено:* метрик у команды обслуживания нет и быть не может (не процесс
+   API); вывод содержит отсоединённые таблицы с размером и длительностью, число оставленных,
+   ожидающие удаления, число строк в `audit_logs_default`; код возврата `0/1/2`. Событие в журнал
+   не пишется — причина во врезке.
 
-9. **Runbook.**
-   Given `docs/runbooks/audit-log.md`;
-   When администратор его читает;
-   Then описаны: как выполняется ретенция, под какой ролью, где лежит архив, как восстановить, что
-   делать при сбое, какова оценка роста объёма.
+9. **Runbook.** ✅ **Закрыто 2026-09-06.** `docs/runbooks/audit-log.md`, раздел «Ретенция»: как
+   выполняется, под какой ролью, где лежит архив (дамп), как восстановить, что делать при сбое
+   (`lock timeout`, DEFAULT-партиция), замеры; оценка роста — в разделе «Объём и рост» там же.
+   Плюс `backup-restore.md` §1, `rls-design.md` («Отсоединённый лист — тоже лист»),
+   `install.md` §2.3, `upgrade.md` (таблица переменных), `.env.example`, `CHANGELOG.md`.
 
-10. **UI.**
-    Given экран `/admin/organization?tab=security`;
-    When владелец меняет срок;
-    Then показано предупреждение о необратимости для более старых данных, требуется подтверждение;
-    видна дата, до которой журнал фактически доступен; экран локализован EN/RU и проходит axe.
+10. **UI.** *Отложено вместе с п. 1.*
 
 ## Задачи
 
-- [ ] `packages/server/prisma/migrations/*_audit_retention/migration.sql` —
-      `organizations.audit_retention_months` + CHECK (минимум 12).
-- [ ] `packages/server/src/application/platform/use-cases/update-audit-retention.use-case.ts`.
-- [ ] `packages/server/scripts/audit-retention.ts` — операция под `app_migrator`
-      (`DETACH` → архивация → `DROP`), запускается отдельным job'ом деплоя/крона, а не рантаймом
-      приложения.
-- [ ] `packages/server/src/infrastructure/archive/audit-archive.adapter.ts` — выгрузка отцепленной
-      партиции (сжатие + запись в объектное хранилище с шифрованием на стороне скрипта).
-- [ ] `packages/server/src/presentation/http/routes/registry.ts` — `audit:manage_retention`.
-- [ ] `packages/client/src/widgets/security-policy/ui/audit-retention-field.component.tsx`,
-      `units/audit/service/mutations/update-audit-retention.mutation.ts`.
-- [ ] `docs/runbooks/audit-log.md` — раздел «Ретенция и восстановление архива».
-- [ ] Тесты: `update-audit-retention.use-case.spec.ts` (п. 1, 2), структурный
-      `app-user-cannot-detach-partition.spec.ts` (п. 3), `no-delete-on-audit-logs.spec.ts` (п. 4),
-      интеграционный `audit-retention-script.spec.ts` (п. 6, 7 — на Testcontainers).
+- [ ] ~~`organizations.audit_retention_months` + CHECK~~ — отложено (п. 1): порог инсталляции —
+      `AUDIT_RETENTION_MONTHS`, `env.schema.ts` (`optionalBoundedInt`, `12`–`600`, без дефолта).
+- [ ] ~~`update-audit-retention.use-case.ts`~~ — отложено (п. 1).
+- [x] `packages/server/scripts/audit-retention.ts` — операция под `app_migrator`, cron хоста;
+      `audit-retention.commands.ts` (DB-половина, её же гоняет интеграционный тест),
+      `audit-retention.util.ts` (план и аргументы, без БД).
+- [ ] ~~`infrastructure/archive/audit-archive.adapter.ts`~~ — ждёт EPIC-015; до него `pg_dump`.
+- [ ] ~~`audit:manage_retention` в реестре маршрутов~~ — отложено (п. 1).
+- [ ] ~~Клиентские компоненты~~ — отложено (п. 10).
+- [x] `docs/runbooks/audit-log.md` — раздел «Ретенция» (с замерами).
+- [x] `prisma/sql/01-grants.sql` — отсоединённый месяц журнала остаётся без прав `app_user`.
+- [x] `rls-catalog.util.ts` — `pnpm check:rls` узнаёт отсоединённый месяц и не требует его в реестр.
+- [x] Тесты: `test/unit/audit/audit-retention.test.ts` (план, аргументы, п. 4),
+      `test/unit/env.test.ts` (`AUDIT_RETENTION_MONTHS`), `test/unit/persistence/rls-catalog.test.ts`
+      (отсоединённый месяц), `test/integration/db/audit-retention.test.ts` (п. 3, 7; замеры).
 
 ## Ссылки
 
@@ -112,12 +132,15 @@ estimate: M
 - [`permission-model.md` §10 «Кто может смотреть» (`audit:manage_retention` — только `owner`), §4.10](../../../docs/security/permission-model.md)
 - [`threat-model.md`, `T-PLAT-05`, `T-SH-05` (бэкапы без шифрования)](../../../docs/security/threat-model.md)
 - [`prd.md`, NFR-5 (RPO/RTO, «бэкап без проверки восстановления не считается бэкапом»)](../../../docs/product/prd.md)
+- [`docs/runbooks/audit-log.md`, «Ретенция»](../../../docs/runbooks/audit-log.md)
 
 ## Definition of Done
 
-- [ ] Тесты написаны первыми (TDD), проходят, изменённый код покрыт
-- [ ] Commit-гейт зелёный (test-coverage, security-auditor, db-reviewer при изменении схемы, production-readiness, commit-hygiene)
-- [ ] Документация обновлена (docs/ + запись в `docs/brain/`)
-- [ ] a11y и i18n (для UI-историй)
-- [ ] **Isolation-тест RLS** для каждой новой таблицы
-- [ ] **Permission объявлена** для каждого нового endpoint и проверяется в use-case
+- [x] Тесты написаны первыми (TDD), проходят, изменённый код покрыт
+- [x] Commit-гейт зелёный (test-coverage, security-auditor, db-reviewer, tenancy-rls-auditor,
+      selfhost-upgrade-checker, production-readiness, commit-hygiene, stale-claims-auditor)
+- [x] Документация обновлена (docs/)
+- [ ] a11y и i18n (для UI-историй) — UI отложен
+- [x] **Isolation-тест RLS** — новых таблиц нет; отсоединённый месяц проверен на свои политики и
+      отсутствие прав `app_user`
+- [ ] **Permission объявлена** для каждого нового endpoint — endpoint'ов нет

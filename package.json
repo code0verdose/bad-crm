@@ -39,6 +39,7 @@
     "db:provision-roles": "turbo run db:provision-roles",
     "db:seed:permissions": "turbo run db:seed:permissions",
     "db:audit-partitions": "turbo run db:audit-partitions",
+    "db:audit-retention": "turbo run db:audit-retention",
     "db:reset": "turbo run db:reset",
     "api:gen": "turbo run api:gen",
     "docker:up": "bash scripts/docker/up.sh",

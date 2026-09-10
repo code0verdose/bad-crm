@@ -698,3 +698,48 @@ describe('metrics exposure', () => {
     expect(SECRET_BEARING_ENV_KEYS).toContain('METRICS_TOKEN');
   });
 });
+
+/**
+ * How long the audit trail is kept before `pnpm db:audit-retention` detaches a month of it.
+ *
+ * Unset means «keep everything», and that is the default on purpose: a self-hosted installation
+ * is the one that answers to an auditor, and the retention its law requires is measured in years
+ * the product cannot know. A number nobody chose would be the product deleting evidence on the
+ * operator's behalf.
+ */
+describe('AUDIT_RETENTION_MONTHS', () => {
+  it('is unset by default, which means nothing is ever detached', () => {
+    expect(loadEnv(VALID_ENV).AUDIT_RETENTION_MONTHS).toBeUndefined();
+  });
+
+  it('accepts a whole number of months inside the range', () => {
+    expect(loadEnv(withEnv({ AUDIT_RETENTION_MONTHS: '24' })).AUDIT_RETENTION_MONTHS).toBe(24);
+  });
+
+  it.each(['12', '600'])('accepts %o, the edge of the range', (value) => {
+    expect(loadEnv(withEnv({ AUDIT_RETENTION_MONTHS: value })).AUDIT_RETENTION_MONTHS).toBe(
+      Number(value),
+    );
+  });
+
+  /**
+   * Below a year is refused rather than obeyed: a threshold under twelve months is nearly always a
+   * unit mistake (days, weeks) and the cost of obeying it is a year of evidence gone. Above fifty
+   * years the number is «never», and «never» is spelled by leaving the variable unset — and `0` is
+   * refused for the same reason it is refused on the argon2 ceiling: it does not mean «off».
+   */
+  it.each(['0', '11', '601', '1.5', 'forever', ''])(
+    'refuses %o and names the interval',
+    (value) => {
+      const result = serverEnvSchema.safeParse(withEnv({ AUDIT_RETENTION_MONTHS: value }));
+
+      expect(result.success).toBe(false);
+
+      const message = result.error?.issues.find(
+        (issue) => issue.path[0] === 'AUDIT_RETENTION_MONTHS',
+      )?.message;
+
+      expect(message).toContain('AUDIT_RETENTION_MONTHS');
+    },
+  );
+});

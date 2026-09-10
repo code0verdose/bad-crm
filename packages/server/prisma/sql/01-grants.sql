@@ -99,6 +99,12 @@ DECLARE
   --     failed migration as finished and hide the state from the probe that exists to notice it.
   global_read  CONSTANT text[] := ARRAY['permissions', '_prisma_migrations'];
 
+  -- A month of an append-only journal that retention detached: `<journal>_YYYY_MM`, the name
+  -- `create_audit_partition(date)` gives a leaf. Built from `append_only` so a second journal that
+  -- is partitioned the same way is covered the day it exists, without a second list.
+  detached_journal CONSTANT text :=
+    '^(' || array_to_string(append_only, '|') || ')_[0-9]{4}_[0-9]{2}$';
+
   -- Tenant tables the application may never DELETE from. Removing an organization is an offboarding
   -- procedure with its own path — export, key revocation, retention — not a statement the request
   -- handler is allowed to issue.
@@ -203,12 +209,21 @@ BEGIN
       EXECUTE format('REVOKE ALL ON TABLE public.%I FROM app_auth_definer', rel.relname);
     END IF;
 
-    IF rel.relispartition THEN
+    IF rel.relispartition OR rel.relname ~ detached_journal THEN
       -- 2. A partition leaf is never addressed by the application: policies and grants are not
       --    inherited, so a leaf reachable by app_user is a leaf with no tenant isolation at all.
       --    REVOKE rather than "do not grant": this file is also the repair path for a leaf that
       --    somebody granted by hand or that a partition-maintenance job granted by mistake.
       --    Checked independently by 4c in docs/security/rls-design.md.
+      --
+      --    A leaf that retention has DETACHed (`pnpm db:audit-retention`, STORY-016-05) is no
+      --    longer `relispartition` — it is an ordinary table with row security on, and the branch
+      --    for ordinary tenant tables below would hand app_user `SELECT, INSERT, UPDATE, DELETE`
+      --    on a month of the trail while it waits for the backup that precedes its DROP. The
+      --    application never had a privilege on that month and does not get one now; it is
+      --    recognised by the name `create_audit_partition(date)` gave it. Asserted on a live
+      --    database by test/integration/db/audit-retention.test.ts, which runs this file again
+      --    after a detach.
       EXECUTE format('REVOKE ALL ON TABLE public.%I FROM app_user', rel.relname);
 
     ELSIF rel.is_tenant_table AND rel.relname = ANY (append_only) THEN

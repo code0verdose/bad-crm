@@ -10,6 +10,7 @@ import {
   rlsCatalogViolations,
   type RlsCatalogFacts,
   type RlsPolicyFacts,
+  type RlsTableFacts,
 } from '@/infrastructure/persistence/prisma/rls-catalog.util.js';
 import { type TenantTableSpec } from '@/infrastructure/persistence/prisma/tenant-tables.constant.js';
 
@@ -144,6 +145,68 @@ describe('a partition of a tenant table', () => {
     expect(problems(withPartition({ policyCount: 0 }))).toEqual([
       expect.stringContaining('teams_2099_01'),
     ]);
+  });
+});
+
+/**
+ * A partition that retention has detached (`pnpm db:audit-retention`, STORY-016-05).
+ *
+ * After `DETACH PARTITION` the leaf is an ordinary table: it still carries `organization_id`, its
+ * own `ENABLE`/`FORCE` and both policies — those were its own all along — and it appears in the
+ * table query the registry checks run over. Without this case the audit reported it twice: absent
+ * from the tenant registry, and modelled by no Prisma model. Both true, neither a defect — it is
+ * waiting for the backup that precedes its `DROP`, and an operator told to «add it to
+ * TENANT_TABLES» would be told to model a table that is about to be removed.
+ *
+ * Recognised by its name and nothing else: `<registry table>_YYYY_MM`. It is still judged as a
+ * tenant table — row security and the policies — because a detached month is exactly as much a
+ * tenant's data as an attached one.
+ */
+describe('a partition that retention has detached', () => {
+  const withDetached = (overrides: Partial<RlsTableFacts> = {}): RlsCatalogFacts => {
+    const facts = healthyFacts();
+
+    facts.tables.push({ table: 'teams_2025_01', rlsEnabled: true, rlsForced: true, ...overrides });
+    facts.tenantColumnTables.push('teams_2025_01');
+    facts.policies.push(tenantPolicy('teams_2025_01'), {
+      table: 'teams_2025_01',
+      policy: 'maintenance_access',
+      permissive: true,
+      roles: ['app_migrator'],
+      command: '*',
+      using: "(current_setting('app.maintenance'::text, true) = 'on'::text)",
+      check: "(current_setting('app.maintenance'::text, true) = 'on'::text)",
+    });
+
+    return facts;
+  };
+
+  it('CONTROL: a protected one is not a registry finding', () => {
+    expect(audit(withDetached())).toEqual([]);
+  });
+
+  it('is still judged on row security', () => {
+    expect(problems(withDetached({ rlsForced: false }))).toEqual([
+      expect.stringContaining('FORCE ROW LEVEL SECURITY'),
+    ]);
+  });
+
+  it('is still judged on its policies', () => {
+    const facts = withDetached();
+    facts.policies = facts.policies.filter((policy) => policy.table !== 'teams_2025_01');
+
+    expect(problems(facts)).toContainEqual(expect.stringContaining('no policy'));
+  });
+
+  it('does not excuse a table that merely looks dated but belongs to no registry table', () => {
+    const facts = healthyFacts();
+    facts.tables.push({ table: 'invoices_2025_01', rlsEnabled: true, rlsForced: true });
+    facts.tenantColumnTables.push('invoices_2025_01');
+    facts.policies.push(tenantPolicy('invoices_2025_01'));
+
+    expect(problems(facts)).toContainEqual(
+      expect.stringContaining('absent from the tenant registry'),
+    );
   });
 });
 

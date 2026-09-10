@@ -23,6 +23,7 @@
     "db:seed:permissions": "tsx scripts/seed-permissions.ts",
     "db:provision-roles": "tsx scripts/provision-system-roles.ts",
     "db:audit-partitions": "tsx scripts/ensure-audit-partitions.ts",
+    "db:audit-retention": "tsx scripts/audit-retention.ts",
     "db:reset": "node --env-file-if-exists=../../.env node_modules/prisma/build/index.js migrate reset --force --skip-seed && tsx scripts/seed.ts"
   },
   "dependencies": {

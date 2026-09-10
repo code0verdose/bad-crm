@@ -127,6 +127,14 @@ const isMaintenanceSwitch = (predicate: string | null): boolean =>
 const commandName = (command: string): string => COMMAND_NAMES[command] ?? command;
 
 /**
+ * `<registry table>_YYYY_MM`: the name `create_audit_partition(date)` gives a leaf, which the leaf
+ * keeps after `DETACH PARTITION`. Only a registry table can be the parent — a dated table of a
+ * family nobody registered is still the drift the registry checks exist to report.
+ */
+const isDetachedPartitionOf = (table: string, registryTables: readonly string[]): boolean =>
+  registryTables.some((parent) => new RegExp(`^${parent}_\\d{4}_\\d{2}$`).test(table));
+
+/**
  * Every way the database can disagree with the specification, in one list.
  *
  * All of them and not the first one, for the reason `databaseRoleViolations` gives: a database that
@@ -187,6 +195,12 @@ export const rlsCatalogViolations = (
   const inSchema = new Set(schemaTables.map((entry) => entry.table));
 
   for (const table of facts.tenantColumnTables) {
+    // A month that retention detached (`pnpm db:audit-retention`) is a table the registry will
+    // never list and no model will ever carry — it is waiting to be dropped. It is still judged
+    // below as a tenant table, because a detached month is exactly as much a tenant's data as an
+    // attached one; only the two registry findings would be wrong about it.
+    if (isDetachedPartitionOf(table, registryTables)) continue;
+
     if (registry[table] === undefined) {
       findings.push({
         check: 'registry',

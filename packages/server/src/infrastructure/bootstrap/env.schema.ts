@@ -122,6 +122,21 @@ interface BoundedIntOptions {
 }
 
 /**
+ * `boundedInt` without a fallback: unset is a value, and it means «this control is off».
+ *
+ * Distinct from a default on purpose. A threshold the product picked would be the product making
+ * the decision the variable exists to leave with the operator — and `undefined` reaching the code
+ * is what forces every consumer to say what «off» does, instead of a number quietly doing it.
+ */
+const optionalBoundedInt = (variable: string, { min, max }: Omit<BoundedIntOptions, 'fallback'>) =>
+  z.coerce
+    .number({ error: `${variable} must be a number` })
+    .int({ error: `${variable} must be a whole number` })
+    .min(min, { error: `${variable} must be between ${min} and ${max}` })
+    .max(max, { error: `${variable} must be between ${min} and ${max}` })
+    .optional();
+
+/**
  * Boolean out of a shell variable, which is always a string.
  *
  * The fallback is applied inside the transform rather than through `.default()`: in Zod 4 a default
@@ -454,6 +469,26 @@ const fields = z.object({
     max: 60_000,
     fallback: 2_000,
   }),
+
+  /**
+   * How many months of the audit trail `pnpm db:audit-retention` keeps attached; a month whose
+   * last row is older than this is detached by that command (STORY-016-05).
+   *
+   * **Unset by default, and unset means nothing is ever detached.** This is the one setting where
+   * a default would be the product deciding on the operator's behalf: a self-hosted installation
+   * is the one that answers to an auditor, and the retention its law requires is measured in years
+   * the product cannot know. Evidence removed by a number nobody chose is the failure the whole
+   * append-only design exists to prevent.
+   *
+   * Twelve months is the floor because a threshold under a year is nearly always a unit mistake
+   * (days, weeks) and the cost of obeying it is a year of evidence gone. Fifty years is the ceiling
+   * because past it the number spells «never», and «never» is spelled by leaving this unset. `0`
+   * is refused for the reason the argon2 ceiling refuses it: it does not mean «off».
+   *
+   * Read by the maintenance command only. The API process parses it for the same reason it parses
+   * everything else — one schema, one `.env.example` — and does nothing with it.
+   */
+  AUDIT_RETENTION_MONTHS: optionalBoundedInt('AUDIT_RETENTION_MONTHS', { min: 12, max: 600 }),
 });
 
 type EnvFields = z.infer<typeof fields>;
