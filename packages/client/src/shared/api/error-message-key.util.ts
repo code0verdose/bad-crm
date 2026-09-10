@@ -27,7 +27,6 @@ export const ERROR_MESSAGE_KEY: Readonly<Record<SharedErrors.ErrorCode, string>>
   employment_period_inverted: 'errors.code.employment_period_inverted',
   recipient_not_active: 'errors.code.recipient_not_active',
   member_not_active: 'errors.code.member_not_active',
-  last_project_lead_required: 'errors.code.last_project_lead_required',
   invalid_recipient: 'errors.code.invalid_recipient',
   not_the_owner: 'errors.code.not_the_owner',
   mail_not_configured: 'errors.code.mail_not_configured',
