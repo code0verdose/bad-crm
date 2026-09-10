@@ -156,8 +156,51 @@ const CALLS: Readonly<Record<string, Call>> = {
     request(app)
       .delete(`/api/v1/teams/${TEAM_ID}/members/${IVAN}`)
       .set('Authorization', `Bearer ${token}`),
+  'POST /api/v1/projects': (app, token) =>
+    request(app)
+      .post('/api/v1/projects')
+      .set('Authorization', `Bearer ${token}`)
+      .set('Idempotency-Key', IDEMPOTENCY_KEY)
+      .send({ key: 'MTX', name: 'Matrix', leadId: IVAN, color: 'indigo' }),
   'GET /api/v1/projects/:projectId': (target, token) =>
     request(target).get(`/api/v1/projects/${PROJECT_ID}`).set('Authorization', `Bearer ${token}`),
+  'PATCH /api/v1/projects/:projectId': (app, token) =>
+    request(app)
+      .patch(`/api/v1/projects/${PROJECT_ID}`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ name: 'Matrix', leadId: IVAN, color: 'indigo' }),
+  'DELETE /api/v1/projects/:projectId': (app, token) =>
+    request(app).delete(`/api/v1/projects/${PROJECT_ID}`).set('Authorization', `Bearer ${token}`),
+  'POST /api/v1/projects/:projectId/visibility': (app, token) =>
+    request(app)
+      .post(`/api/v1/projects/${PROJECT_ID}/visibility`)
+      .set('Authorization', `Bearer ${token}`)
+      .set('X-Confirm-Dangerous', '1')
+      .send({ visibility: 'PRIVATE' }),
+  'POST /api/v1/projects/:projectId/archive': (app, token) =>
+    request(app)
+      .post(`/api/v1/projects/${PROJECT_ID}/archive`)
+      .set('Authorization', `Bearer ${token}`)
+      .send(),
+  'GET /api/v1/projects/:projectId/members': (target, token) =>
+    request(target)
+      .get(`/api/v1/projects/${PROJECT_ID}/members`)
+      .set('Authorization', `Bearer ${token}`),
+  'POST /api/v1/projects/:projectId/members': (app, token) =>
+    request(app)
+      .post(`/api/v1/projects/${PROJECT_ID}/members`)
+      .set('Authorization', `Bearer ${token}`)
+      .set('Idempotency-Key', IDEMPOTENCY_KEY)
+      .send({ userId: IVAN }),
+  'PATCH /api/v1/projects/:projectId/members/:userId': (app, token) =>
+    request(app)
+      .patch(`/api/v1/projects/${PROJECT_ID}/members/${IVAN}`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ projectRole: 'MEMBER' }),
+  'DELETE /api/v1/projects/:projectId/members/:userId': (app, token) =>
+    request(app)
+      .delete(`/api/v1/projects/${PROJECT_ID}/members/${IVAN}`)
+      .set('Authorization', `Bearer ${token}`),
   'GET /api/v1/employees': (target, token) =>
     request(target).get('/api/v1/employees').set('Authorization', `Bearer ${token}`),
   'GET /api/v1/employees/org-chart': (target, token) =>
@@ -228,13 +271,61 @@ const projectFixture = (visibility: 'PUBLIC_ORG' | 'PRIVATE'): ResourceFixture =
     const projects = new FakeProjectStore();
 
     projects.seed({ projectId: PROJECT_ID, organizationId: ORGANIZATION_ID, visibility });
+    // Ivan is on the project as an ordinary member, so the roster commands have a seat to change
+    // and «the last lead» is not what the cell measures; the caller is still not on it.
+    projects.addMember(PROJECT_ID, IVAN, 'MEMBER');
+    projects.subjects.set(IVAN, { userId: IVAN, status: 'ACTIVE' });
 
     return { projects };
   },
 });
 
+/**
+ * The write routes are measured on the same two fixtures as the read. The caller is a bystander on
+ * both, so the resource half decides by visibility alone: `VIEWER` on `PUBLIC_ORG` — enough for
+ * `project:read`, two to three levels short of `EDITOR`/`MANAGER` for every write, hence
+ * `deny:insufficient_acl_level` inside the contour — and `NONE` on `PRIVATE`, which is
+ * `deny:resource_not_found` for read and write alike (the closed contour on a mutation). The owner
+ * clears the level on both; `guest` is `NONE` on both. `POST /projects` has no resource and is one
+ * cell, as every capability-only route.
+ */
+const RESOURCE_ROUTES = [
+  'GET /api/v1/projects/:projectId',
+  'PATCH /api/v1/projects/:projectId',
+  'DELETE /api/v1/projects/:projectId',
+  'POST /api/v1/projects/:projectId/visibility',
+  'POST /api/v1/projects/:projectId/archive',
+  'GET /api/v1/projects/:projectId/members',
+  'POST /api/v1/projects/:projectId/members',
+  'PATCH /api/v1/projects/:projectId/members/:userId',
+  'DELETE /api/v1/projects/:projectId/members/:userId',
+] as const;
+
+/**
+ * `POST /projects` has no resource — one cell, labelled plainly — but its use-case looks the lead
+ * up as a subject before writing, so an empty installation would show every holder of
+ * `project:create` as `deny:user_not_found`: the capability passed, the fixture failed. Ivan is
+ * seeded as an active account so the cell measures the key and nothing else.
+ */
+const leadFixture: ResourceFixture = {
+  label: '',
+  options: () => {
+    const projects = new FakeProjectStore();
+
+    projects.subjects.set(IVAN, { userId: IVAN, status: 'ACTIVE' });
+
+    return { projects };
+  },
+};
+
 const FIXTURES: Readonly<Record<string, readonly ResourceFixture[]>> = {
-  'GET /api/v1/projects/:projectId': [projectFixture('PUBLIC_ORG'), projectFixture('PRIVATE')],
+  'POST /api/v1/projects': [leadFixture],
+  ...Object.fromEntries(
+    RESOURCE_ROUTES.map((route) => [
+      route,
+      [projectFixture('PUBLIC_ORG'), projectFixture('PRIVATE')],
+    ]),
+  ),
 };
 
 /** A capability-only route is one cell; a resource-scoped one is one cell per fixture. */

@@ -5,6 +5,7 @@ import {
 } from '@/application/project/ports/project-member-repository.port.js';
 import { type ProjectMembership, type ProjectSubject } from '@/domain/project/project.entity.js';
 import { type ProjectRole } from '@/domain/project/project.enums.js';
+import { bumpPermissionsVersionOf } from '@/infrastructure/persistence/prisma/permissions-version.util.js';
 import { TenantScopedRepository } from '@/infrastructure/persistence/prisma/tenant-scoped.repository.js';
 
 /**
@@ -19,9 +20,19 @@ import { TenantScopedRepository } from '@/infrastructure/persistence/prisma/tena
  * PostgreSQL can infer a partial unique index; without the clause the statement fails at parse time
  * on every call. Two concurrent adds of one pair therefore leave one row and answer `true` once.
  *
- * **`leads()` reads under `FOR UPDATE`, `subject()` under `FOR SHARE`.** The first is the database
- * half of «the last lead cannot leave»; the second closes the same TOCTOU against offboarding that
- * `team.repository.ts` documents — a `SUSPENDED` account must not end up holding a membership.
+ * **`leads()` reads under `FOR UPDATE`, `subject()` under `FOR NO KEY UPDATE`.** The first is the
+ * database half of «the last lead cannot leave». The second closes the same TOCTOU against
+ * offboarding that `team.repository.ts` documents — a `SUSPENDED` account must not end up holding
+ * a membership — and it is **not** the `FOR SHARE` the team repository takes, for a reason that was
+ * measured rather than reasoned (`test/integration/db/project-roster-races.test.ts`, «one person
+ * put on two different projects at the same time»): every command that reads the subject goes on
+ * to `UPDATE users SET permissions_version` on the same row in the same transaction, and two such
+ * transactions — one person added to two projects at once, two `POST /projects` naming one lead —
+ * each held the share lock the other's `UPDATE` waited for, and PostgreSQL refused one with `40P01`.
+ * `FOR NO KEY UPDATE` is the lock that `UPDATE` itself takes: the second reader queues behind the
+ * first transaction instead of deadlocking with it, and it still conflicts with the offboarding
+ * `UPDATE users SET status`, so the TOCTOU stays closed. `FOR KEY SHARE` would not do: it does not
+ * conflict with that status update.
  */
 export class PrismaProjectMemberRepository
   extends TenantScopedRepository
@@ -103,7 +114,7 @@ export class PrismaProjectMemberRepository
          WHERE organization_id = ${this.organizationId('subject')}::uuid
            AND id = ${userId}::uuid
            AND deleted_at IS NULL
-         FOR SHARE`;
+         FOR NO KEY UPDATE`;
 
       const user = rows[0];
 
@@ -157,5 +168,11 @@ export class PrismaProjectMemberRepository
 
       return ended > 0;
     });
+  }
+
+  bumpPermissionsVersionOf(userIds: readonly string[]): Promise<void> {
+    return this.run('bumpPermissionsVersionOf', (tx) =>
+      bumpPermissionsVersionOf(tx, this.organizationId('bumpPermissionsVersionOf'), userIds),
+    );
   }
 }

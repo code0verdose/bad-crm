@@ -24,6 +24,11 @@ describe('the resource vocabulary', () => {
     expect(isAuditResourceType(type)).toBe(true);
   });
 
+  /** The object of the project domain, added with its first write routes (EPIC-014). */
+  it('names the project', () => {
+    expect(isAuditResourceType('PROJECT')).toBe(true);
+  });
+
   it('refuses a spelling that is not in the list', () => {
     // The lower-case forms the code used before the list existed. They are the failure this list
     // prevents, so they are named here rather than described.

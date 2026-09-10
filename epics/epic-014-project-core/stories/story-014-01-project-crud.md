@@ -102,6 +102,67 @@ estimate: M
 > Ошибка уникальности ключа сегодня отдаётся как `project_already_exists` (тройка из
 > `ERROR_RESOURCES`); `project_key_taken` из критерия 2 — по-прежнему отдельное решение по каталогу.
 
+> **Серверная и HTTP-половины сделаны 2026-09-10** (пятый шаг эпика). Что и где:
+> - use-case'ы `application/project/use-cases/`: `create-project.use-case.ts`,
+>   `update-project.use-case.ts`, `change-project-visibility.use-case.ts`,
+>   `archive-project.use-case.ts`, `delete-project.use-case.ts`; общие факты записи —
+>   `application/project/project-write-facts.util.ts` (строка под `FOR UPDATE` плюс цепочка ACL,
+>   читаются один раз на команду);
+> - policy: именованные решения `canCreateProject`/`canUpdateProject`/`canManageProjectVisibility`/
+>   `canArchiveProject`/`canDeleteProject`/`canManageProjectMembers` в
+>   `domain/project/access/project-access.policy.ts`; value-object `domain/project/project-key.value.ts`
+>   (нормализация `trim` + upper-case, паттерн сверяется с `ck_projects_key_format` тестом);
+> - маршруты в `route-registry.factory.ts`: `POST /projects` (`project:create`),
+>   `PATCH /projects/{projectId}` (`project:update`, при смене `leadId` — ещё и
+>   `project:manage_members`), `POST …/visibility` (`project:manage_visibility`, `X-Confirm-Dangerous`),
+>   `POST …/archive` (`project:archive`), `DELETE …` (`project:delete`); каждый с `aclCheckedIn`,
+>   операцией в `docs/api/openapi.yaml` и переснятым снапшотом матрицы;
+> - репозиторий: `lockForWrite()` под `FOR UPDATE` — писатель строки не берёт `FOR SHARE` из
+>   `scope()`, иначе две правки одного проекта дедлочатся на апгрейде блокировки; **замерено** на
+>   живом PostgreSQL в `test/integration/db/project-write-locks.test.ts`;
+> - журнал: `project.created`/`updated`/`archived` (`INFO`), `project.visibility_changed`/`deleted`
+>   (`WARNING`, за опасными ключами), ресурс `PROJECT`;
+> - описания `permission.project.{create,update,manage_visibility,archive,delete}` на EN и RU.
+>
+> **Решения по критериям, принятые здесь.**
+> - Критерий 2: `project_key_taken` не заводился — это `409 project_already_exists` из тройки
+>   `ERROR_RESOURCES`.
+> - Критерий 4: `project_key_immutable` не заводился — `key` отсутствует в схеме редактирования
+>   (`strictObject`), и `PATCH` с `key` отвечает `422 validation_failed` с `errors[0].path = 'key'`,
+>   `code = 'unrecognized_keys'`.
+> - Критерий 7: подтверждение — `X-Confirm-Dangerous: 1` / `428 confirmation_required`, спрашивается
+>   **после** решения о доступе; сводка «сколько сотрудников потеряет доступ» — клиентская
+>   (STORY-014-05), сервер её не считает. Переиндексация — задел под M4, здесь ничего не делает.
+> - Критерий 9: `invalid_lead` не заводился — чужой лид это `404 user_not_found`, отключённый —
+>   `409 member_not_active` (для держателя `user:read`, иначе тот же 404): те же два факта, что у
+>   участника, и третий код для них был бы третьей фразой на клиенте.
+> - Смена лида в `PATCH` требует `project:manage_members` сверх `project:update`: новый лид
+>   получает `LEAD`-членство (`MANAGER`), и `EDITOR`, раздающий его через форму переименования,
+>   был бы эскалацией (`rules/permissions.mdc`, 10). Прежний лид своё место сохраняет. Назначить
+>   лидом **себя** нельзя ни с каким ключом (`403 self_assignment_forbidden`) — иначе `MANAGER` по
+>   истекающему ACL-гранту становился бы постоянным `LEAD`-членством (находка `security-auditor`
+>   на первом черновике, закрыта тем же гейтом).
+> - **Принятый остаточный риск (переформулирован 2026-09-11 по второму проходу
+>   `security-auditor`):** `409 project_already_exists` на `POST /projects` подтверждает, что ключ
+>   занят, даже когда держатель — `PRIVATE`-проект, невидимый вызывающему. Это свойство модели
+>   (ключ — префикс номеров задач, уникален в организации). Первая редакция называла
+>   компенсирующим контролем «лимит частоты» — **его на этом маршруте нет**: бюджет `api_request`
+>   тратят три use-case'а `identity`, и никакой middleware его не монтирует
+>   (`application/platform/ports/rate-limit.port.ts`). Что ограничивает риск на самом деле:
+>   право `project:create` держат три системные роли (`owner`, `admin`, `manager`); попадание
+>   стоит ровно одну догадку о ключе длиной 2–10 символов и не раскрывает ничего, кроме факта
+>   занятости; промах — не бесплатен, он создаёт проект (в той видимости, какую вызывающий
+>   задал) с вызывающим в роли `LEAD` и строкой `project.created` в журнале.
+>   Известное свойство, которое **не** компенсируется ничем: попадание следа не оставляет —
+>   `ConflictError` не есть `DenyReason`, `access.denied` не пишется, `project.created` тоже.
+>   Оценка Low сохранена; в код не переносится. Если след на попадании понадобится, дешевле всего
+>   писать `project_already_exists` этого маршрута в журнал, а не заводить лимитер.
+> - Критерий 10 (финансовые поля) — сериализатор их не знает, полей нет в схеме; критерий 11 —
+>   мягкое удаление сделано явным `deleted_at` в репозитории, `$extends` не появился (см. врезку выше).
+>
+> **Чего здесь нет:** клиентской формы (`units/project`, `widgets/project-form`) и i18n-namespace
+> `project.json` — клиентская половина истории; списка и `visibleProjectIds` (STORY-014-03/04).
+
 ## Acceptance (Given/When/Then)
 
 1. **Создание проекта.**
@@ -180,27 +241,33 @@ estimate: M
       `idx_projects_org_client` — в STORY-014-07 вместе с `clients`),
       `uq_projects_org_key ... WHERE deleted_at IS NULL`, `idx_projects_org_status ... WHERE deleted_at IS NULL`,
       RLS `ENABLE` + `FORCE` + `tenant_isolation` (USING = WITH CHECK) + `maintenance_access`.
-- [ ] `packages/server/src/domain/project/project.entity.ts`, `project.errors.ts`,
-      `project-key.value.ts` (нормализация и формат).
-- [ ] `packages/server/src/application/project/use-cases/create-project.use-case.ts`,
+- [x] `packages/server/src/domain/project/project.entity.ts`, `project-key.value.ts`
+      (нормализация и формат) — 2026-09-10; `project.errors.ts` не понадобился: свои коды ошибок у
+      проекта только `last_project_lead_required` (STORY-014-02), остальное выражено существующими.
+- [x] `packages/server/src/application/project/use-cases/create-project.use-case.ts`,
       `update-project.use-case.ts`, `change-project-visibility.use-case.ts`,
-      `delete-project.use-case.ts`.
+      `archive-project.use-case.ts`, `delete-project.use-case.ts` (2026-09-10).
 - [x] `packages/server/src/application/project/ports/project-repository.port.ts` + реализация
       `infrastructure/persistence/prisma/project.repository.ts` (2026-09-06).
-- [ ] `packages/server/src/presentation/http/serializers/project.serializer.ts` — уровни
-      (базовый / участник / финансовый).
-- [ ] `packages/server/src/presentation/http/validators/project.validator.ts` — Zod `.strict()`,
-      `.transform` для `key`, `.superRefine` для дат.
-- [ ] `packages/server/src/presentation/http/routes/registry.ts` — `project:create/update/delete/
-      manage_visibility` c `aclCheckedIn`.
+- [x] `packages/server/src/presentation/http/serializers/project.serializer.ts` — базовый уровень
+      и участник; финансового уровня нет, потому что нет финансовых полей (M9).
+- [x] `packages/server/src/presentation/http/validators/project.validator.ts` — `strictObject`,
+      `.transform` для `key`, `.superRefine` для дат (2026-09-10).
+- [x] `packages/server/src/presentation/http/route-registry.factory.ts` — `project:create/update/
+      delete/manage_visibility/archive` c `aclCheckedIn` (2026-09-10).
 - [ ] `packages/client/src/units/project/{model/validation,service,ui}` —
       `project.schema.ts`, `create-project.mutation.ts`, `update-project.mutation.ts`,
       `use-project-form.hook.ts`; `widgets/project-form/project-form.widget.tsx`.
 - [ ] i18n: `packages/client/src/app/i18n/{en,ru}/project.json`.
-- [ ] Тесты: `project-key.value.spec.ts`, `project-access.policy.spec.ts` (п. 5, 6),
-      интеграционные `projects-api.spec.ts` (п. 2, 4, 7–9, 11), снапшот сериализатора по ролям
-      (п. 10); isolation-тест `projects` — [x] реестровый набор `rls-isolation.test.ts` плюс
-      `project-repository.test.ts` (2026-09-06).
+- [x] Тесты: `test/unit/domain/project/project-key-value.test.ts`,
+      `project-access-policy.test.ts` (п. 5, 6), use-case'ы в `test/unit/application/`,
+      HTTP `test/integration/http/project-write-endpoints.test.ts` (п. 2, 4, 7–9, 11),
+      блокировки `test/integration/db/project-write-locks.test.ts`, правка во время удаления
+      настоящими use-case'ами на живом PostgreSQL — `test/integration/db/project-roster-races.test.ts`
+      (п. 11: правка либо успевает до скрытия, либо получает тот же `404`, что чужой id, и записи
+      не оставляет); снапшот сериализатора по ролям
+      не нужен — полей разных уровней нет; isolation-тест `projects` — реестровый набор
+      `rls-isolation.test.ts` плюс `project-repository.test.ts` (2026-09-06).
 
 ## Ссылки
 

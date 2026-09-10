@@ -197,6 +197,67 @@ describe('reading one project', () => {
     ).resolves.toMatchObject({ isDeleted: false });
   });
 
+  /**
+   * The writer's read. `FOR UPDATE`, not `FOR SHARE`: a writer that took the share lock through
+   * `scope()` and then ran `UPDATE` would upgrade its lock while a second writer holds the same
+   * share lock — and two such requests on one project deadlock, each waiting for the other to
+   * release the share it will not release until it has upgraded (the gate's note on step 3; measured
+   * in `test/integration/db/project-write-locks.test.ts`). Every mutation reads through this method.
+   */
+  it('lockForWrite reads the summary FOR UPDATE, flagged rather than filtered', async () => {
+    const startedAt = new Date('2026-01-01T00:00:00Z');
+    const recorder = recordingClient({
+      queryRaw: [
+        [
+          {
+            id: PROJECT,
+            key: 'BAD',
+            name: 'Bad CRM',
+            description: null,
+            status: 'ARCHIVED',
+            visibility: 'PRIVATE',
+            lead_id: LEAD,
+            started_at: startedAt,
+            due_at: null,
+            color: 'indigo',
+            deleted_at: new Date(),
+          },
+        ],
+      ],
+    });
+
+    await expect(
+      inScope(recorder, (repository) => repository.lockForWrite(PROJECT)),
+    ).resolves.toEqual({
+      projectId: PROJECT,
+      isDeleted: true,
+      visibility: 'PRIVATE',
+      key: 'BAD',
+      name: 'Bad CRM',
+      description: null,
+      status: 'ARCHIVED',
+      leadId: LEAD,
+      startedAt,
+      dueAt: null,
+      color: 'indigo',
+    });
+
+    const read = statementAt(recorder, 0);
+
+    expect(read.sql).toContain('FOR UPDATE');
+    expect(read.sql).not.toContain('FOR SHARE');
+    expect(read.sql).not.toContain('deleted_at IS NULL');
+    expect(read.values).toEqual(expect.arrayContaining([ORG, PROJECT]));
+  });
+
+  it('lockForWrite answers null when the tenant policy returns no row', async () => {
+    const recorder = recordingClient();
+
+    await expect(
+      inScope(recorder, (repository) => repository.lockForWrite(PROJECT)),
+    ).resolves.toBeNull();
+  });
+
   it('maps the detail and counts live members from the relation', async () => {
     const startedAt = new Date('2026-01-01T00:00:00Z');
     const createdAt = new Date('2025-12-31T00:00:00Z');

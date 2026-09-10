@@ -51,6 +51,9 @@ describe('error code catalog', () => {
     ['mfa_invalid_code', 401],
     ['mfa_code_replayed', 401],
     ['mfa_token_expired', 401],
+    // The last lead of a project cannot leave or be demoted (STORY-014-02, acceptance 7): a state
+    // conflict with a next step — appoint another lead — not a refusal of a right.
+    ['last_project_lead_required', 409],
   ] as const)('maps %s to HTTP %i (stack.md, «Формат ошибок»)', (code, status) => {
     expect(errorCodeStatus(code)).toBe(status);
   });

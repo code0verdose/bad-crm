@@ -69,7 +69,18 @@ import { ListRolesQuery } from '@/application/iam/use-cases/list-roles.query.js'
 import { ListTeamsQuery } from '@/application/iam/use-cases/list-teams.query.js';
 import { GetTeamDetailQuery } from '@/application/iam/use-cases/get-team-detail.query.js';
 import { ResolveAclQuery } from '@/application/access/use-cases/resolve-acl.query.js';
+import { ArchiveProjectUseCase } from '@/application/project/use-cases/archive-project.use-case.js';
+import { ChangeProjectVisibilityUseCase } from '@/application/project/use-cases/change-project-visibility.use-case.js';
+import { CreateProjectUseCase } from '@/application/project/use-cases/create-project.use-case.js';
+import { DeleteProjectUseCase } from '@/application/project/use-cases/delete-project.use-case.js';
 import { GetProjectDetailQuery } from '@/application/project/use-cases/get-project-detail.query.js';
+import { ListProjectMembersQuery } from '@/application/project/use-cases/list-project-members.query.js';
+import {
+  AddProjectMemberUseCase,
+  RemoveProjectMemberUseCase,
+  UpdateProjectMemberUseCase,
+} from '@/application/project/use-cases/manage-project-members.use-case.js';
+import { UpdateProjectUseCase } from '@/application/project/use-cases/update-project.use-case.js';
 import { DeleteTeamUseCase } from '@/application/iam/use-cases/delete-team.use-case.js';
 import {
   AddTeamMemberUseCase,
@@ -142,6 +153,7 @@ import { PrismaOwnershipRepository } from '@/infrastructure/persistence/prisma/o
 import { PrismaTeamRepository } from '@/infrastructure/persistence/prisma/team.repository.js';
 import { PrismaAclReader } from '@/infrastructure/persistence/prisma/acl-reader.adapter.js';
 import { PrismaProjectAccessReader } from '@/infrastructure/persistence/prisma/project-access-reader.adapter.js';
+import { PrismaProjectMemberRepository } from '@/infrastructure/persistence/prisma/project-member.repository.js';
 import { PrismaProjectRepository } from '@/infrastructure/persistence/prisma/project.repository.js';
 import { PrismaUserLifecycleRepository } from '@/infrastructure/persistence/prisma/user-lifecycle.repository.js';
 import { PrismaEmployeeProfileRepository } from '@/infrastructure/persistence/prisma/employee-profile.repository.js';
@@ -496,7 +508,7 @@ export const buildContainer = (input: ContainerInput): AppContainer => {
       // The first context with a resource layer under its routes: the resolver walks the ACL chain
       // of one project before the row is read. Built here so that the three readers it needs —
       // projects, memberships, grants — are the Prisma adapters and nothing a test would substitute.
-      project: buildProject({ database: input.database, clock, logger }),
+      project: buildProject({ database: input.database, audit, clock, logger }),
       iam: buildIam({
         database: input.database,
         audit,
@@ -591,15 +603,19 @@ const buildOrganization = (input: {
 };
 
 /**
- * The project surface: one query today, over the resolver the domain's policy decides with.
+ * The project surface — the reads and the writes of STORY-014-01/02, over the resolver the domain's
+ * policy decides with.
  *
  * `ResolveAclQuery` is assembled here and only here — it is the seam every resource read of every
  * later domain goes through, and a second instance built elsewhere would be a second registry of
- * chains to keep in step (`resolve-acl.query.ts`, «A registry of chains»). No audit port: a read
- * files nothing, and a refusal is the error handler's to record (`deniedAccessAudit` above).
+ * chains to keep in step (`resolve-acl.query.ts`, «A registry of chains»). The two reads take no
+ * audit port: a read files nothing, and a refusal is the error handler's to record
+ * (`deniedAccessAudit` above). Every command takes the same writer the rest of the container
+ * writes through.
  */
 const buildProject = (input: {
   readonly database: DatabaseConnection | undefined;
+  readonly audit: AuditLoggerPort;
   readonly clock: SystemClockAdapter;
   readonly logger: LoggerPort;
 }): ProjectDependencies => {
@@ -611,12 +627,42 @@ const buildProject = (input: {
     clock: input.clock,
     logger: input.logger,
   });
+  const projects = new PrismaProjectRepository();
+  const members = new PrismaProjectMemberRepository();
 
   return {
-    getProjectDetail: new GetProjectDetailQuery(
+    getProjectDetail: new GetProjectDetailQuery(unitOfWork, projects, resolveAcl),
+    createProject: new CreateProjectUseCase(unitOfWork, projects, members, input.audit),
+    updateProject: new UpdateProjectUseCase(unitOfWork, projects, members, resolveAcl, input.audit),
+    changeProjectVisibility: new ChangeProjectVisibilityUseCase(
       unitOfWork,
-      new PrismaProjectRepository(),
+      projects,
       resolveAcl,
+      input.audit,
+    ),
+    archiveProject: new ArchiveProjectUseCase(unitOfWork, projects, resolveAcl, input.audit),
+    deleteProject: new DeleteProjectUseCase(unitOfWork, projects, members, resolveAcl, input.audit),
+    listProjectMembers: new ListProjectMembersQuery(unitOfWork, projects, members, resolveAcl),
+    addProjectMember: new AddProjectMemberUseCase(
+      unitOfWork,
+      projects,
+      members,
+      resolveAcl,
+      input.audit,
+    ),
+    updateProjectMember: new UpdateProjectMemberUseCase(
+      unitOfWork,
+      projects,
+      members,
+      resolveAcl,
+      input.audit,
+    ),
+    removeProjectMember: new RemoveProjectMemberUseCase(
+      unitOfWork,
+      projects,
+      members,
+      resolveAcl,
+      input.audit,
     ),
   };
 };

@@ -172,6 +172,42 @@ export const AUDIT_ACTION_SEVERITY: Readonly<Record<AuditAction, AuditSeverity>>
   // summarised, or an installation filtering at `WARNING` would see the first ten refusals of a run
   // and lose the evidence that it kept going.
   'access.denial_burst': 'WARNING',
+  /**
+   * `INFO`, like `team.created`: a project is born with nobody on it but its creator and its lead,
+   * and those two seats are the caller's own and the person the caller chose — the same shape as an
+   * invitation naming its roles. The rights it moves are recorded on the memberships below the day
+   * anybody else is added.
+   */
+  'project.created': 'INFO',
+  // A rename, a date, a colour, a description: nothing about access. A change of lead is the one
+  // field that does move rights, and it is filed *additionally* as a membership entry at `WARNING`.
+  'project.updated': 'INFO',
+  /**
+   * `WARNING`, and the story asks for «повышенная severity» by name (STORY-014-01, acceptance 7):
+   * `PUBLIC_ORG → PRIVATE` takes the project away from everybody in the organization who is not on
+   * it, in one statement, without a membership row changing. The reverse direction is filed at the
+   * same level — the level belongs to the action, not to the direction.
+   */
+  'project.visibility_changed': 'WARNING',
+  // Reversible and grants nothing: archiving hides a project from the working lists and leaves it
+  // readable. The way back is STORY-014-07.
+  'project.archived': 'INFO',
+  /**
+   * `WARNING`, like `team.deleted` and for the stronger reason: this is the one project action
+   * behind a `dangerous` key that removes something, and after it the project is 404 to everybody —
+   * this entry is where a reviewer learns it existed.
+   */
+  'project.deleted': 'WARNING',
+  /**
+   * `WARNING` for all three, unlike the `INFO` of their team counterparts — and the difference is
+   * the model, not a mood. A team membership grants nothing; a project membership **is** the implicit
+   * access level of `permission-model.md` §5, so putting somebody on a project, taking them off or
+   * moving them between `LEAD` and `OBSERVER` is a change of rights, and §10 files every change of
+   * rights at this level beside `role.assigned` and `acl.granted`.
+   */
+  'project.member_added': 'WARNING',
+  'project.member_removed': 'WARNING',
+  'project.member_role_changed': 'WARNING',
 };
 
 /** The severity of an action, for a caller that has a validated action and nothing else. */

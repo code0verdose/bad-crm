@@ -326,6 +326,63 @@ export const AUDIT_ACTIONS = [
    * it.
    */
   'access.denial_burst',
+  /**
+   * A project was created (STORY-014-01, acceptance 1), with the creator and the lead written as
+   * its first `LEAD` memberships in the same transaction.
+   *
+   * One entry rather than one plus a `project.member_added` per seat: the two memberships are not
+   * somebody being *put on* an existing project — they are the project's initial state, and a
+   * reviewer asking «who was on it from the start» reads it off `after.members` the way
+   * `team.deleted` carries its roster. A membership written later is its own entry below.
+   */
+  'project.created',
+  /**
+   * The editable fields of a project were replaced — name, description, dates, colour, lead
+   * (STORY-014-01, acceptance 3). `key` is never on this entry: it is part of every task number
+   * and cannot change.
+   *
+   * A change of `leadId` is recorded here **and** as a membership entry: the column is what the
+   * card shows, the `LEAD` membership is what grants `MANAGER`, and the second is the one an
+   * escalation review reads. The use-case writes both in one transaction.
+   */
+  'project.updated',
+  /**
+   * `PUBLIC_ORG` ↔ `PRIVATE` (STORY-014-01, acceptance 7). Behind a `dangerous` key, because the
+   * direction that matters takes access away from everybody in the organization who was not on the
+   * project, and does so without a single membership row changing — the only place that loss is
+   * visible is this entry.
+   */
+  'project.visibility_changed',
+  /**
+   * The project's status became `ARCHIVED` (STORY-014-01; the confirmation, the read-only rule and
+   * the way back are STORY-014-07). A repeat on an archived project files nothing: the state the
+   * caller asked for already held.
+   */
+  'project.archived',
+  /**
+   * The project was soft-deleted: hidden from every list and answered 404 by id, its `key` freed
+   * for reuse (STORY-014-01, acceptance 11). The memberships stay as history — `project_members`
+   * has `left_at` — so unlike `team.deleted` this entry does not have to carry the roster to keep
+   * it from vanishing; it carries it anyway, because it is the one place the roster *at the moment
+   * of deletion* is readable without a join over rows that may since have been ended.
+   */
+  'project.deleted',
+  /**
+   * Somebody was put on a project (STORY-014-02, acceptance 1). Unlike `team.member_added`, this is
+   * a change of rights: `projectRole` is the source of the implicit access level (`LEAD → MANAGER`,
+   * `MEMBER → EDITOR`, …), and a `PRIVATE` project exists for this person from this row on. The
+   * self-join attack `T-PROJ-02` describes — «добавил себя, прочитал, удалил» — is what
+   * `after.userId` beside `actor.userId` makes visible (acceptance 11, `T-PROJ-04`).
+   */
+  'project.member_added',
+  /** A membership ended: `left_at` stamped, the row kept (STORY-014-02, acceptance 5). */
+  'project.member_removed',
+  /**
+   * The role of a live membership changed — a promotion to `LEAD` or a demotion from it (STORY-014-02,
+   * acceptance 4). Filed only when the **role** moves: a change of `allocationPct` alone grants and
+   * takes nothing, and is not an entry.
+   */
+  'project.member_role_changed',
 ] as const;
 
 export type AuditAction = (typeof AUDIT_ACTIONS)[number];

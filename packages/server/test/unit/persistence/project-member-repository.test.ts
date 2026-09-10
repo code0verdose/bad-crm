@@ -19,8 +19,11 @@ import { withTenant } from '@/infrastructure/persistence/prisma/tenant.context.j
  *     cannot infer the partial index at all;
  *   * **`leads` reads under `FOR UPDATE`** — «the last lead cannot leave» is a rule of the use-case,
  *     and it is only sound if two concurrent removals cannot both count two leads;
- *   * **`subject` reads under `FOR SHARE`** — the same TOCTOU `team.repository.ts` closes against
- *     offboarding.
+ *   * **`subject` reads under `FOR NO KEY UPDATE`** — the same TOCTOU `team.repository.ts` closes
+ *     against offboarding, but not with the team's `FOR SHARE`: every reader of the subject goes
+ *     on to bump `users.permissions_version` in the same transaction, and two of them sharing the
+ *     row deadlock on the upgrade (measured red in `project-roster-races.test.ts`, «one person
+ *     put on two different projects at the same time»).
  *
  * Whether PostgreSQL accepts these statements, and whether the locks serialize, is the subject of
  * `test/integration/db/project-repository.test.ts`.
@@ -29,6 +32,7 @@ import { withTenant } from '@/infrastructure/persistence/prisma/tenant.context.j
 const ORG = '018f4a3b-0000-7000-8000-0000000000f1';
 const PROJECT = '018f4a3b-0000-7000-8000-0000000000f2';
 const IVAN = '018f4a3b-0000-7000-8000-0000000000f3';
+const PETR = '018f4a3b-0000-7000-8000-0000000000f4';
 
 interface Recorder {
   readonly calls: { name: string; args: Record<string, unknown> }[];
@@ -176,7 +180,7 @@ describe('the leads of a project', () => {
 });
 
 describe('the account a membership would be written for', () => {
-  it('reads the live account under FOR SHARE', async () => {
+  it('reads the live account under FOR NO KEY UPDATE, never FOR SHARE', async () => {
     const recorder = recordingClient({ queryRaw: [[{ id: IVAN, status: 'ACTIVE' }]] });
 
     await expect(inScope(recorder, (repository) => repository.subject(IVAN))).resolves.toEqual({
@@ -186,7 +190,8 @@ describe('the account a membership would be written for', () => {
 
     const read = statementAt(recorder, 0);
 
-    expect(read.sql).toContain('FOR SHARE');
+    expect(read.sql).toContain('FOR NO KEY UPDATE');
+    expect(read.sql).not.toContain('FOR SHARE');
     expect(read.sql).toContain('deleted_at IS NULL');
     expect(read.values).toEqual(expect.arrayContaining([ORG, IVAN]));
   });
@@ -293,5 +298,28 @@ describe('leaving a project', () => {
     await expect(inScope(recorder, (repository) => repository.leave(PROJECT, IVAN))).resolves.toBe(
       false,
     );
+  });
+});
+
+describe('invalidating the folded rights of the people concerned', () => {
+  it('bumps every id in one statement, scoped to the tenant', async () => {
+    const recorder = recordingClient();
+
+    await inScope(recorder, (repository) => repository.bumpPermissionsVersionOf([IVAN, PETR]));
+
+    const bump = statementAt(recorder, 0);
+
+    expect(bump.sql).toContain('permissions_version = permissions_version + 1');
+    expect(bump.sql).toContain('organization_id = ?');
+    expect(bump.values).toEqual([ORG, [IVAN, PETR]]);
+    expect(recorder.raw).toHaveLength(1);
+  });
+
+  it('sends nothing for nobody', async () => {
+    const recorder = recordingClient();
+
+    await inScope(recorder, (repository) => repository.bumpPermissionsVersionOf([]));
+
+    expect(recorder.raw).toEqual([]);
   });
 });

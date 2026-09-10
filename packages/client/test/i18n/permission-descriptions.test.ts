@@ -57,8 +57,11 @@ const AWAITING_A_ROUTE: Readonly<Record<string, string>> = {
   permission: 'the catalogue itself and `explain` need the resource layer (STORY-011-06)',
   acl: 'blocked with STORY-011-06: no domain owns a resource to hang an ACL on',
   project:
-    'EPIC-014 in progress: `project:read` is routed and described; the eleven keys of the write ' +
-    'side wait for their routes (create, update, members, visibility, archive, budget)',
+    'EPIC-014 in progress: the seven keys of the card and the write routes are routed and ' +
+    'described (read, create, update, manage_members, manage_visibility, archive, delete); ' +
+    'manage_settings waits for the project-settings surface (STORY-014-07), manage_labels for ' +
+    'labels, which belong to the task domain (M3), and view_budget, manage_budget and ' +
+    'view_financials for the finance fields (M9)',
   board: 'boards arrive with tasks (M3)',
   task: 'tasks are M3 — the largest domain of the catalogue and none of it exists',
   sprint: 'sprints arrive with tasks (M3)',

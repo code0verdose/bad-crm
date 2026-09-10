@@ -69,4 +69,17 @@ export interface ProjectMemberRepositoryPort {
 
   /** Stamps `left_at` on the live row; `false` when there was none. */
   leave(projectId: string, userId: string): Promise<boolean>;
+
+  /**
+   * Invalidates the folded permission view of these accounts — **one statement**, whatever the
+   * size, and a no-op for nobody.
+   *
+   * On this port and not on a shared one, on purpose: the question «should the bump live on one
+   * port every domain imports» was left open by the persistence step (STORY-014-02, «Инкремент
+   * `permissionsVersion`»), and the answer taken here is the one the team and ACL repositories
+   * already took — each port that changes membership carries its own method over the one shared
+   * `UPDATE` in `permissions-version.util.ts`. A third port sharing the statement is not a third
+   * copy of it.
+   */
+  bumpPermissionsVersionOf(userIds: readonly string[]): Promise<void>;
 }

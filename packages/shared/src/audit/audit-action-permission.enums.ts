@@ -83,6 +83,18 @@ export const AUDIT_ACTION_PERMISSIONS: Readonly<Record<AuditAction, readonly Per
   // The refused key is in `after`; it is whichever one the caller lacked.
   'access.denied': [],
   'access.denial_burst': [],
+  'project.created': ['project:create'],
+  'project.updated': ['project:update'],
+  'project.visibility_changed': ['project:manage_visibility'],
+  'project.archived': ['project:archive'],
+  'project.deleted': ['project:delete'],
+  // One key for the three membership entries, as with teams: one endpoint family, and the role is a
+  // column of the membership row. A lead change through `PATCH /projects/{projectId}` files
+  // `project.member_added`/`project.member_role_changed` too, and the use-case demands this key for
+  // that field on top of `project:update` — so the entry is always behind the key it names.
+  'project.member_added': ['project:manage_members'],
+  'project.member_removed': ['project:manage_members'],
+  'project.member_role_changed': ['project:manage_members'],
 };
 
 /** The keys an action stands behind, for a caller that has a validated action and nothing else. */

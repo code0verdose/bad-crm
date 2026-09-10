@@ -176,6 +176,14 @@ describe('the action catalogue', () => {
       'permission.inspected',
       'access.denied',
       'access.denial_burst',
+      'project.created',
+      'project.updated',
+      'project.visibility_changed',
+      'project.archived',
+      'project.deleted',
+      'project.member_added',
+      'project.member_removed',
+      'project.member_role_changed',
     ]);
   });
 

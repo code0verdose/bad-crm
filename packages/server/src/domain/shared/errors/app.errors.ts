@@ -127,7 +127,10 @@ export class ConflictError extends AppError {
       // The recipient of an ownership transfer is suspended or has never signed in: a state, and
       // one with a specific next step — reactivate them, then transfer.
       | 'recipient_not_active'
-      | 'member_not_active',
+      | 'member_not_active'
+      // The only `LEAD` of a project cannot leave or be demoted: a state, with a next step — appoint
+      // another lead first (STORY-014-02, acceptance 7).
+      | 'last_project_lead_required',
     details?: ErrorDetails,
   ) {
     super(code, `Conflicting request: ${code}`, details);

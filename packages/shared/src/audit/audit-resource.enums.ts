@@ -23,6 +23,12 @@ export const AUDIT_RESOURCE_TYPES = [
   'TEAM',
   /** One grant on one object (`resource_acl`): the row, not the object it is about (STORY-011-06). */
   'RESOURCE_ACL',
+  /**
+   * A project — the first object of the model that carries an access level of its own (EPIC-014).
+   * Every project entry, membership entries included, is filed against the project: «what happened
+   * to this project» is the question a roster change answers, and the person is in the payload.
+   */
+  'PROJECT',
 ] as const;
 
 export type AuditResourceType = (typeof AUDIT_RESOURCE_TYPES)[number];

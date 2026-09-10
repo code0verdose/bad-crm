@@ -61,7 +61,18 @@ import { type RefreshSessionUseCase } from '@/application/identity/use-cases/ref
 import { type RegenerateRecoveryCodesUseCase } from '@/application/identity/use-cases/regenerate-recovery-codes.use-case.js';
 import { type RegisterOrganizationUseCase } from '@/application/identity/use-cases/register-organization.use-case.js';
 import { type MfaCoverageReportQuery } from '@/application/organization/use-cases/mfa-coverage-report.query.js';
+import { type ArchiveProjectUseCase } from '@/application/project/use-cases/archive-project.use-case.js';
+import { type ChangeProjectVisibilityUseCase } from '@/application/project/use-cases/change-project-visibility.use-case.js';
+import { type CreateProjectUseCase } from '@/application/project/use-cases/create-project.use-case.js';
+import { type DeleteProjectUseCase } from '@/application/project/use-cases/delete-project.use-case.js';
 import { type GetProjectDetailQuery } from '@/application/project/use-cases/get-project-detail.query.js';
+import { type ListProjectMembersQuery } from '@/application/project/use-cases/list-project-members.query.js';
+import {
+  type AddProjectMemberUseCase,
+  type RemoveProjectMemberUseCase,
+  type UpdateProjectMemberUseCase,
+} from '@/application/project/use-cases/manage-project-members.use-case.js';
+import { type UpdateProjectUseCase } from '@/application/project/use-cases/update-project.use-case.js';
 import { type ReadSecurityPolicyQuery } from '@/application/organization/use-cases/read-security-policy.query.js';
 import { type UpdateSecurityPolicyUseCase } from '@/application/organization/use-cases/update-security-policy.use-case.js';
 import { type RequestPasswordResetUseCase } from '@/application/identity/use-cases/request-password-reset.use-case.js';
@@ -200,6 +211,15 @@ export interface IamDependencies {
  */
 export interface ProjectDependencies {
   readonly getProjectDetail: GetProjectDetailQuery;
+  readonly createProject: CreateProjectUseCase;
+  readonly updateProject: UpdateProjectUseCase;
+  readonly changeProjectVisibility: ChangeProjectVisibilityUseCase;
+  readonly archiveProject: ArchiveProjectUseCase;
+  readonly deleteProject: DeleteProjectUseCase;
+  readonly listProjectMembers: ListProjectMembersQuery;
+  readonly addProjectMember: AddProjectMemberUseCase;
+  readonly updateProjectMember: UpdateProjectMemberUseCase;
+  readonly removeProjectMember: RemoveProjectMemberUseCase;
 }
 
 export interface HttpServerDependencies {

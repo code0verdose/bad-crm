@@ -1,7 +1,7 @@
 ---
 id: STORY-014-02
 epic: EPIC-014
-status: backlog
+status: in-progress
 blocked: false
 priority: must
 estimate: M
@@ -63,7 +63,9 @@ estimate: M
 >   без них код **не компилируется**.
 
 > **Серверная половина таблицы сделана 2026-09-06** (вместе с `projects`, первый шаг эпика;
-> use-case'ов, policy, `implicitLevel`, маршрутов, спеки и клиента **нет**). Что и где:
+> use-case'ов, policy, `implicitLevel`, маршрутов, спеки и клиента на тот день **не было** —
+> `implicitLevel` для `PROJECT` пришёл в тот же день с STORY-011-06, use-case'ы, policy, маршруты и
+> спека закрыты 2026-09-10, см. врезку пятого шага ниже; открыт только клиент). Что и где:
 > - `project_members` в миграции `20260906135656_projects_and_project_members`: составные FK
 >   `(organization_id, project_id) → projects` и `(organization_id, user_id) → users` (оба
 >   `CASCADE` на удаление, `NO ACTION` на обновление), `ck_project_members_role` по закрытому списку
@@ -73,7 +75,9 @@ estimate: M
 > - порт `application/project/ports/project-member-repository.port.ts` и реализация
 >   `infrastructure/persistence/prisma/project-member.repository.ts`: `roster` (живые; с
 >   `includeLeft` — все), `membershipOf` (живая строка — источник будущего `implicitLevel`), `leads`
->   под `FOR UPDATE`, `subject` под `FOR SHARE`, `add` через `ON CONFLICT (project_id, user_id) WHERE
+>   под `FOR UPDATE`, `subject` под `FOR SHARE` (с 2026-09-11 — под `FOR NO KEY UPDATE`: замер гонки
+> «один человек в два проекта разом» показал share-lock upgrade на строке `users`, см. врезку пятого
+> шага ниже), `add` через `ON CONFLICT (project_id, user_id) WHERE
 >   left_at IS NULL DO NOTHING`, `update`, `leave` (`SET left_at = now() … WHERE left_at IS NULL`).
 >
 > **Что держит база, а что остаётся сценарию** (проверено на реальном PostgreSQL в
@@ -87,7 +91,52 @@ estimate: M
 >
 > Инкремент `permissionsVersion` при смене состава (критерий 1) — в use-case следующего шага; метод
 > `bumpPermissionsVersionOf` сегодня есть только у `TeamRepositoryPort`, и решение, выносить ли его в
-> общий порт, принимается там, а не здесь.
+> общий порт, принимается там, а не здесь. *(Закрыто 2026-09-10: метод получил
+> `ProjectMemberRepositoryPort` над общим `permissions-version.util.ts` — как у команд и, с `245d601`,
+> у ACL; см. врезку пятого шага ниже.)*
+
+> **Серверная и HTTP-половины сделаны 2026-09-10** (пятый шаг эпика). Что и где:
+> - use-case'ы `application/project/use-cases/manage-project-members.use-case.ts`
+>   (`AddProjectMemberUseCase`, `UpdateProjectMemberUseCase`, `RemoveProjectMemberUseCase`) и
+>   `list-project-members.query.ts`; все три команды держат строку проекта под `FOR UPDATE`
+>   (`project-write-facts.util.ts`), «последний лид» считается по `leads()` под `FOR UPDATE`;
+> - policy `domain/project/access/project-membership.policy.ts`: `assertNotSelfJoin` (403
+>   `self_assignment_forbidden`, `T-PROJ-02`), `assertLastLeadKept` (409
+>   `last_project_lead_required`), `assertProjectSubjectJoinable` (404 чужой, 409
+>   `member_not_active` только держателю `user:read`);
+> - маршруты: `GET /projects/{projectId}/members` (`project:read`, `?includeLeft=true`),
+>   `POST …/members` (`project:manage_members`, `Idempotency-Key`), `PATCH`/`DELETE
+>   …/members/{userId}` (`project:manage_members`); каждый с `aclCheckedIn`, операцией в спеке и
+>   строками в снапшоте матрицы;
+> - `permissionsVersion` инкрементится в той же транзакции при любом изменении членства —
+>   `ProjectMemberRepositoryPort.bumpPermissionsVersionOf` над общим `permissions-version.util.ts`
+>   (решение «вынести в общий порт» принято так же, как у команд и ACL: свой метод на порт, одна
+>   инструкция на всех);
+> - `implicitLevel` для `PROJECT` уже был в `domain/access/implicit-level.policy.ts` (STORY-011-06),
+>   отдельного `domain/access/implicit-level.ts` не заводилось;
+> - журнал: `project.member_added`/`member_removed`/`member_role_changed` — `WARNING`, потому что
+>   членство в проекте, в отличие от команды, и есть неявный уровень доступа; описание
+>   `permission.project.manage_members` на EN и RU.
+>
+> **Решения по критериям, принятые здесь.**
+> - Критерий 7: код **`last_project_lead_required`** заведён (409): `last_owner_required` советует
+>   передать владение организацией, а здесь следующий шаг — назначить другого лида.
+> - Критерий 8: `invalid_member` не заводился — отключённый участник это `409 member_not_active`
+>   (формулировка на клиенте обобщена на команду и проект), чужой — `404 user_not_found`.
+> - Критерий 4: смена роли пишется в журнал и инкрементит версию; смена одной `allocationPct` —
+>   применяется без записи и без инкремента (прав не двигает). Свою роль менять нельзя ни в какую
+>   сторону (`403 self_assignment_forbidden`) — правило самоприсоединения из критерия 6
+>   распространено на все три пути, пишущие уровень места (`POST …/members`, `leadId` в
+>   `PATCH /projects/{id}`, `projectRole` в `PATCH …/members/{userId}`); своя доля — можно.
+> - Повторный `POST` для человека, который уже в проекте, читается как у команд (гейт L-3
+>   STORY-012-07): та же роль и доля — тихий 204; другая роль — смена роли с записью и правилом
+>   последнего лида; другая доля — применяется тихо.
+> - Критерий 5: выход — `left_at`, строка остаётся; удаление проекта участников не выводит
+>   (проект скрыт, цепочка `missing`).
+>
+> **Чего здесь нет:** клиентских `units/project/service/*`, `widgets/project-members` и
+> `membership-invalidates-permissions` e2e — клиентская половина; суммарная загрузка по проектам как
+> подсказка UI (критерий 9) — там же.
 
 ## Acceptance (Given/When/Then)
 
@@ -166,25 +215,39 @@ estimate: M
       составной FK `(organization_id, project_id)`, `uq_project_members (project_id, user_id) WHERE left_at IS NULL`,
       `idx_project_members_org_user`, RLS `ENABLE` + `FORCE` + политики; порт и репозиторий
       `project-member-repository.port.ts` / `project-member.repository.ts` (2026-09-06).
-- [ ] `packages/server/src/application/project/use-cases/add-project-member.use-case.ts`,
-      `update-project-member.use-case.ts`, `remove-project-member.use-case.ts`.
-- [ ] `packages/server/src/domain/project/access/project-membership.policy.ts` —
-      `canManageMembers`, `assertNotSelfJoin`, `assertLastLeadKept`.
-- [ ] `packages/server/src/domain/access/implicit-level.ts` — ветка `PROJECT` (совместно с
-      [STORY-011-06](../../epic-011-rbac-permissions/stories/story-011-06-resource-acl.md)).
-- [ ] `packages/server/src/application/project/queries/list-project-members.query.ts`.
-- [ ] Инкремент `permissionsVersion` при любом изменении членства — в той же транзакции.
-- [ ] `packages/server/src/presentation/http/routes/registry.ts` — `project:manage_members`,
-      `project:read` c `aclCheckedIn`.
+- [x] `packages/server/src/application/project/use-cases/manage-project-members.use-case.ts` —
+      три команды одним файлом, по образцу `manage-team-members.use-case.ts` (2026-09-10).
+- [x] `packages/server/src/domain/project/access/project-membership.policy.ts` —
+      `assertNotSelfJoin`, `assertLastLeadKept`, `assertProjectSubjectJoinable`;
+      `canManageProjectMembers` — в `project-access.policy.ts` рядом с остальными решениями
+      (2026-09-10).
+- [x] `packages/server/src/domain/access/implicit-level.policy.ts` — ветка `PROJECT` пришла с
+      [STORY-011-06](../../epic-011-rbac-permissions/stories/story-011-06-resource-acl.md) 2026-09-06.
+- [x] `packages/server/src/application/project/use-cases/list-project-members.query.ts` (2026-09-10).
+- [x] Инкремент `permissionsVersion` при любом изменении членства — в той же транзакции
+      (`bumpPermissionsVersionOf` на `ProjectMemberRepositoryPort`, 2026-09-10).
+- [x] `packages/server/src/presentation/http/route-registry.factory.ts` — `project:manage_members`,
+      `project:read` c `aclCheckedIn` (2026-09-10).
 - [ ] `packages/client/src/units/project/service/{queries,mutations,hooks}` —
       `project-members.query.ts`, `add-project-member.mutation.ts` (оптимистичный патч + rollback),
       `use-project-members.hook.ts`; `widgets/project-members/project-members.widget.tsx` +
       `ui/member-role-select.component.tsx`, `ui/allocation-field.component.tsx`.
-- [ ] Тесты: `project-membership.policy.spec.ts` (п. 6, 7), `implicit-level.spec.ts` (п. 2, 3),
-      интеграционные `project-members-api.spec.ts` (п. 1, 4, 5, 8, 9),
-      `membership-invalidates-permissions.spec.ts` (доступ меняется без перелогина),
-      isolation-тест `project_members` — [x] реестровый набор `rls-isolation.test.ts` плюс
-      `project-repository.test.ts` (2026-09-06).
+- [x] Тесты сервера: `test/unit/domain/project/project-membership-policy.test.ts` (п. 6, 7),
+      `implicit-level-policy.test.ts` (п. 2, 3, с STORY-011-06),
+      `test/unit/application/manage-project-members.use-case.test.ts`,
+      HTTP `test/integration/http/project-member-endpoints.test.ts` (п. 1, 4, 5, 8, 9, 10);
+      гонки на живом PostgreSQL настоящими use-case'ами —
+      `test/integration/db/project-roster-races.test.ts` (два лида уходят одновременно → ровно
+      один `409 last_project_lead_required`; двойное добавление → одна строка, один инкремент,
+      одна запись; правка во время удаления → либо успела, либо тот же `404`; один человек в два
+      разных проекта разом → обе строки, без deadlock на строке `users` — этот кейс был красным и
+      сменил блокировку `subject()` с `FOR SHARE` на `FOR NO KEY UPDATE`; у каждой гонки
+      последовательный контроль), потому что HTTP-набор стоит на in-memory-двойниках и гонку
+      измерить не может;
+      isolation-тест `project_members` — реестровый набор `rls-isolation.test.ts` плюс
+      `project-repository.test.ts` (2026-09-06). Открыто: e2e
+      `membership-invalidates-permissions.spec.ts` (доступ меняется без перелогина) — с клиентской
+      половиной.
 
 ## Ссылки
 

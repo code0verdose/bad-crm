@@ -4,6 +4,11 @@ import {
 } from '@/application/access/ports/project-access-reader.port.js';
 import { type AclReaderPort } from '@/application/access/ports/acl-reader.port.js';
 import {
+  type ProjectMemberEntry,
+  type ProjectMemberPatch,
+  type ProjectMemberRepositoryPort,
+} from '@/application/project/ports/project-member-repository.port.js';
+import {
   type ProjectDetail,
   type ProjectDraft,
   type ProjectListEntry,
@@ -13,18 +18,34 @@ import {
 import { type TenantScope } from '@/application/platform/ports/unit-of-work.port.js';
 import { type AclChainNode, type AclEntryOnChain } from '@/domain/access/acl-chain.types.js';
 import { type ProjectRole, type ProjectVisibility } from '@/domain/access/implicit-level.policy.js';
-import { type ProjectScope } from '@/domain/project/project.entity.js';
+import {
+  type ProjectMembership,
+  type ProjectScope,
+  type ProjectSubject,
+  type ProjectSummary,
+} from '@/domain/project/project.entity.js';
 import { type ProjectStatus } from '@/domain/project/project.enums.js';
+import { ConflictError } from '@/domain/shared/errors/app.errors.js';
 
 /** A project as the store keeps it: the detail plus the tenant it belongs to. */
 export interface StoredProject extends ProjectDetail {
   readonly organizationId: string;
 }
 
+/** One membership row as the store keeps it — live while `leftAt` is `null`. */
+interface StoredMembership {
+  readonly projectId: string;
+  readonly userId: string;
+  projectRole: ProjectRole;
+  allocationPct: number;
+  readonly joinedAt: Date;
+  leftAt: Date | null;
+}
+
 /**
- * Projects in memory, behind the three ports a read of one project goes through.
+ * Projects in memory, behind the four ports a read or a write of one project goes through.
  *
- * One store rather than three doubles, because the three ports read **the same rows** on a real
+ * One store rather than four doubles, because the four ports read **the same rows** on a real
  * database — `projects` under the tenant's policy, `project_members` beside it, `resource_acl`
  * along the chain — and a suite that seeded them separately could describe a project the access
  * reader has and the repository has not. That is precisely the disagreement the closed contour
@@ -39,14 +60,22 @@ export interface StoredProject extends ProjectDetail {
  *
  * Reads by id do not filter deleted rows and the list does — the same split
  * `PrismaProjectRepository` makes, so that a deleted project reaches the policy flagged rather than
- * silently absent.
+ * silently absent. A membership ends by `leftAt`, never by removal, as the real table has it.
  */
 export class FakeProjectStore
-  implements ProjectRepositoryPort, ProjectAccessReaderPort, AclReaderPort
+  implements
+    ProjectRepositoryPort,
+    ProjectMemberRepositoryPort,
+    ProjectAccessReaderPort,
+    AclReaderPort
 {
   readonly rows: StoredProject[] = [];
-  /** `projectId → userId → role`: live memberships only. */
-  readonly members = new Map<string, Map<string, ProjectRole>>();
+  /** Every membership the store ever wrote, live and ended alike. */
+  readonly memberships: StoredMembership[] = [];
+  /** The accounts a membership may be written for, by id — seeded like `FakeTeamRepository.subjects`. */
+  readonly subjects = new Map<string, ProjectSubject>();
+  /** Every account whose folded permission view a use-case asked to invalidate, in order. */
+  readonly versionBumps: string[] = [];
   /** What `entriesAlong` answers for everybody — a chain-shaped grant, seeded by a suite that wants one. */
   readonly entries: AclEntryOnChain[] = [];
   /** Every chain the resolver asked about, in order. */
@@ -59,6 +88,18 @@ export class FakeProjectStore
 
   /** Set to make the chain read fail — the 503 branch of the resolver, reachable on purpose. */
   aclFailure: Error | undefined;
+
+  /**
+   * The row is readable under the lock and gone by the time the write runs — the concurrent-delete
+   * window a real lock closes and this double cannot. Modelled so the branch that answers it (the
+   * same 404 a foreign id gets) is one a test has run.
+   */
+  vanishesBeforeWrite = false;
+
+  /** Every insert of a membership answers `false` — the `ON CONFLICT … DO NOTHING` outcome. */
+  refusesInsert = false;
+
+  private next = 1;
 
   /**
    * A suite builds the store before the harness exists and seeds it, so the tenant source cannot be
@@ -96,11 +137,16 @@ export class FakeProjectStore
     return project.projectId;
   }
 
-  addMember(projectId: string, userId: string, role: ProjectRole): void {
-    const roster = this.members.get(projectId) ?? new Map<string, ProjectRole>();
-
-    roster.set(userId, role);
-    this.members.set(projectId, roster);
+  /** Seeds a live membership directly, the way a suite sets up a roster it is not testing. */
+  addMember(projectId: string, userId: string, role: ProjectRole, allocationPct = 100): void {
+    this.memberships.push({
+      projectId,
+      userId,
+      projectRole: role,
+      allocationPct,
+      joinedAt: new Date('2026-09-06T12:00:00.000Z'),
+      leftAt: null,
+    });
   }
 
   private get tenant(): string | undefined {
@@ -119,8 +165,16 @@ export class FakeProjectStore
     );
   }
 
+  private live(projectId: string): StoredMembership[] {
+    return this.memberships.filter((row) => row.projectId === projectId && row.leftAt === null);
+  }
+
+  private liveOf(projectId: string, userId: string): StoredMembership | undefined {
+    return this.live(projectId).find((row) => row.userId === userId);
+  }
+
   private withCount(row: StoredProject): StoredProject {
-    return { ...row, memberCount: this.members.get(row.projectId)?.size ?? 0 };
+    return { ...row, memberCount: this.live(row.projectId).length };
   }
 
   list(): Promise<readonly ProjectListEntry[]> {
@@ -145,6 +199,30 @@ export class FakeProjectStore
     );
   }
 
+  lockForWrite(projectId: string): Promise<ProjectSummary | null> {
+    this.trace.push('lockForWrite');
+
+    const row = this.visible(projectId);
+
+    return Promise.resolve(
+      row === null
+        ? null
+        : {
+            projectId: row.projectId,
+            isDeleted: row.isDeleted,
+            visibility: row.visibility,
+            key: row.key,
+            name: row.name,
+            description: row.description,
+            status: row.status,
+            leadId: row.leadId,
+            startedAt: row.startedAt,
+            dueAt: row.dueAt,
+            color: row.color,
+          },
+    );
+  }
+
   detail(projectId: string): Promise<ProjectDetail | null> {
     this.trace.push('detail');
 
@@ -154,32 +232,49 @@ export class FakeProjectStore
   }
 
   create(draft: ProjectDraft): Promise<string> {
+    this.trace.push('create');
+
     const tenant = this.tenant;
 
     if (tenant === undefined) throw new Error('a project was written outside a tenant scope');
 
+    // `uq_projects_org_key … WHERE deleted_at IS NULL`, reproduced: live rows of this tenant only.
+    const taken = this.rows.some(
+      (row) => row.organizationId === tenant && row.key === draft.key && !row.isDeleted,
+    );
+
+    if (taken) return Promise.reject(new ConflictError('project_already_exists'));
+
     return Promise.resolve(
-      this.seed({ ...draft, projectId: `${this.rows.length + 1}`, organizationId: tenant }),
+      this.seed({
+        ...draft,
+        projectId: `018f4a3b-2c1d-7a41-9f00-2b7c1d0e5c${String(this.next++).padStart(2, '0')}`,
+        organizationId: tenant,
+      }),
     );
   }
 
-  update(projectId: string, patch: ProjectPatch): Promise<boolean> {
-    return this.replace(projectId, patch);
-  }
-
   changeVisibility(projectId: string, visibility: ProjectVisibility): Promise<boolean> {
+    this.trace.push('changeVisibility');
+
     return this.replace(projectId, { visibility });
   }
 
   changeStatus(projectId: string, status: ProjectStatus): Promise<boolean> {
+    this.trace.push('changeStatus');
+
     return this.replace(projectId, { status });
   }
 
   softDelete(projectId: string): Promise<boolean> {
+    this.trace.push('softDelete');
+
     return this.replace(projectId, { isDeleted: true });
   }
 
   private replace(projectId: string, patch: Partial<StoredProject>): Promise<boolean> {
+    if (this.vanishesBeforeWrite) return Promise.resolve(false);
+
     const index = this.rows.findIndex(
       (row) => row.projectId === projectId && row.organizationId === this.tenant && !row.isDeleted,
     );
@@ -189,6 +284,116 @@ export class FakeProjectStore
     this.rows[index] = { ...(this.rows[index] as StoredProject), ...patch };
 
     return Promise.resolve(true);
+  }
+
+  roster(
+    projectId: string,
+    options: { readonly includeLeft?: boolean } = {},
+  ): Promise<readonly ProjectMemberEntry[]> {
+    this.trace.push('roster');
+
+    const rows =
+      options.includeLeft === true
+        ? this.memberships.filter((row) => row.projectId === projectId)
+        : this.live(projectId);
+
+    return Promise.resolve(
+      rows.map((row) => ({
+        userId: row.userId,
+        projectRole: row.projectRole,
+        allocationPct: row.allocationPct,
+        joinedAt: row.joinedAt,
+        leftAt: row.leftAt,
+      })),
+    );
+  }
+
+  membershipOf(projectId: string, userId: string): Promise<ProjectMembership | null> {
+    this.trace.push('membershipOf');
+
+    const row = this.liveOf(projectId, userId);
+
+    return Promise.resolve(
+      row === undefined ? null : { projectRole: row.projectRole, allocationPct: row.allocationPct },
+    );
+  }
+
+  leads(projectId: string): Promise<readonly string[]> {
+    this.trace.push('leads');
+
+    return Promise.resolve(
+      this.live(projectId)
+        .filter((row) => row.projectRole === 'LEAD')
+        .map((row) => row.userId),
+    );
+  }
+
+  subject(userId: string): Promise<ProjectSubject | null> {
+    this.trace.push('subject');
+
+    return Promise.resolve(this.subjects.get(userId) ?? null);
+  }
+
+  add(
+    projectId: string,
+    userId: string,
+    projectRole: ProjectRole,
+    allocationPct: number,
+  ): Promise<boolean> {
+    this.trace.push('add');
+
+    if (this.refusesInsert || this.liveOf(projectId, userId) !== undefined) {
+      return Promise.resolve(false);
+    }
+
+    this.addMember(projectId, userId, projectRole, allocationPct);
+
+    return Promise.resolve(true);
+  }
+
+  update(projectId: string, userId: string, patch: ProjectMemberPatch): Promise<boolean>;
+  update(projectId: string, patch: ProjectPatch): Promise<boolean>;
+  update(
+    projectId: string,
+    userIdOrPatch: string | ProjectPatch,
+    patch?: ProjectMemberPatch,
+  ): Promise<boolean> {
+    if (typeof userIdOrPatch !== 'string') return this.updateProject(projectId, userIdOrPatch);
+
+    this.trace.push('member.update');
+
+    const row = this.liveOf(projectId, userIdOrPatch);
+
+    if (row === undefined || this.vanishesBeforeWrite) return Promise.resolve(false);
+
+    if (patch?.projectRole !== undefined) row.projectRole = patch.projectRole;
+    if (patch?.allocationPct !== undefined) row.allocationPct = patch.allocationPct;
+
+    return Promise.resolve(true);
+  }
+
+  private updateProject(projectId: string, patch: ProjectPatch): Promise<boolean> {
+    this.trace.push('update');
+
+    return this.replace(projectId, patch);
+  }
+
+  leave(projectId: string, userId: string): Promise<boolean> {
+    this.trace.push('leave');
+
+    const row = this.liveOf(projectId, userId);
+
+    if (row === undefined || this.vanishesBeforeWrite) return Promise.resolve(false);
+
+    row.leftAt = new Date('2026-09-10T12:00:00.000Z');
+
+    return Promise.resolve(true);
+  }
+
+  bumpPermissionsVersionOf(userIds: readonly string[]): Promise<void> {
+    this.versionBumps.push(...userIds);
+
+    return Promise.resolve();
   }
 
   /** The access reader: the same tenant rule, a deleted row is no row, membership from the roster. */
@@ -202,7 +407,7 @@ export class FakeProjectStore
     return Promise.resolve({
       organizationId: row.organizationId,
       visibility: row.visibility,
-      memberRole: this.members.get(projectId)?.get(userId) ?? null,
+      memberRole: this.liveOf(projectId, userId)?.projectRole ?? null,
     });
   }
 

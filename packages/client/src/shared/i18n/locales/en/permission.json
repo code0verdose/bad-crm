@@ -34,7 +34,13 @@
     "revoke": "Take a role away from a person, and with it everything the role granted."
   },
   "project": {
-    "read": "Open a project the person may see and read what it is: key, name, status, lead, dates, how many people are on it."
+    "read": "Open a project the person may see and read what it is: key, name, status, lead, dates, how many people are on it.",
+    "create": "Start a new project with a key, a lead and a visibility — the space tasks, documents and hours will be attached to.",
+    "update": "Rename a project, change its description, dates, colour and lead; changing the lead also needs the right to manage its members.",
+    "manage_visibility": "Make a project private to its members, or open it to the whole organization — a change that takes access from or gives it to everybody at once.",
+    "archive": "Archive a project: it leaves the working lists and stays readable.",
+    "delete": "Delete a project — it disappears from every list and its key is freed; the people keep their history on it.",
+    "manage_members": "Put people on a project, take them off, and decide the role each of them holds — and therefore what each of them may do there."
   },
   "permission": {
     "override_read": "Read another person's effective permissions together with the reason written beside each personal exception.",

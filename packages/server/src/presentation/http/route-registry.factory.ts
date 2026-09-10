@@ -84,7 +84,16 @@ import {
   teamMemberParamsSchema,
   updateTeamBodySchema,
 } from '@/presentation/http/validators/team.validator.js';
-import { projectIdParamsSchema } from '@/presentation/http/validators/project.validator.js';
+import {
+  addProjectMemberBodySchema,
+  changeProjectVisibilityBodySchema,
+  createProjectBodySchema,
+  projectIdParamsSchema,
+  projectMemberParamsSchema,
+  projectMembersQuerySchema,
+  updateProjectBodySchema,
+  updateProjectMemberBodySchema,
+} from '@/presentation/http/validators/project.validator.js';
 import {
   deactivateUserBodySchema,
   userLifecycleParamsSchema,
@@ -248,10 +257,48 @@ export const createRouteRegistry = (
   const teamMemberValidator = validate({ params: teamMemberParamsSchema });
 
   const projectIdValidator = validate({ params: projectIdParamsSchema });
+  const createProjectValidator = validate({ body: createProjectBodySchema });
+  const updateProjectValidator = validate({
+    params: projectIdParamsSchema,
+    body: updateProjectBodySchema,
+  });
+  const projectVisibilityValidator = validate({
+    params: projectIdParamsSchema,
+    body: changeProjectVisibilityBodySchema,
+  });
+  const projectMembersQueryValidator = validate({
+    params: projectIdParamsSchema,
+    query: projectMembersQuerySchema,
+  });
+  const addProjectMemberValidator = validate({
+    params: projectIdParamsSchema,
+    body: addProjectMemberBodySchema,
+  });
+  const updateProjectMemberValidator = validate({
+    params: projectMemberParamsSchema,
+    body: updateProjectMemberBodySchema,
+  });
+  const projectMemberValidator = validate({ params: projectMemberParamsSchema });
 
   const projects = createProjectController({
     getProjectDetail: dependencies.project.getProjectDetail,
+    createProject: dependencies.project.createProject,
+    updateProject: dependencies.project.updateProject,
+    changeVisibility: dependencies.project.changeProjectVisibility,
+    archiveProject: dependencies.project.archiveProject,
+    deleteProject: dependencies.project.deleteProject,
+    listMembers: dependencies.project.listProjectMembers,
+    addMember: dependencies.project.addProjectMember,
+    updateMember: dependencies.project.updateProjectMember,
+    removeMember: dependencies.project.removeProjectMember,
     projectIdValidator,
+    createValidator: createProjectValidator,
+    updateValidator: updateProjectValidator,
+    visibilityValidator: projectVisibilityValidator,
+    membersQueryValidator: projectMembersQueryValidator,
+    addMemberValidator: addProjectMemberValidator,
+    updateMemberValidator: updateProjectMemberValidator,
+    memberValidator: projectMemberValidator,
   });
 
   const teams = createTeamController({
@@ -679,6 +726,15 @@ export const createRouteRegistry = (
       aclCheckedIn: 'RemoveTeamMemberUseCase',
     },
     {
+      method: 'post',
+      path: `${API_PREFIX}/projects`,
+      handlers: [requireIdempotencyKey(), createProjectValidator.handler, projects.create],
+      // No level: there is no row yet to hold one on. The lead is looked up inside the use-case,
+      // which is the only place that can answer 404 rather than 403 for somebody else's account.
+      permission: 'project:create',
+      aclCheckedIn: 'CreateProjectUseCase',
+    },
+    {
       method: 'get',
       path: `${API_PREFIX}/projects/:projectId`,
       handlers: [projectIdValidator.handler, projects.detail],
@@ -688,6 +744,75 @@ export const createRouteRegistry = (
       // `PRIVATE` project they are not on, another organization's, a deleted row — is the ACL chain,
       // resolved inside the use-case and answered 404 rather than 403 for every outsider.
       aclCheckedIn: 'GetProjectDetailQuery',
+    },
+    {
+      method: 'patch',
+      path: `${API_PREFIX}/projects/:projectId`,
+      handlers: [updateProjectValidator.handler, projects.update],
+      // `EDITOR` on the chain. A changed `leadId` additionally needs `project:manage_members`,
+      // decided in the use-case over the same locked row — the one field of the patch that moves
+      // rights (a `LEAD` membership is `MANAGER`).
+      permission: 'project:update',
+      aclCheckedIn: 'UpdateProjectUseCase',
+    },
+    {
+      method: 'post',
+      path: `${API_PREFIX}/projects/:projectId/visibility`,
+      handlers: [projectVisibilityValidator.handler, projects.changeVisibility],
+      // `MANAGER`, `dangerous`: the direction that matters takes the project away from everybody
+      // in the organization who is not on it. Confirmed with `X-Confirm-Dangerous: 1`, demanded
+      // only after the decision so the 428 cannot be used to learn who holds the right.
+      permission: 'project:manage_visibility',
+      aclCheckedIn: 'ChangeProjectVisibilityUseCase',
+    },
+    {
+      method: 'post',
+      path: `${API_PREFIX}/projects/:projectId/archive`,
+      handlers: [projectIdValidator.handler, projects.archive],
+      // `MANAGER`. Idempotent on an archived project; the way back is STORY-014-07.
+      permission: 'project:archive',
+      aclCheckedIn: 'ArchiveProjectUseCase',
+    },
+    {
+      method: 'delete',
+      path: `${API_PREFIX}/projects/:projectId`,
+      handlers: [projectIdValidator.handler, projects.remove],
+      // `MANAGER`, `dangerous`: soft, the key is freed, every member's folded view is bumped.
+      permission: 'project:delete',
+      aclCheckedIn: 'DeleteProjectUseCase',
+    },
+    {
+      method: 'get',
+      path: `${API_PREFIX}/projects/:projectId/members`,
+      handlers: [projectMembersQueryValidator.handler, projects.listMembers],
+      // The same gate as the card: `VIEWER` on the chain, so a `PRIVATE` project's roster is the
+      // same 404 to an outsider as the project itself.
+      permission: 'project:read',
+      aclCheckedIn: 'ListProjectMembersQuery',
+    },
+    {
+      method: 'post',
+      path: `${API_PREFIX}/projects/:projectId/members`,
+      handlers: [requireIdempotencyKey(), addProjectMemberValidator.handler, projects.addMember],
+      // `MANAGER` on the chain. Four decisions the guard cannot make: the project may be nobody's
+      // (404), the subject may be the caller (403, `T-PROJ-02`), the subject may be another
+      // organization's (404) or deactivated (409) — all of them need rows.
+      permission: 'project:manage_members',
+      aclCheckedIn: 'AddProjectMemberUseCase',
+    },
+    {
+      method: 'patch',
+      path: `${API_PREFIX}/projects/:projectId/members/:userId`,
+      handlers: [updateProjectMemberValidator.handler, projects.updateMember],
+      permission: 'project:manage_members',
+      aclCheckedIn: 'UpdateProjectMemberUseCase',
+    },
+    {
+      method: 'delete',
+      path: `${API_PREFIX}/projects/:projectId/members/:userId`,
+      handlers: [projectMemberValidator.handler, projects.removeMember],
+      permission: 'project:manage_members',
+      aclCheckedIn: 'RemoveProjectMemberUseCase',
     },
     {
       method: 'post',

@@ -2485,6 +2485,58 @@ paths:
         '503':
           $ref: '#/components/responses/ServiceUnavailable'
 
+  /projects:
+    post:
+      operationId: createProject
+      summary: Create a project.
+      description: |
+        A project is born `ACTIVE`, with **two `LEAD` memberships written in the same transaction**:
+        the caller's and the lead's (one, when they are the same person). A project nobody leads has
+        nobody holding `MANAGER` on it by membership, and the creator would be an `EDITOR` of their
+        own project on a `PUBLIC_ORG` one and nobody at all on a `PRIVATE` one. Both folded views
+        are invalidated, the caller's too — the next request already reads the new seat.
+
+        `key` is normalized on the way in — `" bad "` is stored as `BAD` — and refused when what
+        remains is not `^[A-Z][A-Z0-9]{1,9}$`. It is unique **inside the organization among live
+        projects**: deleting a project frees its key, and a collision is `409 project_already_exists`.
+        It never changes afterwards — it is the prefix of every task number.
+
+        `leadId` names an account of this organization. Another organization's — and nobody's — is
+        `404 user_not_found`; a suspended or still-invited one is `409 member_not_active` for a
+        caller who also holds `user:read`, and the same `404` otherwise (which inactive state an
+        account is in is a directory fact). `dueAt` before `startedAt` is `422` on `dueAt`.
+      tags: [project]
+      x-permission: project:create
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProjectDraft'
+      responses:
+        '201':
+          description: The project, as `GET /projects/{projectId}` would read it.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectDetail'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
   /projects/{projectId}:
     get:
       operationId: getProject
@@ -2523,6 +2575,344 @@ paths:
           $ref: '#/components/responses/NotFound'
         '422':
           $ref: '#/components/responses/ValidationFailed'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+
+    patch:
+      operationId: updateProject
+      summary: Edit a project.
+      description: |
+        **Replace, not merge**: the body is what the project will be, and a `description` left out is
+        cleared. `key` is not a field here and is refused as an unknown one: it is part of every task
+        number, and changing it would break every reference.
+
+        `project:update` needs `EDITOR` on the chain — a `MEMBER` may rename, an `OBSERVER` may not.
+        **A changed `leadId` additionally needs `project:manage_members`**: the lead is a column
+        *and* a `LEAD` membership, and this operation keeps the two in step by putting the new lead
+        on the project (or promoting them). That is a change of rights, filed as one, and an
+        `EDITOR` may not hand `MANAGER` to anybody through the rename form — nor may anybody hand
+        it to themselves (`403 self_assignment_forbidden`). The previous lead keeps their seat;
+        demoting them is `PATCH /projects/{projectId}/members/{userId}`. `dueAt` before `startedAt`
+        is `422` on `dueAt`, as on creation.
+
+        Every outsider is `404`, as on the read: a project of another organization, a `PRIVATE` one
+        the caller is not on, a deleted one. A caller who lacks the key is `403` before anything is
+        read.
+      tags: [project]
+      x-permission: project:update
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProjectPatch'
+      responses:
+        '204':
+          description: The project is what the body says.
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+
+    delete:
+      operationId: deleteProject
+      summary: Delete a project.
+      description: |
+        Soft: the row is hidden — every list leaves it out, every read by id answers `404` — and its
+        `key` is freed for reuse. The memberships stay as history (`project_members` has `left_at`);
+        they resolve for nobody, because a hidden project has no ACL chain. Every live member's
+        permission version is bumped in the same transaction, so a token minted before the deletion
+        stops trusting a seat on a project that is no longer there.
+
+        `project:delete` — `MANAGER` on the chain, and a `dangerous` key: a refusal is filed in the
+        audit trail. The trail entry carries the roster at the moment of deletion.
+      tags: [project]
+      x-permission: project:delete
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+      responses:
+        '204':
+          description: The project is gone from every list and answers 404 by id.
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+
+  /projects/{projectId}/visibility:
+    post:
+      operationId: changeProjectVisibility
+      summary: Make a project PRIVATE, or open it to the organization.
+      description: |
+        `PUBLIC_ORG → PRIVATE` takes the project away from everybody in the organization who is not on
+        it, in one statement, without a membership changing; the reverse hands it to everybody at
+        once. `project:manage_visibility` is `MANAGER` on the chain and a `dangerous` key, and both
+        directions are **confirmed**: the first request is answered `428 confirmation_required`, and
+        the client repeats it with `X-Confirm-Dangerous: 1` after showing what the change does. The
+        confirmation is demanded only after the decision, so the 428 cannot be used to learn who
+        holds the right.
+
+        Asking for the visibility already held is a no-op: `204`, no confirmation demanded, nothing
+        filed. A change is filed at `WARNING`.
+      tags: [project]
+      x-permission: project:manage_visibility
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+        - $ref: '#/components/parameters/ConfirmDangerous'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProjectVisibilityChange'
+      responses:
+        '204':
+          description: The project has the visibility the body names.
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '428':
+          $ref: '#/components/responses/ConfirmationRequired'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+
+  /projects/{projectId}/archive:
+    post:
+      operationId: archiveProject
+      summary: Archive a project.
+      description: |
+        `status` becomes `ARCHIVED`. `project:archive`, `MANAGER` on the chain. Idempotent: an
+        archived project answers `204` again and nothing is filed. What an archived project refuses
+        and how it comes back are STORY-014-07; this operation only moves the status.
+      tags: [project]
+      x-permission: project:archive
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+      responses:
+        '204':
+          description: The project is archived.
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+
+  /projects/{projectId}/members:
+    get:
+      operationId: listProjectMembers
+      summary: Who is on a project, and as what.
+      description: |
+        The live roster in joining order — **user ids and no names**: who these accounts belong to is
+        `GET /employees`, behind its own permission. `?includeLeft=true` adds the people who left,
+        each with their `leftAt`; a person who left and came back is two rows.
+
+        Gated exactly as the project card is: `project:read`, `VIEWER` on the chain — so the roster
+        of a `PRIVATE` project is the same `404` to an outsider as the project itself.
+      tags: [project]
+      x-permission: project:read
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+        - name: includeLeft
+          in: query
+          required: false
+          description: Show the memberships that ended, beside the live ones.
+          schema:
+            type: boolean
+            default: false
+      responses:
+        '200':
+          description: The roster.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ProjectMember'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+
+    post:
+      operationId: addProjectMember
+      summary: Put somebody on a project.
+      description: |
+        A membership is access: `projectRole` is the source of the implicit level (`LEAD → MANAGER`,
+        `MEMBER → EDITOR`, `REVIEWER → COMMENTER`, `OBSERVER → VIEWER`), and a `PRIVATE` project
+        exists for this person from this row on. The person's permission version is bumped in the
+        same transaction, and the seat is filed at `WARNING`.
+
+        `project:manage_members` is `MANAGER` on the chain. **Nobody puts themselves on a project**,
+        whatever key they hold — the caller's own `userId` is `403 self_assignment_forbidden`. An
+        account of another organization is `404 user_not_found`; a suspended or still-invited one is
+        `409 member_not_active` for a caller who also holds `user:read`, and the same `404` otherwise.
+
+        A repeat for somebody already on the project is read the way the team roster reads one: the
+        same role and allocation is a silent `204`; a different `projectRole` is applied as a role
+        change and filed as one (`409 last_project_lead_required` if it would demote the only lead);
+        a different `allocationPct` alone is applied quietly.
+      tags: [project]
+      x-permission: project:manage_members
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProjectMemberDraft'
+      responses:
+        '204':
+          description: The person is on the project with the role and allocation the body names.
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+
+  /projects/{projectId}/members/{userId}:
+    patch:
+      operationId: updateProjectMember
+      summary: Change somebody's role or allocation on a project.
+      description: |
+        A field that is absent is left as it is; a body with neither is `422`. A role that moves is
+        a change of rights — bumped and filed with both sides, and refused for the caller's own seat
+        (`403 self_assignment_forbidden`: nobody raises their own role). An allocation that moves
+        alone grants nothing and takes nothing: applied, and neither bumped nor filed — one's own
+        included.
+
+        Demoting the only `LEAD` is `409 last_project_lead_required`: appoint another lead first.
+        Somebody who is not on the project is `404 user_not_found`.
+      tags: [project]
+      x-permission: project:manage_members
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+        - $ref: '#/components/parameters/ProjectMemberUserId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProjectMemberPatch'
+      responses:
+        '204':
+          description: The membership is what the body says.
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+
+    delete:
+      operationId: removeProjectMember
+      summary: Take somebody off a project.
+      description: |
+        The membership **ends** rather than disappears: `leftAt` is stamped and the row stays as
+        history and as a link target, which is what lets the same person come back later as a new
+        row. The person's permission version is bumped in the same transaction, so the access is gone
+        on their next request.
+
+        The only `LEAD` does not leave — `409 last_project_lead_required`. Somebody who is not on the
+        project is `404 user_not_found`.
+      tags: [project]
+      x-permission: project:manage_members
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+        - $ref: '#/components/parameters/ProjectMemberUserId'
+      responses:
+        '204':
+          description: The membership ended.
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
         '500':
           $ref: '#/components/responses/InternalError'
         '503':
@@ -3703,6 +4093,7 @@ components:
         - employment_period_inverted
         - recipient_not_active
         - member_not_active
+        - last_project_lead_required
         - invalid_recipient
         - not_the_owner
         - confirmation_required
@@ -4083,6 +4474,163 @@ components:
         createdAt:
           type: string
           format: date-time
+
+    ProjectDraft:
+      type: object
+      additionalProperties: false
+      required: [key, name, leadId, color]
+      description: |
+        What a project is created from. `visibility` left out means `PUBLIC_ORG`; `status` is not
+        here at all — a project is born `ACTIVE`.
+      properties:
+        key:
+          type: string
+          description: |
+            Normalized on the way in — trimmed and upper-cased — and then held to
+            `^[A-Z][A-Z0-9]{1,9}$`. Never changes once set: it is the prefix of every task number.
+          examples: [' bad ']
+        name:
+          type: string
+          minLength: 1
+          maxLength: 120
+          examples: ['Bad CRM']
+        description:
+          type: string
+          maxLength: 2000
+          nullable: true
+        visibility:
+          type: string
+          enum: [PUBLIC_ORG, PRIVATE]
+          default: PUBLIC_ORG
+        leadId:
+          type: string
+          format: uuid
+          description: An active account of this organization; written as a `LEAD` membership too.
+          examples: ['018f4a3b-2c1d-7a41-9f00-2b7c1d0e5b11']
+        startedAt:
+          type: string
+          format: date-time
+          nullable: true
+        dueAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: Not before `startedAt` when both are given — `422` on this field otherwise.
+        color:
+          type: string
+          pattern: '^[a-z][a-z0-9-]{0,31}$'
+          description: A name from the palette of the design system, never a hex literal.
+          examples: ['indigo']
+
+    ProjectPatch:
+      type: object
+      additionalProperties: false
+      required: [name, leadId, color]
+      description: |
+        The editable fields, replaced as a whole. No `key` — it is refused as an unknown field. No
+        `visibility` and no `status`: each is a decision of its own, with its own operation.
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 120
+        description:
+          type: string
+          maxLength: 2000
+          nullable: true
+        leadId:
+          type: string
+          format: uuid
+          description: |
+            A changed lead additionally needs `project:manage_members`: the new lead is put on the
+            project as `LEAD`, and that is a change of rights. The caller's own id is refused
+            (`403 self_assignment_forbidden`) — nobody hands the lead to themselves.
+          examples: ['018f4a3b-2c1d-7a41-9f00-2b7c1d0e5b11']
+        startedAt:
+          type: string
+          format: date-time
+          nullable: true
+        dueAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: Not before `startedAt` when both are given — `422` on this field otherwise.
+        color:
+          type: string
+          pattern: '^[a-z][a-z0-9-]{0,31}$'
+
+    ProjectVisibilityChange:
+      type: object
+      additionalProperties: false
+      required: [visibility]
+      properties:
+        visibility:
+          type: string
+          enum: [PUBLIC_ORG, PRIVATE]
+
+    ProjectMember:
+      type: object
+      additionalProperties: false
+      required: [userId, projectRole, allocationPct, joinedAt, leftAt]
+      description: |
+        One membership. A **user id and no name**: who this account belongs to is `GET /employees`,
+        behind a different permission. `leftAt` is `null` while the membership is live.
+      properties:
+        userId:
+          type: string
+          format: uuid
+          examples: ['018f4a3b-2c1d-7a41-9f00-2b7c1d0e5b11']
+        projectRole:
+          type: string
+          enum: [LEAD, MEMBER, REVIEWER, OBSERVER]
+          description: |
+            The source of the implicit access level: `LEAD → MANAGER`, `MEMBER → EDITOR`,
+            `REVIEWER → COMMENTER`, `OBSERVER → VIEWER`.
+        allocationPct:
+          type: integer
+          minimum: 0
+          maximum: 100
+          description: Share of this person's time on the project. Not summed across projects in M2.
+        joinedAt:
+          type: string
+          format: date-time
+        leftAt:
+          type: string
+          format: date-time
+          nullable: true
+
+    ProjectMemberDraft:
+      type: object
+      additionalProperties: false
+      required: [userId]
+      properties:
+        userId:
+          type: string
+          format: uuid
+          examples: ['018f4a3b-2c1d-7a41-9f00-2b7c1d0e5b11']
+        projectRole:
+          type: string
+          enum: [LEAD, MEMBER, REVIEWER, OBSERVER]
+          default: MEMBER
+        allocationPct:
+          type: integer
+          minimum: 0
+          maximum: 100
+          default: 100
+
+    ProjectMemberPatch:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      description: A field left out is left as it is; at least one has to be present.
+      properties:
+        projectRole:
+          type: string
+          enum: [LEAD, MEMBER, REVIEWER, OBSERVER]
+        allocationPct:
+          type: integer
+          minimum: 0
+          maximum: 100
 
     EmployeeProfile:
       type: object
@@ -5140,6 +5688,20 @@ components:
       examples:
         badCrm:
           value: 018f4a3b-2c1d-7a41-9f00-2b7c1d0e5b01
+
+    ProjectMemberUserId:
+      name: userId
+      in: path
+      required: true
+      description: |
+        The account whose membership is being changed or ended. An id that is on no such project is
+        404 — the caller asked to change something the organization does not have.
+      schema:
+        type: string
+        format: uuid
+      examples:
+        ivan:
+          value: 018f4a3b-2c1d-7a41-9f00-2b7c1d0e5b11
 
     InvitationId:
       name: invitationId

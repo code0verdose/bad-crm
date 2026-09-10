@@ -5,7 +5,7 @@ import {
   type ProjectPatch,
   type ProjectRepositoryPort,
 } from '@/application/project/ports/project-repository.port.js';
-import { type ProjectScope } from '@/domain/project/project.entity.js';
+import { type ProjectScope, type ProjectSummary } from '@/domain/project/project.entity.js';
 import { type ProjectStatus, type ProjectVisibility } from '@/domain/project/project.enums.js';
 import { TenantScopedRepository } from '@/infrastructure/persistence/prisma/tenant-scoped.repository.js';
 
@@ -85,6 +85,54 @@ export class PrismaProjectRepository
         projectId: row.id,
         isDeleted: row.deleted_at !== null,
         visibility: row.visibility as ProjectVisibility,
+      };
+    });
+  }
+
+  lockForWrite(projectId: string): Promise<ProjectSummary | null> {
+    return this.run('lockForWrite', async (tx) => {
+      // `FOR UPDATE`, and not the share lock `scope()` takes: this is the first statement of every
+      // mutation, and a writer that started with `FOR SHARE` would have to upgrade it under its own
+      // `UPDATE` — the deadlock of two concurrent edits of one project. No `deleted_at IS NULL`, as
+      // in `scope()`: the policy decides what a deleted row answers.
+      const rows = await tx.$queryRaw<
+        {
+          id: string;
+          key: string;
+          name: string;
+          description: string | null;
+          status: string;
+          visibility: string;
+          lead_id: string;
+          started_at: Date | null;
+          due_at: Date | null;
+          color: string;
+          deleted_at: Date | null;
+        }[]
+      >`
+        SELECT id, key, name, description, status, visibility, lead_id, started_at, due_at, color,
+               deleted_at
+          FROM projects
+         WHERE organization_id = ${this.organizationId('lockForWrite')}::uuid
+           AND id = ${projectId}::uuid
+         FOR UPDATE`;
+
+      const row = rows[0];
+
+      if (row === undefined) return null;
+
+      return {
+        projectId: row.id,
+        isDeleted: row.deleted_at !== null,
+        visibility: row.visibility as ProjectVisibility,
+        key: row.key,
+        name: row.name,
+        description: row.description,
+        status: row.status as ProjectStatus,
+        leadId: row.lead_id,
+        startedAt: row.started_at,
+        dueAt: row.due_at,
+        color: row.color,
       };
     });
   }

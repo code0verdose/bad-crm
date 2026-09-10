@@ -108,3 +108,48 @@ export const canReadProject = (
   actor: Actor | null,
   facts: () => Promise<ProjectAccessFacts>,
 ): Promise<Decision> => decideProjectAccess(actor, 'project:read', facts);
+
+/**
+ * May this caller create a project at all — `project:create`, and no level: there is no row yet to
+ * hold one on. The signature takes the facts anyway so that every write route is wired the same
+ * way; `authorizeWith` never invokes them for a key without a level, and the table test holds that.
+ */
+export const canCreateProject = (
+  actor: Actor | null,
+  facts: () => Promise<ProjectAccessFacts>,
+): Promise<Decision> => decideProjectAccess(actor, 'project:create', facts);
+
+/** `project:update` — `EDITOR`: a `MEMBER` may rename, an `OBSERVER` may not (acceptance 5). */
+export const canUpdateProject = (
+  actor: Actor | null,
+  facts: () => Promise<ProjectAccessFacts>,
+): Promise<Decision> => decideProjectAccess(actor, 'project:update', facts);
+
+/** `project:manage_visibility` — `MANAGER`, and `dangerous` (acceptance 7). */
+export const canManageProjectVisibility = (
+  actor: Actor | null,
+  facts: () => Promise<ProjectAccessFacts>,
+): Promise<Decision> => decideProjectAccess(actor, 'project:manage_visibility', facts);
+
+/** `project:archive` — `MANAGER`. */
+export const canArchiveProject = (
+  actor: Actor | null,
+  facts: () => Promise<ProjectAccessFacts>,
+): Promise<Decision> => decideProjectAccess(actor, 'project:archive', facts);
+
+/** `project:delete` — `MANAGER`, and `dangerous` (acceptance 11). */
+export const canDeleteProject = (
+  actor: Actor | null,
+  facts: () => Promise<ProjectAccessFacts>,
+): Promise<Decision> => decideProjectAccess(actor, 'project:delete', facts);
+
+/**
+ * `project:manage_members` — `MANAGER`. Also demanded, on top of `project:update`, for the one
+ * field of a `PATCH` that moves rights: a new `leadId` is a new `LEAD` membership, and an `EDITOR`
+ * who could hand `MANAGER` to anybody through a rename form would be the escalation
+ * `rules/permissions.mdc` rule 10 forbids.
+ */
+export const canManageProjectMembers = (
+  actor: Actor | null,
+  facts: () => Promise<ProjectAccessFacts>,
+): Promise<Decision> => decideProjectAccess(actor, 'project:manage_members', facts);

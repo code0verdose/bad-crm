@@ -67,6 +67,33 @@ describe('which permission an audit action stands behind', () => {
     expect(PERMISSION_META['acl:grant'].dangerous).toBe(true);
   });
 
+  /**
+   * The project entries, by name (STORY-014-01 / STORY-014-02). Unlike a team, a project membership
+   * **is** access — `projectRole` is the source of the implicit level — so the three membership
+   * entries and the visibility change read at `WARNING`, and the two behind a `dangerous` key
+   * (`project:manage_visibility`, `project:delete`) never degrade.
+   */
+  it('reads the project entries against the keys their routes declare', () => {
+    expect(permissionsBehind('project.created')).toEqual(['project:create']);
+    expect(permissionsBehind('project.updated')).toEqual(['project:update']);
+    expect(permissionsBehind('project.visibility_changed')).toEqual(['project:manage_visibility']);
+    expect(permissionsBehind('project.archived')).toEqual(['project:archive']);
+    expect(permissionsBehind('project.deleted')).toEqual(['project:delete']);
+    for (const action of [
+      'project.member_added',
+      'project.member_removed',
+      'project.member_role_changed',
+    ] as const) {
+      expect(permissionsBehind(action)).toEqual(['project:manage_members']);
+      expect(severityOf(action)).toBe('WARNING');
+    }
+    expect(isBehindDangerousPermission('project.visibility_changed')).toBe(true);
+    expect(isBehindDangerousPermission('project.deleted')).toBe(true);
+    expect(isBehindDangerousPermission('project.updated')).toBe(false);
+    expect(severityOf('project.created')).toBe('INFO');
+    expect(severityOf('project.deleted')).toBe('WARNING');
+  });
+
   it('treats an action with two possible keys as dangerous if either one is', () => {
     expect(permissionsBehind('role.dangerous_granted')).toEqual(['role:create', 'role:update']);
     expect(PERMISSION_META['role:create'].dangerous).toBe(false);

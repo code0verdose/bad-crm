@@ -1475,6 +1475,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/projects": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create a project.
+         * @description A project is born `ACTIVE`, with **two `LEAD` memberships written in the same transaction**:
+         *     the caller's and the lead's (one, when they are the same person). A project nobody leads has
+         *     nobody holding `MANAGER` on it by membership, and the creator would be an `EDITOR` of their
+         *     own project on a `PUBLIC_ORG` one and nobody at all on a `PRIVATE` one. Both folded views
+         *     are invalidated, the caller's too — the next request already reads the new seat.
+         *
+         *     `key` is normalized on the way in — `" bad "` is stored as `BAD` — and refused when what
+         *     remains is not `^[A-Z][A-Z0-9]{1,9}$`. It is unique **inside the organization among live
+         *     projects**: deleting a project frees its key, and a collision is `409 project_already_exists`.
+         *     It never changes afterwards — it is the prefix of every task number.
+         *
+         *     `leadId` names an account of this organization. Another organization's — and nobody's — is
+         *     `404 user_not_found`; a suspended or still-invited one is `409 member_not_active` for a
+         *     caller who also holds `user:read`, and the same `404` otherwise (which inactive state an
+         *     account is in is a directory fact). `dueAt` before `startedAt` is `422` on `dueAt`.
+         */
+        post: operations["createProject"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/projects/{projectId}": {
         parameters: {
             query?: never;
@@ -1502,10 +1536,170 @@ export interface paths {
         get: operations["getProject"];
         put?: never;
         post?: never;
+        /**
+         * Delete a project.
+         * @description Soft: the row is hidden — every list leaves it out, every read by id answers `404` — and its
+         *     `key` is freed for reuse. The memberships stay as history (`project_members` has `left_at`);
+         *     they resolve for nobody, because a hidden project has no ACL chain. Every live member's
+         *     permission version is bumped in the same transaction, so a token minted before the deletion
+         *     stops trusting a seat on a project that is no longer there.
+         *
+         *     `project:delete` — `MANAGER` on the chain, and a `dangerous` key: a refusal is filed in the
+         *     audit trail. The trail entry carries the roster at the moment of deletion.
+         */
+        delete: operations["deleteProject"];
+        options?: never;
+        head?: never;
+        /**
+         * Edit a project.
+         * @description **Replace, not merge**: the body is what the project will be, and a `description` left out is
+         *     cleared. `key` is not a field here and is refused as an unknown one: it is part of every task
+         *     number, and changing it would break every reference.
+         *
+         *     `project:update` needs `EDITOR` on the chain — a `MEMBER` may rename, an `OBSERVER` may not.
+         *     **A changed `leadId` additionally needs `project:manage_members`**: the lead is a column
+         *     *and* a `LEAD` membership, and this operation keeps the two in step by putting the new lead
+         *     on the project (or promoting them). That is a change of rights, filed as one, and an
+         *     `EDITOR` may not hand `MANAGER` to anybody through the rename form — nor may anybody hand
+         *     it to themselves (`403 self_assignment_forbidden`). The previous lead keeps their seat;
+         *     demoting them is `PATCH /projects/{projectId}/members/{userId}`. `dueAt` before `startedAt`
+         *     is `422` on `dueAt`, as on creation.
+         *
+         *     Every outsider is `404`, as on the read: a project of another organization, a `PRIVATE` one
+         *     the caller is not on, a deleted one. A caller who lacks the key is `403` before anything is
+         *     read.
+         */
+        patch: operations["updateProject"];
+        trace?: never;
+    };
+    "/projects/{projectId}/visibility": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Make a project PRIVATE, or open it to the organization.
+         * @description `PUBLIC_ORG → PRIVATE` takes the project away from everybody in the organization who is not on
+         *     it, in one statement, without a membership changing; the reverse hands it to everybody at
+         *     once. `project:manage_visibility` is `MANAGER` on the chain and a `dangerous` key, and both
+         *     directions are **confirmed**: the first request is answered `428 confirmation_required`, and
+         *     the client repeats it with `X-Confirm-Dangerous: 1` after showing what the change does. The
+         *     confirmation is demanded only after the decision, so the 428 cannot be used to learn who
+         *     holds the right.
+         *
+         *     Asking for the visibility already held is a no-op: `204`, no confirmation demanded, nothing
+         *     filed. A change is filed at `WARNING`.
+         */
+        post: operations["changeProjectVisibility"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
+        trace?: never;
+    };
+    "/projects/{projectId}/archive": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Archive a project.
+         * @description `status` becomes `ARCHIVED`. `project:archive`, `MANAGER` on the chain. Idempotent: an
+         *     archived project answers `204` again and nothing is filed. What an archived project refuses
+         *     and how it comes back are STORY-014-07; this operation only moves the status.
+         */
+        post: operations["archiveProject"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/projects/{projectId}/members": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Who is on a project, and as what.
+         * @description The live roster in joining order — **user ids and no names**: who these accounts belong to is
+         *     `GET /employees`, behind its own permission. `?includeLeft=true` adds the people who left,
+         *     each with their `leftAt`; a person who left and came back is two rows.
+         *
+         *     Gated exactly as the project card is: `project:read`, `VIEWER` on the chain — so the roster
+         *     of a `PRIVATE` project is the same `404` to an outsider as the project itself.
+         */
+        get: operations["listProjectMembers"];
+        put?: never;
+        /**
+         * Put somebody on a project.
+         * @description A membership is access: `projectRole` is the source of the implicit level (`LEAD → MANAGER`,
+         *     `MEMBER → EDITOR`, `REVIEWER → COMMENTER`, `OBSERVER → VIEWER`), and a `PRIVATE` project
+         *     exists for this person from this row on. The person's permission version is bumped in the
+         *     same transaction, and the seat is filed at `WARNING`.
+         *
+         *     `project:manage_members` is `MANAGER` on the chain. **Nobody puts themselves on a project**,
+         *     whatever key they hold — the caller's own `userId` is `403 self_assignment_forbidden`. An
+         *     account of another organization is `404 user_not_found`; a suspended or still-invited one is
+         *     `409 member_not_active` for a caller who also holds `user:read`, and the same `404` otherwise.
+         *
+         *     A repeat for somebody already on the project is read the way the team roster reads one: the
+         *     same role and allocation is a silent `204`; a different `projectRole` is applied as a role
+         *     change and filed as one (`409 last_project_lead_required` if it would demote the only lead);
+         *     a different `allocationPct` alone is applied quietly.
+         */
+        post: operations["addProjectMember"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/projects/{projectId}/members/{userId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Take somebody off a project.
+         * @description The membership **ends** rather than disappears: `leftAt` is stamped and the row stays as
+         *     history and as a link target, which is what lets the same person come back later as a new
+         *     row. The person's permission version is bumped in the same transaction, so the access is gone
+         *     on their next request.
+         *
+         *     The only `LEAD` does not leave — `409 last_project_lead_required`. Somebody who is not on the
+         *     project is `404 user_not_found`.
+         */
+        delete: operations["removeProjectMember"];
+        options?: never;
+        head?: never;
+        /**
+         * Change somebody's role or allocation on a project.
+         * @description A field that is absent is left as it is; a body with neither is `422`. A role that moves is
+         *     a change of rights — bumped and filed with both sides, and refused for the caller's own seat
+         *     (`403 self_assignment_forbidden`: nobody raises their own role). An allocation that moves
+         *     alone grants nothing and takes nothing: applied, and neither bumped nor filed — one's own
+         *     included.
+         *
+         *     Demoting the only `LEAD` is `409 last_project_lead_required`: appoint another lead first.
+         *     Somebody who is not on the project is `404 user_not_found`.
+         */
+        patch: operations["updateProjectMember"];
         trace?: never;
     };
     "/employees": {
@@ -2272,7 +2466,7 @@ export interface components {
          *     reused with a different meaning.
          * @enum {string}
          */
-        ErrorCode: "validation_failed" | "unauthenticated" | "invalid_credentials" | "account_suspended" | "registration_disabled" | "password_reset_token_invalid" | "invitation_not_valid" | "mail_not_configured" | "route_not_found" | "payload_too_large" | "vault_locked" | "stale_version" | "idempotency_key_reuse" | "last_owner_required" | "period_locked" | "self_lockout" | "system_role_immutable" | "owner_immutable" | "invitation_already_accepted" | "manager_cycle_detected" | "employment_period_inverted" | "recipient_not_active" | "member_not_active" | "invalid_recipient" | "not_the_owner" | "confirmation_required" | "invalid_totp_code" | "totp_code_replayed" | "mfa_already_enabled" | "reauthentication_required" | "recovery_code_invalid" | "mfa_token_expired" | "mfa_invalid_code" | "mfa_code_replayed" | "mfa_enrollment_required" | "mfa_required_by_policy" | "rate_limited" | "feature_disabled" | "service_unavailable" | "internal_error" | "organization_not_found" | "organization_forbidden" | "organization_already_exists" | "team_not_found" | "team_forbidden" | "team_already_exists" | "user_not_found" | "user_forbidden" | "user_already_exists" | "role_not_found" | "role_forbidden" | "role_already_exists" | "invitation_not_found" | "invitation_forbidden" | "invitation_already_exists" | "session_not_found" | "session_forbidden" | "session_already_exists" | "project_not_found" | "project_forbidden" | "project_already_exists" | "board_not_found" | "board_forbidden" | "board_already_exists" | "task_not_found" | "task_forbidden" | "task_already_exists" | "sprint_not_found" | "sprint_forbidden" | "sprint_already_exists" | "comment_not_found" | "comment_forbidden" | "comment_already_exists" | "doc_not_found" | "doc_forbidden" | "doc_already_exists" | "kb_note_not_found" | "kb_note_forbidden" | "kb_note_already_exists" | "file_not_found" | "file_forbidden" | "file_already_exists" | "vault_item_not_found" | "vault_item_forbidden" | "vault_item_already_exists" | "secure_link_not_found" | "secure_link_forbidden" | "secure_link_already_exists" | "time_entry_not_found" | "time_entry_forbidden" | "time_entry_already_exists" | "channel_not_found" | "channel_forbidden" | "channel_already_exists" | "message_not_found" | "message_forbidden" | "message_already_exists" | "dashboard_not_found" | "dashboard_forbidden" | "dashboard_already_exists";
+        ErrorCode: "validation_failed" | "unauthenticated" | "invalid_credentials" | "account_suspended" | "registration_disabled" | "password_reset_token_invalid" | "invitation_not_valid" | "mail_not_configured" | "route_not_found" | "payload_too_large" | "vault_locked" | "stale_version" | "idempotency_key_reuse" | "last_owner_required" | "period_locked" | "self_lockout" | "system_role_immutable" | "owner_immutable" | "invitation_already_accepted" | "manager_cycle_detected" | "employment_period_inverted" | "recipient_not_active" | "member_not_active" | "last_project_lead_required" | "invalid_recipient" | "not_the_owner" | "confirmation_required" | "invalid_totp_code" | "totp_code_replayed" | "mfa_already_enabled" | "reauthentication_required" | "recovery_code_invalid" | "mfa_token_expired" | "mfa_invalid_code" | "mfa_code_replayed" | "mfa_enrollment_required" | "mfa_required_by_policy" | "rate_limited" | "feature_disabled" | "service_unavailable" | "internal_error" | "organization_not_found" | "organization_forbidden" | "organization_already_exists" | "team_not_found" | "team_forbidden" | "team_already_exists" | "user_not_found" | "user_forbidden" | "user_already_exists" | "role_not_found" | "role_forbidden" | "role_already_exists" | "invitation_not_found" | "invitation_forbidden" | "invitation_already_exists" | "session_not_found" | "session_forbidden" | "session_already_exists" | "project_not_found" | "project_forbidden" | "project_already_exists" | "board_not_found" | "board_forbidden" | "board_already_exists" | "task_not_found" | "task_forbidden" | "task_already_exists" | "sprint_not_found" | "sprint_forbidden" | "sprint_already_exists" | "comment_not_found" | "comment_forbidden" | "comment_already_exists" | "doc_not_found" | "doc_forbidden" | "doc_already_exists" | "kb_note_not_found" | "kb_note_forbidden" | "kb_note_already_exists" | "file_not_found" | "file_forbidden" | "file_already_exists" | "vault_item_not_found" | "vault_item_forbidden" | "vault_item_already_exists" | "secure_link_not_found" | "secure_link_forbidden" | "secure_link_already_exists" | "time_entry_not_found" | "time_entry_forbidden" | "time_entry_already_exists" | "channel_not_found" | "channel_forbidden" | "channel_already_exists" | "message_not_found" | "message_forbidden" | "message_already_exists" | "dashboard_not_found" | "dashboard_forbidden" | "dashboard_already_exists";
         /**
          * @description Why one field was rejected. The list mirrors
          *     `packages/shared/src/errors/validation-issue.enums.ts`; anything a validator produces
@@ -2442,6 +2636,115 @@ export interface components {
             taskCounter: number;
             /** Format: date-time */
             createdAt: string;
+        };
+        /**
+         * @description What a project is created from. `visibility` left out means `PUBLIC_ORG`; `status` is not
+         *     here at all — a project is born `ACTIVE`.
+         */
+        ProjectDraft: {
+            /**
+             * @description Normalized on the way in — trimmed and upper-cased — and then held to
+             *     `^[A-Z][A-Z0-9]{1,9}$`. Never changes once set: it is the prefix of every task number.
+             * @example bad
+             */
+            key: string;
+            /** @example Bad CRM */
+            name: string;
+            description?: string | null;
+            /**
+             * @default PUBLIC_ORG
+             * @enum {string}
+             */
+            visibility: "PUBLIC_ORG" | "PRIVATE";
+            /**
+             * Format: uuid
+             * @description An active account of this organization; written as a `LEAD` membership too.
+             * @example 018f4a3b-2c1d-7a41-9f00-2b7c1d0e5b11
+             */
+            leadId: string;
+            /** Format: date-time */
+            startedAt?: string | null;
+            /**
+             * Format: date-time
+             * @description Not before `startedAt` when both are given — `422` on this field otherwise.
+             */
+            dueAt?: string | null;
+            /**
+             * @description A name from the palette of the design system, never a hex literal.
+             * @example indigo
+             */
+            color: string;
+        };
+        /**
+         * @description The editable fields, replaced as a whole. No `key` — it is refused as an unknown field. No
+         *     `visibility` and no `status`: each is a decision of its own, with its own operation.
+         */
+        ProjectPatch: {
+            name: string;
+            description?: string | null;
+            /**
+             * Format: uuid
+             * @description A changed lead additionally needs `project:manage_members`: the new lead is put on the
+             *     project as `LEAD`, and that is a change of rights. The caller's own id is refused
+             *     (`403 self_assignment_forbidden`) — nobody hands the lead to themselves.
+             * @example 018f4a3b-2c1d-7a41-9f00-2b7c1d0e5b11
+             */
+            leadId: string;
+            /** Format: date-time */
+            startedAt?: string | null;
+            /**
+             * Format: date-time
+             * @description Not before `startedAt` when both are given — `422` on this field otherwise.
+             */
+            dueAt?: string | null;
+            color: string;
+        };
+        ProjectVisibilityChange: {
+            /** @enum {string} */
+            visibility: "PUBLIC_ORG" | "PRIVATE";
+        };
+        /**
+         * @description One membership. A **user id and no name**: who this account belongs to is `GET /employees`,
+         *     behind a different permission. `leftAt` is `null` while the membership is live.
+         */
+        ProjectMember: {
+            /**
+             * Format: uuid
+             * @example 018f4a3b-2c1d-7a41-9f00-2b7c1d0e5b11
+             */
+            userId: string;
+            /**
+             * @description The source of the implicit access level: `LEAD → MANAGER`, `MEMBER → EDITOR`,
+             *     `REVIEWER → COMMENTER`, `OBSERVER → VIEWER`.
+             * @enum {string}
+             */
+            projectRole: "LEAD" | "MEMBER" | "REVIEWER" | "OBSERVER";
+            /** @description Share of this person's time on the project. Not summed across projects in M2. */
+            allocationPct: number;
+            /** Format: date-time */
+            joinedAt: string;
+            /** Format: date-time */
+            leftAt: string | null;
+        };
+        ProjectMemberDraft: {
+            /**
+             * Format: uuid
+             * @example 018f4a3b-2c1d-7a41-9f00-2b7c1d0e5b11
+             */
+            userId: string;
+            /**
+             * @default MEMBER
+             * @enum {string}
+             */
+            projectRole: "LEAD" | "MEMBER" | "REVIEWER" | "OBSERVER";
+            /** @default 100 */
+            allocationPct: number;
+        };
+        /** @description A field left out is left as it is; at least one has to be present. */
+        ProjectMemberPatch: {
+            /** @enum {string} */
+            projectRole?: "LEAD" | "MEMBER" | "REVIEWER" | "OBSERVER";
+            allocationPct?: number;
         };
         /**
          * @description A personnel record, in the shape this caller is allowed to see. The employment fields below
@@ -3347,6 +3650,11 @@ export interface components {
          *     project here would be a fact about data the caller cannot see.
          */
         ProjectId: string;
+        /**
+         * @description The account whose membership is being changed or ended. An id that is on no such project is
+         *     404 — the caller asked to change something the organization does not have.
+         */
+        ProjectMemberUserId: string;
         /**
          * @description Identifier of an invitation of the caller's organization. Another organization's id is 404,
          *     and so is one that was already revoked — a revoked invitation is a deleted row, because the
@@ -5565,6 +5873,70 @@ export interface operations {
             503: components["responses"]["ServiceUnavailable"];
         };
     };
+    createProject: {
+        parameters: {
+            query?: never;
+            header: {
+                /**
+                 * @description Client-generated key, mandatory on every unsafe operation that creates an entity, sends
+                 *     mail or spends money or tokens.
+                 *
+                 *     **Today the server only requires the key; it does not yet store or replay a response.** The
+                 *     table keyed by `(key, request hash)` is a cross-cutting mechanism that has not been built —
+                 *     the open half is recorded in STORY-006-01. What the requirement buys now is that a client
+                 *     which never learned to send the header cannot be made idempotent later without a breaking
+                 *     change; what it does not buy is the convenience of getting the original `201` back instead
+                 *     of a `409` on retry. Where a lost response is genuinely ambiguous rather than merely
+                 *     inconvenient, the operation says so in its own description.
+                 *
+                 *     When the store lands: a replay carrying the same request hash will return the stored
+                 *     response, and the same key with a different hash will be refused with 409
+                 *     `idempotency_key_reuse`.
+                 *
+                 *     Declaring the parameter is not a claim that the operation will replay: the client attaches a
+                 *     key to every unsafe request, and nearly every unsafe operation therefore requires one. What
+                 *     the store will change differs per operation, and each says so in its own description:
+                 *
+                 *     * operations that create something, send mail or spend tokens are the ones a replay is *for*
+                 *       — today a lost response leaves the caller unable to tell «it did not happen» from «it
+                 *       happened and the answer was lost»;
+                 *     * operations idempotent by construction (`assignRole`, `deactivateUser`, `reactivateUser`)
+                 *       require the key but gain nothing from a stored response — asking twice for a state that is
+                 *       already there answers the same way. The key is required anyway, so a client written today
+                 *       keeps working when the store lands;
+                 *     * `POST /auth/login` and `POST /auth/refresh` will **never** replay: a stored response *is* a
+                 *       credential. Replaying it would hand back tokens that have since been rotated or revoked,
+                 *       and would let one key slip a repeat past the failed-attempt counter the lockout depends on.
+                 */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProjectDraft"];
+            };
+        };
+        responses: {
+            /** @description The project, as `GET /projects/{projectId}` would read it. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProjectDetail"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["ValidationFailed"];
+            429: components["responses"]["RateLimited"];
+            500: components["responses"]["InternalError"];
+        };
+    };
     getProject: {
         parameters: {
             query?: never;
@@ -5595,6 +5967,351 @@ export interface operations {
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
             422: components["responses"]["ValidationFailed"];
+            500: components["responses"]["InternalError"];
+            503: components["responses"]["ServiceUnavailable"];
+        };
+    };
+    deleteProject: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /**
+                 * @description Identifier of a project the caller may see. Another organization's id is 404, and so are a
+                 *     `PRIVATE` project the caller is not on and a project that has been deleted — the row survives
+                 *     as a soft deletion so that its `key` can be reused, and confirming that an id once named a
+                 *     project here would be a fact about data the caller cannot see.
+                 */
+                projectId: components["parameters"]["ProjectId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The project is gone from every list and answers 404 by id. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["ValidationFailed"];
+            429: components["responses"]["RateLimited"];
+            500: components["responses"]["InternalError"];
+            503: components["responses"]["ServiceUnavailable"];
+        };
+    };
+    updateProject: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /**
+                 * @description Identifier of a project the caller may see. Another organization's id is 404, and so are a
+                 *     `PRIVATE` project the caller is not on and a project that has been deleted — the row survives
+                 *     as a soft deletion so that its `key` can be reused, and confirming that an id once named a
+                 *     project here would be a fact about data the caller cannot see.
+                 */
+                projectId: components["parameters"]["ProjectId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProjectPatch"];
+            };
+        };
+        responses: {
+            /** @description The project is what the body says. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["ValidationFailed"];
+            429: components["responses"]["RateLimited"];
+            500: components["responses"]["InternalError"];
+            503: components["responses"]["ServiceUnavailable"];
+        };
+    };
+    changeProjectVisibility: {
+        parameters: {
+            query?: never;
+            header?: {
+                /**
+                 * @description `1` repeats a request that was refused **428 `confirmation_required`** because the
+                 *     composition contains a key the catalogue marks dangerous.
+                 *
+                 *     A header rather than a field in the body: the confirmation is about the request as a whole,
+                 *     and a flag inside the payload would make the same document mean two different things — which
+                 *     is how a client ends up sending it by default. Any other value, or the header repeated, reads
+                 *     as «not confirmed».
+                 */
+                "X-Confirm-Dangerous"?: components["parameters"]["ConfirmDangerous"];
+            };
+            path: {
+                /**
+                 * @description Identifier of a project the caller may see. Another organization's id is 404, and so are a
+                 *     `PRIVATE` project the caller is not on and a project that has been deleted — the row survives
+                 *     as a soft deletion so that its `key` can be reused, and confirming that an id once named a
+                 *     project here would be a fact about data the caller cannot see.
+                 */
+                projectId: components["parameters"]["ProjectId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProjectVisibilityChange"];
+            };
+        };
+        responses: {
+            /** @description The project has the visibility the body names. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["ValidationFailed"];
+            428: components["responses"]["ConfirmationRequired"];
+            429: components["responses"]["RateLimited"];
+            500: components["responses"]["InternalError"];
+            503: components["responses"]["ServiceUnavailable"];
+        };
+    };
+    archiveProject: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /**
+                 * @description Identifier of a project the caller may see. Another organization's id is 404, and so are a
+                 *     `PRIVATE` project the caller is not on and a project that has been deleted — the row survives
+                 *     as a soft deletion so that its `key` can be reused, and confirming that an id once named a
+                 *     project here would be a fact about data the caller cannot see.
+                 */
+                projectId: components["parameters"]["ProjectId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The project is archived. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["ValidationFailed"];
+            429: components["responses"]["RateLimited"];
+            500: components["responses"]["InternalError"];
+            503: components["responses"]["ServiceUnavailable"];
+        };
+    };
+    listProjectMembers: {
+        parameters: {
+            query?: {
+                /** @description Show the memberships that ended, beside the live ones. */
+                includeLeft?: boolean;
+            };
+            header?: never;
+            path: {
+                /**
+                 * @description Identifier of a project the caller may see. Another organization's id is 404, and so are a
+                 *     `PRIVATE` project the caller is not on and a project that has been deleted — the row survives
+                 *     as a soft deletion so that its `key` can be reused, and confirming that an id once named a
+                 *     project here would be a fact about data the caller cannot see.
+                 */
+                projectId: components["parameters"]["ProjectId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The roster. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: components["schemas"]["ProjectMember"][];
+                    };
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["ValidationFailed"];
+            500: components["responses"]["InternalError"];
+            503: components["responses"]["ServiceUnavailable"];
+        };
+    };
+    addProjectMember: {
+        parameters: {
+            query?: never;
+            header: {
+                /**
+                 * @description Client-generated key, mandatory on every unsafe operation that creates an entity, sends
+                 *     mail or spends money or tokens.
+                 *
+                 *     **Today the server only requires the key; it does not yet store or replay a response.** The
+                 *     table keyed by `(key, request hash)` is a cross-cutting mechanism that has not been built —
+                 *     the open half is recorded in STORY-006-01. What the requirement buys now is that a client
+                 *     which never learned to send the header cannot be made idempotent later without a breaking
+                 *     change; what it does not buy is the convenience of getting the original `201` back instead
+                 *     of a `409` on retry. Where a lost response is genuinely ambiguous rather than merely
+                 *     inconvenient, the operation says so in its own description.
+                 *
+                 *     When the store lands: a replay carrying the same request hash will return the stored
+                 *     response, and the same key with a different hash will be refused with 409
+                 *     `idempotency_key_reuse`.
+                 *
+                 *     Declaring the parameter is not a claim that the operation will replay: the client attaches a
+                 *     key to every unsafe request, and nearly every unsafe operation therefore requires one. What
+                 *     the store will change differs per operation, and each says so in its own description:
+                 *
+                 *     * operations that create something, send mail or spend tokens are the ones a replay is *for*
+                 *       — today a lost response leaves the caller unable to tell «it did not happen» from «it
+                 *       happened and the answer was lost»;
+                 *     * operations idempotent by construction (`assignRole`, `deactivateUser`, `reactivateUser`)
+                 *       require the key but gain nothing from a stored response — asking twice for a state that is
+                 *       already there answers the same way. The key is required anyway, so a client written today
+                 *       keeps working when the store lands;
+                 *     * `POST /auth/login` and `POST /auth/refresh` will **never** replay: a stored response *is* a
+                 *       credential. Replaying it would hand back tokens that have since been rotated or revoked,
+                 *       and would let one key slip a repeat past the failed-attempt counter the lockout depends on.
+                 */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                /**
+                 * @description Identifier of a project the caller may see. Another organization's id is 404, and so are a
+                 *     `PRIVATE` project the caller is not on and a project that has been deleted — the row survives
+                 *     as a soft deletion so that its `key` can be reused, and confirming that an id once named a
+                 *     project here would be a fact about data the caller cannot see.
+                 */
+                projectId: components["parameters"]["ProjectId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProjectMemberDraft"];
+            };
+        };
+        responses: {
+            /** @description The person is on the project with the role and allocation the body names. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["ValidationFailed"];
+            429: components["responses"]["RateLimited"];
+            500: components["responses"]["InternalError"];
+            503: components["responses"]["ServiceUnavailable"];
+        };
+    };
+    removeProjectMember: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /**
+                 * @description Identifier of a project the caller may see. Another organization's id is 404, and so are a
+                 *     `PRIVATE` project the caller is not on and a project that has been deleted — the row survives
+                 *     as a soft deletion so that its `key` can be reused, and confirming that an id once named a
+                 *     project here would be a fact about data the caller cannot see.
+                 */
+                projectId: components["parameters"]["ProjectId"];
+                /**
+                 * @description The account whose membership is being changed or ended. An id that is on no such project is
+                 *     404 — the caller asked to change something the organization does not have.
+                 */
+                userId: components["parameters"]["ProjectMemberUserId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The membership ended. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["ValidationFailed"];
+            429: components["responses"]["RateLimited"];
+            500: components["responses"]["InternalError"];
+            503: components["responses"]["ServiceUnavailable"];
+        };
+    };
+    updateProjectMember: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /**
+                 * @description Identifier of a project the caller may see. Another organization's id is 404, and so are a
+                 *     `PRIVATE` project the caller is not on and a project that has been deleted — the row survives
+                 *     as a soft deletion so that its `key` can be reused, and confirming that an id once named a
+                 *     project here would be a fact about data the caller cannot see.
+                 */
+                projectId: components["parameters"]["ProjectId"];
+                /**
+                 * @description The account whose membership is being changed or ended. An id that is on no such project is
+                 *     404 — the caller asked to change something the organization does not have.
+                 */
+                userId: components["parameters"]["ProjectMemberUserId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProjectMemberPatch"];
+            };
+        };
+        responses: {
+            /** @description The membership is what the body says. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["ValidationFailed"];
+            429: components["responses"]["RateLimited"];
             500: components["responses"]["InternalError"];
             503: components["responses"]["ServiceUnavailable"];
         };

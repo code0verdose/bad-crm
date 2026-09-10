@@ -189,6 +189,16 @@ const GENERIC_ERROR_CODE_STATUS = {
   recipient_not_active: 409,
   member_not_active: 409,
   /**
+   * The operation would leave a project without a single `LEAD` (STORY-014-02, acceptance 7):
+   * removing the last lead, or demoting them.
+   *
+   * Its own code rather than `last_owner_required`: that sentence tells the client to transfer
+   * ownership of the *organization*, which is somebody else's next step — here the fix is to
+   * appoint another lead first. A conflict rather than a denial, like the owner's: the caller holds
+   * `project:manage_members` and the membership exists; the current state is what refuses.
+   */
+  last_project_lead_required: 409,
+  /**
    * Handing the organization to oneself. **422**: the value in the field is wrong, and no state
    * anywhere would make it right.
    */

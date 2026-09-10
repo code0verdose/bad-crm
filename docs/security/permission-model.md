@@ -1664,7 +1664,7 @@ LIMIT 1;                      -- ближайший узел с записями
 форму (примеры ниже с доменом `task` — иллюстрации: домена `task` в продукте нет, первым доменом с
 ACL стал проект — EPIC-014, kickoff 2026-09-06: `ProjectAccessReaderPort`, его адаптер,
 `resolve-acl.query.ts`, policy `domain/project/access/project-access.policy.ts` и первое ресурсное
-чтение `get-project-detail.query.ts` отгружены; маршрутов `acl:*` и `project:*` ещё нет).
+чтение `get-project-detail.query.ts` отгружены; маршрутов `acl:*` ещё нет, а `project:*` на маршрутах с 2026-09-10 семь ключей — `read`, `create`, `update`, `manage_visibility`, `archive`, `delete`, `manage_members` — см. таблицу маршрутов в §8).
 
 | Слой | Роль | Сегодня | Чего здесь нет |
 |---|---|---|---|
@@ -2288,6 +2288,15 @@ node -e "const m=require('./packages/server/test/permissions/__snapshots__/permi
 | `PUT /api/v1/users/:userId/permission-overrides/:permission` | `permission:override` | `WritePermissionOverrideUseCase` |
 | `DELETE /api/v1/users/:userId/permission-overrides/:permission` | `permission:override` | `RemovePermissionOverrideUseCase` |
 | `GET /api/v1/projects/:projectId` | `project:read` | `GetProjectDetailQuery` |
+| `POST /api/v1/projects` | `project:create` | `CreateProjectUseCase` |
+| `PATCH /api/v1/projects/:projectId` | `project:update` (+ `project:manage_members` при смене `leadId`) | `UpdateProjectUseCase` |
+| `POST /api/v1/projects/:projectId/visibility` | `project:manage_visibility` | `ChangeProjectVisibilityUseCase` |
+| `POST /api/v1/projects/:projectId/archive` | `project:archive` | `ArchiveProjectUseCase` |
+| `DELETE /api/v1/projects/:projectId` | `project:delete` | `DeleteProjectUseCase` |
+| `GET /api/v1/projects/:projectId/members` | `project:read` | `ListProjectMembersQuery` |
+| `POST /api/v1/projects/:projectId/members` | `project:manage_members` | `AddProjectMemberUseCase` |
+| `PATCH /api/v1/projects/:projectId/members/:userId` | `project:manage_members` | `UpdateProjectMemberUseCase` |
+| `DELETE /api/v1/projects/:projectId/members/:userId` | `project:manage_members` | `RemoveProjectMemberUseCase` |
 
 До 2026-09-06 каждая ячейка снапшота отражала **только** capability — не потому, что у всех прав на
 маршрутах `requiredLevel` был `null` (`organization:manage_security_policy` несёт `MANAGER` на трёх

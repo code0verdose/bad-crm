@@ -1,4 +1,4 @@
-import { type ProjectScope } from '@/domain/project/project.entity.js';
+import { type ProjectScope, type ProjectSummary } from '@/domain/project/project.entity.js';
 import { type ProjectStatus, type ProjectVisibility } from '@/domain/project/project.enums.js';
 
 /**
@@ -92,6 +92,22 @@ export interface ProjectRepositoryPort {
    * project a concurrent request has meanwhile deleted.
    */
   scope(projectId: string): Promise<ProjectScope | null>;
+
+  /**
+   * The same facts plus every editable field, read under **`FOR UPDATE`** — the read every mutation
+   * of the row starts from, and the only one it may start from.
+   *
+   * Not `scope()`: that lock is `FOR SHARE`, and a writer that took it and then ran its `UPDATE`
+   * would upgrade a share lock while a second writer holds the same share lock — two edits of one
+   * project then deadlock, each waiting for the other's share to go away before its own upgrade
+   * can proceed (the gate's note on step 3; `test/integration/db/project-write-locks.test.ts`
+   * measures both shapes). `FOR UPDATE` from the first statement serializes writers instead.
+   *
+   * Flagged rather than filtered, like `scope()`: the policy decides what a deleted row answers.
+   * The row is also the audit `before` of every change, which is why it carries the fields and not
+   * only the scope.
+   */
+  lockForWrite(projectId: string): Promise<ProjectSummary | null>;
 
   detail(projectId: string): Promise<ProjectDetail | null>;
 

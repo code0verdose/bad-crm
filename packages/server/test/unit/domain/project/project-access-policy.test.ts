@@ -8,6 +8,12 @@ import { type Decision } from '@/domain/access/decision.types.js';
 import { assertAllowed } from '@/domain/access/decision.util.js';
 import {
   assertProjectAddressable,
+  canArchiveProject,
+  canCreateProject,
+  canDeleteProject,
+  canManageProjectMembers,
+  canManageProjectVisibility,
+  canUpdateProject,
   decideProjectAccess,
   projectAclScope,
   projectAddressable,
@@ -327,5 +333,75 @@ describe('decideProjectAccess — the guest', () => {
     );
 
     expect(decision).toEqual(refused('resource_not_found', 'project:read'));
+  });
+});
+
+describe('the named decisions — one per write route, each over its own key', () => {
+  /**
+   * The keys are read off the catalogue rather than restated: `project:create` carries no level and
+   * is decided without a fact; every other key reads the level the resolver answered.
+   */
+  it('canCreateProject is capability-only: no fact is ever read', async () => {
+    let read = 0;
+    const factsRead = (): Promise<ProjectAccessFacts> => {
+      read += 1;
+
+      return Promise.resolve({ scope: scopeOf(), acl: resolved('NONE') });
+    };
+
+    expect(await canCreateProject(actorWith(['project:create']), factsRead)).toEqual({
+      allowed: true,
+      reason: null,
+    });
+    expect(await canCreateProject(actorWith([]), factsRead)).toEqual(
+      refused('permission_not_granted', 'project:create'),
+    );
+    expect(read).toBe(0);
+  });
+
+  it.each<
+    [
+      string,
+      (actor: Actor | null, facts: () => Promise<ProjectAccessFacts>) => Promise<Decision>,
+      ProjectPermissionKey,
+      SharedPermissions.AccessLevel,
+      SharedPermissions.AccessLevel,
+    ]
+  >([
+    ['canUpdateProject', canUpdateProject, 'project:update', 'EDITOR', 'COMMENTER'],
+    [
+      'canManageProjectVisibility',
+      canManageProjectVisibility,
+      'project:manage_visibility',
+      'MANAGER',
+      'EDITOR',
+    ],
+    ['canArchiveProject', canArchiveProject, 'project:archive', 'MANAGER', 'EDITOR'],
+    ['canDeleteProject', canDeleteProject, 'project:delete', 'MANAGER', 'EDITOR'],
+    [
+      'canManageProjectMembers',
+      canManageProjectMembers,
+      'project:manage_members',
+      'MANAGER',
+      'EDITOR',
+    ],
+  ])('%s: the key, its level, and one below it', async (_name, decide, key, enough, tooLow) => {
+    expect(await decide(actorWith([key]), facts(scopeOf(), resolved(enough)))).toEqual({
+      allowed: true,
+      reason: null,
+    });
+    expect(await decide(actorWith([key]), facts(scopeOf(), resolved(tooLow)))).toEqual(
+      refused('insufficient_acl_level', key),
+    );
+    expect(await decide(actorWith([]), facts(scopeOf(), resolved('MANAGER')))).toEqual(
+      refused('permission_not_granted', key),
+    );
+    // The contour stays closed for every key: a deleted row is nobody's, whatever the level.
+    const gone = await decide(
+      actorWith([key]),
+      facts(scopeOf({ isDeleted: true }), resolved(enough)),
+    );
+
+    expect(gone).toEqual(refused('resource_not_found', key));
   });
 });

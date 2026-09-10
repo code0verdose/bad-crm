@@ -18,7 +18,7 @@ import {
 import { type AclResourceRef } from '@/domain/access/acl-chain.types.js';
 import { type Actor } from '@/domain/access/actor.types.js';
 import { type AclScope } from '@/domain/access/authorize.util.js';
-import { type ProjectScope } from '@/domain/project/project.entity.js';
+import { type ProjectScope, type ProjectSummary } from '@/domain/project/project.entity.js';
 import { type ProjectStatus, type ProjectVisibility } from '@/domain/project/project.enums.js';
 
 /**
@@ -113,6 +113,12 @@ class InMemoryProjectRepository implements ProjectRepositoryPort {
         ? null
         : { projectId: row.projectId, isDeleted: row.isDeleted, visibility: row.visibility },
     );
+  }
+
+  lockForWrite(projectId: string): Promise<ProjectSummary | null> {
+    this.trace.push('lockForWrite');
+
+    return Promise.resolve(this.visible(projectId));
   }
 
   detail(projectId: string): Promise<ProjectDetail | null> {

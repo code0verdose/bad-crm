@@ -39,7 +39,18 @@ import {
   RecordDeniedAccessUseCase,
 } from '@/application/access/use-cases/record-denied-access.use-case.js';
 import { ResolveAclQuery } from '@/application/access/use-cases/resolve-acl.query.js';
+import { ArchiveProjectUseCase } from '@/application/project/use-cases/archive-project.use-case.js';
+import { ChangeProjectVisibilityUseCase } from '@/application/project/use-cases/change-project-visibility.use-case.js';
+import { CreateProjectUseCase } from '@/application/project/use-cases/create-project.use-case.js';
+import { DeleteProjectUseCase } from '@/application/project/use-cases/delete-project.use-case.js';
 import { GetProjectDetailQuery } from '@/application/project/use-cases/get-project-detail.query.js';
+import { ListProjectMembersQuery } from '@/application/project/use-cases/list-project-members.query.js';
+import {
+  AddProjectMemberUseCase,
+  RemoveProjectMemberUseCase,
+  UpdateProjectMemberUseCase,
+} from '@/application/project/use-cases/manage-project-members.use-case.js';
+import { UpdateProjectUseCase } from '@/application/project/use-cases/update-project.use-case.js';
 import { AcceptInvitationUseCase } from '@/application/iam/use-cases/accept-invitation.use-case.js';
 import { DeactivateUserUseCase } from '@/application/iam/use-cases/deactivate-user.use-case.js';
 import { ResetUserMfaUseCase } from '@/application/iam/use-cases/reset-user-mfa.use-case.js';
@@ -730,11 +741,40 @@ export const createAuthApp = (options: AuthAppOptions = {}): AuthApp => {
    * are one object here because they are one set of rows on a database (`project-doubles.util.ts`).
    * The resolver is the real one, so a foreign id is `missing` by the same walk production takes.
    */
+  const projectAcl = new ResolveAclQuery({ acl: projects, projects, clock, logger });
   const project: ProjectDependencies = {
-    getProjectDetail: new GetProjectDetailQuery(
+    getProjectDetail: new GetProjectDetailQuery(unitOfWork, projects, projectAcl),
+    createProject: new CreateProjectUseCase(unitOfWork, projects, projects, audit),
+    updateProject: new UpdateProjectUseCase(unitOfWork, projects, projects, projectAcl, audit),
+    changeProjectVisibility: new ChangeProjectVisibilityUseCase(
       unitOfWork,
       projects,
-      new ResolveAclQuery({ acl: projects, projects, clock, logger }),
+      projectAcl,
+      audit,
+    ),
+    archiveProject: new ArchiveProjectUseCase(unitOfWork, projects, projectAcl, audit),
+    deleteProject: new DeleteProjectUseCase(unitOfWork, projects, projects, projectAcl, audit),
+    listProjectMembers: new ListProjectMembersQuery(unitOfWork, projects, projects, projectAcl),
+    addProjectMember: new AddProjectMemberUseCase(
+      unitOfWork,
+      projects,
+      projects,
+      projectAcl,
+      audit,
+    ),
+    updateProjectMember: new UpdateProjectMemberUseCase(
+      unitOfWork,
+      projects,
+      projects,
+      projectAcl,
+      audit,
+    ),
+    removeProjectMember: new RemoveProjectMemberUseCase(
+      unitOfWork,
+      projects,
+      projects,
+      projectAcl,
+      audit,
     ),
   };
 
