@@ -74,10 +74,10 @@ const composingFiles = (): string[] => [
 
 /**
  * The call, not the prop. `SharedUi.DataState` takes an `errorMessageKey="…"` attribute, which is a
- * constant key handed to a component and has nothing to do with reading an `Error` — six widgets
- * pass one. What is forbidden is the *function*, so the parenthesis is part of the pattern.
+ * constant key handed to a component and has nothing to do with reading an `Error` — a dozen
+ * widgets and pages pass one. What is forbidden is the *function*, so the parenthesis is part of the pattern.
  *
- * Both spellings. `errorMessageKey(` was the function until 2026-09-06, when it was removed for
+ * Both spellings. `errorMessageKey(` was the function until 2026-09-10, when it was removed for
  * dropping the values a `rate_limited` interpolates; `errorMessage(` is what replaced it, and a
  * gate that only knew the old name would go green on a widget calling the new one.
  */

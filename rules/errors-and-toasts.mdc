@@ -70,7 +70,8 @@ const queryClient = new QueryClient({
   mutationCache: new MutationCache({
     onError: (error) => {
       if (isAbortError(error)) return;
-      notify.error({ id: 'mutation-error', messageKey: errorCodeToKey(error) });
+      const { key: messageKey, values } = errorMessage(error); // the pair, never the key alone
+      notify.error({ id: 'mutation-error', messageKey, values });
     },
   }),
 });

@@ -23,9 +23,10 @@ import { axeViolationsIn } from '../support/axe-scan.util.js';
  *     to be told *which* of the three fields to fix. `rules/errors-and-toasts.mdc` §4 makes that an
  *     inline error, never a toast;
  *   * **one signal per action.** The mutation owns its failure, so the global toast stands aside;
- *   * **the strength meter is advisory and says so in words.** There is no strength policy on the
- *     server — `passwordSchema` is length only — so a meter that blocked submission would enforce a
- *     rule the product does not have. It reads out as a sentence rather than as a coloured bar,
+ *   * **the strength meter is advisory and says so in words.** What the server refuses is a *shape*
+ *     — a repeated character, a run, a keyboard walk (`isWeakPassword`, shared with the form through
+ *     `newPasswordSchema`) — never a *score*, so a meter that blocked submission on its score would
+ *     enforce a rule the product does not have. It reads out as a sentence rather than as a coloured bar,
  *     because colour is never the only carrier of meaning (`rules/a11y.mdc` §2);
  *   * **success closes the other sessions**, which is the whole point of the operation, so the list
  *     beside it is asked again rather than left showing what it read a minute ago.

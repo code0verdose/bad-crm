@@ -52,7 +52,7 @@ export const overrideRefusalMessageKey = (
  * The fallback is `errorMessage`, so a `rate_limited` keeps the seconds it interpolates — the global
  * handler this replaces would have passed them, and a local handler that silently dropped them
  * would turn «try again in 30 s» into «try again in {{seconds}} s» for one screen only. Until
- * 2026-09-06 a key-only `errorMessageKey` existed beside it and did exactly that on thirteen hooks;
+ * 2026-09-10 a key-only `errorMessageKey` existed beside it and did exactly that on thirteen hooks;
  * it is gone, and this file was the one place that had read the pair from the start.
  *
  * Returned as a message rather than as a notification because it has **two** renderers, and which

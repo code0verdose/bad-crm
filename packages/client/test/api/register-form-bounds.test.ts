@@ -32,8 +32,10 @@ import {
  * message under the field that has to change. A second statement of a rule is only safe while
  * something notices the two disagreeing, and this is that something.
  *
- * The password is **not** restated anywhere: the form applies `SharedValidation.passwordSchema`,
- * the same object the server applies, so there is nothing here for a test to compare.
+ * The password is **not** restated anywhere: the form applies `SharedValidation.newPasswordSchema`
+ * — the bounds of `passwordSchema`, which the server validator applies, plus the shape check the
+ * server's use-case applies — both from one shared source, so there is nothing here for a test to
+ * compare.
  */
 const SPEC_PATH = fileURLToPath(new URL('../../../../docs/api/openapi.yaml', import.meta.url));
 

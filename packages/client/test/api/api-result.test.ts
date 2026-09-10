@@ -87,7 +87,7 @@ describe('choosing the message a user sees', () => {
 
   /**
    * The one sentence with a place for a value, and the value comes from the answer. It travels as
-   * a pair rather than as a key: a key-only variant of this function existed until 2026-09-06, and
+   * a pair rather than as a key: a key-only variant of this function existed until 2026-09-10, and
    * every hook that used it printed «{{seconds}}» on the fourth attempt.
    */
   it('carries the wait of a rate limit as a value to interpolate, never glued into the key', () => {

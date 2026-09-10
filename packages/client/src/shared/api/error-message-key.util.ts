@@ -27,6 +27,7 @@ export const ERROR_MESSAGE_KEY: Readonly<Record<SharedErrors.ErrorCode, string>>
   employment_period_inverted: 'errors.code.employment_period_inverted',
   recipient_not_active: 'errors.code.recipient_not_active',
   member_not_active: 'errors.code.member_not_active',
+  last_project_lead_required: 'errors.code.last_project_lead_required',
   invalid_recipient: 'errors.code.invalid_recipient',
   not_the_owner: 'errors.code.not_the_owner',
   mail_not_configured: 'errors.code.mail_not_configured',
@@ -142,7 +143,7 @@ export const VALIDATION_ISSUE_MESSAGE_KEY: Readonly<
 /**
  * The sentence for a failure, as the two things a renderer needs: the key and what it interpolates.
  *
- * **The pair, never the key alone.** Until 2026-09-06 a second function returned just `key`, «for
+ * **The pair, never the key alone.** Until 2026-09-10 a second function returned just `key`, «for
  * the places that render a message without interpolating anything» — and thirteen hooks used it,
  * every one of them reachable by a `429`. `rate_limited` is the one sentence with a place for a
  * value, `Retry-After` is what the server puts there, and a hook that dropped `values` on the way
