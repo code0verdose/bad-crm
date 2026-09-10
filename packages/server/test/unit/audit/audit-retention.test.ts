@@ -14,7 +14,7 @@ import {
   planRetention,
   retentionCutoff,
 } from '../../../scripts/audit-retention.util.js';
-import { AUDIT_RETENTION_MONTHS_RANGE } from '@/infrastructure/persistence/prisma/audit-retention.constant.js';
+import { AUDIT_RETENTION_MONTHS_RANGE } from '@/infrastructure/bootstrap/audit-retention.constant.js';
 
 /**
  * What `pnpm db:audit-retention` decides — the arithmetic and the argument grammar, without a

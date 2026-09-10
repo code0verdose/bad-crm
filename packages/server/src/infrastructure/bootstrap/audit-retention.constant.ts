@@ -1,7 +1,9 @@
 /**
  * The two numbers `pnpm db:audit-retention` and the environment schema have to agree on.
  *
- * Kept in `src/` and not in `scripts/` because `env.schema.ts` is the first reader: the schema
+ * Kept beside `env.schema.ts` (and not in `scripts/` or under `persistence/`) because the schema is
+ * the first reader and is also compiled by the root `tsconfig.scripts.json`, which knows no `@/`
+ * alias — a sibling import is the only kind both projects resolve: the schema
  * refuses a threshold outside the interval before any command starts, and the command refuses the
  * same interval again at its own door (`assertRetentionMonths`) — for a caller that never went
  * through the schema. One constant, so the two doors cannot disagree about what «under a year» is.

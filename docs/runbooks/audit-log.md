@@ -385,7 +385,7 @@ PATH=/usr/local/bin:/usr/bin:/bin
    есть. Отсоединение записи не требует — оно обратимо и видно в `awaiting drop`.
 
 **Один запуск за раз.** Команда берёт сессионный advisory lock (`pg_try_advisory_lock`,
-ключ `AUDIT_RETENTION_ADVISORY_LOCK_KEY`) на всё время работы; второй запуск — cron поверх ручного
+ключ константу ключа advisory-lock в `packages/server/src/infrastructure/bootstrap/audit-retention.constant.ts`) на всё время работы; второй запуск — cron поверх ручного
 или наоборот — отвечает `another run holds the lock`, код `1`, и не трогает ничего. Без этого два
 запуска гонялись за одним `DETACH`, проигравший падал с `is not a partition` как на сломанной
 конфигурации и не обрабатывал остаток плана. Advisory lock не требует привилегий — ключ может

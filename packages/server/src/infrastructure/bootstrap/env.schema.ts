@@ -1,8 +1,7 @@
 import { z } from 'zod';
 
+import { AUDIT_RETENTION_MONTHS_RANGE } from './audit-retention.constant.js';
 import { type EnvIssue } from './env.errors.js';
-
-import { AUDIT_RETENTION_MONTHS_RANGE } from '@/infrastructure/persistence/prisma/audit-retention.constant.js';
 
 /**
  * Environment schema of the API and worker processes.

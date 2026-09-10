@@ -2,7 +2,7 @@ import { performance } from 'node:perf_hooks';
 
 import { type Pool, type PoolClient } from 'pg';
 
-import { AUDIT_RETENTION_ADVISORY_LOCK_KEY } from '../src/infrastructure/persistence/prisma/audit-retention.constant.js';
+import { AUDIT_RETENTION_ADVISORY_LOCK_KEY } from '../src/infrastructure/bootstrap/audit-retention.constant.js';
 
 import {
   AUDIT_DEFAULT_PARTITION,

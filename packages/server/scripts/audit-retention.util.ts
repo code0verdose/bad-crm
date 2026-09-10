@@ -16,7 +16,7 @@
  * or before the cutoff — not when it starts.
  */
 
-import { AUDIT_RETENTION_MONTHS_RANGE } from '../src/infrastructure/persistence/prisma/audit-retention.constant.js';
+import { AUDIT_RETENTION_MONTHS_RANGE } from '../src/infrastructure/bootstrap/audit-retention.constant.js';
 
 /**
  * The bounds of `env.schema.ts`, enforced again at the function's own door.

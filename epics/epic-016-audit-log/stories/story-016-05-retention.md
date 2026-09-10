@@ -1,7 +1,7 @@
 ---
 id: STORY-016-05
 epic: EPIC-016
-status: in-progress
+status: review
 blocked: false
 priority: should
 estimate: M
@@ -160,9 +160,16 @@ estimate: M
 ## Definition of Done
 
 - [x] Тесты написаны первыми (TDD), проходят, изменённый код покрыт
-- [ ] Commit-гейт зелёный (test-coverage, security-auditor, db-reviewer, tenancy-rls-auditor,
+- [x] Commit-гейт зелёный (test-coverage, security-auditor, db-reviewer, tenancy-rls-auditor,
       selfhost-upgrade-checker, production-readiness, commit-hygiene, stale-claims-auditor) —
       на `2417808` пять PASS и судья FAIL; отметка ставится по выводу судьи после доводки
+      *Закрыт 2026-09-10.* Первый проход по `2417808` (автора остановили посреди гейтов): обновляемость
+      PASS, RLS PASS (WARN — эвристика по имени), база PASS, безопасность PASS, продакшен-готовность
+      PASS с тремя Medium, судья FAIL — в том числе за эту самую отметку, поставленную вперёд гейта.
+      Доводка `d127074` закрыла шестнадцать пунктов; её гейты: покрытие PASS, безопасность PASS,
+      продакшен-готовность FAIL → PASS (границы партиций в timezone сессии — допуск ±14 ч), чистота
+      PASS, судья FAIL → FAIL → PASS. Константа диапазона переехала в `bootstrap/` тем же днём: корневой
+      проект скриптов не знает алиас `@/`, а линтер сервера запрещает родительский относительный импорт.
 - [x] Документация обновлена (docs/)
 - [ ] a11y и i18n (для UI-историй) — UI отложен
 - [x] **Isolation-тест RLS** — новых таблиц нет; отсоединённый месяц проверен на свои политики и

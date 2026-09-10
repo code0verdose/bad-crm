@@ -3,7 +3,7 @@ import { performance } from 'node:perf_hooks';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { type Pool } from 'pg';
 
-import { AUDIT_RETENTION_ADVISORY_LOCK_KEY } from '@/infrastructure/persistence/prisma/audit-retention.constant.js';
+import { AUDIT_RETENTION_ADVISORY_LOCK_KEY } from '@/infrastructure/bootstrap/audit-retention.constant.js';
 import {
   LEAF_PRIVILEGES_SQL,
   POLICIES_SQL,
