@@ -2,6 +2,8 @@ import { z } from 'zod';
 
 import { type EnvIssue } from './env.errors.js';
 
+import { AUDIT_RETENTION_MONTHS_RANGE } from '@/infrastructure/persistence/prisma/audit-retention.constant.js';
+
 /**
  * Environment schema of the API and worker processes.
  *
@@ -486,9 +488,13 @@ const fields = z.object({
    * is refused for the reason the argon2 ceiling refuses it: it does not mean «off».
    *
    * Read by the maintenance command only. The API process parses it for the same reason it parses
-   * everything else — one schema, one `.env.example` — and does nothing with it.
+   * everything else — one schema, one `.env.example` — and does nothing with it. The interval is
+   * `AUDIT_RETENTION_MONTHS_RANGE`, shared with the command, which refuses it again at its own door.
    */
-  AUDIT_RETENTION_MONTHS: optionalBoundedInt('AUDIT_RETENTION_MONTHS', { min: 12, max: 600 }),
+  AUDIT_RETENTION_MONTHS: optionalBoundedInt(
+    'AUDIT_RETENTION_MONTHS',
+    AUDIT_RETENTION_MONTHS_RANGE,
+  ),
 });
 
 type EnvFields = z.infer<typeof fields>;

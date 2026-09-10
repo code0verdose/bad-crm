@@ -6,6 +6,7 @@ import {
   TENANT_COLUMN_TABLES_SQL,
 } from '@/infrastructure/persistence/prisma/rls-catalog.constant.js';
 import {
+  detachedJournalPattern,
   readRlsCatalog,
   rlsCatalogViolations,
   type RlsCatalogFacts,
@@ -158,18 +159,41 @@ describe('a partition of a tenant table', () => {
  * waiting for the backup that precedes its `DROP`, and an operator told to «add it to
  * TENANT_TABLES» would be told to model a table that is about to be removed.
  *
- * Recognised by its name and nothing else: `<registry table>_YYYY_MM`. It is still judged as a
- * tenant table — row security and the policies — because a detached month is exactly as much a
- * tenant's data as an attached one.
+ * Recognised by its name and nothing else: `<journal>_YYYY_MM`, where a journal is a registry
+ * table the application may only insert into and read — the same set `01-grants.sql` calls
+ * `append_only` and builds its `detached_journal` pattern from. Only journals are partitioned by
+ * month, so a dated name under any other registry table is drift, not a detached month. It is
+ * still judged as a tenant table — row security and the policies — because a detached month is
+ * exactly as much a tenant's data as an attached one.
  */
 describe('a partition that retention has detached', () => {
+  const JOURNAL_REGISTRY: Record<string, TenantTableSpec> = {
+    ...REGISTRY,
+    audit_logs: {
+      model: 'AuditLog',
+      tenantColumn: 'organization_id',
+      appUserPrivileges: ['SELECT', 'INSERT'],
+      softDeleted: false,
+      rowTimestamps: false,
+    },
+  };
+  const JOURNAL_SCHEMA_TABLES = [...SCHEMA_TABLES, { model: 'AuditLog', table: 'audit_logs' }];
+
   const withDetached = (overrides: Partial<RlsTableFacts> = {}): RlsCatalogFacts => {
     const facts = healthyFacts();
 
-    facts.tables.push({ table: 'teams_2025_01', rlsEnabled: true, rlsForced: true, ...overrides });
-    facts.tenantColumnTables.push('teams_2025_01');
-    facts.policies.push(tenantPolicy('teams_2025_01'), {
-      table: 'teams_2025_01',
+    facts.tables.push({ table: 'audit_logs', rlsEnabled: true, rlsForced: true });
+    facts.tenantColumnTables.push('audit_logs');
+    facts.policies.push(tenantPolicy('audit_logs'));
+    facts.tables.push({
+      table: 'audit_logs_2025_01',
+      rlsEnabled: true,
+      rlsForced: true,
+      ...overrides,
+    });
+    facts.tenantColumnTables.push('audit_logs_2025_01');
+    facts.policies.push(tenantPolicy('audit_logs_2025_01'), {
+      table: 'audit_logs_2025_01',
       policy: 'maintenance_access',
       permissive: true,
       roles: ['app_migrator'],
@@ -181,21 +205,50 @@ describe('a partition that retention has detached', () => {
     return facts;
   };
 
+  const journalAudit = (facts: RlsCatalogFacts): ReturnType<typeof rlsCatalogViolations> =>
+    rlsCatalogViolations(facts, JOURNAL_REGISTRY, JOURNAL_SCHEMA_TABLES);
+
+  const journalProblems = (facts: RlsCatalogFacts): string[] =>
+    journalAudit(facts).map(
+      (finding) => `${finding.subject}: ${finding.problem} — ${finding.remedy}`,
+    );
+
   it('CONTROL: a protected one is not a registry finding', () => {
-    expect(audit(withDetached())).toEqual([]);
+    expect(journalAudit(withDetached())).toEqual([]);
   });
 
   it('is still judged on row security', () => {
-    expect(problems(withDetached({ rlsForced: false }))).toEqual([
+    expect(journalProblems(withDetached({ rlsForced: false }))).toEqual([
       expect.stringContaining('FORCE ROW LEVEL SECURITY'),
     ]);
   });
 
   it('is still judged on its policies', () => {
     const facts = withDetached();
-    facts.policies = facts.policies.filter((policy) => policy.table !== 'teams_2025_01');
+    facts.policies = facts.policies.filter((policy) => policy.table !== 'audit_logs_2025_01');
 
-    expect(problems(facts)).toContainEqual(expect.stringContaining('no policy'));
+    expect(journalProblems(facts)).toContainEqual(expect.stringContaining('no policy'));
+  });
+
+  /**
+   * `teams` is a registry table, but not a journal: nothing partitions it, so nothing can detach a
+   * month of it, and a table named like one is a table somebody created — the drift the registry
+   * checks exist to report. The pattern is built from the append-only set, not from the registry.
+   */
+  it('does not excuse a dated table under a registry table that is not a journal', () => {
+    const facts = healthyFacts();
+    facts.tables.push({ table: 'teams_2025_01', rlsEnabled: true, rlsForced: true });
+    facts.tenantColumnTables.push('teams_2025_01');
+    facts.policies.push(tenantPolicy('teams_2025_01'));
+
+    expect(journalProblems(facts)).toContainEqual(
+      expect.stringContaining('absent from the tenant registry'),
+    );
+  });
+
+  it('spells the pattern the way 01-grants.sql does, from the append-only set', () => {
+    expect(detachedJournalPattern(JOURNAL_REGISTRY)).toBe('^(audit_logs)_[0-9]{4}_[0-9]{2}$');
+    expect(detachedJournalPattern(REGISTRY)).toBeUndefined();
   });
 
   it('does not excuse a table that merely looks dated but belongs to no registry table', () => {

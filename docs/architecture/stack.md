@@ -1028,6 +1028,7 @@ describe.each(TENANT_SCOPED_TABLES)('RLS isolation: %s', (table) => {
 | `pnpm db:provision-roles` | Системные роли всем организациям. Идемпотентно, после каждого обновления |
 | `pnpm db:seed:permissions` | Справочник прав в соответствие с кодом. Удалений не делает |
 | `pnpm db:audit-partitions` | Партиции журнала на текущий месяц и два вперёд |
+| `pnpm db:audit-retention` | Отсоединяет месяцы журнала старше `AUDIT_RETENTION_MONTHS` (`DETACH`, не `DELETE`); `-- --drop <таблица>` удаляет отсоединённый месяц после бэкапа. `app_migrator`, cron хоста; не задана переменная — ничего не отсоединяет |
 | `pnpm db:reset` | Пересоздание схемы средствами Prisma |
 | `pnpm check:rls` | Аудит каталога RLS на живой базе, включая партиции. Только читает |
 | `pnpm api:gen` | `openapi-typescript docs/api/openapi.yaml` → `api-schema.d.ts` в клиенте |

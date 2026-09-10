@@ -8,11 +8,13 @@ import {
   type RetentionReport,
 } from '../../../scripts/audit-retention.commands.js';
 import {
+  assertRetentionMonths,
   parseRetentionArguments,
   partitionMonth,
   planRetention,
   retentionCutoff,
 } from '../../../scripts/audit-retention.util.js';
+import { AUDIT_RETENTION_MONTHS_RANGE } from '@/infrastructure/persistence/prisma/audit-retention.constant.js';
 
 /**
  * What `pnpm db:audit-retention` decides — the arithmetic and the argument grammar, without a
@@ -53,10 +55,12 @@ describe('the cutoff', () => {
     );
   });
 
-  it('is anchored to UTC, like the partition boundaries themselves', () => {
-    // 1 September 00:30 UTC is still August in half the world; `occurred_at` is `timestamptz` and
-    // the partition ranges are UTC dates, so the cutoff must be too — or a run in the wrong
-    // timezone would detach a month one day early.
+  it('is anchored to UTC, whatever timezone the run happens in', () => {
+    // 1 September 00:30 UTC is still August in half the world; `occurred_at` is `timestamptz`, so
+    // the cutoff is an instant and must not depend on the timezone of the host running the
+    // command — or a run in the wrong timezone would detach a month one day early. (Partition
+    // bounds themselves are midnight in the timezone of the session that created them; the
+    // command absorbs that offset with `BOUND_TOLERANCE_MS` in `audit-retention.commands.ts`.)
     expect(retentionCutoff(new Date('2026-09-01T00:30:00Z'), 12).toISOString()).toBe(
       '2025-09-01T00:00:00.000Z',
     );
@@ -102,6 +106,29 @@ describe('which partitions retention detaches', () => {
     ]);
   });
 
+  /**
+   * The schema refuses a threshold under a year; the function has to as well, because the function
+   * is what an integration test or a future caller hands a number to, and `0` here would detach
+   * last month. Same constant on both sides, so the two cannot drift apart.
+   */
+  it.each([0, 11, 601, 1.5])(
+    'refuses %s months by the same bounds env.schema.ts enforces',
+    (months) => {
+      const { min, max } = AUDIT_RETENTION_MONTHS_RANGE;
+
+      expect(() => planRetention({ now: NOW, retentionMonths: months, partitions })).toThrow(
+        `AUDIT_RETENTION_MONTHS must be between ${String(min)} and ${String(max)}`,
+      );
+      expect(() => assertRetentionMonths(months)).toThrow(RangeError);
+    },
+  );
+
+  it('accepts the edges of the range and «off»', () => {
+    expect(() => assertRetentionMonths(AUDIT_RETENTION_MONTHS_RANGE.min)).not.toThrow();
+    expect(() => assertRetentionMonths(AUDIT_RETENTION_MONTHS_RANGE.max)).not.toThrow();
+    expect(() => assertRetentionMonths(undefined)).not.toThrow();
+  });
+
   it('keeps a partition it cannot date rather than guessing', () => {
     const plan = planRetention({
       now: NOW,
@@ -125,6 +152,14 @@ describe('the command line', () => {
       { mode: 'drop', tables: ['audit_logs_2025_07', 'audit_logs_2025_08'] },
     );
     expect(parseRetentionArguments(['--drop'])).toMatchObject({ mode: 'error' });
+  });
+
+  it('--drop names each table once, however many times it was typed', () => {
+    // A repeated name passed the pre-check twice and failed inside the transaction on the second
+    // `DROP` with «does not exist» — a rollback of a list that was fine, reported as a broken run.
+    expect(parseRetentionArguments(['--drop', 'audit_logs_2025_07', 'audit_logs_2025_07'])).toEqual(
+      { mode: 'drop', tables: ['audit_logs_2025_07'] },
+    );
   });
 
   it('--drop refuses a name that is not a dated audit partition', () => {

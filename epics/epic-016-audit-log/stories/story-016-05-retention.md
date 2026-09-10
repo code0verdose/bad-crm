@@ -1,7 +1,7 @@
 ---
 id: STORY-016-05
 epic: EPIC-016
-status: review
+status: in-progress
 blocked: false
 priority: should
 estimate: M
@@ -35,8 +35,31 @@ estimate: M
 >   подтверждением между ними; архив до EPIC-015 — обычный `pg_dump` по рунбуку.
 > - Событие `audit.retention_applied` с `actorType = SYSTEM` — писать некуда: `organization_id`
 >   в журнале `NOT NULL`, а у операции организации нет. Единственное действие без организации в
->   каталоге — `rls.bypassed`; расширять список ради операции, след которой виден в `pg_class` и
->   в логе cron, не стали (решение записано в рунбуке).
+>   каталоге — `rls.bypassed`; расширять список ради этой операции не стали. **Принятый риск, по
+>   факту:** `pg_class` после `--drop` о таблице не помнит, а stdout cron без редиректа никуда не
+>   пишется — след существует только там, где его оставили сами; рунбук требует датированный лог
+>   команды, алерт на ненулевой код, `log_statement = 'ddl'` и запись каждого `--drop` в
+>   devops-журнал.
+>
+> **Доводка 2026-09-10 после гейтов коммита `2417808`** (судья FAIL при пяти PASS, находки сняты
+> одной волной): сессионный advisory lock на запуск (второй запуск — `another run holds the
+> lock`, код `1`, без побочных эффектов); `--drop` — все `DROP` одной транзакцией за
+> `lock_timeout`, с явной схемой `public.`; ошибка окружения — код `2` и сообщение без стека
+> (тот же дефект починен в `ensure-audit-partitions.ts`); границы `12`–`600` — одна константа
+> (`audit-retention.constant.ts`) в схеме и в функции; подсказка про `DATABASE_MIGRATION_URL` на
+> `must be owner`; сверка обеих границ `relpartbound` с месяцем из имени — **с допуском в часовой
+> пояс**
+> (±14 ч), потому что `create_audit_partition` пишет границу в `timezone` сессии создания и на
+> инсталляции с `Europe/Moscow` строгая сверка остановила бы ретенцию навсегда (замерено гейтом
+> production-readiness, воспроизведено тестом), в обоих режимах — до первого `DETACH`/`DROP`;
+> дубли имён в `--drop` схлопываются; проверка 4c `rls-design.md` и `01-grants.sql` сведены к
+> одному условию с положительным контролем на живом Postgres.
+>
+> **Открыто после доводки (вне этой дельты):** закрепить UTC в самой `create_audit_partition`
+> (`SET timezone` в свойствах функции или `AT TIME ZONE 'UTC'` в границах) новой миграцией по
+> expand→migrate→contract — тогда допуск в команде станет страховкой, а не необходимостью;
+> smoke-тест кодов выхода `0/1/2` самих entry-скриптов через `child_process` (сегодня покрыты
+> только вынесенные хелперы).
 > - `DETACH PARTITION` подразумевался безобидным. **Замерено:** `CONCURRENTLY` PostgreSQL 16
 >   отвергает при DEFAULT-партиции, обычная форма берёт `ACCESS EXCLUSIVE` на родителе; сам
 >   оператор — 1 мс на 100 000 строк, но очередь за ним — все вставки журнала. Отсюда
@@ -137,8 +160,9 @@ estimate: M
 ## Definition of Done
 
 - [x] Тесты написаны первыми (TDD), проходят, изменённый код покрыт
-- [x] Commit-гейт зелёный (test-coverage, security-auditor, db-reviewer, tenancy-rls-auditor,
-      selfhost-upgrade-checker, production-readiness, commit-hygiene, stale-claims-auditor)
+- [ ] Commit-гейт зелёный (test-coverage, security-auditor, db-reviewer, tenancy-rls-auditor,
+      selfhost-upgrade-checker, production-readiness, commit-hygiene, stale-claims-auditor) —
+      на `2417808` пять PASS и судья FAIL; отметка ставится по выводу судьи после доводки
 - [x] Документация обновлена (docs/)
 - [ ] a11y и i18n (для UI-историй) — UI отложен
 - [x] **Isolation-тест RLS** — новых таблиц нет; отсоединённый месяц проверен на свои политики и

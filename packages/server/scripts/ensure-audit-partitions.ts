@@ -1,10 +1,10 @@
 import { fileURLToPath } from 'node:url';
 
-import { loadEnv } from '../src/infrastructure/bootstrap/load-env.util.js';
 import { createPrismaClient } from '../src/infrastructure/persistence/prisma/prisma.client.js';
 import { type LoggerPort } from '../src/application/platform/ports/logger.port.js';
 
 import { monthsToEnsure, partitionDate } from './audit-partitions.util.js';
+import { ownerRoleHint, readScriptEnv } from './maintenance-script.util.js';
 
 /**
  * `pnpm db:audit-partitions` — makes sure the audit trail has somewhere to write, this month and the
@@ -42,7 +42,15 @@ const silent: LoggerPort = {
 };
 
 /** `scripts/**` is tooling: the ban on reading `process.env` guards `src/**`, not this. */
-const env = loadEnv(process.env);
+const environment = readScriptEnv('db:audit-partitions', process.env);
+
+if (!environment.ok) {
+  process.stderr.write(`${environment.message}\n`);
+  process.exit(2);
+}
+
+const { env } = environment;
+const migrationUrlSet = env.DATABASE_MIGRATION_URL !== undefined;
 const prisma = createPrismaClient({
   url: env.DATABASE_MIGRATION_URL ?? env.DATABASE_URL,
   logger: silent,
@@ -62,8 +70,11 @@ try {
 
   process.stdout.write(`audit partitions ready: ${created.join(', ')}\n`);
 } catch (error) {
+  const hint = ownerRoleHint(error, { migrationUrlSet });
+
   process.stderr.write(
-    `db:audit-partitions could not run: ${error instanceof Error ? error.message : String(error)}\n`,
+    `db:audit-partitions could not run: ${error instanceof Error ? error.message : String(error)}\n` +
+      (hint === undefined ? '' : `${hint}\n`),
   );
   process.exitCode = 2;
 } finally {

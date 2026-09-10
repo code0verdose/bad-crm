@@ -2,10 +2,13 @@ import { fileURLToPath } from 'node:url';
 
 import { Pool } from 'pg';
 
-import { loadEnv } from '../src/infrastructure/bootstrap/load-env.util.js';
-
-import { renderRetentionReport, runAuditRetention } from './audit-retention.commands.js';
+import {
+  AuditRetentionLockHeldError,
+  renderRetentionReport,
+  runAuditRetention,
+} from './audit-retention.commands.js';
 import { parseRetentionArguments } from './audit-retention.util.js';
+import { ownerRoleHint, readScriptEnv } from './maintenance-script.util.js';
 
 /**
  * `pnpm db:audit-retention` — detaches the months of the audit trail that are older than
@@ -28,8 +31,9 @@ import { parseRetentionArguments } from './audit-retention.util.js';
  * name, after the operator has confirmed a backup holds it. The command that detached and dropped
  * in one run would be a command whose failure mode is silent data loss.
  *
- * Exit codes: `0` done; `1` something was refused or timed out and the report says which;
- * `2` bad arguments or configuration.
+ * Exit codes: `0` done; `1` something was refused or timed out and the report says which — or
+ * another run holds the advisory lock; `2` bad arguments or configuration, including an
+ * environment the schema refuses.
  */
 
 try {
@@ -46,7 +50,15 @@ if (arguments_.mode === 'error') {
 }
 
 /** `scripts/**` is tooling: the ban on reading `process.env` guards `src/**`, not this. */
-const env = loadEnv(process.env);
+const environment = readScriptEnv('db:audit-retention', process.env);
+
+if (!environment.ok) {
+  process.stderr.write(`${environment.message}\n`);
+  process.exit(2);
+}
+
+const { env } = environment;
+const migrationUrlSet = env.DATABASE_MIGRATION_URL !== undefined;
 const pool = new Pool({ connectionString: env.DATABASE_MIGRATION_URL ?? env.DATABASE_URL, max: 1 });
 
 try {
@@ -61,10 +73,18 @@ try {
 
   if (report.failed.length > 0) process.exitCode = 1;
 } catch (error) {
-  process.stderr.write(
-    `db:audit-retention could not run: ${error instanceof Error ? error.message : String(error)}\n`,
-  );
-  process.exitCode = 2;
+  if (error instanceof AuditRetentionLockHeldError) {
+    process.stderr.write(`db:audit-retention: ${error.message}\n`);
+    process.exitCode = 1;
+  } else {
+    const hint = ownerRoleHint(error, { migrationUrlSet });
+
+    process.stderr.write(
+      `db:audit-retention could not run: ${error instanceof Error ? error.message : String(error)}\n` +
+        (hint === undefined ? '' : `${hint}\n`),
+    );
+    process.exitCode = 2;
+  }
 } finally {
   await pool.end();
 }

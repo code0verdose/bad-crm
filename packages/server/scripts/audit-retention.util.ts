@@ -7,11 +7,36 @@
  * privilege for. So the only decision worth making is *which months*, and that is arithmetic over
  * a date and a threshold, assertable without a container.
  *
- * Two facts anchor it. Partition names are `audit_logs_YYYY_MM` and cover `[month, month + 1)` in
- * UTC — `create_audit_partition(date)` in the migration is the author of both. And a month is old
+ * Two facts anchor it. Partition names are `audit_logs_YYYY_MM` and cover `[month, month + 1)` at
+ * midnight **in the session timezone the partition was created under** —
+ * `create_audit_partition(date)` in the migration is the author of both name and bound, and it
+ * does not pin UTC (the open item of STORY-016-05). The arithmetic here is UTC; the offset between
+ * the two is absorbed by `BOUND_TOLERANCE_MS` in `audit-retention.commands.ts`. And a month is old
  * enough when **every row in it** is at least the threshold old, which is when the month *ends* on
  * or before the cutoff — not when it starts.
  */
+
+import { AUDIT_RETENTION_MONTHS_RANGE } from '../src/infrastructure/persistence/prisma/audit-retention.constant.js';
+
+/**
+ * The bounds of `env.schema.ts`, enforced again at the function's own door.
+ *
+ * The schema guards the command line; this guards every other caller — a test, a future job — that
+ * hands a number straight to `planRetention`. Without it `0` here would detach last month, and the
+ * whole reason the schema refuses anything under a year is that such a number is nearly always a
+ * unit mistake. `undefined` passes: it is «off», not a threshold.
+ */
+export const assertRetentionMonths = (months: number | undefined): void => {
+  const { min, max } = AUDIT_RETENTION_MONTHS_RANGE;
+
+  if (months === undefined) return;
+
+  if (!Number.isInteger(months) || months < min || months > max) {
+    throw new RangeError(
+      `AUDIT_RETENTION_MONTHS must be between ${String(min)} and ${String(max)}, got ${String(months)}`,
+    );
+  }
+};
 
 /** The one partition that carries no month and is never a candidate for anything here. */
 export const AUDIT_DEFAULT_PARTITION = 'audit_logs_default';
@@ -74,6 +99,8 @@ export const planRetention = ({
   retentionMonths,
   partitions,
 }: RetentionPlanInput): RetentionPlan => {
+  assertRetentionMonths(retentionMonths);
+
   const candidates = [...partitions].filter((name) => name !== AUDIT_DEFAULT_PARTITION).sort();
 
   if (retentionMonths === undefined) return { detach: [], keep: candidates };
@@ -133,5 +160,7 @@ export const parseRetentionArguments = (argv: readonly string[]): RetentionArgum
     };
   }
 
-  return { mode: 'drop', tables: rest };
+  // Each name once: a repeated one passed every pre-check and failed inside the transaction on
+  // its second `DROP` with «does not exist» — a sound list, rolled back and reported as broken.
+  return { mode: 'drop', tables: [...new Set(rest)] };
 };

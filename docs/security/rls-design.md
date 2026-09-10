@@ -620,7 +620,11 @@ GRANT SELECT ON audit_logs_2026_08 TO backup_role;
 сохраняет — они были его собственными с рождения (`create_audit_partition`), наследовать было
 нечего и терять нечего; это проверено в
 `packages/server/test/integration/db/audit-retention.test.ts`, который прогоняет `01-grants.sql`
-повторно после отсоединения.
+повторно после отсоединения. Обратная сторона узнавания по имени: **отсоединённый месяц нельзя
+переименовывать** — выпав из регекспа, он на следующем `pnpm db:grants` получит от ветки обычных
+tenant-таблиц те самые четыре привилегии. Проверка 4c (ниже) с 2026-09-10 фильтрует по тому же
+условию, что и скрипт, — `relispartition OR relname ~ detached_journal`, — поэтому выданный по
+ошибке грант на отсоединённый месяц она видит; положительный контроль — в том же тесте.
 
 ### Таблицы, у которых `organization_id` «есть только через родителя»
 
@@ -1293,10 +1297,18 @@ FROM   pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
 WHERE  n.nspname = 'public' AND c.relkind IN ('r','p')
   AND  has_table_privilege('app_user', c.oid, 'TRUNCATE');
 
--- 4c. партиции недоступны напрямую
-SELECT c.relname, 'у партиции есть права app_user' AS problem
+-- 4c. партиции и отсоединённые месяцы журналов недоступны напрямую.
+--     Отсоединённый месяц (`pnpm db:audit-retention`) уже не relispartition, и по имени
+--     `<журнал>_YYYY_MM` его узнаёт только регексп — тот же, что `detached_journal` в
+--     01-grants.sql (собран из `append_only`) и `detachedJournalPattern` в rls-catalog.util.ts;
+--     три написания держит вместе test/unit/persistence/grants-registry.test.ts. Отсоединённый
+--     месяц НЕ переименовывать: выпав из регекспа, он на следующем `pnpm db:grants` получит от
+--     ветки обычных tenant-таблиц `SELECT, INSERT, UPDATE, DELETE` для app_user.
+SELECT c.relname, 'у листа есть права app_user' AS problem
 FROM   pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
-WHERE  n.nspname = 'public' AND c.relispartition
+WHERE  n.nspname = 'public' AND c.relkind = 'r'
+  AND  (c.relispartition
+        OR c.relname ~ '^(audit_logs|activity_events|vault_access_logs|secure_link_views)_[0-9]{4}_[0-9]{2}$')
   AND  has_table_privilege('app_user', c.oid, 'SELECT,INSERT,UPDATE,DELETE');
 
 -- 4d. журналы append-only

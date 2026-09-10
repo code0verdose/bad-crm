@@ -8,8 +8,10 @@ import { afterAll, beforeAll, beforeEach, describe, expect, inject, it } from 'v
 import {
   CANONICAL_MAINTENANCE_PREDICATE,
   CANONICAL_TENANT_PREDICATE,
+  LEAF_PRIVILEGES_SQL,
 } from '@/infrastructure/persistence/prisma/rls-catalog.constant.js';
 import {
+  detachedJournalPattern,
   readRlsCatalog,
   rlsCatalogViolations,
   type RlsCatalogFacts,
@@ -608,6 +610,19 @@ describe('grants', () => {
     );
 
     expect(rows.map((row) => row.relname)).toEqual([]);
+  });
+
+  /**
+   * Check 4c of `docs/security/rls-design.md`, as the operator runs it. Leaves are the
+   * `audit_logs` months and its DEFAULT partition; a detached month is not present here — its
+   * positive control lives in `audit-retention.test.ts`, which makes one and grants on it.
+   */
+  it('gives app_user nothing on any partition leaf or detached journal month (check 4c)', async () => {
+    const { rows } = await pools.owner.query<{ table_name: string }>(LEAF_PRIVILEGES_SQL, [
+      detachedJournalPattern(TENANT_TABLES),
+    ]);
+
+    expect(rows.map((row) => row.table_name)).toEqual([]);
   });
 
   it('leaves PUBLIC with nothing at all', async () => {

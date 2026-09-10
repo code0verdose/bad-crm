@@ -3,6 +3,7 @@ import { fileURLToPath } from 'node:url';
 
 import { describe, expect, it } from 'vitest';
 
+import { detachedJournalPattern } from '@/infrastructure/persistence/prisma/rls-catalog.util.js';
 import { TENANT_TABLES } from '@/infrastructure/persistence/prisma/tenant-tables.constant.js';
 
 /**
@@ -24,6 +25,14 @@ const GRANTS_SQL = readFileSync(
   fileURLToPath(new URL('../../../prisma/sql/01-grants.sql', import.meta.url)),
   'utf8',
 );
+
+const RLS_DESIGN_MD = readFileSync(
+  fileURLToPath(new URL('../../../../../docs/security/rls-design.md', import.meta.url)),
+  'utf8',
+);
+
+/** The `^(a|b)_[0-9]{4}_[0-9]{2}$` pattern of a detached journal month, wherever it is written. */
+const DETACHED_JOURNAL_PATTERN = /\^\(([a-z_|]+)\)_\[0-9\]\{4\}_\[0-9\]\{2\}\$/;
 
 /** The table names of a `name CONSTANT text[] := ARRAY[...]` declaration. */
 const sqlList = (name: string): string[] => {
@@ -126,5 +135,46 @@ describe('01-grants.sql agrees with the tenant table registry', () => {
   it('classifies a tenant table by row-level security, not by a column name', () => {
     expect(GRANTS_SQL).toMatch(/c\.relrowsecurity AS is_tenant_table/);
     expect(GRANTS_SQL).not.toMatch(/attname = 'organization_id'[\s\S]{0,120}AS is_tenant_table/);
+  });
+});
+
+/**
+ * A detached month of a journal is recognised by name in three places that cannot import each
+ * other: `01-grants.sql` (`detached_journal`, built from `append_only`), `rls-catalog.util.ts`
+ * (`detachedJournalPattern`, built from the registry's append-only set) and check 4c of
+ * `docs/security/rls-design.md`, which an operator runs by hand. The SQL names journals ahead of
+ * their migrations so a future one is safe on the day it lands; the registry can only name tables
+ * that exist. So the assertion is containment over what exists, and equality between the two
+ * texts an operator reads.
+ */
+describe('the detached-journal pattern is one pattern', () => {
+  it('01-grants.sql builds it from append_only and nothing else', () => {
+    expect(GRANTS_SQL).toContain("array_to_string(append_only, '|') || ')_[0-9]{4}_[0-9]{2}$'");
+  });
+
+  it('the registry-derived pattern names exactly the append-only tables that exist', () => {
+    const pattern = detachedJournalPattern(TENANT_TABLES);
+    const match = pattern === undefined ? null : DETACHED_JOURNAL_PATTERN.exec(pattern);
+
+    expect(match).not.toBeNull();
+
+    const inCode = ((match as RegExpExecArray)[1] as string).split('|').sort();
+    const known = new Set(Object.keys(TENANT_TABLES));
+
+    expect(inCode).toEqual(
+      sqlList('append_only')
+        .filter((table) => known.has(table))
+        .sort(),
+    );
+    expect(inCode).toEqual(registryTablesWithout('UPDATE'));
+  });
+
+  it('check 4c of rls-design.md spells the same list as append_only', () => {
+    const inDoc = [...RLS_DESIGN_MD.matchAll(new RegExp(DETACHED_JOURNAL_PATTERN, 'g'))].map(
+      (match) => (match[1] as string).split('|').sort().join('|'),
+    );
+
+    expect(inDoc.length, 'check 4c no longer names detached journal months').toBeGreaterThan(0);
+    expect(new Set(inDoc)).toEqual(new Set([sqlList('append_only').sort().join('|')]));
   });
 });

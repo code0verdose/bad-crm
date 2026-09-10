@@ -36,6 +36,13 @@ Bad CRM — self-hosted продукт под AGPL-3.0. Всё остально�
   зафиксированы.
 - Entrypoint контейнера приложения: применение миграций при старте (с явным обоснованием
   компромисса и защитой от параллельного запуска).
+- Точка входа для команд обслуживания из cron хоста — `db:audit-partitions`,
+  `db:audit-retention`, `db:grants` — **внутри образа**. Сегодня они запускаются через `tsx`,
+  который лежит в `devDependencies` (`packages/server/package.json`); образ, собранный
+  `pnpm install --prod`, их не запустит вовсе. Либо команды компилируются в `dist/scripts/**` и
+  вызываются `node`, либо `tsx` переезжает в `dependencies` осознанно — решение фиксируется ADR,
+  рунбуки `audit-log.md`/`upgrade.md` переписывают cron-строки под контейнер
+  (`docker compose exec app …`).
 - `.env.example` с разделением на обязательные и опциональные переменные; скрипт
   `bootstrap-secrets.sh` — CSPRNG-генерация `JWT_SECRET`, `APP_ENCRYPTION_KEY`, паролей БД, кредов
   MinIO, `MEILI_MASTER_KEY`.

@@ -127,12 +127,42 @@ const isMaintenanceSwitch = (predicate: string | null): boolean =>
 const commandName = (command: string): string => COMMAND_NAMES[command] ?? command;
 
 /**
- * `<registry table>_YYYY_MM`: the name `create_audit_partition(date)` gives a leaf, which the leaf
- * keeps after `DETACH PARTITION`. Only a registry table can be the parent — a dated table of a
- * family nobody registered is still the drift the registry checks exist to report.
+ * Registry tables the application may only insert into and read — the journals. The same set
+ * `01-grants.sql` declares as `append_only`; `test/unit/persistence/grants-registry.test.ts` holds
+ * the two together.
  */
-const isDetachedPartitionOf = (table: string, registryTables: readonly string[]): boolean =>
-  registryTables.some((parent) => new RegExp(`^${parent}_\\d{4}_\\d{2}$`).test(table));
+const appendOnlyTables = (registry: Record<string, TenantTableSpec>): string[] =>
+  Object.entries(registry)
+    .filter(
+      ([, spec]) =>
+        !spec.appUserPrivileges.includes('UPDATE') && !spec.appUserPrivileges.includes('DELETE'),
+    )
+    .map(([table]) => table)
+    .sort();
+
+/**
+ * `^(<journal>|…)_[0-9]{4}_[0-9]{2}$`: the name `create_audit_partition(date)` gives a leaf, which
+ * the leaf keeps after `DETACH PARTITION` — spelled the way `01-grants.sql` spells its
+ * `detached_journal`, so check 4c of `docs/security/rls-design.md` can quote either.
+ *
+ * Built from the append-only set and not from the whole registry, on purpose: only journals are
+ * partitioned by month, so only a journal can have a detached month. A dated name under any other
+ * registry table (`teams_2025_01`) is a table somebody created, and that is exactly the drift the
+ * registry checks exist to report. `undefined` when the registry has no journal — nothing is
+ * excused then. The SQL names journals whose migrations have not landed yet, so a future one is
+ * safe on its first day; the registry can only name tables that exist, hence the two are held to
+ * containment, not equality.
+ */
+export const detachedJournalPattern = (
+  registry: Record<string, TenantTableSpec>,
+): string | undefined => {
+  const journals = appendOnlyTables(registry);
+
+  return journals.length === 0 ? undefined : `^(${journals.join('|')})_[0-9]{4}_[0-9]{2}$`;
+};
+
+const isDetachedJournalMonth = (table: string, pattern: string | undefined): boolean =>
+  pattern !== undefined && new RegExp(pattern).test(table);
 
 /**
  * Every way the database can disagree with the specification, in one list.
@@ -190,6 +220,7 @@ export const rlsCatalogViolations = (
   findings.push(...partitionFindings(facts, registry));
 
   const registryTables = Object.keys(registry);
+  const detachedJournal = detachedJournalPattern(registry);
   const existingTables = new Set(facts.tables.map((table) => table.table));
   const withTenantColumn = new Set(facts.tenantColumnTables);
   const inSchema = new Set(schemaTables.map((entry) => entry.table));
@@ -199,7 +230,7 @@ export const rlsCatalogViolations = (
     // never list and no model will ever carry — it is waiting to be dropped. It is still judged
     // below as a tenant table, because a detached month is exactly as much a tenant's data as an
     // attached one; only the two registry findings would be wrong about it.
-    if (isDetachedPartitionOf(table, registryTables)) continue;
+    if (isDetachedJournalMonth(table, detachedJournal)) continue;
 
     if (registry[table] === undefined) {
       findings.push({

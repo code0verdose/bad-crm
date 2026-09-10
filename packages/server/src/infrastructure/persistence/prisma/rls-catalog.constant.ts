@@ -116,6 +116,24 @@ export const ALL_PARTITIONS_ROW_SECURITY_SQL = `
    ORDER BY p.relname, c.relname`;
 
 /**
+ * Check 4c of `docs/security/rls-design.md`: leaves the application can address directly.
+ *
+ * A partition leaf and a month that retention detached (`$1`, the pattern `detachedJournalPattern`
+ * builds) are the tables `app_user` must hold nothing on — policies and privileges are not
+ * inherited, so a leaf reachable by the application is a leaf with no tenant isolation, and a
+ * detached month is a year of evidence the application never had a privilege on. The `relname`
+ * half is what `relispartition` cannot see: after `DETACH` the catalog flag is off, and the name
+ * is all that still says what the table is.
+ */
+export const LEAF_PRIVILEGES_SQL = `
+  SELECT c.relname AS table_name
+    FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+   WHERE n.nspname = 'public' AND c.relkind = 'r'
+     AND (c.relispartition OR c.relname ~ $1)
+     AND has_table_privilege('app_user', c.oid, 'SELECT,INSERT,UPDATE,DELETE')
+   ORDER BY c.relname`;
+
+/**
  * Tables that carry a tenant column, straight from the catalog rather than from the schema.
  *
  * This is the half of the cross-check the code cannot answer: a table created by hand on the

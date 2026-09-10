@@ -214,7 +214,10 @@ BEGIN
       --    inherited, so a leaf reachable by app_user is a leaf with no tenant isolation at all.
       --    REVOKE rather than "do not grant": this file is also the repair path for a leaf that
       --    somebody granted by hand or that a partition-maintenance job granted by mistake.
-      --    Checked independently by 4c in docs/security/rls-design.md.
+      --    Checked independently by 4c in docs/security/rls-design.md, which since 2026-09-10
+      --    matches this branch exactly: `relispartition OR relname ~ detached_journal`. Before
+      --    that it filtered on `relispartition` alone, and a detached month fell through both 4c
+      --    and 4d.
       --
       --    A leaf that retention has DETACHed (`pnpm db:audit-retention`, STORY-016-05) is no
       --    longer `relispartition` — it is an ordinary table with row security on, and the branch
