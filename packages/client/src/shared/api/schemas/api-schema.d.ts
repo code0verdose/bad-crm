@@ -19,12 +19,14 @@ export interface paths {
          *     one transaction, and the answer is a session — the person who filled in the form is signed in
          *     rather than sent to the login screen to type the same password again.
          *
-         *     `Idempotency-Key` is mandatory here and is the reason this operation can be retried at all:
-         *     a connection dropped after the request left and before the answer arrived would otherwise
-         *     produce a second organization on retry. A replay carrying the same request hash gets the
-         *     stored response, cookie included. The stored key has no organization to be scoped to — the
-         *     organization is what the request creates — so it is stored per key alone until the row it
-         *     produced exists.
+         *     `Idempotency-Key` is mandatory here. What it buys today is only the guarantee that the
+         *     header is present and well-formed: replaying a stored response, cookie included, is the
+         *     intended behaviour and is **not implemented yet** (the store has no organization to be scoped
+         *     to — the organization is what the request creates). Until it lands, a retry after a dropped
+         *     connection reaches the server as a second registration and is answered with
+         *     `409 organization_already_exists`, because the slug is unique per installation; the first
+         *     request's session is not replayed. Corrected 2026-09-10 — the previous text promised the
+         *     replay as if it existed.
          */
         post: operations["registerOrganization"];
         delete?: never;
@@ -4686,7 +4688,6 @@ export interface operations {
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
             422: components["responses"]["ValidationFailed"];
-            429: components["responses"]["RateLimited"];
             500: components["responses"]["InternalError"];
         };
     };
@@ -5594,7 +5595,6 @@ export interface operations {
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
             422: components["responses"]["ValidationFailed"];
-            429: components["responses"]["RateLimited"];
             500: components["responses"]["InternalError"];
             503: components["responses"]["ServiceUnavailable"];
         };
