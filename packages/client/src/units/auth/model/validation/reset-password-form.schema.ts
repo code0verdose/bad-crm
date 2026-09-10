@@ -11,9 +11,10 @@ export const PASSWORD_MISMATCH_MESSAGE_KEY = 'validation.password.mismatch';
  * being typed.** Sign-in checks an *existing* password for presence only — enforcing a length there
  * would refuse a password chosen before the policy changed and would advertise the policy to
  * anybody with a login form. This screen *sets* one, so it is the screen the policy belongs to, and
- * `SharedValidation.passwordSchema` is the same one the server applies. A password refused here
- * costs a round trip; refused there it costs a round trip too — the token survives a 422 — so this
- * is about telling the person now rather than in a second.
+ * `SharedValidation.newPasswordSchema` is the bounds the server's validator applies plus the shape
+ * check its use-case applies, from one shared source. A password refused here costs no round trip;
+ * refused there it costs one — the token survives a 422 — so this is about telling the person now
+ * rather than in a second, under the field rather than above the form.
  *
  * **The confirmation field is not ceremony.** This is the one form in the product where the input is
  * masked, the person cannot read back what they typed, and a typo is unrecoverable in the ordinary
@@ -27,7 +28,7 @@ export const PASSWORD_MISMATCH_MESSAGE_KEY = 'validation.password.mismatch';
  */
 export const resetPasswordFormSchema = z
   .object({
-    newPassword: SharedValidation.passwordSchema,
+    newPassword: SharedValidation.newPasswordSchema,
     // No policy of its own: it is right when it equals the first field and wrong otherwise, and a
     // second «too short» under it would be one mistake reported twice.
     confirmPassword: z.string(),

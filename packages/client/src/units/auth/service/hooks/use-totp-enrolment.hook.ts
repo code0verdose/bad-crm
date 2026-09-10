@@ -1,4 +1,4 @@
-import { errorMessageKey } from '@shared/api';
+import { errorMessage, type ErrorMessage } from '@shared/api';
 import { type TotpEnrolmentDraft } from '@units/auth/api';
 import { type TotpConfirmFormValues } from '@units/auth/model';
 import { useConfirmTotp } from '@units/auth/service/mutations/confirm-totp.mutation.js';
@@ -11,8 +11,8 @@ export interface TotpEnrolment {
   readonly issuedCodes: readonly string[] | undefined;
   readonly isBeginning: boolean;
   readonly isConfirming: boolean;
-  /** i18n key of a refused confirmation, chosen from the problem `code`. */
-  readonly failureKey: string | undefined;
+  /** The sentence for a refused confirmation, chosen from the problem `code` — key and values. */
+  readonly failure: ErrorMessage | undefined;
   readonly begin: () => void;
   /** Throws the drafted secret away without enrolling — «not now», not «try again». */
   readonly abandon: () => void;
@@ -44,7 +44,7 @@ export const useTotpEnrolment = (): TotpEnrolment => {
     issuedCodes: confirmation.data?.codes,
     isBeginning: setup.isPending,
     isConfirming: confirmation.isPending,
-    failureKey: confirmation.error === null ? undefined : errorMessageKey(confirmation.error),
+    failure: confirmation.error === null ? undefined : errorMessage(confirmation.error),
     begin: () => {
       setup.mutate();
     },

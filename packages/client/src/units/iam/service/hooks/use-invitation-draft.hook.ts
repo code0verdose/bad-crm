@@ -30,7 +30,7 @@ export interface InvitationDraftState {
  * now» is `null`, not `''` — sitting in a widget where the next screen to invite somebody would
  * have had to rediscover it.
  *
- * No `failureKey`: this write has no refusal the screen renders itself. The global mutation handler
+ * No `failure`: this write has no refusal the screen renders itself. The global mutation handler
  * is the single signal (`rules/errors-and-toasts.mdc` §2), and the success half is not a toast
  * either — it is the link the widget shows beside the form, because «sent» and «sent without a
  * relay» are one sentence with two meanings (`create-invitation.mutation.ts` says why).

@@ -1,6 +1,6 @@
 import { SharedHooks } from '@shared';
 
-import { ERROR_MESSAGE_KEY, errorMessageKey, isApiError } from '@shared/api';
+import { ERROR_MESSAGE_KEY, errorMessage, type ErrorMessage, isApiError } from '@shared/api';
 import { loginAttempt } from '@units/auth/lib';
 import {
   ORGANIZATION_SELECTION_NOTICE_KEY,
@@ -15,8 +15,8 @@ export type LoginStep = 'password' | 'second-factor';
 export interface SecondFactorController {
   /** Carried by the submit button of the step, never by a page-wide spinner. */
   readonly isPending: boolean;
-  /** i18n key of a refused code, chosen from the problem `code`; `undefined` when nothing failed. */
-  readonly failureKey: string | undefined;
+  /** The sentence for a refused code, chosen from the problem `code`; `undefined` when nothing failed. */
+  readonly failure: ErrorMessage | undefined;
   /** Whole seconds the intermediate token has left, counted down to zero. */
   readonly secondsLeft: number;
   readonly submit: (values: TwoFactorFormValues) => void;
@@ -27,11 +27,11 @@ export interface LoginController {
   /** True while the password is in flight — the submit button carries it, nothing else does. */
   readonly isPending: boolean;
   /**
-   * i18n key of something the form has to say that is not a field error and not a failure: that
-   * this address belongs to more than one organization, or that the second step ran out of time.
-   * `undefined` the rest of the time.
+   * Something the form has to say that is not a field error and not a failure: that this address
+   * belongs to more than one organization, or that the second step ran out of time. `undefined` the
+   * rest of the time.
    */
-  readonly noticeKey: string | undefined;
+  readonly notice: ErrorMessage | undefined;
   readonly submit: (credentials: LoginFormValues) => void;
   readonly secondFactor: SecondFactorController;
 }
@@ -69,7 +69,7 @@ const isChallengeGone = (error: unknown): boolean =>
  *
  * The two refusals are reported differently on purpose. A refused **password** is one toast, raised
  * by the global `MutationCache.onError`, because `invalid_credentials` is a verdict on two fields at
- * once that deliberately refuses to say which. A refused **code** is `failureKey`, rendered beside
+ * once that deliberately refuses to say which. A refused **code** is `failure`, rendered beside
  * the one field on the step, because that is where a server's verdict about a field belongs
  * (`rules/errors-and-toasts.mdc` §3–§4); `verify-second-factor.mutation.ts` is what stops a toast
  * being raised on top of it.
@@ -91,14 +91,14 @@ export const useLogin = (): LoginController => {
 
     isPending: password.isPending,
 
-    noticeKey:
+    notice:
       password.data?.status === 'organization_selection_required'
-        ? ORGANIZATION_SELECTION_NOTICE_KEY
+        ? { key: ORGANIZATION_SELECTION_NOTICE_KEY }
         : isChallengeOver
           ? // The sentence the server would have sent for the same event, borrowed rather than
             // written twice: a countdown that reached zero and a token the server has forgotten are
             // the same fact to the person reading it, and two sentences would drift apart.
-            ERROR_MESSAGE_KEY.mfa_token_expired
+            { key: ERROR_MESSAGE_KEY.mfa_token_expired }
           : undefined,
 
     submit: (credentials) => {
@@ -115,10 +115,10 @@ export const useLogin = (): LoginController => {
     secondFactor: {
       isPending: secondFactor.isPending,
       secondsLeft,
-      failureKey:
+      failure:
         secondFactor.error === null || isChallengeGone(secondFactor.error)
           ? undefined
-          : errorMessageKey(secondFactor.error),
+          : errorMessage(secondFactor.error),
       submit: (values) => {
         secondFactor.mutate(values);
       },

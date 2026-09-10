@@ -2,20 +2,20 @@ import { useCallback } from 'react';
 
 import { type ResetMfaResult } from '@units/employee/api';
 import { useResetUserMfa } from '@units/employee/service/mutations';
-import { errorMessageKey } from '@shared/api';
+import { errorMessage, type ErrorMessage } from '@shared/api';
 
 export interface ResetMfaController {
   /** What the server answered, or `undefined` while nothing has been run yet. */
   readonly result: ResetMfaResult | undefined;
   /**
-   * The refusal as a sentence key, chosen from the `code` and never from `detail`
+   * The refusal as a sentence — key and values — chosen from the `code` and never from `detail`
    * (`rules/errors-and-toasts.mdc` §10). Absent while nothing has been refused.
    *
-   * A key rather than the `Error`, and that is the point of this hook: the dialog renders what it
-   * is given and translates nothing. `error → messageKey` is a rule about how failures are read,
+   * A message rather than the `Error`, and that is the point of this hook: the dialog renders what
+   * it is given and translates nothing. `error → messageKey` is a rule about how failures are read,
    * and it lives on one layer of this client — `service/hooks` — for all three confirmations.
    */
-  readonly failureKey: string | undefined;
+  readonly failure: ErrorMessage | undefined;
   readonly isPending: boolean;
   readonly resetMfa: () => void;
   /** The dialog is done with: clears the answer so the next open starts from the confirmation. */
@@ -52,7 +52,7 @@ export const useResetMfa = (userId: string): ResetMfaController => {
 
   return {
     result: data,
-    failureKey: error === null ? undefined : errorMessageKey(error),
+    failure: error === null ? undefined : errorMessage(error),
     isPending,
     resetMfa,
     dismiss,

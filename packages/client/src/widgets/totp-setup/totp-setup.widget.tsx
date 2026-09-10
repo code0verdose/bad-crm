@@ -50,7 +50,7 @@ export function TotpSetup({ enrolment, isEnrolled }: TotpSetupProps) {
           <Text>{t('security.totp.scan.description')}</Text>
           <AuthUi.TotpQr qrSvg={enrolment.draft.qrSvg} secret={enrolment.draft.secret} />
           <AuthUi.TotpConfirmForm
-            failureKey={enrolment.failureKey}
+            failure={enrolment.failure}
             isPending={enrolment.isConfirming}
             onCancel={enrolment.abandon}
             onSubmit={enrolment.confirm}

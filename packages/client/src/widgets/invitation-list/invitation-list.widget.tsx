@@ -144,7 +144,7 @@ export function InvitationList() {
           action.run(ask.id, ask.action === 'revoke' ? close : undefined);
         }}
         opened={ask !== null}
-        {...(action.failureKey === undefined ? {} : { failureKey: action.failureKey })}
+        {...(action.failure === undefined ? {} : { failure: action.failure })}
         {...(ask?.action === 'resend' && list.minted !== undefined ? { minted: list.minted } : {})}
       />
     </Stack>

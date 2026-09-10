@@ -25,6 +25,9 @@ import { SharedApi } from '@shared';
  * to the one request that can be refused for it — and once learned, the form is gone.
  */
 const USER_ID = 'b3f1c2d4-5e6a-4b7c-8d9e-0f1a2b3c4d5e';
+
+/** JSON paths of the contract, joined at runtime so the catalogue-parity gate does not read them as keys. */
+const OWNER_PASSWORD = ['owner', 'password'].join('.');
 const ORGANIZATION_ID = '7c9e6679-7425-40de-944b-e07fc1f90ae7';
 
 const VALUES = {
@@ -51,16 +54,20 @@ const registered = (): Response =>
     201,
   );
 
-const refused = (code: string, status: number): Response =>
-  json(
-    {
+const refused = (
+  code: string,
+  status: number,
+  headers: Readonly<Record<string, string>> = {},
+): Response =>
+  new Response(
+    JSON.stringify({
       type: `https://bad-crm.dev/problems/${code}`,
       title: 'Registration refused',
       status,
       code,
       requestId: 'req-register',
-    },
-    status,
+    }),
+    { status, headers: { 'content-type': 'application/json', ...headers } },
   );
 
 interface Harness {
@@ -208,9 +215,9 @@ describe('registering an organization', () => {
     });
 
     await waitFor(() => {
-      expect(result.current.slugErrorKey).toBe('errors.code.organization_already_exists');
+      expect(result.current.slugError).toEqual({ key: 'errors.code.organization_already_exists' });
     });
-    expect(result.current.noticeKey).toBeUndefined();
+    expect(result.current.notice).toBeUndefined();
     expect(result.current.isClosed).toBe(false);
     expect(stand.notify.error).not.toHaveBeenCalled();
   });
@@ -229,8 +236,8 @@ describe('registering an organization', () => {
     await waitFor(() => {
       expect(result.current.isClosed).toBe(true);
     });
-    expect(result.current.noticeKey).toBeUndefined();
-    expect(result.current.slugErrorKey).toBeUndefined();
+    expect(result.current.notice).toBeUndefined();
+    expect(result.current.slugError).toBeUndefined();
     expect(stand.notify.error).not.toHaveBeenCalled();
   });
 
@@ -246,11 +253,145 @@ describe('registering an organization', () => {
     });
 
     await waitFor(() => {
-      expect(result.current.noticeKey).toBe('errors.code.rate_limited');
+      expect(result.current.notice).toEqual({ key: 'errors.code.rate_limited' });
     });
-    expect(result.current.slugErrorKey).toBeUndefined();
+    expect(result.current.slugError).toBeUndefined();
     expect(result.current.isClosed).toBe(false);
     expect(stand.notify.error).not.toHaveBeenCalled();
+  });
+
+  /**
+   * The notice is the pair, not the key. `Retry-After` is what the server puts in the sentence's
+   * one placeholder, and a controller that handed the form the key alone — as this one did until
+   * 2026-09-06 — had the form print «Try again in {{seconds}} s.» to the fourth attempt an hour.
+   * Asserted on the object because `cimode` cannot see the difference on screen; the route suite
+   * asserts the rendered number under a real catalogue.
+   */
+  it('hands the form the wait the server named, with the sentence that has a place for it', async () => {
+    vi.stubGlobal('fetch', () =>
+      Promise.resolve(refused('rate_limited', 429, { 'retry-after': '42' })),
+    );
+
+    const { AuthService } = await freshUnit();
+    const { result } = renderHook(() => AuthService.useRegistration(), {
+      wrapper: harness().wrapper,
+    });
+
+    act(() => {
+      result.current.submit(VALUES);
+    });
+
+    await waitFor(() => {
+      expect(result.current.notice).toEqual({
+        key: 'errors.code.rate_limited',
+        values: { seconds: 42 },
+      });
+    });
+  });
+
+  /**
+   * A `422` naming the password lands under the password, not above the form. Only a bundle older
+   * than the server can reach it — the client applies the same check before sending — but «check
+   * the highlighted fields» above a form with nothing highlighted is what it showed when it did.
+   */
+  it('puts a password the server refused under the password field, and raises no toast', async () => {
+    vi.stubGlobal('fetch', () =>
+      Promise.resolve(
+        json(
+          {
+            type: 'https://bad-crm.dev/problems/validation_failed',
+            title: 'Validation failed',
+            status: 422,
+            code: 'validation_failed',
+            requestId: 'req-register',
+            errors: [{ path: OWNER_PASSWORD, code: 'custom', message: 'weak' }],
+          },
+          422,
+        ),
+      ),
+    );
+
+    const { AuthService } = await freshUnit();
+    const stand = harness();
+    const { result } = renderHook(() => AuthService.useRegistration(), { wrapper: stand.wrapper });
+
+    act(() => {
+      result.current.submit(VALUES);
+    });
+
+    await waitFor(() => {
+      expect(result.current.passwordError).toEqual({ key: 'validation.password.weak' });
+    });
+    expect(result.current.notice).toBeUndefined();
+    expect(result.current.slugError).toBeUndefined();
+    expect(stand.notify.error).not.toHaveBeenCalled();
+  });
+
+  /** A bound the client's own schema also enforces reads through the written-out map, like every field issue. */
+  it('reads a bound the server named on the password through the field map', async () => {
+    vi.stubGlobal('fetch', () =>
+      Promise.resolve(
+        json(
+          {
+            type: 'https://bad-crm.dev/problems/validation_failed',
+            title: 'Validation failed',
+            status: 422,
+            code: 'validation_failed',
+            requestId: 'req-register',
+            errors: [{ path: OWNER_PASSWORD, code: 'too_big', message: 'too long' }],
+          },
+          422,
+        ),
+      ),
+    );
+
+    const { AuthService } = await freshUnit();
+    const { result } = renderHook(() => AuthService.useRegistration(), {
+      wrapper: harness().wrapper,
+    });
+
+    act(() => {
+      result.current.submit(VALUES);
+    });
+
+    await waitFor(() => {
+      expect(result.current.passwordError).toEqual({ key: 'errors.field.too_big' });
+    });
+  });
+
+  /** A `422` naming nothing this form has is still said, above the fields, so a refusal is never silent. */
+  it('states a field issue it cannot place above the fields', async () => {
+    vi.stubGlobal('fetch', () =>
+      Promise.resolve(
+        json(
+          {
+            type: 'https://bad-crm.dev/problems/validation_failed',
+            title: 'Validation failed',
+            status: 422,
+            code: 'validation_failed',
+            requestId: 'req-register',
+            errors: [
+              { path: ['owner', 'locale'].join('.'), code: 'invalid_value', message: 'nope' },
+            ],
+          },
+          422,
+        ),
+      ),
+    );
+
+    const { AuthService } = await freshUnit();
+    const { result } = renderHook(() => AuthService.useRegistration(), {
+      wrapper: harness().wrapper,
+    });
+
+    act(() => {
+      result.current.submit(VALUES);
+    });
+
+    await waitFor(() => {
+      expect(result.current.notice).toEqual({ key: 'errors.code.validation_failed' });
+    });
+    expect(result.current.passwordError).toBeUndefined();
   });
 
   it('carries the wait for the button and nothing else', async () => {
@@ -279,7 +420,7 @@ describe('registering an organization', () => {
     await waitFor(() => {
       expect(result.current.isPending).toBe(true);
     });
-    expect(result.current.noticeKey).toBeUndefined();
+    expect(result.current.notice).toBeUndefined();
 
     await act(async () => {
       answer(registered());

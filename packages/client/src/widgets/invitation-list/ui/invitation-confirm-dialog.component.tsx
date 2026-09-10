@@ -1,6 +1,8 @@
 import { Alert, Button, Group, List, Modal, Stack, Text } from '@mantine/core';
 import { useTranslation } from 'react-i18next';
 
+import { type SharedApi } from '@shared';
+
 import { INVITATION_ACTION_COPY, type InvitationActionKind } from '@widgets/invitation-list/lib';
 import { IamUi, type IamApi } from '@units/iam';
 
@@ -11,7 +13,7 @@ export interface InvitationConfirmDialogProps {
   readonly email: string;
   readonly isPending: boolean;
   /** The refusal as a sentence key, chosen from the `code`. Absent while nothing has been refused. */
-  readonly failureKey?: string;
+  readonly failure?: SharedApi.ErrorMessage;
   /** The link a successful re-issue produced — the only copy that will ever exist. */
   readonly minted?: IamApi.MintedInvitation;
   readonly onConfirm: () => void;
@@ -45,7 +47,7 @@ export function InvitationConfirmDialog({
   action,
   email,
   isPending,
-  failureKey,
+  failure,
   minted,
   onConfirm,
   onClose,
@@ -77,12 +79,12 @@ export function InvitationConfirmDialog({
             ))}
           </List>
 
-          {failureKey !== undefined && (
+          {failure !== undefined && (
             // `role="alert"`, so it is announced rather than merely drawn: the operator's attention
             // is on the button they just pressed (`rules/a11y.mdc` §13). The text comes from the
             // `code`, never from `detail` — the technical half went to the log.
             <Alert color="danger" role="alert" title={t(copy.failedTitleKey)} variant="light">
-              <Text size="sm">{t(failureKey)}</Text>
+              <Text size="sm">{t(failure.key, failure.values ?? {})}</Text>
             </Alert>
           )}
 

@@ -1,3 +1,5 @@
+import { SharedValidation } from '@bad-crm/shared';
+
 import { type AuditLoggerPort } from '@/application/platform/ports/audit-logger.port.js';
 import { type PasswordHasherPort } from '@/application/identity/ports/password-hasher.port.js';
 import {
@@ -12,7 +14,6 @@ import {
 import { type BootstrapOrganizationUseCase } from '@/application/organization/use-cases/bootstrap-organization.use-case.js';
 import { type RateLimitPort } from '@/application/platform/ports/rate-limit.port.js';
 import { type UnitOfWorkPort } from '@/application/platform/ports/unit-of-work.port.js';
-import { isWeakPassword } from '@/domain/identity/weak-password.util.js';
 import {
   AccountRefusedError,
   RateLimitedError,
@@ -60,6 +61,14 @@ export interface RegistrationDefaults {
  * tenant is unusable. A session is not in that set: if it fails, an organization and an owner exist
  * and the person signs in. Stretching one transaction over both would only widen the window in which
  * the tenant root is locked.
+ *
+ * **The audit record is in the first transaction, not the second — and that follows from the
+ * paragraph above.** The trail is written into the transaction that is open (`audit-log.adapter.ts`),
+ * so a record made beside the session would exist exactly when the session did; a session is
+ * allowed to fail and leave the tenant standing, and the record must not be. Until 2026-09-06 it
+ * was beside the session, and an installation whose first session insert failed had an organization
+ * with no `organization.registered` row. `BootstrapOrganizationUseCase.inSameTransaction` is the
+ * seam: the record is written after the roles, with the owner's id, and rolls back with the tenant.
  */
 export class RegisterOrganizationUseCase {
   constructor(
@@ -103,7 +112,7 @@ export class RegisterOrganizationUseCase {
     // the layer that can also rate-limit it. Reported as `validation_failed` on the field, exactly
     // like a password that is too short: from the person's side it is the same problem, and a
     // distinct code would tell somebody which of their guesses was nearly acceptable.
-    if (isWeakPassword(input.owner.password)) {
+    if (SharedValidation.isWeakPassword(input.owner.password)) {
       throw new ValidationError([
         {
           path: 'owner.password',
@@ -139,37 +148,34 @@ export class RegisterOrganizationUseCase {
             locale,
             timezone,
           },
+          // Inside the transaction that creates the tenant, like every other privileged action —
+          // and not the one below, which may fail without undoing the tenant. An organization
+          // created with no record of who created it is the one row an operator can least afford
+          // to find unexplained. The slug goes in `after`, the password does not — «after» carries
+          // what changed, never a credential.
+          inSameTransaction: async (created) => {
+            await this.audit.record({
+              action: 'organization.registered',
+              actor: {
+                userId: created.ownerId,
+                organizationId: created.organizationId,
+                ipAddress: input.client.ipAddress,
+              },
+              target: { type: 'ORGANIZATION', id: created.organizationId },
+              after: { slug: input.organization.slug, name: input.organization.name },
+              requestId: undefined,
+            });
+          },
         }),
     );
 
-    const session = await this.unitOfWork.withTenant(
-      { organizationId, userId: ownerId },
-      async () => {
-        const issued = await this.issueSession.execute({
-          userId: ownerId,
-          // A brand-new account: the version the column defaults to.
-          permissionsVersion: 1,
-          client: input.client,
-        });
-
-        // Inside the transaction, like every other privileged action: an organization created with
-        // no record of who created it is the one row an operator can least afford to find
-        // unexplained. The slug goes in `after`, the password does not — «after» carries what
-        // changed, never a credential.
-        await this.audit.record({
-          action: 'organization.registered',
-          actor: {
-            userId: ownerId,
-            organizationId,
-            ipAddress: input.client.ipAddress,
-          },
-          target: { type: 'ORGANIZATION', id: organizationId },
-          after: { slug: input.organization.slug, name: input.organization.name },
-          requestId: undefined,
-        });
-
-        return issued;
-      },
+    const session = await this.unitOfWork.withTenant({ organizationId, userId: ownerId }, () =>
+      this.issueSession.execute({
+        userId: ownerId,
+        // A brand-new account: the version the column defaults to.
+        permissionsVersion: 1,
+        client: input.client,
+      }),
     );
 
     return {

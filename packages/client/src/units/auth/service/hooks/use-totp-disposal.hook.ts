@@ -1,19 +1,19 @@
 import { useCallback } from 'react';
 
-import { errorMessageKey } from '@shared/api';
+import { errorMessage, type ErrorMessage } from '@shared/api';
 import { type TotpDisableRequest } from '@units/auth/api';
 import { useDisableTotp } from '@units/auth/service/mutations/disable-totp.mutation.js';
 
 export interface TotpDisposal {
   /**
-   * The refusal as a sentence key, chosen from the `code` and never from `detail`
+   * The refusal as a sentence — key and values — chosen from the `code` and never from `detail`
    * (`rules/errors-and-toasts.mdc` §10). Absent while nothing has been refused.
    *
    * `403 reauthentication_required` answers a wrong password, a wrong code and an already-spent
    * recovery code alike, which is why the dialog renders it above both fields rather than under
    * either — the server deliberately refuses to say which half was wrong.
    */
-  readonly failureKey: string | undefined;
+  readonly failure: ErrorMessage | undefined;
   readonly isPending: boolean;
   /**
    * Sends both proofs as typed. `onDisabled` fires only on success: the section this dialog was
@@ -54,7 +54,7 @@ export const useTotpDisposal = (): TotpDisposal => {
   );
 
   return {
-    failureKey: error === null ? undefined : errorMessageKey(error),
+    failure: error === null ? undefined : errorMessage(error),
     isPending,
     disable,
   };

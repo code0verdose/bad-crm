@@ -1,15 +1,23 @@
 /**
  * The half of the password policy a length check cannot express.
  *
- * `packages/shared/src/validation/password.schema.ts` states the bounds — twelve characters to a
- * hundred and twenty-eight — and says in its own comment that strength scoring belongs next to the
- * use-case, because that is where it can also be rate-limited. This is that half, kept deliberately
- * small: a full `zxcvbn` and a top-100k list are a dependency and a data file, and both belong to
- * the same decision an operator makes about password policy rather than to the sign-up path of M1.
+ * `password.schema.ts` beside this file states the bounds — twelve characters to a hundred and
+ * twenty-eight. This is the other half, kept deliberately small: a full `zxcvbn` and a top-100k list
+ * are a dependency and a data file, and both belong to the same decision an operator makes about
+ * password policy rather than to the sign-up path of M1.
  *
- * What is refused here is what twelve characters still lets through: a keyboard walk lengthened
- * until it fits, one character repeated, and a plain ascending run. Every rule below is a *shape*,
- * not a dictionary entry, so the check stays a pure function over the input with nothing to load.
+ * **One copy, shared, since 2026-09-06.** It lived in the server's domain layer, and the three
+ * use-cases that set a password applied it after the schema had passed the bounds. The client
+ * validated with the bounds alone, so a password the server would refuse crossed the wire, came
+ * back as `422`, and the registration form said «check the highlighted fields» with nothing
+ * highlighted — there was no field error to attach, because the client had no way to know the
+ * rule. Here, it is the same function on both sides: `newPasswordSchema` refuses the shape before
+ * the round trip, the use-cases refuse it after the rate limit, and the two cannot drift.
+ *
+ * What is refused is what twelve characters still lets through: a keyboard walk lengthened until it
+ * fits, one character repeated, and a plain ascending run. Every rule below is a *shape*, not a
+ * dictionary entry, so the check stays a pure function over the input with nothing to load — which
+ * is also what makes it fit for a package that may not touch Node or the browser.
  */
 
 /**
@@ -84,9 +92,10 @@ const isSequentialRun = (password: string): boolean => {
 /**
  * Whether the password is one of the shapes above.
  *
- * The caller reports it as `422 validation_failed` on the `password` field — the same answer as a
- * password that is too short, because from the person's point of view it is the same problem and a
- * distinct code would tell an attacker which of their guesses was "nearly" acceptable.
+ * A server caller reports it as `422 validation_failed` on the `password` field — the same answer
+ * as a password that is too short, because from the person's point of view it is the same problem
+ * and a distinct code would tell an attacker which of their guesses was "nearly" acceptable. A form
+ * reports it under the field through `newPasswordSchema`, with `validation.password.weak`.
  */
 export const isWeakPassword = (password: string): boolean => {
   const trimmed = password.trim();

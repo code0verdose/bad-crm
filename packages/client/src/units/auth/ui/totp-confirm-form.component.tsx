@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 
 import { SharedLib } from '@shared';
 
+import { type ErrorMessage } from '@shared/api';
 import { firstInvalidField } from '@units/auth/lib';
 import { totpConfirmFormSchema, type TotpConfirmFormValues } from '@units/auth/model';
 
@@ -12,7 +13,7 @@ import { TotpCodeField } from './totp-code-field.component.js';
 export interface TotpConfirmFormProps {
   readonly isPending: boolean;
   /** i18n key of the refusal, chosen from the problem `code` by the unit hook. */
-  readonly failureKey: string | undefined;
+  readonly failure: ErrorMessage | undefined;
   readonly onSubmit: (values: TotpConfirmFormValues) => void;
   /** Abandons the drafted secret. «Not now», not «try again». */
   readonly onCancel: () => void;
@@ -24,7 +25,7 @@ export interface TotpConfirmFormProps {
  * The form stack is the product's one form stack — `@mantine/form` with the shared
  * `zodFormResolver`, so the schema decides what is well-formed and Mantine wires `aria-invalid` and
  * `aria-describedby` to the message (`rules/design-system.mdc` §11, `rules/a11y.mdc` §18). Whether
- * the *values* are right is decided by the server, and its refusal arrives as `failureKey`.
+ * the *values* are right is decided by the server, and its refusal arrives as `failure`.
  *
  * **The refusal is rendered here, beside the fields, rather than as a toast** — and it carries a
  * second sentence the contract asks every client to carry. `POST /auth/2fa/confirm` answers the
@@ -35,12 +36,7 @@ export interface TotpConfirmFormProps {
  * only thing standing between them and it is being told. So they are told, here, at the moment it
  * happens.
  */
-export function TotpConfirmForm({
-  isPending,
-  failureKey,
-  onSubmit,
-  onCancel,
-}: TotpConfirmFormProps) {
+export function TotpConfirmForm({ isPending, failure, onSubmit, onCancel }: TotpConfirmFormProps) {
   const { t } = useTranslation();
 
   const form = useForm<TotpConfirmFormValues>({
@@ -89,7 +85,7 @@ export function TotpConfirmForm({
           {...form.getInputProps('currentPassword')}
         />
 
-        {failureKey !== undefined && (
+        {failure !== undefined && (
           <Alert
             color="danger"
             role="alert"
@@ -97,7 +93,7 @@ export function TotpConfirmForm({
             variant="light"
           >
             <Stack gap="xs">
-              <Text size="sm">{t(failureKey)}</Text>
+              <Text size="sm">{t(failure.key, failure.values ?? {})}</Text>
               <Text size="sm">{t('security.totp.failed.lostAnswer')}</Text>
             </Stack>
           </Alert>

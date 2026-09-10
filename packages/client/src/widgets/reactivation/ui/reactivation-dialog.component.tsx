@@ -119,12 +119,14 @@ export function ReactivationDialog({ opened, userId, email, onClose }: Reactivat
             </List>
           </Alert>
 
-          {reactivation.failureKey !== undefined && (
+          {reactivation.failure !== undefined && (
             // The text comes from the `code`, never from `detail` — the technical half went to the
             // log. `Alert` announces itself (`role="alert"`), which is what an operator whose
             // attention is on the button they just pressed needs (`rules/a11y.mdc` §13).
             <Alert color="danger" title={t('members.reactivate.failed.title')} variant="light">
-              <Text size="sm">{t(reactivation.failureKey)}</Text>
+              <Text size="sm">
+                {t(reactivation.failure.key, reactivation.failure.values ?? {})}
+              </Text>
             </Alert>
           )}
 

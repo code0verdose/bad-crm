@@ -50,7 +50,7 @@ export function RecoveryCodes({ codes }: RecoveryCodesProps) {
         titleKey="security.codes.regenerate.title"
       >
         <AuthUi.RegenerateRecoveryCodesForm
-          failureKey={codes.failureKey}
+          failure={codes.failure}
           isPending={codes.isRegenerating}
           onSubmit={codes.regenerate}
         />

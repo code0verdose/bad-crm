@@ -43,7 +43,7 @@ estimate: M
       *Сделано 2026-07-29:* `test/unit/application/register-organization.use-case.test.ts` (успех,
       слабый пароль, закрытая регистрация, дефолты локали/таймзоны, «пароль не попал в ответ»),
       `test/unit/crypto/argon2-password-hasher.test.ts` (пол OWASP, перехеш, dummy-хеш),
-      `test/unit/domain/weak-password.test.ts`, `test/integration/http/auth-endpoints.test.ts`
+      `packages/shared/test/validation/weak-password.test.ts` (переехал из `packages/server` 2026-09-06 — одна копия списка на клиент и сервер), `test/integration/http/auth-endpoints.test.ts`
       (201 + cookie, 422 по полю, 403 при закрытой регистрации, `Idempotency-Key`). Откат
       транзакции по-прежнему проверяется на живом PostgreSQL в
       `test/integration/db/organization-bootstrap.test.ts`.
@@ -55,7 +55,7 @@ estimate: M
       Пометка стояла невыполненной при уже существующей реализации. **Остаётся в этой истории:**
       проверка на компрометацию/слабость из acceptance (zxcvbn score ≥ 3, top-100k blocklist) —
       сама схема в своём комментарии относит её к use-case'у, который умеет её ещё и rate-limit'ить.
-      *2026-07-29:* закрыто **частично** — `domain/identity/weak-password.util.ts` отбивает
+      *2026-07-29:* закрыто **частично** — `packages/shared/src/validation/weak-password.util.ts` (до 2026-09-06 жил на сервере в domain/identity под тем же именем) отбивает
       клавиатурные дорожки (с leetspeak-фолдингом), повтор одного символа, монотонный ряд и
       «только цифры», use-case отвечает `422 validation_failed` по полю `owner.password`. Полный
       `zxcvbn` + список top-100k — **остаётся открытым**: это зависимость и файл данных, решение о

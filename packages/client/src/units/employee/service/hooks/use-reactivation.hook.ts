@@ -3,7 +3,7 @@ import { useCallback } from 'react';
 
 import { type ReactivationResult } from '@units/employee/api';
 import { useReactivateUser } from '@units/employee/service/mutations';
-import { errorMessageKey } from '@shared/api';
+import { errorMessage, type ErrorMessage } from '@shared/api';
 import { QueryKeys } from '@shared/lib';
 
 export interface ReactivationController {
@@ -17,7 +17,7 @@ export interface ReactivationController {
    * this client — `service/hooks` — for every confirmation dialog. Handing the dialog an `Error`
    * would let it apply the rule a second time, differently, with nothing turning red.
    */
-  readonly failureKey: string | undefined;
+  readonly failure: ErrorMessage | undefined;
   readonly isPending: boolean;
   readonly reactivate: () => void;
   /**
@@ -32,8 +32,8 @@ export interface ReactivationController {
  * (`rules/frontend-fsd.mdc` rule 6).
  *
  * **The reason it was written is `dismiss`; the reason it is shaped like its two neighbours is
- * `failureKey`.** All three confirmations in this product — this one, the 2FA reset and the
- * invitation pair — now hand `ui` a ready sentence key, so the rule about reading a failure by its
+ * `failure`.** All three confirmations in this product — this one, the 2FA reset and the
+ * invitation pair — now hand `ui` a ready sentence, so the rule about reading a failure by its
  * `code` is applied on one layer instead of three.
  *
  * **About `dismiss`.** The mutation deliberately invalidates nothing (see
@@ -77,7 +77,7 @@ export const useReactivation = (userId: string): ReactivationController => {
 
   return {
     result: data,
-    failureKey: error === null ? undefined : errorMessageKey(error),
+    failure: error === null ? undefined : errorMessage(error),
     isPending,
     reactivate,
     dismiss,

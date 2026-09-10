@@ -4,6 +4,7 @@ import { useForm } from '@mantine/form';
 
 import { SharedLib } from '@shared';
 
+import { type ErrorMessage } from '@shared/api';
 import { firstInvalidField } from '@units/auth/lib';
 import { loginFormSchema, type LoginFormValues } from '@units/auth/model';
 
@@ -13,7 +14,7 @@ export interface LoginFormProps {
   /** Carried by the submit button, never by a page-wide spinner or a toast. */
   readonly isPending: boolean;
   /** i18n key of something the answer said that is neither a field error nor a failure. */
-  readonly noticeKey?: string | undefined;
+  readonly notice?: ErrorMessage | undefined;
   readonly onSubmit: (credentials: LoginFormValues) => void;
 }
 
@@ -40,7 +41,7 @@ export interface LoginFormProps {
  * `MutationCache.onError` (`rules/errors-and-toasts.mdc` §3). The `Alert` above the fields is for
  * the answer that is neither success nor failure — an address that belongs to two organizations.
  */
-export function LoginForm({ isPending, noticeKey, onSubmit }: LoginFormProps) {
+export function LoginForm({ isPending, notice, onSubmit }: LoginFormProps) {
   const { t } = useTranslation();
 
   const form = useForm<LoginFormValues>({
@@ -70,8 +71,13 @@ export function LoginForm({ isPending, noticeKey, onSubmit }: LoginFormProps) {
       )}
     >
       <Stack gap="md">
-        {noticeKey === undefined ? null : (
-          <Alert color="warning" role="alert" title={t(noticeKey)} variant="light" />
+        {notice === undefined ? null : (
+          <Alert
+            color="warning"
+            role="alert"
+            title={t(notice.key, notice.values ?? {})}
+            variant="light"
+          />
         )}
 
         <TextInput

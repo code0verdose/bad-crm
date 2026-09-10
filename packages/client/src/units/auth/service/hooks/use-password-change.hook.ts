@@ -23,7 +23,7 @@ export interface PasswordChange {
 }
 
 /** Nothing refused yet — a stable object, so it is not a new value on every render. */
-const NOTHING_REFUSED: PasswordChangeFailure = { fieldErrors: {}, alertKey: undefined };
+const NOTHING_REFUSED: PasswordChangeFailure = { fieldErrors: {}, alert: undefined };
 
 /**
  * Changing one's own password, as the object a form can render — the unit's public API for `ui`

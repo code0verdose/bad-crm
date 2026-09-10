@@ -104,7 +104,7 @@ export function OffboardingDialog({ opened, userId, email, onClose }: Offboardin
             value={typed}
           />
 
-          {offboarding.failureKey !== undefined && (
+          {offboarding.failure !== undefined && (
             // `role="alert"`, so it is announced rather than merely drawn: the operator's attention
             // is on the button they just pressed (`rules/a11y.mdc` §13). The refusal is rendered
             // here rather than toasted because this dialog is `aria-modal="true"` — a toast in the
@@ -118,7 +118,7 @@ export function OffboardingDialog({ opened, userId, email, onClose }: Offboardin
               title={t('offboarding.failed.title')}
               variant="light"
             >
-              <Text size="sm">{t(offboarding.failureKey)}</Text>
+              <Text size="sm">{t(offboarding.failure.key, offboarding.failure.values ?? {})}</Text>
             </Alert>
           )}
 

@@ -52,7 +52,7 @@ export function LoginPage() {
         <>
           <AuthUi.LoginForm
             isPending={login.isPending}
-            noticeKey={login.noticeKey}
+            notice={login.notice}
             onSubmit={login.submit}
           />
 
@@ -62,7 +62,7 @@ export function LoginPage() {
         </>
       ) : (
         <AuthUi.TwoFactorForm
-          failureKey={login.secondFactor.failureKey}
+          failure={login.secondFactor.failure}
           isPending={login.secondFactor.isPending}
           onSubmit={login.secondFactor.submit}
           secondsLeft={login.secondFactor.secondsLeft}

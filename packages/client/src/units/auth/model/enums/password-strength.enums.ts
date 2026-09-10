@@ -1,10 +1,12 @@
 /**
  * How a password reads to the meter beside the field — four steps, and none of them is a verdict.
  *
- * The product has no strength policy: `SharedValidation.passwordSchema` is a length range and
- * nothing else, and the server applies exactly that. The meter is therefore advice, and the four
- * words are chosen to sound like advice; a level never refuses a submission
- * (`change-password-form.schema.ts` validates length and agreement, and does not look at this).
+ * The product has no strength *score* policy: what the server refuses is a shape — a keyboard walk,
+ * a repeated character, a plain run (`SharedValidation.isWeakPassword`) — and the forms refuse the
+ * same shapes through `newPasswordSchema`. The meter is advice beyond that, and the four words are
+ * chosen to sound like advice; a level never refuses a submission
+ * (`change-password-form.schema.ts` validates bounds, shape and agreement, and does not look at
+ * this).
  */
 export const PASSWORD_STRENGTHS = ['weak', 'fair', 'good', 'strong'] as const;
 

@@ -85,7 +85,7 @@ const cacheContents = (queryClient: QueryClient): string =>
 /**
  * The unit **and** the shared layer it threw the error from, out of the same fresh module graph.
  *
- * `errorMessageKey` recognises a failure by `instanceof ApiError`, and `vi.resetModules()` builds a
+ * `errorMessage` recognises a failure by `instanceof ApiError`, and `vi.resetModules()` builds a
  * second `ApiError` class — so asking the outer graph about an error minted in the inner one
  * answers «not one of mine» and maps every refusal to `internal_error`. Which is exactly what this
  * suite saw before the two were taken from the same import.
@@ -215,7 +215,9 @@ describe('presenting the second factor', () => {
     expect(AuthLib.readAccessToken()).toBeNull();
     expect(events).toEqual([]);
     expect(notify.error).not.toHaveBeenCalled();
-    expect(FreshApi.errorMessageKey(result.current.error)).toBe('errors.code.mfa_invalid_code');
+    expect(FreshApi.errorMessage(result.current.error)).toEqual({
+      key: 'errors.code.mfa_invalid_code',
+    });
   });
 
   /**

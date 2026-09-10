@@ -1,3 +1,5 @@
+import { SharedValidation } from '@bad-crm/shared';
+
 import { type AuditLoggerPort } from '@/application/platform/ports/audit-logger.port.js';
 import { type PasswordHasherPort } from '@/application/identity/ports/password-hasher.port.js';
 import { type PasswordResetTokenRepositoryPort } from '@/application/identity/ports/password-reset-token.port.js';
@@ -18,7 +20,6 @@ import { type UnitOfWorkPort } from '@/application/platform/ports/unit-of-work.p
 import { maskIpAddress } from '@/domain/identity/mask-ip-address.util.js';
 import { renderPasswordChangedMail } from '@/domain/identity/password-changed-mail.util.js';
 import { SECURITY_EVENTS } from '@/domain/identity/security-event.constant.js';
-import { isWeakPassword } from '@/domain/identity/weak-password.util.js';
 import {
   RateLimitedError,
   UnauthenticatedError,
@@ -206,7 +207,11 @@ export class ChangePasswordUseCase {
    * a form they should not have reached.
    */
   private assertNewPasswordUsable(input: ChangePasswordInput): void {
-    if (input.newPassword !== input.currentPassword && !isWeakPassword(input.newPassword)) return;
+    if (
+      input.newPassword !== input.currentPassword &&
+      !SharedValidation.isWeakPassword(input.newPassword)
+    )
+      return;
 
     throw new ValidationError([
       {

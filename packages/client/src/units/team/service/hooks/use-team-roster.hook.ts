@@ -36,7 +36,7 @@ export interface TeamRoster {
  * dialogs skipped it, and only harder to notice because the calls sit in a composition point that
  * is allowed to know a great deal else.
  *
- * **No `failureKey`, and that is deliberate rather than missing.** These controls sit on the page
+ * **No `failure`, and that is deliberate rather than missing.** These controls sit on the page
  * rather than in a modal, so the one global toast keyed by `code` is visible exactly where the
  * action was taken, and the three mutations therefore declare no local `onError`
  * (`add-team-member.mutation.ts` says why at length). Handing `ui` a key it would have nothing to

@@ -133,7 +133,7 @@ describe('disbanding a team', () => {
 
     await waitFor(() => {
       // Anchored (`rules/testing.mdc`, «ассерт по подстроке»).
-      expect(result.current.failureKey).toMatch(/^errors\.code\.team_forbidden$/);
+      expect(result.current.failure).toEqual({ key: 'errors.code.team_forbidden' });
     });
 
     expect(deleted).not.toHaveBeenCalled();
@@ -155,7 +155,7 @@ describe('disbanding a team', () => {
       result.current.disband();
     });
     await waitFor(() => {
-      expect(result.current.failureKey).toBeDefined();
+      expect(result.current.failure).toBeDefined();
     });
 
     act(() => {
@@ -163,7 +163,7 @@ describe('disbanding a team', () => {
     });
 
     await waitFor(() => {
-      expect(result.current.failureKey).toBeUndefined();
+      expect(result.current.failure).toBeUndefined();
     });
   });
 });

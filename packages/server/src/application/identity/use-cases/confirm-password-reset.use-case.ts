@@ -1,3 +1,5 @@
+import { SharedValidation } from '@bad-crm/shared';
+
 import { type AuditLoggerPort } from '@/application/platform/ports/audit-logger.port.js';
 import {
   type AuthLookupPort,
@@ -15,7 +17,6 @@ import { type RateLimitPort } from '@/application/platform/ports/rate-limit.port
 import { type UnitOfWorkPort } from '@/application/platform/ports/unit-of-work.port.js';
 import { maskIpAddress } from '@/domain/identity/mask-ip-address.util.js';
 import { SECURITY_EVENTS } from '@/domain/identity/security-event.constant.js';
-import { isWeakPassword } from '@/domain/identity/weak-password.util.js';
 import {
   PasswordResetTokenInvalidError,
   RateLimitedError,
@@ -129,7 +130,7 @@ export class ConfirmPasswordResetUseCase {
   async execute(input: ConfirmPasswordResetInput): Promise<void> {
     const ipMasked = maskIpAddress(input.client.ipAddress);
 
-    if (isWeakPassword(input.newPassword)) {
+    if (SharedValidation.isWeakPassword(input.newPassword)) {
       throw new ValidationError([
         {
           path: 'newPassword',

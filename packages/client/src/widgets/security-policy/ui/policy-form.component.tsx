@@ -95,7 +95,7 @@ export function PolicyForm({ policy }: PolicyFormProps) {
 
       <PolicyPreviewDialog
         draft={editor.draft}
-        failureKey={editor.failureKey}
+        failure={editor.failure}
         isDirty={editor.isDirty}
         isSaving={editor.isSaving}
         needsSelfLockoutConfirmation={editor.needsSelfLockoutConfirmation}

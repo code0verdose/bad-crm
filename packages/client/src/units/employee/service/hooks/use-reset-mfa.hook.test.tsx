@@ -18,7 +18,7 @@ import { SharedApi, type SharedLib } from '@shared';
  * forgotten in.
  *
  * So what is asserted here is the shape the dialog consumes: a **key**, not an `Error`. A dialog
- * that receives an `Error` can still call `errorMessageKey` on it, and the arrangement this file
+ * that receives an `Error` can still call `errorMessage` on it, and the arrangement this file
  * exists to prevent would be back with the suite green.
  */
 
@@ -110,7 +110,7 @@ describe('resetting somebody else’s second factor', () => {
       expect(result.current.result).toEqual(RESULT);
     });
     // The report is the signal; nothing is toasted beside it (`rules/errors-and-toasts.mdc` §2).
-    expect(result.current.failureKey).toBeUndefined();
+    expect(result.current.failure).toBeUndefined();
   });
 
   it('hands the refusal to `ui` as a sentence key rather than as an error', async () => {
@@ -127,7 +127,7 @@ describe('resetting somebody else’s second factor', () => {
     });
 
     await waitFor(() => {
-      expect(result.current.failureKey).toBe('errors.code.user_forbidden');
+      expect(result.current.failure).toEqual({ key: 'errors.code.user_forbidden' });
     });
 
     // The dialog is `aria-modal`, so the refusal is rendered inside it and the global toast stands
@@ -135,7 +135,7 @@ describe('resetting somebody else’s second factor', () => {
     expect(globalNotify.error).not.toHaveBeenCalled();
     // Anchored: an unanchored match on the code would be equally happy with a key that has drifted
     // to another namespace (`rules/testing.mdc`, «ассерт по подстроке»).
-    expect(result.current.failureKey).toMatch(/^errors\.code\.user_forbidden$/);
+    expect(result.current.failure).toEqual({ key: 'errors.code.user_forbidden' });
   });
 
   it('forgets the refusal when the dialog is dismissed, so the next open starts clean', async () => {
@@ -151,7 +151,7 @@ describe('resetting somebody else’s second factor', () => {
       result.current.resetMfa();
     });
     await waitFor(() => {
-      expect(result.current.failureKey).toBe('errors.code.user_forbidden');
+      expect(result.current.failure).toEqual({ key: 'errors.code.user_forbidden' });
     });
 
     act(() => {
@@ -159,7 +159,7 @@ describe('resetting somebody else’s second factor', () => {
     });
 
     await waitFor(() => {
-      expect(result.current.failureKey).toBeUndefined();
+      expect(result.current.failure).toBeUndefined();
     });
     expect(result.current.result).toBeUndefined();
   });

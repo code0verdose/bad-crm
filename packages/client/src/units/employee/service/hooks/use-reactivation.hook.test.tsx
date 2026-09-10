@@ -18,7 +18,7 @@ import { SharedApi, SharedLib, type SharedLib as SharedLibTypes } from '@shared'
  * by `detail` (`rules/errors-and-toasts.mdc` §10), and this product had three confirmation dialogs
  * doing it in three different places — one inside its unit hook, one in the dialog component, one in
  * a dialog that also called the mutation itself. A hook that hands out an `Error` invites the second
- * arrangement back, and nothing would go red: the dialog would simply call `errorMessageKey` again.
+ * arrangement back, and nothing would go red: the dialog would simply call `errorMessage` again.
  */
 
 const USER = '018f4a3b-2c1d-7a41-9f00-2b7c1d0e5af1';
@@ -99,7 +99,7 @@ describe('bringing an account back', () => {
     await waitFor(() => {
       expect(result.current.result).toEqual(RESULT);
     });
-    expect(result.current.failureKey).toBeUndefined();
+    expect(result.current.failure).toBeUndefined();
   });
 
   it('hands the refusal to `ui` as a sentence key rather than as an error', async () => {
@@ -118,7 +118,7 @@ describe('bringing an account back', () => {
     await waitFor(() => {
       // Anchored, so a key that drifted into another namespace fails here rather than passing on a
       // substring (`rules/testing.mdc`, «ассерт по подстроке»).
-      expect(result.current.failureKey).toMatch(/^errors\.code\.user_forbidden$/);
+      expect(result.current.failure).toEqual({ key: 'errors.code.user_forbidden' });
     });
 
     // The dialog renders it in place; the global toast stands aside (`rules/tanstack-query.mdc` §10).

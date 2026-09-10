@@ -2,7 +2,7 @@ import { Alert, Button, Group, List, Modal, Stack, Text } from '@mantine/core';
 import { useId } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { SharedUi } from '@shared';
+import { SharedUi, type SharedApi } from '@shared';
 
 import { OrganizationService } from '@units/organization';
 
@@ -22,7 +22,7 @@ export interface PolicyPreviewDialogProps {
   readonly isSaving: boolean;
   /** The server asked for a second confirmation because the caller is covering themselves. */
   readonly needsSelfLockoutConfirmation: boolean;
-  readonly failureKey: string | undefined;
+  readonly failure: SharedApi.ErrorMessage | undefined;
   readonly onApply: () => void;
   readonly onClose: () => void;
 }
@@ -58,7 +58,7 @@ export function PolicyPreviewDialog({
   isDirty,
   isSaving,
   needsSelfLockoutConfirmation,
-  failureKey,
+  failure,
   onApply,
   onClose,
 }: PolicyPreviewDialogProps) {
@@ -136,14 +136,14 @@ export function PolicyPreviewDialog({
           </Alert>
         )}
 
-        {failureKey !== undefined && (
+        {failure !== undefined && (
           <Alert
             color="danger"
             role="alert"
             title={t('organization.security.preview.failed.title')}
             variant="light"
           >
-            <Text size="sm">{t(failureKey)}</Text>
+            <Text size="sm">{t(failure.key, failure.values ?? {})}</Text>
           </Alert>
         )}
 

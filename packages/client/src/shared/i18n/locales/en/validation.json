@@ -5,6 +5,7 @@
   "password": {
     "mismatch": "The two passwords are different",
     "required": "Enter a password",
+    "weak": "Too easy to guess — a keyboard walk, a repeated character, a plain run or a common word",
     "unchanged": "The new password is the same as the current one",
     "too_short_one": "Too short — at least {{count}} character",
     "too_short_other": "Too short — at least {{count}} characters",

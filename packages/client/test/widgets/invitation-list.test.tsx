@@ -507,7 +507,7 @@ describe('closing an invitation', () => {
 describe('re-issuing an invitation', () => {
   /**
    * The refusal path of the *other* action, and it needed its own case rather than trusting the
-   * revoke one above: the two live on separate `failureKey` branches of `useInvitationList`, and
+   * revoke one above: the two live on separate `failure` branches of `useInvitationList`, and
    * neither is reached by the other's test. Until this existed, the sentence a person reads when a
    * re-issue fails was asserted by nothing at all.
    */

@@ -22,7 +22,7 @@ import { type NotificationRequest } from '@shared/lib';
  * So the model's own division of labour is used: **translate by `code`, explain by `reason`**
  * (`permission-model.md` §«Слой 5»; `problem.serializer.ts` carries `reason` as an RFC 9457
  * extension member for exactly this). This map covers only the reasons whose code loses the
- * distinction; everything else falls through to `errorMessageKey`, which is why it is a partial
+ * distinction; everything else falls through to `errorMessage`, which is why it is a partial
  * record rather than a `Record<DenyReason, …>` that would have to invent a sentence for
  * `vault_locked`.
  */
@@ -38,7 +38,7 @@ export const OVERRIDE_REFUSAL_MESSAGE_KEY: Readonly<
  * than the code».
  *
  * `undefined` rather than a fallback key, so the caller keeps one decision instead of two: the
- * mutation falls back to `errorMessageKey(error)`, which is the same sentence every other screen
+ * mutation falls back to `errorMessage(error)`, which is the same sentence every other screen
  * shows for that code.
  */
 export const overrideRefusalMessageKey = (
@@ -49,10 +49,11 @@ export const overrideRefusalMessageKey = (
  * The sentence a failed write or removal shows: the precise one when there is one, the ordinary one
  * otherwise.
  *
- * The fallback is `errorMessage` rather than `errorMessageKey`, so a `rate_limited` keeps the
- * seconds it interpolates — the global handler this replaces would have passed them, and a local
- * handler that silently dropped them would turn «try again in 30 s» into «try again in {{seconds}}
- * s» for one screen only.
+ * The fallback is `errorMessage`, so a `rate_limited` keeps the seconds it interpolates — the global
+ * handler this replaces would have passed them, and a local handler that silently dropped them
+ * would turn «try again in 30 s» into «try again in {{seconds}} s» for one screen only. Until
+ * 2026-09-06 a key-only `errorMessageKey` existed beside it and did exactly that on thirteen hooks;
+ * it is gone, and this file was the one place that had read the pair from the start.
  *
  * Returned as a message rather than as a notification because it has **two** renderers, and which
  * one is right depends on where the action was started: a removal is clicked in the table and shows

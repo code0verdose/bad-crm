@@ -19,8 +19,9 @@ export const PASSWORD_CONFIRMATION_MESSAGE_KEY = 'validation.password.mismatch';
  *
  * **The current password is checked for presence only.** A length rule on it would refuse to *send*
  * a password chosen before the current policy — which is exactly the password somebody with an old
- * account is trying to replace. The new one gets `SharedValidation.passwordSchema`, the same schema
- * the server applies, because this is the screen that *sets* a password.
+ * account is trying to replace. The new one gets `SharedValidation.newPasswordSchema` — the bounds
+ * plus the shape check the server's use-case applies, from one shared source — because this is the
+ * screen that *sets* a password.
  *
  * **Equality with the current password is refused here as well as there.** The server answers
  * `422 validation_failed` for it, so nothing is lost by letting it through — except a round trip and
@@ -30,13 +31,14 @@ export const PASSWORD_CONFIRMATION_MESSAGE_KEY = 'validation.password.mismatch';
  * the input somebody has to fix: an error attached to the form has no `aria-describedby` to belong
  * to (`rules/errors-and-toasts.mdc` §4, `rules/a11y.mdc` §18).
  *
- * The strength meter is **not** part of this schema and deliberately cannot be: there is no strength
- * policy on the server, and a client that refused what the server accepts would be inventing one.
+ * The strength meter is **not** part of this schema. The server's policy is a shape check —
+ * `isWeakPassword`, refused here through `newPasswordSchema` — not a score, and a client that
+ * refused on the meter's arithmetic would be inventing a policy the server does not hold.
  */
 export const changePasswordFormSchema = z
   .object({
     currentPassword: z.string().min(1, { error: 'validation.password.required' }),
-    newPassword: SharedValidation.passwordSchema,
+    newPassword: SharedValidation.newPasswordSchema,
     // No policy of its own: it is right when it equals the field above and wrong otherwise, and a
     // second «too short» under it would be one mistake reported twice.
     confirmPassword: z.string(),

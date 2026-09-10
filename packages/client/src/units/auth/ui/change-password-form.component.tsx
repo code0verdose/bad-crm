@@ -90,7 +90,7 @@ export function ChangePasswordForm({ isPending, failure, onSubmit }: ChangePassw
       )}
     >
       <Stack gap="md">
-        {failure.alertKey !== undefined && (
+        {failure.alert !== undefined && (
           // `role="alert"`, so it is announced rather than merely drawn: attention is on the button
           // that was just pressed (`rules/a11y.mdc` §13).
           <Alert
@@ -99,7 +99,7 @@ export function ChangePasswordForm({ isPending, failure, onSubmit }: ChangePassw
             title={t('security.password.failed.title')}
             variant="light"
           >
-            <Text size="sm">{t(failure.alertKey)}</Text>
+            <Text size="sm">{t(failure.alert.key, failure.alert.values ?? {})}</Text>
           </Alert>
         )}
 

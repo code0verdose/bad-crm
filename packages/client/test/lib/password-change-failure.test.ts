@@ -31,7 +31,7 @@ describe('sorting a refused password change', () => {
     expect(failure.fieldErrors).toEqual({
       currentPassword: 'errors.code.invalid_credentials',
     });
-    expect(failure.alertKey).toBeUndefined();
+    expect(failure.alert).toBeUndefined();
   });
 
   it('puts a field issue under the field the server named', () => {
@@ -42,7 +42,7 @@ describe('sorting a refused password change', () => {
     );
 
     expect(failure.fieldErrors).toEqual({ newPassword: 'errors.field.too_small' });
-    expect(failure.alertKey).toBeUndefined();
+    expect(failure.alert).toBeUndefined();
   });
 
   /**
@@ -61,14 +61,29 @@ describe('sorting a refused password change', () => {
     );
 
     expect(failure.fieldErrors).toEqual({});
-    expect(failure.alertKey).toBe('errors.code.validation_failed');
+    expect(failure.alert).toEqual({ key: 'errors.code.validation_failed' });
   });
 
   it('states a refusal that names no field above the form', () => {
     const failure = AuthLib.passwordChangeFailure(apiError('rate_limited'));
 
     expect(failure.fieldErrors).toEqual({});
-    expect(failure.alertKey).toBe('errors.code.rate_limited');
+    expect(failure.alert).toEqual({ key: 'errors.code.rate_limited' });
+  });
+
+  /** The wait travels with the sentence; a sorter that kept the key and dropped the value would print the placeholder. */
+  it('keeps the seconds a rate limit named', () => {
+    const failure = AuthLib.passwordChangeFailure(
+      new SharedApi.ApiError({
+        code: 'rate_limited',
+        status: 429,
+        requestId: 'req-1',
+        issues: [],
+        retryAfterSeconds: 30,
+      }),
+    );
+
+    expect(failure.alert).toEqual({ key: 'errors.code.rate_limited', values: { seconds: 30 } });
   });
 
   /**
@@ -80,6 +95,6 @@ describe('sorting a refused password change', () => {
     const failure = AuthLib.passwordChangeFailure(new Error('socket hang up'));
 
     expect(failure.fieldErrors).toEqual({});
-    expect(failure.alertKey).toBe('errors.code.internal_error');
+    expect(failure.alert).toEqual({ key: 'errors.code.internal_error' });
   });
 });

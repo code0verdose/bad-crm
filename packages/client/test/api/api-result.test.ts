@@ -1,13 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import {
-  ApiError,
-  apiErrorOf,
-  errorMessage,
-  errorMessageKey,
-  isAbortError,
-  unwrapApiResult,
-} from '@shared/api';
+import { ApiError, apiErrorOf, errorMessage, isAbortError, unwrapApiResult } from '@shared/api';
 
 /**
  * `openapi-fetch` never throws on a 4xx or a 5xx: it returns `{ error, response }` and leaves the
@@ -78,7 +71,7 @@ describe('choosing the message a user sees', () => {
   it('selects the i18n key by the stable code, never by the server text', () => {
     const error = new ApiError({ code: 'task_not_found', status: 404, requestId: 'r', issues: [] });
 
-    expect(errorMessageKey(error)).toBe('errors.code.task_not_found');
+    expect(errorMessage(error)).toEqual({ key: 'errors.code.task_not_found' });
   });
 
   /**
@@ -87,9 +80,35 @@ describe('choosing the message a user sees', () => {
    * exception text would put a stack sentence in a toast.
    */
   it('falls back to the internal-error key for anything that is not an API error', () => {
-    expect(errorMessageKey(new TypeError('undefined is not a function'))).toBe(
-      'errors.code.internal_error',
-    );
+    expect(errorMessage(new TypeError('undefined is not a function'))).toEqual({
+      key: 'errors.code.internal_error',
+    });
+  });
+
+  /**
+   * The one sentence with a place for a value, and the value comes from the answer. It travels as
+   * a pair rather than as a key: a key-only variant of this function existed until 2026-09-06, and
+   * every hook that used it printed «{{seconds}}» on the fourth attempt.
+   */
+  it('carries the wait of a rate limit as a value to interpolate, never glued into the key', () => {
+    const error = new ApiError({
+      code: 'rate_limited',
+      status: 429,
+      requestId: 'r',
+      issues: [],
+      retryAfterSeconds: 42,
+    });
+
+    expect(errorMessage(error)).toEqual({
+      key: 'errors.code.rate_limited',
+      values: { seconds: 42 },
+    });
+  });
+
+  it('carries no values for a rate limit whose answer named no wait', () => {
+    const error = new ApiError({ code: 'rate_limited', status: 429, requestId: 'r', issues: [] });
+
+    expect(errorMessage(error)).toEqual({ key: 'errors.code.rate_limited' });
   });
 });
 

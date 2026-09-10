@@ -236,7 +236,7 @@ describe('signing in', () => {
     result.current.submit(CREDENTIALS);
 
     await waitFor(() => {
-      expect(result.current.noticeKey).toBe(AuthModel.ORGANIZATION_SELECTION_NOTICE_KEY);
+      expect(result.current.notice).toEqual({ key: AuthModel.ORGANIZATION_SELECTION_NOTICE_KEY });
     });
     expect(AuthService.authSession.read()).toEqual({ status: 'unknown' });
   });
@@ -247,7 +247,7 @@ describe('signing in', () => {
  * token, the code buys the session, and the step ends — one way or another — rather than sitting on
  * a token that is already dead.
  *
- * The shared layer is re-imported out of the same fresh graph as the unit, because `errorMessageKey`
+ * The shared layer is re-imported out of the same fresh graph as the unit, because `errorMessage`
  * recognises a failure by `instanceof ApiError` and `vi.resetModules()` builds a second class.
  */
 const freshUnitAndShared = async () => {
@@ -345,7 +345,7 @@ describe('signing in with a second factor', () => {
     result.current.secondFactor.submit({ code: '000000' });
 
     await waitFor(() => {
-      expect(result.current.secondFactor.failureKey).toBe('errors.code.mfa_invalid_code');
+      expect(result.current.secondFactor.failure).toEqual({ key: 'errors.code.mfa_invalid_code' });
     });
     expect(result.current.step).toBe('second-factor');
   });
@@ -371,7 +371,7 @@ describe('signing in with a second factor', () => {
     await waitFor(() => {
       expect(result.current.step).toBe('password');
     });
-    expect(result.current.noticeKey).toBe('errors.code.mfa_token_expired');
+    expect(result.current.notice).toEqual({ key: 'errors.code.mfa_token_expired' });
   });
 
   /**
@@ -387,7 +387,7 @@ describe('signing in with a second factor', () => {
     result.current.submit(CREDENTIALS);
 
     await waitFor(() => {
-      expect(result.current.noticeKey).toBe('errors.code.mfa_token_expired');
+      expect(result.current.notice).toEqual({ key: 'errors.code.mfa_token_expired' });
     });
     expect(result.current.step).toBe('password');
     expect(result.current.secondFactor.secondsLeft).toBe(0);
@@ -413,13 +413,13 @@ describe('signing in with a second factor', () => {
     result.current.secondFactor.submit({ code: '000000' });
 
     await waitFor(() => {
-      expect(result.current.secondFactor.failureKey).toBe('errors.code.mfa_invalid_code');
+      expect(result.current.secondFactor.failure).toEqual({ key: 'errors.code.mfa_invalid_code' });
     });
 
     result.current.submit(CREDENTIALS);
 
     await waitFor(() => {
-      expect(result.current.secondFactor.failureKey).toBeUndefined();
+      expect(result.current.secondFactor.failure).toBeUndefined();
     });
     expect(result.current.step).toBe('second-factor');
   });

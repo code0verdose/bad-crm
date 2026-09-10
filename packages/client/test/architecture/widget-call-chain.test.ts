@@ -6,7 +6,7 @@
  * `rules/frontend-fsd.mdc` rule 4 fixes the chain as `ui → service/hooks → service/{queries,
  * mutations} → api`, and rule 6 makes the hook the unit's public API for `ui`. A widget that calls
  * `XxxMutations.useY()` itself skips the middle link, and a widget that then turns the `Error` into
- * a sentence key with `errorMessageKey` puts a second copy of «read the failure by its `code`»
+ * a sentence with `errorMessage` puts a second copy of «read the failure by its `code`»
  * (`rules/errors-and-toasts.mdc` §10) on a layer that has no business knowing the rule.
  *
  * **Nothing else catches either, and the reason is structural rather than an oversight in the
@@ -76,8 +76,12 @@ const composingFiles = (): string[] => [
  * The call, not the prop. `SharedUi.DataState` takes an `errorMessageKey="…"` attribute, which is a
  * constant key handed to a component and has nothing to do with reading an `Error` — six widgets
  * pass one. What is forbidden is the *function*, so the parenthesis is part of the pattern.
+ *
+ * Both spellings. `errorMessageKey(` was the function until 2026-09-06, when it was removed for
+ * dropping the values a `rate_limited` interpolates; `errorMessage(` is what replaced it, and a
+ * gate that only knew the old name would go green on a widget calling the new one.
  */
-const ERROR_KEY_CALL = /\berrorMessageKey\s*\(/;
+const ERROR_KEY_CALL = /\berrorMessage(?:Key)?\s*\(/;
 
 /**
  * The hooks of a unit's **data segments** — `service/queries` and `service/mutations` — read off the
@@ -128,6 +132,8 @@ describe('the widget call-chain detectors', () => {
   it.each([
     ['a bare call', 'const key = errorMessageKey(error);'],
     ['a namespaced call', 'const key = SharedApi.errorMessageKey(mutation.error);'],
+    ['the pair-returning successor', 'const message = errorMessage(error);'],
+    ['the namespaced successor', 'const message = SharedApi.errorMessage(mutation.error);'],
   ])('rejects %s', (_case, source) => {
     expect(ERROR_KEY_CALL.test(source)).toBe(true);
   });

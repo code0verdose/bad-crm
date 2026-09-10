@@ -54,12 +54,12 @@ export function TeamCreateDialog({ opened, onClose }: TeamCreateDialogProps) {
       <Stack gap="md">
         <Text size="sm">{t('teams.create.description')}</Text>
 
-        {creation.failureKey !== undefined && (
+        {creation.failure !== undefined && (
           // `role="alert"`, so it is announced rather than merely drawn: the operator's attention is
           // on the button they just pressed (`rules/a11y.mdc` §13). The text comes from the `code`,
           // never from `detail` — the technical half went to the log.
           <Alert color="danger" role="alert" title={t('teams.create.failed')} variant="light">
-            <Text size="sm">{t(creation.failureKey)}</Text>
+            <Text size="sm">{t(creation.failure.key, creation.failure.values ?? {})}</Text>
           </Alert>
         )}
 

@@ -39,9 +39,10 @@ export function RegisterPage() {
       ) : (
         <AuthUi.RegisterForm
           isPending={registration.isPending}
-          noticeKey={registration.noticeKey}
+          notice={registration.notice}
           onSubmit={registration.submit}
-          slugErrorKey={registration.slugErrorKey}
+          passwordError={registration.passwordError}
+          slugError={registration.slugError}
         />
       )}
 

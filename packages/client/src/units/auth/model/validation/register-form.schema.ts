@@ -31,9 +31,10 @@ export const MAX_ORGANIZATION_SLUG = SharedValidation.SLUG_MAX_LENGTH;
  *
  * **The password policy is enforced here**, unlike on the sign-in form, and the difference is the
  * one `reset-password-form.schema.ts` states: this screen *sets* a password. It is
- * `SharedValidation.passwordSchema` — the same schema the server applies
- * (`packages/shared/src/validation/password.schema.ts`) — rather than a second statement of twelve
- * characters that could drift from it.
+ * `SharedValidation.newPasswordSchema` — the bounds the server's validator applies plus the shape
+ * check its use-case applies, both from `packages/shared/src/validation` — rather than a second
+ * statement of either that could drift. Until 2026-09-06 the form carried the bounds alone, and a
+ * password the server called weak came back as a `422` the form could not place.
  *
  * **The confirmation field never reaches the server**, and it is not ceremony either. This is the
  * first password of an installation: nobody can reset it for the person who typed it, the address
@@ -62,7 +63,7 @@ export const registerFormSchema = z
       .max(MAX_ORGANIZATION_SLUG, { error: 'auth.register.field.slugTooLong' })
       .regex(SLUG_PATTERN, { error: 'auth.register.field.slugInvalid' }),
     email: SharedValidation.emailSchema,
-    password: SharedValidation.passwordSchema,
+    password: SharedValidation.newPasswordSchema,
     // No policy of its own: it is right when it equals the password and wrong otherwise, and a
     // second «too short» under it would be one mistake reported twice.
     confirmPassword: z.string(),

@@ -9,6 +9,7 @@ import {
   moneySchema,
   moneyWireSchema,
   offsetPageSchema,
+  newPasswordSchema,
   passwordSchema,
   slugSchema,
   sortOrderSchema,
@@ -54,6 +55,43 @@ describe('passwordSchema', () => {
 
   it('does not trim: a password is a byte sequence, not a display string', () => {
     expect(passwordSchema.parse('  spaced pass  ')).toBe('  spaced pass  ');
+  });
+});
+
+/**
+ * The schema for a password being *set*, as opposed to one being presented.
+ *
+ * `passwordSchema` above deliberately accepts `aaaaaaaaaaaa`: it bounds a password somebody already
+ * has, and refusing to *send* one chosen before the policy would lock its owner out. This one adds
+ * the half of the policy the server's use-cases apply to a password being chosen, so a form that
+ * sets one refuses the same shapes before the round trip.
+ */
+describe('newPasswordSchema', () => {
+  it('accepts a passphrase', () => {
+    expect(newPasswordSchema.safeParse('correct-horse-battery-staple').success).toBe(true);
+  });
+
+  it.each([
+    ['one character repeated to length', 'a'.repeat(12)],
+    ['a keyboard walk padded to length', 'qwertyuiop12'],
+    ['a dictionary word in leetspeak', 'P@ssw0rd1234'],
+  ])('refuses %s with the weak-password key on the field', (_case, value) => {
+    const result = newPasswordSchema.safeParse(value);
+
+    expect(result.success).toBe(false);
+    expect(result.error?.issues.map((issue) => issue.message)).toEqual([
+      'validation.password.weak',
+    ]);
+  });
+
+  /** The bounds come first and alone: a short password is «too short», not «too short and weak». */
+  it('reports a bound before it judges strength', () => {
+    const result = newPasswordSchema.safeParse('aaa');
+
+    expect(result.success).toBe(false);
+    expect(result.error?.issues.map((issue) => issue.message)).toEqual([
+      'validation.password.too_short',
+    ]);
   });
 });
 

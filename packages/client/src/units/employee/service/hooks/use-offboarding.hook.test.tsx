@@ -15,7 +15,7 @@ import { SharedApi, type SharedLib } from '@shared';
  * widget while the three confirmations beside it kept theirs in their units.
  *
  * So what is asserted here is the shape the dialog consumes: a **key**, not an `Error`. A dialog
- * handed an `Error` can call `errorMessageKey` on it again, and the arrangement this file exists to
+ * handed an `Error` can call `errorMessage` on it again, and the arrangement this file exists to
  * prevent would be back with the suite green.
  */
 
@@ -108,7 +108,7 @@ describe('switching a colleague off', () => {
       expect(result.current.report).toEqual(REPORT);
     });
     // The report is the signal; nothing is toasted beside it (`rules/errors-and-toasts.mdc` §2).
-    expect(result.current.failureKey).toBeUndefined();
+    expect(result.current.failure).toBeUndefined();
   });
 
   it('hands the refusal to `ui` as a sentence key rather than as an error', async () => {
@@ -127,7 +127,7 @@ describe('switching a colleague off', () => {
     await waitFor(() => {
       // Anchored: an unanchored match on the code would be equally happy with a key that has
       // drifted to another namespace (`rules/testing.mdc`, «ассерт по подстроке»).
-      expect(result.current.failureKey).toMatch(/^errors\.code\.last_owner_required$/);
+      expect(result.current.failure).toEqual({ key: 'errors.code.last_owner_required' });
     });
 
     // The dialog is `aria-modal`, so the refusal is rendered inside it and the global toast stands
@@ -148,7 +148,7 @@ describe('switching a colleague off', () => {
       result.current.deactivate('Уволен');
     });
     await waitFor(() => {
-      expect(result.current.failureKey).toBeDefined();
+      expect(result.current.failure).toBeDefined();
     });
 
     act(() => {
@@ -156,7 +156,7 @@ describe('switching a colleague off', () => {
     });
 
     await waitFor(() => {
-      expect(result.current.failureKey).toBeUndefined();
+      expect(result.current.failure).toBeUndefined();
     });
     expect(result.current.report).toBeUndefined();
   });

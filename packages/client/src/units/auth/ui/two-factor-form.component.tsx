@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next';
 
 import { SharedLib } from '@shared';
 
+import { type ErrorMessage } from '@shared/api';
 import { twoFactorFormSchema, type TwoFactorFormValues } from '@units/auth/model';
 
 import classes from './login-form.module.css';
@@ -19,7 +20,7 @@ export interface TwoFactorFormProps {
   /** Carried by the submit button, never by a page-wide spinner or a toast. */
   readonly isPending: boolean;
   /** i18n key of a refused code, chosen from the problem `code` by the unit hook. */
-  readonly failureKey: string | undefined;
+  readonly failure: ErrorMessage | undefined;
   /** What is left of the intermediate token's five minutes. */
   readonly secondsLeft: number;
   readonly onSubmit: (values: TwoFactorFormValues) => void;
@@ -32,7 +33,7 @@ export interface TwoFactorFormProps {
  * `zodFormResolver`, so the schema decides what is well-formed and Mantine wires `aria-invalid` and
  * the `aria-describedby` that points at the message (`rules/design-system.mdc` §11,
  * `rules/a11y.mdc` §18). Whether the code is *right* is decided by `POST /auth/2fa/verify`, and its
- * refusal arrives as `failureKey`.
+ * refusal arrives as `failure`.
  *
  * **One field, two hints.** The link switches what the step says and how the field is typed —
  * numeric keypad and six characters for an authenticator, plain text and thirty-two for a recovery
@@ -56,12 +57,7 @@ export interface TwoFactorFormProps {
  * costs one keystroke rather than the whole value. The same arrangement, for the same reason, as
  * `disable-totp-dialog.component.tsx`.
  */
-export function TwoFactorForm({
-  isPending,
-  failureKey,
-  secondsLeft,
-  onSubmit,
-}: TwoFactorFormProps) {
+export function TwoFactorForm({ isPending, failure, secondsLeft, onSubmit }: TwoFactorFormProps) {
   const { t } = useTranslation();
   const [source, setSource] = useState<CodeSource>('authenticator');
   const codeRef = useRef<HTMLInputElement>(null);
@@ -130,14 +126,14 @@ export function TwoFactorForm({
           {...form.getInputProps('code')}
         />
 
-        {failureKey !== undefined && (
+        {failure !== undefined && (
           <Alert
             color="danger"
             role="alert"
             title={t('auth.twoFactor.failed.title')}
             variant="light"
           >
-            <Text size="sm">{t(failureKey)}</Text>
+            <Text size="sm">{t(failure.key, failure.values ?? {})}</Text>
           </Alert>
         )}
 

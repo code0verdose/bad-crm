@@ -148,7 +148,7 @@ export function ActiveSessions() {
 
             sessions.revoke(ask.session, done);
           }}
-          {...(sessions.failureKey === undefined ? {} : { failureKey: sessions.failureKey })}
+          {...(sessions.failure === undefined ? {} : { failure: sessions.failure })}
         />
       )}
     </SharedUi.Section>

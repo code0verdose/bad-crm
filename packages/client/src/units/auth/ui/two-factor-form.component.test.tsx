@@ -21,7 +21,7 @@ const renderForm = (props: Partial<Parameters<typeof TwoFactorForm>[0]> = {}) =>
   const { container } = render(
     <MantineProvider env="test">
       <TwoFactorForm
-        failureKey={undefined}
+        failure={undefined}
         isPending={false}
         onSubmit={onSubmit}
         secondsLeft={287}
@@ -149,7 +149,7 @@ describe('the second-factor step', () => {
   });
 
   it('announces a refused code rather than only drawing it', () => {
-    renderForm({ failureKey: 'errors.code.mfa_invalid_code' });
+    renderForm({ failure: { key: 'errors.code.mfa_invalid_code' } });
 
     expect(screen.getByRole('alert')).toHaveTextContent('errors.code.mfa_invalid_code');
   });
@@ -165,7 +165,7 @@ describe('the second-factor step', () => {
   });
 
   it('has no accessibility violation, plain or refused', async () => {
-    const { container } = renderForm({ failureKey: 'errors.code.mfa_invalid_code' });
+    const { container } = renderForm({ failure: { key: 'errors.code.mfa_invalid_code' } });
 
     const { violations } = await axe.run(container, {
       // Colours live in a stylesheet jsdom never loads; contrast is measured from the tokens in

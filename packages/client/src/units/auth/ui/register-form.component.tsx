@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 
 import { SharedLib } from '@shared';
 
+import { type ErrorMessage } from '@shared/api';
 import { firstInvalidField } from '@units/auth/lib';
 import {
   MAX_ORGANIZATION_NAME,
@@ -18,13 +19,20 @@ export interface RegisterFormProps {
   /** Carried by the submit button, never by a page-wide spinner or a toast. */
   readonly isPending: boolean;
   /**
-   * i18n key of a refusal that is about the **slug** — today only «that organization already
-   * exists». It is rendered under the field, which is where a server's verdict about a field
-   * belongs (`rules/errors-and-toasts.mdc` §4).
+   * A refusal that is about the **slug** — today only «that organization already exists». It is
+   * rendered under the field, which is where a server's verdict about a field belongs
+   * (`rules/errors-and-toasts.mdc` §4).
    */
-  readonly slugErrorKey?: string | undefined;
-  /** i18n key of a refusal that belongs to no single field: rate limit, an unreadable answer, 500. */
-  readonly noticeKey?: string | undefined;
+  readonly slugError?: ErrorMessage | undefined;
+  /** A refusal that is about the **password** — the server's half of the policy. Under the field. */
+  readonly passwordError?: ErrorMessage | undefined;
+  /**
+   * A refusal that belongs to no single field: rate limit, an unreadable answer, 500.
+   *
+   * Rendered as `t(key, values)`, never `t(key)`: the rate limit's sentence has a place for the
+   * seconds the server named, and a form that translated the key alone showed the placeholder.
+   */
+  readonly notice?: ErrorMessage | undefined;
   readonly onSubmit: (values: RegisterFormValues) => void;
 }
 
@@ -38,12 +46,13 @@ export interface RegisterFormProps {
  * the `aria-describedby` a screen reader needs (`rules/a11y.mdc` §18). The resolver answers
  * synchronously; no schema in this product has an async refinement.
  *
- * **The two server-side refusals arrive as props rather than as toasts**, and they are rendered in
- * two different places on purpose. A taken slug is a statement about one field and joins that
- * field's own error; everything else — a rate limit, a 500 — is a statement about the request and
- * sits above the fields in an `Alert` with `role="alert"`, so it is announced to somebody who
- * cannot see it appear. Exactly one of them is ever set for one submit, so the screen never says
- * the same thing twice (`rules/errors-and-toasts.mdc` §2).
+ * **The three server-side refusals arrive as props rather than as toasts**, and they are rendered in
+ * three different places on purpose. A taken slug is a statement about one field and joins that
+ * field's own error; a password the server's policy refused joins the password field's; everything
+ * else — a rate limit, a 500 — is a statement about the request and sits above the fields in an
+ * `Alert` with `role="alert"`, so it is announced to somebody who cannot see it appear. Exactly one
+ * of them is ever set for one submit, so the screen never says the same thing twice
+ * (`rules/errors-and-toasts.mdc` §2).
  *
  * `maxLength` on the two organization fields is the schema's bound rather than a number retyped
  * here: a form that let somebody type a 200-character name only to refuse it on submit would be
@@ -51,7 +60,13 @@ export interface RegisterFormProps {
  *
  * It shares the sign-in form's stylesheet: same object, same width, one place for it to change.
  */
-export function RegisterForm({ isPending, noticeKey, slugErrorKey, onSubmit }: RegisterFormProps) {
+export function RegisterForm({
+  isPending,
+  notice,
+  passwordError,
+  slugError,
+  onSubmit,
+}: RegisterFormProps) {
   const { t } = useTranslation();
 
   const form = useForm<RegisterFormValues>({
@@ -87,8 +102,13 @@ export function RegisterForm({ isPending, noticeKey, slugErrorKey, onSubmit }: R
       )}
     >
       <Stack gap="md">
-        {noticeKey === undefined ? null : (
-          <Alert color="warning" role="alert" title={t(noticeKey)} variant="light" />
+        {notice === undefined ? null : (
+          <Alert
+            color="warning"
+            role="alert"
+            title={t(notice.key, notice.values ?? {})}
+            variant="light"
+          />
         )}
 
         <TextInput
@@ -112,7 +132,10 @@ export function RegisterForm({ isPending, noticeKey, slugErrorKey, onSubmit }: R
           // before «already taken» could even be true. Read at render, which is where derived state
           // belongs (`rules/frontend-fsd.mdc` rule 11) — an effect copying it into form state would
           // be a second copy to leave standing after the next submit.
-          error={form.errors['slug'] ?? (slugErrorKey === undefined ? undefined : t(slugErrorKey))}
+          error={
+            form.errors['slug'] ??
+            (slugError === undefined ? undefined : t(slugError.key, slugError.values ?? {}))
+          }
         />
 
         <TextInput
@@ -132,12 +155,20 @@ export function RegisterForm({ isPending, noticeKey, slugErrorKey, onSubmit }: R
           marked as the invalid one (`rules/a11y.mdc` §18).
         */}
         <PasswordInput
-          aria-invalid={form.errors['password'] !== undefined}
+          aria-invalid={form.errors['password'] !== undefined || passwordError !== undefined}
           autoComplete="new-password"
           key={form.key('password')}
           label={t('auth.register.password.label')}
           required
           {...form.getInputProps('password')}
+          // The form's own issue first, as on the slug: the server's verdict is only reachable by a
+          // password the schema let through, and the two never stand at once.
+          error={
+            form.errors['password'] ??
+            (passwordError === undefined
+              ? undefined
+              : t(passwordError.key, passwordError.values ?? {}))
+          }
         />
 
         <PasswordInput

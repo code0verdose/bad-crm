@@ -1,6 +1,8 @@
 import { Alert, Button, Group, List, Modal, Stack, Text } from '@mantine/core';
 import { useTranslation } from 'react-i18next';
 
+import { type SharedApi } from '@shared';
+
 import { SESSION_ACTION_COPY, type SessionActionKind } from '@widgets/active-sessions/lib';
 
 export interface SessionConfirmDialogProps {
@@ -9,7 +11,7 @@ export interface SessionConfirmDialogProps {
   readonly device: string;
   readonly isPending: boolean;
   /** The refusal as a sentence key, chosen from the `code`. Absent while nothing has been refused. */
-  readonly failureKey?: string;
+  readonly failure?: SharedApi.ErrorMessage;
   readonly onConfirm: () => void;
   readonly onCancel: () => void;
 }
@@ -48,7 +50,7 @@ export function SessionConfirmDialog({
   action,
   device,
   isPending,
-  failureKey,
+  failure,
   onConfirm,
   onCancel,
 }: SessionConfirmDialogProps) {
@@ -74,7 +76,7 @@ export function SessionConfirmDialog({
           ))}
         </List>
 
-        {failureKey !== undefined && (
+        {failure !== undefined && (
           // `role="alert"`, so it is announced rather than merely drawn: attention is on the button
           // that was just pressed (`rules/a11y.mdc` §13). The text comes from the `code`, never from
           // `detail` — the technical half went to the log.
@@ -84,7 +86,7 @@ export function SessionConfirmDialog({
             title={t('security.sessions.failed.title')}
             variant="light"
           >
-            <Text size="sm">{t(failureKey)}</Text>
+            <Text size="sm">{t(failure.key, failure.values ?? {})}</Text>
           </Alert>
         )}
 

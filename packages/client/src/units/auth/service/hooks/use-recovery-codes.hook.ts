@@ -1,4 +1,4 @@
-import { errorMessageKey } from '@shared/api';
+import { errorMessage, type ErrorMessage } from '@shared/api';
 import { type RegenerateRecoveryCodesFormValues } from '@units/auth/model';
 import { useRegenerateRecoveryCodes } from '@units/auth/service/mutations/regenerate-recovery-codes.mutation.js';
 import { useRecoveryCodeStatusQuery } from '@units/auth/service/queries/recovery-code-status.query.js';
@@ -18,8 +18,8 @@ export interface RecoveryCodes {
   /** A freshly issued set, for as long as the person is looking at it. */
   readonly issuedCodes: readonly string[] | undefined;
   readonly isRegenerating: boolean;
-  /** i18n key of a refused reissue, chosen from the problem `code`. */
-  readonly failureKey: string | undefined;
+  /** The sentence for a refused reissue, chosen from the problem `code` — key and values. */
+  readonly failure: ErrorMessage | undefined;
   readonly regenerate: (values: RegenerateRecoveryCodesFormValues) => void;
   readonly dismissCodes: () => void;
 }
@@ -55,7 +55,7 @@ export const useRecoveryCodes = (): RecoveryCodes => {
     },
     issuedCodes: reissue.data?.codes,
     isRegenerating: reissue.isPending,
-    failureKey: reissue.error === null ? undefined : errorMessageKey(reissue.error),
+    failure: reissue.error === null ? undefined : errorMessage(reissue.error),
     regenerate: (values: RegenerateRecoveryCodesFormValues) => {
       reissue.mutate(values);
     },

@@ -3,7 +3,7 @@ import { isInvitationExpired } from '@units/iam/lib';
 import { useResendInvitation } from '@units/iam/service/mutations/resend-invitation.mutation.js';
 import { useRevokeInvitation } from '@units/iam/service/mutations/revoke-invitation.mutation.js';
 import { useInvitationsQuery } from '@units/iam/service/queries/invitations.query.js';
-import { errorMessageKey } from '@shared/api';
+import { errorMessage, type ErrorMessage } from '@shared/api';
 
 /** One row as the screen renders it: the invitation, plus the one fact the contract leaves open. */
 export interface OpenInvitation {
@@ -20,8 +20,8 @@ export interface OpenInvitation {
  */
 export interface InvitationAction {
   readonly isPending: boolean;
-  /** The refusal as a sentence key, chosen from the `code` — never from `detail`. */
-  readonly failureKey: string | undefined;
+  /** The refusal as a sentence — key and values — chosen from the `code`, never from `detail`. */
+  readonly failure: ErrorMessage | undefined;
   /**
    * Runs it. `onDone` fires only on success, which is how the screen closes a dialog on the
    * operation that has nothing left to show and keeps it open on the one that has.
@@ -78,7 +78,7 @@ export const useInvitationList = (): InvitationList => {
     },
     resend: {
       isPending: resend.isPending,
-      failureKey: resend.error === null ? undefined : errorMessageKey(resend.error),
+      failure: resend.error === null ? undefined : errorMessage(resend.error),
       run: (invitationId, onDone) => {
         resend.mutate(invitationId, onDone === undefined ? undefined : { onSuccess: onDone });
       },
@@ -89,7 +89,7 @@ export const useInvitationList = (): InvitationList => {
     minted: resend.data,
     revoke: {
       isPending: revoke.isPending,
-      failureKey: revoke.error === null ? undefined : errorMessageKey(revoke.error),
+      failure: revoke.error === null ? undefined : errorMessage(revoke.error),
       run: (invitationId, onDone) => {
         revoke.mutate(invitationId, onDone === undefined ? undefined : { onSuccess: onDone });
       },

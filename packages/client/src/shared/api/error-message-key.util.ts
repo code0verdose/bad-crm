@@ -139,9 +139,22 @@ export const VALIDATION_ISSUE_MESSAGE_KEY: Readonly<
   custom: 'errors.field.custom',
 };
 
-/** What a message needs interpolated. Only `rate_limited` carries anything today. */
+/**
+ * The sentence for a failure, as the two things a renderer needs: the key and what it interpolates.
+ *
+ * **The pair, never the key alone.** Until 2026-09-06 a second function returned just `key`, «for
+ * the places that render a message without interpolating anything» — and thirteen hooks used it,
+ * every one of them reachable by a `429`. `rate_limited` is the one sentence with a place for a
+ * value, `Retry-After` is what the server puts there, and a hook that dropped `values` on the way
+ * to the screen printed «Try again in {{seconds}} s.» to the one person a registration form has —
+ * while the global toast, which read the pair, said «42». Nothing typed caught it, because a
+ * string is a string. Now nothing returns a bare key: a hook hands `ui` this object, and `ui`
+ * calls `t(key, values)`. A renderer that wants only the key has to say so by reading it, which is
+ * a decision a reviewer can see.
+ */
 export interface ErrorMessage {
   readonly key: string;
+  /** Only `rate_limited` carries anything today; absent, not empty, for every other code. */
   readonly values?: Readonly<Record<string, number>>;
 }
 
@@ -164,6 +177,3 @@ export const errorMessage = (error: unknown): ErrorMessage => {
     ? { key: ERROR_MESSAGE_KEY.rate_limited, values: { seconds: error.retryAfterSeconds } }
     : { key: ERROR_MESSAGE_KEY[error.code] };
 };
-
-/** The key alone, for the places that render a message without interpolating anything. */
-export const errorMessageKey = (error: unknown): string => errorMessage(error).key;

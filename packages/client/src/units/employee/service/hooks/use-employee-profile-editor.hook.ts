@@ -23,7 +23,7 @@ export interface EmployeeProfileEditor {
  * at the top there is no id at the call site to get wrong, so the form cannot be saved onto
  * somebody else's record by a mistake in the JSX.
  *
- * No `failureKey` and no success signal: the toast on success belongs to
+ * No `failure` and no success signal: the toast on success belongs to
  * `update-employee-profile.mutation.ts` (it is a property of the write, and it writes the fresh
  * record into the cache in the same breath), and every refusal is the one red toast from the global
  * `MutationCache` handler (`rules/errors-and-toasts.mdc` §3).

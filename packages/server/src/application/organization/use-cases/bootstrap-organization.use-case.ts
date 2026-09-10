@@ -10,6 +10,21 @@ import { type UnitOfWorkPort } from '@/application/platform/ports/unit-of-work.p
 export interface BootstrapOrganizationInput {
   readonly organization: OrganizationDraft;
   readonly owner: OrganizationOwnerDraft;
+  /**
+   * Work that has to commit **with** the organization or not at all — run inside the same
+   * transaction, after the roles, with the two ids the statement produced.
+   *
+   * The one caller today writes `organization.registered` here. The record could not go anywhere
+   * else and still be a record: the audit adapter writes into the transaction that is open, and
+   * the transaction after this one — the session — is permitted to fail and leave the tenant
+   * standing (`register-organization.use-case.ts`). A record written there was a record that could
+   * be missing for a tenant that exists, which is the row an operator can least afford to find
+   * unexplained. A rejection here rolls the tenant back, which is the point.
+   *
+   * A step rather than an audit port on this class: this use-case is about tenancy and holds no
+   * opinion on what a registration is; the seed and the integration suites build it without one.
+   */
+  readonly inSameTransaction?: (created: BootstrapOrganizationResult) => Promise<void>;
 }
 
 export interface BootstrapOrganizationResult {
@@ -54,8 +69,9 @@ export interface BootstrapOrganizationResult {
  * ## What is deliberately not here
  *
  * Input validation, password hashing, the open-registration switch and `Idempotency-Key` belong to
- * the HTTP entry point in [STORY-006-01], which builds on this use-case; the audit record belongs
- * to the journal of [EPIC-016]. This class stays the part that is about tenancy.
+ * the HTTP entry point in [STORY-006-01], which builds on this use-case. The audit record is that
+ * caller's too — but it is written *through* `inSameTransaction`, because the transaction it has to
+ * share is this one. This class stays the part that is about tenancy.
  */
 export class BootstrapOrganizationUseCase {
   constructor(
@@ -84,7 +100,13 @@ export class BootstrapOrganizationUseCase {
       // (`SYSTEM_ROLE_PERMISSIONS`), so this call is also what an upgrade re-runs.
       await this.provisionRoles.execute({ organizationId });
 
-      return { organizationId, ownerId };
+      const created: BootstrapOrganizationResult = { organizationId, ownerId };
+
+      // Last, so what the caller records is a tenant that is complete: the roles are in, and the
+      // owner the record names exists in this transaction.
+      await input.inSameTransaction?.(created);
+
+      return created;
     });
   }
 }

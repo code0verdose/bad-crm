@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { isWeakPassword } from '@/domain/identity/weak-password.util.js';
+import { isWeakPassword } from '../../src/validation/weak-password.util.js';
 
 describe('the weak-password check', () => {
   it.each([

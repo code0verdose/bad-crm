@@ -3,7 +3,7 @@ import { useCallback, useState } from 'react';
 import { type PolicyRoleRef, type SecurityPolicy } from '@units/organization/api';
 import { POLICY_ROLE_KEYS } from '@units/organization/model';
 import { useUpdateSecurityPolicy } from '@units/organization/service/mutations';
-import { errorMessageKey, isApiError } from '@shared/api';
+import { errorMessage, type ErrorMessage, isApiError } from '@shared/api';
 
 /** The unsaved policy: the two fields a client may set, and nothing else. */
 export interface PolicyDraft {
@@ -36,8 +36,8 @@ export interface SecurityPolicyEditor {
    * cleared it: it is `true` exactly while the last answer was 428 `confirmation_required`.
    */
   readonly needsSelfLockoutConfirmation: boolean;
-  /** A genuine refusal as a sentence key — never the 428, which is not one. */
-  readonly failureKey: string | undefined;
+  /** A genuine refusal as a sentence — key and values — never the 428, which is not one. */
+  readonly failure: ErrorMessage | undefined;
   readonly save: () => void;
 }
 
@@ -55,7 +55,7 @@ export interface SecurityPolicyEditor {
  * **The 428 is not a failure and is not shown as one.** `confirmation_required` is the second half
  * of a save the server is willing to perform: it means «you are about to require a second factor of
  * yourself and you have none». The dialog renders the warning and offers the repeat;
- * `failureKey` stays `undefined`, so nothing red appears for a decision that is still being made.
+ * `failure` stays `undefined`, so nothing red appears for a decision that is still being made.
  *
  * `onSaved` is a callback rather than an observed flag, so the dialog closes **from the mutation's
  * own success** rather than from an effect watching `isSuccess` — the reaction-to-an-event case of
@@ -146,10 +146,10 @@ export const useSecurityPolicyEditor = (
     discard,
     isSaving: mutation.isPending,
     needsSelfLockoutConfirmation,
-    failureKey:
+    failure:
       mutation.error === null || needsSelfLockoutConfirmation
         ? undefined
-        : errorMessageKey(mutation.error),
+        : errorMessage(mutation.error),
     save,
   };
 };

@@ -1,4 +1,10 @@
-import { errorMessageKey, isApiError, VALIDATION_ISSUE_MESSAGE_KEY } from '@shared/api';
+import {
+  ERROR_MESSAGE_KEY,
+  errorMessage,
+  type ErrorMessage,
+  isApiError,
+  VALIDATION_ISSUE_MESSAGE_KEY,
+} from '@shared/api';
 
 /**
  * Where a refused change of password belongs on the screen: under one of the fields, or above all
@@ -7,8 +13,12 @@ import { errorMessageKey, isApiError, VALIDATION_ISSUE_MESSAGE_KEY } from '@shar
 export interface PasswordChangeFailure {
   /** Field name → i18n key, ready for `form.setErrors` (`rules/errors-and-toasts.mdc` §4). */
   readonly fieldErrors: Readonly<Record<string, string>>;
-  /** i18n key of a refusal that belongs to no field, stated above the form. Absent when one does. */
-  readonly alertKey: string | undefined;
+  /**
+   * A refusal that belongs to no field, stated above the form. Absent when one does.
+   *
+   * Key and values, so a `429` keeps the seconds its sentence has a place for.
+   */
+  readonly alert: ErrorMessage | undefined;
 }
 
 /** The field the contract names for a wrong current password, and the only one it can be. */
@@ -41,10 +51,13 @@ const FIELDS: ReadonlySet<string> = new Set([CURRENT_PASSWORD, 'newPassword', 'c
  * Everything else — `429`, a network failure, a 500 — has no field and is stated above the form.
  */
 export const passwordChangeFailure = (error: unknown): PasswordChangeFailure => {
-  if (!isApiError(error)) return { fieldErrors: {}, alertKey: errorMessageKey(error) };
+  if (!isApiError(error)) return { fieldErrors: {}, alert: errorMessage(error) };
 
   if (error.code === 'invalid_credentials') {
-    return { fieldErrors: { [CURRENT_PASSWORD]: errorMessageKey(error) }, alertKey: undefined };
+    return {
+      fieldErrors: { [CURRENT_PASSWORD]: ERROR_MESSAGE_KEY.invalid_credentials },
+      alert: undefined,
+    };
   }
 
   const fieldErrors = Object.fromEntries(
@@ -54,6 +67,6 @@ export const passwordChangeFailure = (error: unknown): PasswordChangeFailure => 
   );
 
   return Object.keys(fieldErrors).length === 0
-    ? { fieldErrors: {}, alertKey: errorMessageKey(error) }
-    : { fieldErrors, alertKey: undefined };
+    ? { fieldErrors: {}, alert: errorMessage(error) }
+    : { fieldErrors, alert: undefined };
 };

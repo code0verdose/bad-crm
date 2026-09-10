@@ -116,7 +116,7 @@ export function ResetMfaDialog({ opened, userId, email, onClose }: ResetMfaDialo
             value={typed}
           />
 
-          {reset.failureKey !== undefined && (
+          {reset.failure !== undefined && (
             // `role="alert"`, so it is announced rather than merely drawn: the operator's attention
             // is on the button they just pressed (`rules/a11y.mdc` §13). The text comes from the
             // `code`, never from `detail` — the technical half went to the log.
@@ -126,7 +126,7 @@ export function ResetMfaDialog({ opened, userId, email, onClose }: ResetMfaDialo
               title={t('security.reset.failed.title')}
               variant="light"
             >
-              <Text size="sm">{t(reset.failureKey)}</Text>
+              <Text size="sm">{t(reset.failure.key, reset.failure.values ?? {})}</Text>
             </Alert>
           )}
 

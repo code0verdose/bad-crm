@@ -169,6 +169,52 @@ describe('BootstrapOrganizationUseCase', () => {
   });
 
   /**
+   * The seam a caller uses for work that must commit with the tenant — the registration's audit
+   * record, today. Three properties, each of which a wrong placement would break: it runs inside
+   * the same scope (a record written outside would be refused by the adapter or land in no
+   * transaction), after the roles (the tenant it describes is complete), and a rejection there
+   * rolls the tenant back rather than leaving it standing unrecorded.
+   */
+  describe('inSameTransaction', () => {
+    it('runs inside the scope that created the organization, after the roles, with both ids', async () => {
+      const database = new InMemoryDatabase();
+      const seen: { scope: unknown; kinds: string[]; created: unknown }[] = [];
+
+      await buildUseCase(database).execute({
+        organization: draft,
+        owner,
+        inSameTransaction: (created) => {
+          seen.push({ scope: database.scopes.at(-1), kinds: database.kinds(), created });
+
+          return Promise.resolve();
+        },
+      });
+
+      expect(seen).toEqual([
+        {
+          scope: { organizationId: NEW_ORGANIZATION_ID, userId: null },
+          kinds: ['organization', 'user'],
+          created: { organizationId: NEW_ORGANIZATION_ID, ownerId: NEW_USER_ID },
+        },
+      ]);
+      expect(database.scopes).toHaveLength(1);
+    });
+
+    it('propagates its rejection, so the caller sees the tenant was not committed', async () => {
+      const database = new InMemoryDatabase();
+
+      await expect(
+        buildUseCase(database).execute({
+          organization: draft,
+          owner,
+          inSameTransaction: () => Promise.reject(new Error('audit sink unavailable')),
+        }),
+      ).rejects.toThrow('audit sink unavailable');
+      expect(database.rows).toEqual([]);
+    });
+  });
+
+  /**
    * There is one write left, so this is no longer about the order of several — it is about the
    * transaction: a failure anywhere inside `withTenant` must leave the tenant root absent rather than
    * half-built, because an organization nobody owns is an installation nobody can administer.

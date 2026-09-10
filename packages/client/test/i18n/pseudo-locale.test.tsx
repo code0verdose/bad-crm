@@ -17,7 +17,7 @@ import { MantineProvider } from '@mantine/core';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, assert, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import i18next, { type i18n as I18n } from 'i18next';
 import { I18nextProvider, initReactI18next } from 'react-i18next';
@@ -300,7 +300,7 @@ describe('the second-factor step in a pseudo locale', () => {
       <I18nextProvider i18n={instance}>
         <MantineProvider>
           <AuthUi.TwoFactorForm
-            failureKey="errors.code.mfa_invalid_code"
+            failure={{ key: 'errors.code.mfa_invalid_code' }}
             isPending={false}
             onSubmit={() => undefined}
             secondsLeft={287}
@@ -350,7 +350,8 @@ describe('the second-factor step in a pseudo locale', () => {
 describe('the change-password form in a pseudo locale', () => {
   const mountForm = async (failure: {
     readonly fieldErrors: Readonly<Record<string, string>>;
-    readonly alertKey: string | undefined;
+    readonly alert:
+      { readonly key: string; readonly values?: Readonly<Record<string, number>> } | undefined;
   }): Promise<HTMLElement> => {
     const instance = await pseudoInstance();
 
@@ -377,17 +378,21 @@ describe('the change-password form in a pseudo locale', () => {
   it('shows the refusal as a sentence, not as a key', async () => {
     const container = await mountForm({
       fieldErrors: {},
-      alertKey: 'errors.code.rate_limited',
+      alert: { key: 'errors.code.rate_limited', values: { seconds: 30 } },
     });
 
     expect(unmarked(container)).toEqual([]);
+    // The value, not only the marker: a sentence rendered from the key alone is pseudo-localised
+    // too, with `{{seconds}}` where the number belongs.
+    expect(container.textContent).toContain('30');
+    expect(container.textContent).not.toContain('{{');
   });
 
   /** CONTROL: the alert is on screen at all — one that never rendered would also pass. */
   it('CONTROL: is looking at the refusal it names', async () => {
     const container = await mountForm({
       fieldErrors: {},
-      alertKey: 'errors.code.rate_limited',
+      alert: { key: 'errors.code.rate_limited' },
     });
     const alert = container.querySelector('[role="alert"]');
 
@@ -397,7 +402,7 @@ describe('the change-password form in a pseudo locale', () => {
 
   it('shows the strength of the field as a sentence too', async () => {
     const instance = await pseudoInstance();
-    const container = await mountForm({ fieldErrors: {}, alertKey: undefined });
+    const container = await mountForm({ fieldErrors: {}, alert: undefined });
 
     expect(unmarked(container)).toEqual([]);
     // Named, not merely «nothing unmarked»: a meter that rendered no text at all would satisfy the
@@ -409,7 +414,7 @@ describe('the change-password form in a pseudo locale', () => {
 /**
  * The notice above the sign-in fields, which the `/login` case above never reaches either.
  *
- * `noticeKey` is `undefined` on a screen nobody has submitted yet, so the happy mount walks past
+ * `notice` is `undefined` on a screen nobody has submitted yet, so the happy mount walks past
  * an `Alert` that is not rendered. The form shipped with `title={noticeKey}` — the raw key — and
  * the component's own test asserted `getByRole('alert')` has the text
  * `auth.login.organizationSelectionRequired`, which is exactly what `cimode` produces from a
@@ -430,7 +435,11 @@ describe.each([
     const { container } = render(
       <I18nextProvider i18n={instance}>
         <MantineProvider>
-          <AuthUi.LoginForm isPending={false} noticeKey={noticeKey} onSubmit={() => undefined} />
+          <AuthUi.LoginForm
+            isPending={false}
+            notice={{ key: noticeKey }}
+            onSubmit={() => undefined}
+          />
         </MantineProvider>
       </I18nextProvider>,
     );
@@ -474,9 +483,10 @@ describe('the registration screen in a pseudo locale', () => {
     element: React.ReactNode = (
       <AuthUi.RegisterForm
         isPending={false}
-        noticeKey="errors.code.rate_limited"
+        notice={{ key: 'errors.code.rate_limited', values: { seconds: 42 } }}
         onSubmit={() => undefined}
-        slugErrorKey="errors.code.organization_already_exists"
+        passwordError={{ key: 'validation.password.weak' }}
+        slugError={{ key: 'errors.code.organization_already_exists' }}
       />
     ),
   ): Promise<HTMLElement> => {
@@ -491,12 +501,28 @@ describe('the registration screen in a pseudo locale', () => {
     return container;
   };
 
-  it('shows nothing unmarked on the form, its notice or its refused field', async () => {
+  it('shows nothing unmarked on the form, its notice or its refused fields', async () => {
     const unmarked = textNodes(await mountRegistration()).filter(
       (text) => !isPseudoLocalised(text) && !NOT_A_SENTENCE.test(text) && !PROPER_NOUNS.has(text),
     );
 
     expect(unmarked).toEqual([]);
+  });
+
+  /**
+   * The notice with its value in it. `cimode` drops interpolation, so every other suite renders a
+   * notice built as `t(key)` and one built as `t(key, values)` identically; under a real catalogue
+   * the first prints `{{seconds}}` where the second prints the wait. That is what the fourth
+   * registration attempt an hour showed until 2026-09-06, and this is the line that would have
+   * gone red for it.
+   */
+  it('puts the wait into the notice that has a place for it', async () => {
+    const container = await mountRegistration();
+    const notice = container.querySelector('[role="alert"]');
+
+    assert(notice !== null, 'the rate-limit notice must be on screen');
+    expect(notice.textContent).toContain('42');
+    expect(notice.textContent).not.toContain('{{');
   });
 
   it('shows nothing unmarked when the installation is closed to registration', async () => {
@@ -625,7 +651,7 @@ describe('the field messages of every form in a pseudo locale', () => {
     [
       'the second-factor step',
       <AuthUi.TwoFactorForm
-        failureKey={undefined}
+        failure={undefined}
         isPending={false}
         onSubmit={noop}
         secondsLeft={287}
@@ -634,7 +660,7 @@ describe('the field messages of every form in a pseudo locale', () => {
     [
       'the second-factor enrolment',
       <AuthUi.TotpConfirmForm
-        failureKey={undefined}
+        failure={undefined}
         isPending={false}
         onCancel={noop}
         onSubmit={noop}
@@ -642,11 +668,7 @@ describe('the field messages of every form in a pseudo locale', () => {
     ],
     [
       'the recovery-code replacement',
-      <AuthUi.RegenerateRecoveryCodesForm
-        failureKey={undefined}
-        isPending={false}
-        onSubmit={noop}
-      />,
+      <AuthUi.RegenerateRecoveryCodesForm failure={undefined} isPending={false} onSubmit={noop} />,
     ],
     [
       'the invitation acceptance',
@@ -694,7 +716,7 @@ describe('the field messages of every form in a pseudo locale', () => {
     [
       'the change-password form',
       <AuthUi.ChangePasswordForm
-        failure={{ fieldErrors: {}, alertKey: undefined }}
+        failure={{ fieldErrors: {}, alert: undefined }}
         isPending={false}
         onSubmit={noop}
       />,

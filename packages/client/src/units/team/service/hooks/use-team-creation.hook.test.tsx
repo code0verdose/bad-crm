@@ -143,7 +143,7 @@ describe('creating a team', () => {
 
     await waitFor(() => {
       // Anchored (`rules/testing.mdc`, «ассерт по подстроке»).
-      expect(result.current.failureKey).toMatch(/^errors\.code\.team_already_exists$/);
+      expect(result.current.failure).toEqual({ key: 'errors.code.team_already_exists' });
     });
 
     expect(created).not.toHaveBeenCalled();
@@ -163,7 +163,7 @@ describe('creating a team', () => {
       result.current.create({ name: 'Backend', slug: 'backend', description: '' });
     });
     await waitFor(() => {
-      expect(result.current.failureKey).toBeDefined();
+      expect(result.current.failure).toBeDefined();
     });
 
     act(() => {
@@ -171,7 +171,7 @@ describe('creating a team', () => {
     });
 
     await waitFor(() => {
-      expect(result.current.failureKey).toBeUndefined();
+      expect(result.current.failure).toBeUndefined();
     });
   });
 });

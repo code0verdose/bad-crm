@@ -1,14 +1,14 @@
 import { useCallback } from 'react';
 
 import { useDeleteTeam } from '@units/team/service/mutations';
-import { errorMessageKey } from '@shared/api';
+import { errorMessage, type ErrorMessage } from '@shared/api';
 
 export interface TeamDeletion {
   /**
-   * The refusal as a sentence key, chosen from the `code` and never from `detail`
+   * The refusal as a sentence — key and values — chosen from the `code` and never from `detail`
    * (`rules/errors-and-toasts.mdc` §10). Absent while nothing has been refused.
    */
-  readonly failureKey: string | undefined;
+  readonly failure: ErrorMessage | undefined;
   readonly isPending: boolean;
   /**
    * Disbands it. `onDeleted` fires only on success — the screen the dialog sits on stops existing,
@@ -51,7 +51,7 @@ export const useTeamDeletion = (teamId: string): TeamDeletion => {
   }, [reset]);
 
   return {
-    failureKey: error === null ? undefined : errorMessageKey(error),
+    failure: error === null ? undefined : errorMessage(error),
     isPending,
     disband,
     dismiss,

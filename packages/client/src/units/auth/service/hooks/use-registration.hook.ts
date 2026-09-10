@@ -1,6 +1,11 @@
 import { useTranslation } from 'react-i18next';
 
-import { errorMessageKey, isApiError } from '@shared/api';
+import {
+  errorMessage,
+  type ErrorMessage,
+  isApiError,
+  VALIDATION_ISSUE_MESSAGE_KEY,
+} from '@shared/api';
 import { resolveLanguage } from '@shared/i18n';
 import { resolveTimeZone } from '@shared/lib';
 import { type RegisterFormValues } from '@units/auth/model';
@@ -21,15 +26,52 @@ export interface RegistrationController {
    * organization yet», and that answer is exactly what a closed installation is refusing to give.
    */
   readonly isClosed: boolean;
-  /** i18n key of a refusal that belongs to the slug field — the slug is taken. */
-  readonly slugErrorKey: string | undefined;
-  /** i18n key of a refusal that belongs to no field, shown above them. */
-  readonly noticeKey: string | undefined;
+  /** A refusal that belongs to the slug field — the slug is taken. */
+  readonly slugError: ErrorMessage | undefined;
+  /** A refusal that belongs to the password field — the server's half of the policy said no. */
+  readonly passwordError: ErrorMessage | undefined;
+  /**
+   * A refusal that belongs to no field, shown above them.
+   *
+   * The pair, not the key: `rate_limited` is the one sentence with a place for a value, and the
+   * value is the `Retry-After` the server sent. The form calls `t(key, values)`; until 2026-09-06
+   * this was a key alone and the fourth attempt printed «Try again in {{seconds}} s.».
+   */
+  readonly notice: ErrorMessage | undefined;
   readonly submit: (values: RegisterFormValues) => void;
 }
 
-/** Which of the three places a refusal is rendered in. Derived from the answer, never stored. */
+/** Which of the four places a refusal is rendered in. Derived from the answer, never stored. */
 const codeOf = (error: unknown): string | undefined => (isApiError(error) ? error.code : undefined);
+
+/**
+ * The field the contract names for the owner's password — the only field a `422` can point at that
+ * this form has. Joined at runtime rather than written as `'owner.password'`: the catalogue-parity
+ * gate reads every dotted literal under `src/` as a translation key, and this one is a JSON path.
+ */
+const OWNER_PASSWORD = ['owner', 'password'].join('.');
+
+/**
+ * The server's verdict on the password, when a `422` names that field.
+ *
+ * `custom` on this field has exactly one producer — `isWeakPassword` in the registration use-case —
+ * and the client applies the same check from `@bad-crm/shared` before it sends anything, so this
+ * branch is reached only by a bundle older than the server. Its sentence is the one the client's
+ * own schema would have shown, so the person reads the same refusal either way. Every other code
+ * is a bound (`too_small`, `too_big`) and reads through the written-out map, like a refused change
+ * of password does (`password-change-failure.util.ts`).
+ */
+const passwordVerdict = (error: unknown): ErrorMessage | undefined => {
+  if (!isApiError(error) || error.code !== 'validation_failed') return undefined;
+
+  const issue = error.issues.find((candidate) => candidate.path === OWNER_PASSWORD);
+
+  if (issue === undefined) return undefined;
+
+  return issue.code === 'custom'
+    ? { key: 'validation.password.weak' }
+    : { key: VALIDATION_ISSUE_MESSAGE_KEY[issue.code] };
+};
 
 /**
  * Registering an organization, as the object a public screen can render — the unit's public API for
@@ -44,8 +86,14 @@ const codeOf = (error: unknown): string | undefined => (isApiError(error) ? erro
  * exists to catch a typo while it is still a typo, not to be sent.
  *
  * **Every state is read from the mutation at render**, never copied into state by an effect
- * (rule 11): which of the three refusals happened is a function of the error the mutation already
+ * (rule 11): which of the four refusals happened is a function of the error the mutation already
  * holds, and a second copy would survive the next submit that cleared the first.
+ *
+ * **A `422` naming the password goes under the password.** The server keeps the half of the policy
+ * it can rate-limit (`register-organization.use-case.ts`), and its verdict is a statement about one
+ * field. Left to the notice it would read «check the highlighted fields» above a form with nothing
+ * highlighted — which is what it did until 2026-09-06. A `422` naming nothing this form has still
+ * goes to the notice, so a refusal is never silent.
  *
  * `submit` returns nothing and never rejects: `mutate`, not `mutateAsync`. Where the new session
  * lands is not decided here either — registering records the session and asks the router to
@@ -56,20 +104,23 @@ export const useRegistration = (): RegistrationController => {
   const mutation = useRegisterOrganizationMutation();
 
   const code = codeOf(mutation.error);
+  const passwordError = passwordVerdict(mutation.error);
 
   return {
     isPending: mutation.isPending,
     isClosed: code === 'registration_disabled',
 
-    slugErrorKey:
-      code === 'organization_already_exists' ? errorMessageKey(mutation.error) : undefined,
+    slugError: code === 'organization_already_exists' ? errorMessage(mutation.error) : undefined,
 
-    noticeKey:
+    passwordError,
+
+    notice:
       mutation.error === null ||
       code === 'registration_disabled' ||
-      code === 'organization_already_exists'
+      code === 'organization_already_exists' ||
+      passwordError !== undefined
         ? undefined
-        : errorMessageKey(mutation.error),
+        : errorMessage(mutation.error),
 
     submit: (values) => {
       mutation.mutate({

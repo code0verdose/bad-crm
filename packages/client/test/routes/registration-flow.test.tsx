@@ -4,7 +4,7 @@ import userEvent from '@testing-library/user-event';
 import axe from 'axe-core';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { setCimodeLanguage } from '../support/test-language.util.js';
+import { setCimodeLanguage, setTestLanguage } from '../support/test-language.util.js';
 
 /**
  * Creating the first organization of an installation, through the real route tree.
@@ -34,7 +34,11 @@ interface RecordedRequest {
   readonly idempotencyKey: string | null;
 }
 
-const problem = (code: string, status: number): Response =>
+const problem = (
+  code: string,
+  status: number,
+  headers: Readonly<Record<string, string>> = {},
+): Response =>
   new Response(
     JSON.stringify({
       type: `https://bad-crm.dev/problems/${code}`,
@@ -43,7 +47,7 @@ const problem = (code: string, status: number): Response =>
       code,
       requestId: 'req-1',
     }),
-    { status, headers: { 'content-type': 'application/problem+json' } },
+    { status, headers: { 'content-type': 'application/problem+json', ...headers } },
   );
 
 const session = (): Response =>
@@ -99,9 +103,14 @@ interface StartedScreen {
 
 let unsubscribe: (() => void) | undefined;
 
+/**
+ * `language` names a real catalogue to mount with instead of the suite's `cimode` instance — the
+ * one case that asserts a *sentence* rather than a key needs one, for the reason it states.
+ */
 const startApplicationAt = async (
   path: string,
   requests: RecordedRequest[],
+  language?: 'en' | 'ru',
 ): Promise<StartedScreen> => {
   vi.resetModules();
   vi.stubGlobal('fetch', api(requests));
@@ -114,6 +123,7 @@ const startApplicationAt = async (
     { router },
     { appQueryClient },
     { AuthService },
+    { SharedI18n },
   ] = await Promise.all([
     import('@app'),
     import('@app/api-middleware.util.js'),
@@ -121,7 +131,11 @@ const startApplicationAt = async (
     import('@app/router.js'),
     import('@app/app-query-client.constant.js'),
     import('@units/auth'),
+    import('@shared'),
   ]);
+
+  const i18n = language === undefined ? i18next : SharedI18n.createI18n(language);
+  if (language !== undefined) setTestLanguage(language);
 
   installApiMiddleware();
   unsubscribe = subscribeAuthEvents({
@@ -130,7 +144,7 @@ const startApplicationAt = async (
     session: AuthService.authSession,
   });
 
-  const { container } = render(<App i18n={i18next} />);
+  const { container } = render(<App i18n={i18n} />);
   const screen = within(container);
   await screen.findByRole('heading', { level: 1 });
 
@@ -162,6 +176,37 @@ const registerWith = async (
   await user.type(screen.getByLabelText(/auth\.register\.password\.label/), PASSWORD);
   await user.type(screen.getByLabelText(/auth\.register\.confirmPassword\.label/), PASSWORD);
   await user.click(screen.getByRole('button', { name: 'auth.register.submit' }));
+};
+
+/**
+ * The same five fields, found by their shape rather than by their label.
+ *
+ * `registerWith` above queries labels by key, which only exists under `cimode`; the one case that
+ * runs under a real catalogue has English labels on screen, and matching those would be writing the
+ * catalogue out a second time. `autocomplete` is part of the contract with the browser, not with the
+ * translator, so it is the same under every language.
+ */
+const registerByShape = async (
+  user: ReturnType<typeof userEvent.setup>,
+  container: HTMLElement,
+) => {
+  const field = (selector: string): HTMLElement => {
+    const element = container.querySelector<HTMLElement>(selector);
+
+    if (element === null) throw new Error(`no field matches ${selector}`);
+
+    return element;
+  };
+
+  await user.type(field('input[autocomplete="organization"]'), ORGANIZATION);
+  await user.type(field('input[autocomplete="off"]'), SLUG);
+  await user.type(field('input[type="email"]'), EMAIL);
+  const [password, confirmation] = container.querySelectorAll<HTMLElement>(
+    'input[autocomplete="new-password"]',
+  );
+  await user.type(password as HTMLElement, PASSWORD);
+  await user.type(confirmation as HTMLElement, PASSWORD);
+  await user.click(field('button[type="submit"]'));
 };
 
 beforeEach(() => {
@@ -234,6 +279,28 @@ describe('registering an organization', () => {
     expect(notice).toHaveTextContent('errors.code.rate_limited');
     expect(screen.getByRole('button', { name: 'auth.register.submit' })).toBeInTheDocument();
     expect(toasts().queryByText('errors.code.rate_limited')).not.toBeInTheDocument();
+  });
+
+  /**
+   * Under a real catalogue, not `cimode` — and that is the whole point of the case.
+   *
+   * `cimode` answers `t(key)` with the key and drops the values, so a notice rendered as `t(key)`
+   * and one rendered as `t(key, values)` are byte for byte the same on every other case in this
+   * file. The fourth attempt an hour is where they differ: the server says how long to wait in
+   * `Retry-After`, the client reads it, and the sentence has a place for it — and a form that
+   * translated the key alone printed «Try again in {{seconds}} s.» to the one person who could not
+   * be signed in to see anything else.
+   */
+  it('says how long to wait, with the number in the sentence', async () => {
+    const user = userEvent.setup();
+    answer = () => problem('rate_limited', 429, { 'retry-after': '42' });
+    const { screen, container } = await startApplicationAt('/register', [], 'en');
+
+    await registerByShape(user, container);
+
+    const notice = await screen.findByRole('alert');
+    expect(notice.textContent).toContain('42');
+    expect(notice.textContent).not.toContain('{{');
   });
 
   it('has no accessibility violation', async () => {

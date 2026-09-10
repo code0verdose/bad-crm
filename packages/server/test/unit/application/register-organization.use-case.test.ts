@@ -7,6 +7,9 @@ import { BootstrapOrganizationUseCase } from '@/application/organization/use-cas
 import { type AppError, ValidationError } from '@/domain/shared/errors/app.errors.js';
 import { ProvisionSystemRolesUseCase } from '@/application/iam/use-cases/provision-system-roles.use-case.js';
 
+import { type AuditEvent } from '@/application/platform/ports/audit-logger.port.js';
+import { type TenantScope } from '@/application/platform/ports/unit-of-work.port.js';
+
 import { FakeRoleRepository } from '../../support/iam-doubles.util.js';
 import {
   disabledMfaPolicy,
@@ -41,8 +44,31 @@ interface Harness {
   readonly sessions: FakeSessions;
   readonly hasher: FakePasswordHasher;
   readonly rateLimit: FakeRateLimit;
-  readonly audit: FakeAuditLogger;
+  readonly audit: ScopeRecordingAuditLogger;
+  readonly unitOfWork: FakeUnitOfWork;
   readonly journal: string[];
+}
+
+/**
+ * The audit sink, remembering **which transaction** each record was written in.
+ *
+ * `PrismaAuditLogger` writes into the transaction `withTenant` opened, so the scope that is current
+ * at `record` time is the transaction the row lands in — and the row exists exactly when that
+ * transaction commits. A fake that only counts events cannot tell «recorded with the organization»
+ * from «recorded a transaction later», which is the difference these cases are about.
+ */
+class ScopeRecordingAuditLogger extends FakeAuditLogger {
+  readonly scopes: (TenantScope | undefined)[] = [];
+
+  constructor(private readonly unitOfWork: FakeUnitOfWork) {
+    super();
+  }
+
+  override record(event: AuditEvent): Promise<void> {
+    this.scopes.push(this.unitOfWork.current);
+
+    return super.record(event);
+  }
 }
 
 const harness = (
@@ -56,7 +82,7 @@ const harness = (
   const journal: string[] = [];
   const hasher = new FakePasswordHasher(journal);
   const unitOfWork = new FakeUnitOfWork();
-  const audit = new FakeAuditLogger();
+  const audit = new ScopeRecordingAuditLogger(unitOfWork);
   const rateLimit = new FakeRateLimit({ ...rateLimitOptions, journal });
 
   const bootstrap = new BootstrapOrganizationUseCase(
@@ -95,9 +121,13 @@ const harness = (
     sessions,
     hasher,
     rateLimit,
+    unitOfWork,
     journal,
   };
 };
+
+const registeredEvents = (test: Harness): AuditEvent[] =>
+  test.audit.events.filter((event) => event.action === 'organization.registered');
 
 const refusal = async (run: () => Promise<unknown>): Promise<AppError> => {
   try {
@@ -201,6 +231,57 @@ describe('registering an organization', () => {
       );
 
       expect(JSON.stringify((error as ValidationError).issues)).not.toContain('qwertyuiop12');
+    });
+  });
+
+  /**
+   * «Inside the transaction, like every other privileged action» — and it has to be the *right*
+   * transaction. Until 2026-09-06 the record was written in the second one, with the session, and
+   * the docstring of this use-case says in as many words that the second one is allowed to fail
+   * and leave the organization standing. An organization with no record of who created it is the
+   * one row an operator can least afford to find unexplained (`rules/observability.mdc` §15).
+   */
+  describe('the record of the registration', () => {
+    it('writes organization.registered in the transaction that created the organization', async () => {
+      const test = harness();
+
+      await test.register.execute(REQUEST);
+
+      const [bootstrap] = test.unitOfWork.scopes;
+      const index = test.audit.events.findIndex(
+        (event) => event.action === 'organization.registered',
+      );
+      expect(index).toBeGreaterThanOrEqual(0);
+      expect(test.audit.scopes[index]).toBe(bootstrap);
+      expect(bootstrap?.userId).toBeNull();
+      expect(bootstrap?.organizationId).toBe(test.audit.events[index]?.actor.organizationId);
+    });
+
+    it('keeps the organization, the owner and the record when the session cannot be written', async () => {
+      const test = harness();
+      // Every refresh digest collides, so the session insert exhausts its attempts and the second
+      // transaction ends in an error — the failure the use-case's own docstring permits.
+      test.sessions.collisionsToSimulate = Number.MAX_SAFE_INTEGER;
+
+      await expect(test.register.execute(REQUEST)).rejects.toThrow();
+
+      expect(test.organizations.createdOwner).toMatchObject({ email: 'ada@example.com' });
+      expect(test.sessions.rows.size).toBe(0);
+      expect(registeredEvents(test)).toHaveLength(1);
+    });
+
+    /** CONTROL: the happy path writes the record once — not zero times, and not once per transaction. */
+    it('CONTROL: writes exactly one record on the happy path', async () => {
+      const test = harness();
+
+      await test.register.execute(REQUEST);
+
+      expect(registeredEvents(test)).toHaveLength(1);
+      expect(registeredEvents(test)[0]).toMatchObject({
+        actor: { userId: USER_ID, ipAddress: '203.0.113.42' },
+        target: { type: 'ORGANIZATION' },
+        after: { slug: 'bad-company', name: 'Bad Company' },
+      });
     });
   });
 

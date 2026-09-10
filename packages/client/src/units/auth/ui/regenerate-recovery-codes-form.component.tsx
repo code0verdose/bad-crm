@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 
 import { SharedLib } from '@shared';
 
+import { type ErrorMessage } from '@shared/api';
 import { firstInvalidField } from '@units/auth/lib';
 import {
   regenerateRecoveryCodesFormSchema,
@@ -15,7 +16,7 @@ import { TotpCodeField } from './totp-code-field.component.js';
 export interface RegenerateRecoveryCodesFormProps {
   readonly isPending: boolean;
   /** i18n key of the refusal — in practice always `reauthentication_required`. */
-  readonly failureKey: string | undefined;
+  readonly failure: ErrorMessage | undefined;
   readonly onSubmit: (values: RegenerateRecoveryCodesFormValues) => void;
 }
 
@@ -33,7 +34,7 @@ export interface RegenerateRecoveryCodesFormProps {
  */
 export function RegenerateRecoveryCodesForm({
   isPending,
-  failureKey,
+  failure,
   onSubmit,
 }: RegenerateRecoveryCodesFormProps) {
   const { t } = useTranslation();
@@ -64,14 +65,14 @@ export function RegenerateRecoveryCodesForm({
       )}
     >
       <Stack gap="md">
-        {failureKey !== undefined && (
+        {failure !== undefined && (
           <Alert
             color="danger"
             role="alert"
             title={t('security.codes.regenerate.failed.title')}
             variant="light"
           >
-            <Text size="sm">{t(failureKey)}</Text>
+            <Text size="sm">{t(failure.key, failure.values ?? {})}</Text>
           </Alert>
         )}
 

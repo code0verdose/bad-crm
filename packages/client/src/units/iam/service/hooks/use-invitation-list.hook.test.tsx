@@ -174,7 +174,7 @@ describe('the two actions on an open invitation', () => {
     await waitFor(() => {
       expect(result.current.revoke.isPending).toBe(false);
     });
-    expect(result.current.revoke.failureKey).toBeUndefined();
+    expect(result.current.revoke.failure).toBeUndefined();
   });
 
   it('runs the callback a re-issue was given, for the caller that wants one', async () => {
@@ -216,7 +216,7 @@ describe('the two actions on an open invitation', () => {
     });
 
     await waitFor(() => {
-      expect(result.current.resend.failureKey).toBeDefined();
+      expect(result.current.resend.failure).toBeDefined();
     });
 
     act(() => {
@@ -224,7 +224,7 @@ describe('the two actions on an open invitation', () => {
     });
 
     await waitFor(() => {
-      expect(result.current.resend.failureKey).toBeUndefined();
+      expect(result.current.resend.failure).toBeUndefined();
     });
   });
 });

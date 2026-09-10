@@ -87,6 +87,14 @@ describe('the registration form', () => {
       { confirmPassword: 'something-else-12' },
       'validation.password.mismatch',
     ],
+    // The server's half of the policy, applied here from the same shared check: until 2026-09-06
+    // this password crossed the wire, came back as a `422`, and the form said «check the
+    // highlighted fields» with nothing highlighted.
+    [
+      'a password the policy calls weak',
+      { password: 'qwertyuiop12', confirmPassword: 'qwertyuiop12' },
+      'validation.password.weak',
+    ],
     ['an empty organization name', { organizationName: ' ' }, 'validation.required'],
   ])('refuses %s without asking the server', async (_case, filling, message) => {
     const { onSubmit, user } = renderForm();
@@ -112,7 +120,7 @@ describe('the registration form', () => {
   });
 
   it('renders the taken slug under the slug field, not over the form', async () => {
-    renderForm({ slugErrorKey: 'errors.code.organization_already_exists' });
+    renderForm({ slugError: { key: 'errors.code.organization_already_exists' } });
 
     const slug = screen.getByLabelText(/auth\.register\.slug\.label/);
     const message = await screen.findByText('errors.code.organization_already_exists');
@@ -121,9 +129,18 @@ describe('the registration form', () => {
   });
 
   it('announces a refusal that belongs to no field', () => {
-    renderForm({ noticeKey: 'errors.code.rate_limited' });
+    renderForm({ notice: { key: 'errors.code.rate_limited' } });
 
     expect(screen.getByRole('alert')).toHaveTextContent('errors.code.rate_limited');
+  });
+
+  it("renders the server's verdict on the password under the password field", async () => {
+    renderForm({ passwordError: { key: 'validation.password.weak' } });
+
+    const password = screen.getByLabelText(/auth\.register\.password\.label/);
+    const message = await screen.findByText('validation.password.weak');
+    expect(password).toHaveAttribute('aria-invalid', 'true');
+    expect(password.getAttribute('aria-describedby')).toContain(message.id);
   });
 
   it('carries the wait on the submit button', () => {
@@ -136,7 +153,7 @@ describe('the registration form', () => {
   });
 
   it('has no accessibility violation, filled in or in error', async () => {
-    const { container, user } = renderForm({ noticeKey: 'errors.code.rate_limited' });
+    const { container, user } = renderForm({ notice: { key: 'errors.code.rate_limited' } });
     await fill(user, { email: 'ada' });
     await screen.findByText('validation.email.invalid');
 

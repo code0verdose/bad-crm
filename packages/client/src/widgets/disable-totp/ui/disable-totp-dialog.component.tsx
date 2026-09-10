@@ -114,7 +114,7 @@ export function DisableTotpDialog({ onCancel, onDisabled }: DisableTotpDialogPro
             <List.Item>{t('security.disable.consequence.again')}</List.Item>
           </List>
 
-          {disposal.failureKey !== undefined && (
+          {disposal.failure !== undefined && (
             // `role="alert"`, so it is announced rather than merely drawn: attention is on the
             // button that was just pressed (`rules/a11y.mdc` §13).
             <Alert
@@ -123,7 +123,7 @@ export function DisableTotpDialog({ onCancel, onDisabled }: DisableTotpDialogPro
               title={t('security.disable.failed.title')}
               variant="light"
             >
-              <Text size="sm">{t(disposal.failureKey)}</Text>
+              <Text size="sm">{t(disposal.failure.key, disposal.failure.values ?? {})}</Text>
             </Alert>
           )}
 

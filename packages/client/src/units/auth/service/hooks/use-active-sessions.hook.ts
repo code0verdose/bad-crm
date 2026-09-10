@@ -1,6 +1,6 @@
 import { useCallback } from 'react';
 
-import { errorMessageKey } from '@shared/api';
+import { errorMessage, type ErrorMessage } from '@shared/api';
 import { type SessionSummary } from '@units/auth/api';
 import { useRevokeOtherSessions } from '@units/auth/service/mutations/revoke-other-sessions.mutation.js';
 import { useRevokeSession } from '@units/auth/service/mutations/revoke-session.mutation.js';
@@ -20,8 +20,8 @@ export interface ActiveSessions {
   readonly hasOthers: boolean;
   readonly retry: () => void;
   readonly isRevoking: boolean;
-  /** i18n key of a refused revocation, chosen from the `code`. Absent while nothing was refused. */
-  readonly failureKey: string | undefined;
+  /** The sentence for a refused revocation, chosen from the `code`. Absent while nothing was refused. */
+  readonly failure: ErrorMessage | undefined;
   /**
    * Closes one session. `onRevoked` fires only on success, so the dialog can shut and hand the focus
    * back — and so that a refusal leaves it open with the message in it. Required rather than
@@ -47,7 +47,7 @@ export interface ActiveSessions {
  * slot, and a widget composing three hooks would be composing them in the layer that is not allowed
  * to know a cache exists (rule 5).
  *
- * **`failureKey` is one slot for both writes.** Only one confirmation can be open at a time, so only
+ * **`failure` is one slot for both writes.** Only one confirmation can be open at a time, so only
  * one of them can be the last thing refused; two slots would mean deciding, in the dialog, which of
  * them to believe.
  */
@@ -82,7 +82,7 @@ export const useActiveSessions = (): ActiveSessions => {
       void list.refetch();
     },
     isRevoking: one.isPending || others.isPending,
-    failureKey: failure === null ? undefined : errorMessageKey(failure),
+    failure: failure === null ? undefined : errorMessage(failure),
     revoke,
     revokeOthers,
     dismissFailure: () => {

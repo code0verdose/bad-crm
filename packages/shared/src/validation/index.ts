@@ -17,3 +17,4 @@ export * from './password.schema.js';
 export * from './slug.schema.js';
 export * from './sorting.schema.js';
 export * from './timezone.schema.js';
+export * from './weak-password.util.js';

@@ -3,16 +3,16 @@ import { useCallback } from 'react';
 import { toTeamDraft } from '@units/team/lib';
 import { type TeamForm } from '@units/team/model';
 import { useCreateTeam } from '@units/team/service/mutations';
-import { errorMessageKey } from '@shared/api';
+import { errorMessage, type ErrorMessage } from '@shared/api';
 
 export interface TeamCreation {
   /**
-   * The refusal as a sentence key, chosen from the `code` and never from `detail`
+   * The refusal as a sentence — key and values — chosen from the `code` and never from `detail`
    * (`rules/errors-and-toasts.mdc` §10). Absent while nothing has been refused.
    *
-   * A key rather than the `Error`: the dialog renders what it is given and translates nothing.
+   * A message rather than the `Error`: the dialog renders what it is given and translates nothing.
    */
-  readonly failureKey: string | undefined;
+  readonly failure: ErrorMessage | undefined;
   readonly isPending: boolean;
   /**
    * Creates it from the form's own values — the mapping to the request body lives here, not in the
@@ -57,7 +57,7 @@ export const useTeamCreation = (): TeamCreation => {
   }, [reset]);
 
   return {
-    failureKey: error === null ? undefined : errorMessageKey(error),
+    failure: error === null ? undefined : errorMessage(error),
     isPending,
     create,
     dismiss,

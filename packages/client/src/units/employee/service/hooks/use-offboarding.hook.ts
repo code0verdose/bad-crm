@@ -2,20 +2,20 @@ import { useCallback } from 'react';
 
 import { type OffboardingReport } from '@units/employee/api';
 import { useDeactivateUser } from '@units/employee/service/mutations';
-import { errorMessageKey } from '@shared/api';
+import { errorMessage, type ErrorMessage } from '@shared/api';
 
 export interface OffboardingController {
   /** What the server actually revoked, or `undefined` while nothing has been run yet. */
   readonly report: OffboardingReport | undefined;
   /**
-   * The refusal as a sentence key, chosen from the `code` and never from `detail`
+   * The refusal as a sentence — key and values — chosen from the `code` and never from `detail`
    * (`rules/errors-and-toasts.mdc` §10). Absent while nothing has been refused.
    *
-   * A key rather than the `Error`, and that is the point of this hook: the dialog renders what it
-   * is given and translates nothing. `error → messageKey` is a rule about how failures are read,
+   * A message rather than the `Error`, and that is the point of this hook: the dialog renders what
+   * it is given and translates nothing. `error → messageKey` is a rule about how failures are read,
    * and it lives on one layer of this client — `service/hooks` — for every confirmation.
    */
-  readonly failureKey: string | undefined;
+  readonly failure: ErrorMessage | undefined;
   readonly isPending: boolean;
   /** Runs it. The reason is trimmed here, because the request body is the unit's business. */
   readonly deactivate: (reason: string) => void;
@@ -56,7 +56,7 @@ export const useOffboarding = (userId: string): OffboardingController => {
 
   return {
     report: data,
-    failureKey: error === null ? undefined : errorMessageKey(error),
+    failure: error === null ? undefined : errorMessage(error),
     isPending,
     deactivate,
     dismiss,

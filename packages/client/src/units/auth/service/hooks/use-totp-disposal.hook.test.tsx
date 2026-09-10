@@ -133,7 +133,7 @@ describe('turning the second factor off', () => {
 
     await waitFor(() => {
       // Anchored (`rules/testing.mdc`, «ассерт по подстроке»).
-      expect(result.current.failureKey).toMatch(/^errors\.code\.reauthentication_required$/);
+      expect(result.current.failure).toEqual({ key: 'errors.code.reauthentication_required' });
     });
 
     expect(disabled).not.toHaveBeenCalled();
@@ -149,7 +149,7 @@ describe('turning the second factor off', () => {
 
     const { result } = renderHook(() => AuthService.useTotpDisposal(), { wrapper });
 
-    expect(result.current.failureKey).toBeUndefined();
+    expect(result.current.failure).toBeUndefined();
     expect(result.current.isPending).toBe(false);
   });
 });

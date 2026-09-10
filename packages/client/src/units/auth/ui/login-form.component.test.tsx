@@ -119,13 +119,13 @@ describe('the sign-in form', () => {
 
   /**
    * Says the notice is an `Alert` and not a toast, and nothing about the *text*: this suite runs in
-   * `cimode`, where `t(key)` answers with the key, so a form that renders `{noticeKey}` raw passes
+   * `cimode`, where `t(key)` answers with the key, so a form that renders `{notice.key}` raw passes
    * this exactly as a form that translates it. It did, until 2026-08-30. That the sentence rather
    * than the key reaches the screen is asserted where it can be —
    * `test/i18n/pseudo-locale.test.tsx`, under a locale that transforms its values.
    */
   it('shows a notice the sign-in came back with, as an alert rather than a toast', () => {
-    renderForm({ noticeKey: 'auth.login.organizationSelectionRequired' });
+    renderForm({ notice: { key: 'auth.login.organizationSelectionRequired' } });
 
     expect(screen.getByRole('alert')).toHaveTextContent('auth.login.organizationSelectionRequired');
   });
