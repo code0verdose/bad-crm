@@ -1,7 +1,7 @@
 ---
 id: STORY-006-01
 epic: EPIC-006
-status: in-progress
+status: review
 blocked: false
 priority: must
 estimate: M
@@ -137,7 +137,17 @@ estimate: M
 ## Definition of Done
 
 - [x] Тесты написаны первыми (TDD), проходят, изменённый код покрыт
-- [ ] Commit-гейт зелёный (test-coverage, security-auditor, **db-reviewer обязателен**, production-readiness, commit-hygiene)
+- [x] Commit-гейт зелёный (test-coverage, security-auditor, **db-reviewer обязателен**, production-readiness, commit-hygiene)
+      *Закрыт 2026-09-10 по итогам прогона 2026-09-06 и починок после него.* `test-coverage` — PASS, три мутации
+      красные на своих тестах (разбитый CTE отвергает сам Postgres по циклическому ключу; снятый лимит —
+      четыре теста; забытый `t()` — только псевдолокаль). `security-auditor` — PASS по коду; две Medium — про
+      модель угроз (`T-TENANT-06/07` обещали защиту, которой нет) — переписаны на факт `9e8689c`, **перепринятие
+      рисков — за человеком**. `db-reviewer` — PASS, «организация и владелец одним оператором» подтверждено
+      (data-modifying CTE, составной `NO ACTION`, без `DEFERRABLE`). `production-readiness` — FAIL → закрыт:
+      H1 `{{seconds}}` в форме и тот же класс во всех хуках — `c826ea3`; M1 спека обещала replay по
+      `Idempotency-Key` — снято; M2 `organization.registered` теперь в транзакции создания — `c826ea3`;
+      M3 слабые пароли — один список в `packages/shared` для формы и сервера — `c826ea3`; M4 шаги первого
+      входа называют slug и путь для закрытого контура; M5 прокси — `fca2ecf`. `commit-hygiene` — PASS.
 - [x] Документация обновлена (docs/ + запись в `docs/brain/`)
 - [x] a11y-проверка: форма с корректными `label`, связью ошибок через `aria-describedby`, объявлением ошибок в live-region, полной работой с клавиатуры
 - [x] i18n: строки в обоих языках, хардкода нет
