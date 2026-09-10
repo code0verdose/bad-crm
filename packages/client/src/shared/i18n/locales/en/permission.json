@@ -33,6 +33,9 @@
     "assign": "Give a person a role, and with it every permission that role carries.",
     "revoke": "Take a role away from a person, and with it everything the role granted."
   },
+  "project": {
+    "read": "Open a project the person may see and read what it is: key, name, status, lead, dates, how many people are on it."
+  },
   "permission": {
     "override_read": "Read another person's effective permissions together with the reason written beside each personal exception.",
     "override": "Grant or take away a single permission for one person, past their roles and past what those roles say."

@@ -87,7 +87,10 @@ kickoff'ом EPIC-014 2026-09-06** и в тот же день получила �
 `infrastructure/persistence/prisma/project-access-reader.adapter.ts`, резолвер
 `application/access/use-cases/resolve-acl.query.ts`, policy
 `domain/project/access/project-access.policy.ts` и первое ресурсное чтение
-`application/project/use-cases/get-project-detail.query.ts`; маршрутов `acl:*` и `project:*` нет.
+`application/project/use-cases/get-project-detail.query.ts`; маршрутов `acl:*` нет, а первый
+`project:*`-маршрут — `GET /api/v1/projects/{projectId}` (`project:read`, `aclCheckedIn:
+'GetProjectDetailQuery'`) — отгружен 2026-09-06, и с ним снапшот матрицы прав стал двумерным
+(фикстура ресурса в ключе ячейки, `test/permissions/permission-matrix.test.ts`).
 У STORY-011-07 (policy-слой) открытых критериев не осталось: ресурсные половины «сначала
 capability, потом ACL» и «404 вместо 403 на чужом объекте» и критерий «ридер не возвращает
 сущность» закрыты 2026-09-06 на проекте (`test/integration/db/project-read-access.test.ts` —
@@ -237,7 +240,7 @@ git ls-files 'packages/client/src/**' | grep -iE 'modal|dialog'
 архитектурное: маршруты ACL (STORY-011-06 — таблица `resource_acl`, резолвер и use-case'ы выдачи/отзыва отгружены 2026-09-06, маршрутов `acl:*` ещё нет) — персональные оверрайды
 прав (STORY-011-05) реализованы, запись и чтение чужих эффективных прав существуют
 (`GET /api/v1/users/{userId}/permissions`, STORY-011-11), а ресурсный слой есть у одного домена —
-проекта (ридер, резолвер, policy, чтение одного проекта), маршрутов `acl:*` и `project:*` нет; переключателя организации и юнита
+проекта (ридер, резолвер, policy, чтение одного проекта за маршрутом `GET /api/v1/projects/{projectId}`), маршрутов `acl:*` нет, из `project:*` на маршруте только `project:read`; переключателя организации и юнита
 `units/organization`; привязки `errors[].path` к полям
 формы (STORY-008-03 — нечем проверить, пока клиент и сервер валидируют одной схемой); мастерской
 компонентов (STORY-008-06 — нужен выбор инструмента и ADR; псевдолокаль при этом сделана); доменных

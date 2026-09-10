@@ -1,7 +1,7 @@
 ---
 id: STORY-014-05
 epic: EPIC-014
-status: backlog
+status: in-progress
 blocked: false
 priority: should
 estimate: M
@@ -42,12 +42,51 @@ estimate: M
 > (`POST /api/v1/telemetry/client-error`, EPIC-009) — то есть работа реальная, но она не сводится к
 > инкременту в обработчике 403.
 >
-> **Контракт и права.** `GET /api/v1/projects/{projectId}` обязан появиться в
-> `docs/api/openapi.yaml` — спека сверяется со стеком Express в обе стороны
-> (`packages/server/test/contract/openapi.test.ts:166`). А первый `project:*`-маршрут, где бы он ни
-> появился первым, обязан **в том же коммите** принести сентенции `permission.project.*` на EN и RU
-> и удалить строку `project` из `AWAITING_A_ROUTE`
-> (`packages/client/test/i18n/permission-descriptions.test.ts:59`).
+> **Контракт и права — сделано 2026-09-06, серверная половина.** `GET /api/v1/projects/{projectId}`
+> есть в `docs/api/openapi.yaml` (`getProject`, `x-permission: project:read`, схема `ProjectDetail`,
+> параметр `ProjectId`), типы клиента перегенерированы; запись в `route-registry.factory.ts` с
+> `aclCheckedIn: 'GetProjectDetailQuery'`, контроллер `presentation/http/controllers/project.controller.ts`,
+> сериализатор-whitelist `project.serializer.ts`, валидатор `uuid` на `:projectId`
+> (`project.validator.ts`); `ResolveAclQuery` и `GetProjectDetailQuery` собраны в
+> `container.factory.ts` (`buildProject`). HTTP-набор — `test/integration/http/project-endpoints.test.ts`:
+> свой `PUBLIC_ORG` → 200 с полями whitelist'а; несуществующий, чужой, `PRIVATE` без членства и
+> удалённый → **одно** `404 project_not_found` с одинаковым телом; без `project:read` → 403
+> `permission_not_granted` до единого обращения к портам; владелец без ключа читает `PRIVATE`;
+> отказ ридера цепочки → 503 `acl_resolution_failed`, строка не читается.
+>
+> **Две поправки к тому, что здесь было записано.**
+> - Строка `project` из `AWAITING_A_ROUTE` **не удаляется**: гейт
+>   (`permission-descriptions.test.ts`, «leaves no key both undescribed and unexcused») требует
+>   либо сентенцию, либо строку для **каждого** ключа ресурса, а на маршруте стоит один
+>   `project:read` из двенадцати. Удаление строки роняет гейт на одиннадцати ключах записи.
+>   Сделано то, чего гейт требует на самом деле: сентенция `permission.project.read` на EN и RU
+>   (описывать остальные одиннадцать запрещает второе направление того же гейта) и уточнённая
+>   причина в строке `project`. Строка уйдёт с последним `project:*`-маршрутом.
+> - Не-uuid в `:projectId` — `422 validation_failed`, а не 404: так отвечает каждый параметрический
+>   маршрут этого API (`teamIdParamsSchema`, `roleIdParamsSchema`), и `validated-operations.test.ts`
+>   требует объявленного `422` у операции с валидатором. Без валидатора `::uuid` в `scope()` дал бы
+>   500 — вот чего маршрут не делает. 422 ничего о существовании не говорит.
+>
+> **Контракт объявляет `503`** (`ServiceUnavailable`): резолвер отвечает `unavailable` на отказ
+> любого из двух ридеров, `authorizeResource` превращает это в `acl_resolution_failed` — код,
+> который маршрут действительно возвращает, а спека обязана называть ровно те коды, что достижимы
+> (`docs/api/README.md`, «Обязательное для каждой новой операции»).
+>
+> **Снапшот матрицы** переснят: 14 новых ячеек — по две (`PUBLIC_ORG` / `PRIVATE`, вызывающий не
+> участник) на каждую системную роль, — ни одной сдвинутой. Это первое capability ∧ ACL-решение на
+> маршруте, а не изменение доступа; подробно — в докстринге `permission-matrix.test.ts` и в
+> `permission-model.md`, «Guarded-маршруты сегодня».
+>
+> **Заметка на следующий шаг (из гейта шага 3).** Писатель строки `projects` — `update`,
+> `changeVisibility`, `changeStatus`, `softDelete` — берёт `FOR UPDATE`, а не `scope()` под
+> `FOR SHARE`: две транзакции, обе взявшие share-lock на одну строку и обе поднимающие его до
+> exclusive, — это deadlock. Для этого чтения неактуально, для CRUD (STORY-014-01) — обязательно.
+>
+> **Чего в этой дельте нет.** Клиентской карточки (критерии 1–8, 10 целиком), блока `permissions`
+> в DTO (критерий 5 — приходит с первым маршрутом записи, когда `canUpdateProject` и соседи
+> получат потребителя), финансовых полей и их сокрытия (критерий 9 — полей ещё нет ни в схеме
+> ответа, ни в модели чтения, поэтому скрывать нечего; в `ProjectDetail` спеки записано, что они
+> сюда не добавляются).
 
 ## Acceptance (Given/When/Then)
 
@@ -128,8 +167,10 @@ estimate: M
 - [ ] `packages/client/src/units/project/service/queries/project-detail.query.ts`,
       `service/hooks/use-project-detail.hook.ts`.
 - [ ] `packages/client/src/units/auth/lib/guards/require-project-member.guard.ts`.
-- [ ] `packages/server/src/application/project/queries/get-project-detail.query.ts` — проект +
-      участники + `permissions` (`canEdit`, `canManageMembers`, `canArchive`) одним запросом.
+- [x] `packages/server/src/application/project/use-cases/get-project-detail.query.ts` — проект
+      (шаг 3, `f156ee9`); маршрут, контракт, контроллер, сериализатор, валидатор и сборка в
+      контейнере — 2026-09-06. **Без** `permissions` (`canEdit`, `canManageMembers`, `canArchive`)
+      и без состава участников: и то и другое — вместе с первым маршрутом записи.
 - [ ] i18n: `packages/client/src/app/i18n/{en,ru}/project.json`.
 - [ ] Тесты: `use-project-detail.hook.spec.ts`, компонентные на п. 5, 7, 8,
       `get-project-detail.query.spec.ts` (счётчик SQL, п. 9), e2e `project-overview.spec.ts`

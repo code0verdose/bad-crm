@@ -2485,6 +2485,51 @@ paths:
         '503':
           $ref: '#/components/responses/ServiceUnavailable'
 
+  /projects/{projectId}:
+    get:
+      operationId: getProject
+      summary: One project, as the project card reads it.
+      description: |
+        The first read behind a **resource-scoped** permission: `project:read` carries
+        `requiredLevel: VIEWER`, and holding the key is only the first half of the decision. The
+        second half is the ACL chain of the project (`PROJECT → ORGANIZATION`), resolved inside the
+        use-case before the row is read — a member of the organization is `VIEWER` on a `PUBLIC_ORG`
+        project by the implicit table, and nobody at all on a `PRIVATE` one they are not on.
+
+        **Every outsider is `404`.** A project of another organization, a `PRIVATE` project the caller
+        is not on, a deleted one and an id that never named anything are one answer with one body;
+        `403` is only «you hold no `project:read`», inside the caller's own organization. The two are
+        deliberately ordered: a caller without the key is refused before a statement about the
+        project is sent, so the refusal carries nothing of the row.
+
+        No `permissions` block yet: `{ canEdit, canManageMembers, canArchive }` arrives with the first
+        write route of the project (STORY-014-05, acceptance 5; STORY-011-08, acceptance 12).
+      tags: [project]
+      x-permission: project:read
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+      responses:
+        '200':
+          description: The project.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectDetail'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+
   /employees:
     get:
       operationId: listEmployees
@@ -3981,6 +4026,66 @@ components:
           enum: [MEMBER, LEAD]
           default: MEMBER
 
+    ProjectDetail:
+      type: object
+      additionalProperties: false
+      required:
+        [id, key, name, description, status, visibility, leadId, color, memberCount, startedAt,
+         dueAt, taskCounter, createdAt]
+      description: |
+        One project, as the card reads it. `key` is the prefix of every task number of the project
+        (`BAD-14`) and never changes once set; `taskCounter` is how many numbers it has handed out.
+
+        No financial field is here and none will be added to this schema: budget and rates are
+        behind `project:view_budget` and `project:view_financials`, and a caller without them must
+        not receive the keys at all (STORY-014-05, acceptance 9; `T-PROJ-05`).
+      properties:
+        id:
+          type: string
+          format: uuid
+        key:
+          type: string
+          pattern: '^[A-Z][A-Z0-9]{1,9}$'
+          examples: ['BAD']
+        name:
+          type: string
+        description:
+          type: string
+          nullable: true
+        status:
+          type: string
+          enum: [ACTIVE, ON_HOLD, ARCHIVED, CLOSED]
+        visibility:
+          type: string
+          enum: [PUBLIC_ORG, PRIVATE]
+          description: |
+            `PUBLIC_ORG` — every member of the organization is `VIEWER` on it; `PRIVATE` — only the
+            people on it and the subjects of an explicit grant, and everybody else is answered 404.
+        leadId:
+          type: string
+          format: uuid
+        color:
+          type: string
+          description: A name from the palette of the design system, never a hex literal.
+        memberCount:
+          type: integer
+          minimum: 0
+          description: Live memberships only — people who left the project are not on it.
+        startedAt:
+          type: string
+          format: date-time
+          nullable: true
+        dueAt:
+          type: string
+          format: date-time
+          nullable: true
+        taskCounter:
+          type: integer
+          minimum: 0
+        createdAt:
+          type: string
+          format: date-time
+
     EmployeeProfile:
       type: object
       additionalProperties: false
@@ -5021,6 +5126,22 @@ components:
       examples:
         ivan:
           value: 018f4a3b-2c1d-7a41-9f00-2b7c1d0e5a42
+
+    ProjectId:
+      name: projectId
+      in: path
+      required: true
+      description: |
+        Identifier of a project the caller may see. Another organization's id is 404, and so are a
+        `PRIVATE` project the caller is not on and a project that has been deleted — the row survives
+        as a soft deletion so that its `key` can be reused, and confirming that an id once named a
+        project here would be a fact about data the caller cannot see.
+      schema:
+        type: string
+        format: uuid
+      examples:
+        badCrm:
+          value: 018f4a3b-2c1d-7a41-9f00-2b7c1d0e5b01
 
     InvitationId:
       name: invitationId

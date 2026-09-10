@@ -91,12 +91,15 @@ estimate: L
 > use-case'ами, а таблица уровней для `project:update`/`project:delete` уже стоит в
 > `test/unit/domain/project/project-access-policy.test.ts`. Критерии 6 и 7 закрыты **в policy-части**
 > на этом чтении: три неразличимых 404 с контролем на живой базе
-> (`test/integration/db/project-read-access.test.ts`) и 503 при отказе резолвера — пока только
-> двойником `{ status: 'unavailable' }` (`get-project-detail.query.test.ts`), живой отказ базы не
-> воспроизводился. Снапшотная половина критерия 6 («⚠ раскрытие существования» в
-> `permission-matrix`) ждёт маршрута. Маршрута
-> ещё нет — он следующий шаг вместе с описаниями права, спекой и снапшотом матрицы. Открытыми
-> остаются 4, 5, 8, 9, 10, 11 и `visible-projects.policy.ts`.
+> (`test/integration/db/project-read-access.test.ts`) и 503 при отказе резолвера — двойником
+> `{ status: 'unavailable' }` (`get-project-detail.query.test.ts`) и, с маршрутом, отказом ридера
+> цепочки по HTTP (`project-endpoints.test.ts`, «answers 503 when the chain cannot be read»); живой
+> отказ базы не воспроизводился. **Маршрут отгружен 2026-09-06** — `GET /api/v1/projects/:projectId`
+> (`project:read`, `aclCheckedIn: 'GetProjectDetailQuery'`), и с ним снапшотная половина критерия 6:
+> матрица стала двумерной, у маршрута с ресурсом по ячейке на фикстуру (`PUBLIC_ORG` / `PRIVATE`,
+> вызывающий не участник), и подмена 404 → 403 на приватной фикстуре теперь видна как
+> «⚠ раскрытие существования» (`permission-matrix.test.ts`, `FIXTURES`). Открытыми остаются 4, 5,
+> 8, 9, 10, 11 и `visible-projects.policy.ts`.
 
 ## Acceptance (Given/When/Then)
 

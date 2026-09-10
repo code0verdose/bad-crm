@@ -11,7 +11,9 @@ import { describe, expect, it } from 'vitest';
 import { isGuardedRoute, type RouteDeclaration } from '@/presentation/http/route-registry.types.js';
 import { createRouteRegistry } from '@/presentation/http/route-registry.factory.js';
 
-import { createAuthApp, type AuthApp } from '../support/auth-app.util.js';
+import { createAuthApp, type AuthApp, type AuthAppOptions } from '../support/auth-app.util.js';
+import { ORGANIZATION_ID } from '../support/identity-doubles.util.js';
+import { FakeProjectStore } from '../support/project-doubles.util.js';
 import { createTestApp } from '../support/test-app.util.js';
 
 /**
@@ -27,14 +29,26 @@ import { createTestApp } from '../support/test-app.util.js';
  * access then shows up as a diff in a committed file, with the direction spelled out — widening is
  * not the same kind of event as narrowing, and «404 became 403» is not cosmetic at all.
  *
- * **What this cannot see yet:** the resource layer. Every cell here is the capability decision —
- * not because every routed key has `requiredLevel: null` (`organization:manage_security_policy`
- * carries `MANAGER` and sits on three routes), but because no routed key with a level has a
- * resource reader on its route: the organization has none, the guard calls `authorizeCapability`
- * only, and nothing on those routes reads the level. The project policy that does read a level
- * (`GetProjectDetailQuery`) is not on a route yet. The first `project:*` route changes that: the
- * matrix gains a second dimension and the fixtures gain a resource — the shape of this file is
- * chosen to make that an addition rather than a rewrite.
+ * **The second dimension — the resource — arrived with `GET /projects/:projectId` (2026-09-06).**
+ * Until then every cell was the capability decision alone: `organization:manage_security_policy`
+ * carried `MANAGER` on three routes, but no routed key with a level had a resource reader on its
+ * route, so nothing read the level. `project:read` is the first that does — `GetProjectDetailQuery`
+ * resolves the ACL chain of the project before the row is read — and for such a route one cell per
+ * role is not an answer: the same role gets `allow` on a `PUBLIC_ORG` project and
+ * `deny:resource_not_found` on a `PRIVATE` one it is not on. So a route may name **fixtures**
+ * (`FIXTURES` below), and it is measured once per fixture, with the fixture in the cell key. The
+ * snapshot keeps its shape — `role → "METHOD /path [fixture]" → outcome` — which is what made this an
+ * addition rather than a rewrite.
+ *
+ * Read the two project cells together. Every system role holds `project:read`, so on the public
+ * fixture every role but one is `allow`; on the private one the same roles become
+ * `deny:resource_not_found` — not `permission_*`, because the contour is closed and «not yours» must
+ * read as «not there» (invariant 2). The one row that stays `allow` on both is the owner, who is
+ * `MANAGER` on the root without a walk (rule 9 of `rules/permissions.mdc`); the one row that is
+ * refused on both is `guest`, whose implicit level is `NONE` on every object (§5, last row) — the
+ * key alone opens nothing for a guest. A role without the key would be `deny:permission_not_granted`
+ * on both fixtures, because the capability is decided before the fixture gets a say; no system role
+ * is in that position today, and `project-endpoints.test.ts` holds that cell instead.
  */
 
 const SNAPSHOT = fileURLToPath(new URL('./__snapshots__/permission-matrix.json', import.meta.url));
@@ -43,6 +57,7 @@ const IVAN = '018f4a3b-2c1d-7a41-9f00-2b7c1d0e5a51';
 const ROLE_ID = '018f4a3b-2c1d-7a41-9f00-2b7c1d0e5a52';
 const INVITATION_ID = '018f4a3b-2c1d-7a41-9f00-2b7c1d0e5a53';
 const TEAM_ID = '018f4a3b-2c1d-7a41-9f00-2b7c1d0e5a54';
+const PROJECT_ID = '018f4a3b-2c1d-7a41-9f00-2b7c1d0e5a55';
 const PASSWORD = 'correct-horse-battery';
 const IDEMPOTENCY_KEY = 'd'.repeat(32);
 const REASON = 'matrix fixture reason, long enough';
@@ -141,6 +156,8 @@ const CALLS: Readonly<Record<string, Call>> = {
     request(app)
       .delete(`/api/v1/teams/${TEAM_ID}/members/${IVAN}`)
       .set('Authorization', `Bearer ${token}`),
+  'GET /api/v1/projects/:projectId': (target, token) =>
+    request(target).get(`/api/v1/projects/${PROJECT_ID}`).set('Authorization', `Bearer ${token}`),
   'GET /api/v1/employees': (target, token) =>
     request(target).get('/api/v1/employees').set('Authorization', `Bearer ${token}`),
   'GET /api/v1/employees/org-chart': (target, token) =>
@@ -191,6 +208,41 @@ const CALLS: Readonly<Record<string, Call>> = {
       .delete(`/api/v1/users/${IVAN}/permission-overrides/task%3Aread`)
       .set('Authorization', `Bearer ${token}`),
 };
+
+/**
+ * The resource each cell of a resource-scoped route is measured against.
+ *
+ * One entry per route whose use-case reads a level; a route absent here is measured once, on the
+ * empty installation, as every capability-only route always was. Each fixture is a project the
+ * caller is **not** on — membership would make the cell about the roster rather than about the
+ * role, and the roster is `project-endpoints.test.ts`'s subject.
+ */
+interface ResourceFixture {
+  readonly label: string;
+  readonly options: () => Partial<AuthAppOptions>;
+}
+
+const projectFixture = (visibility: 'PUBLIC_ORG' | 'PRIVATE'): ResourceFixture => ({
+  label: `${visibility} project, caller not on it`,
+  options: () => {
+    const projects = new FakeProjectStore();
+
+    projects.seed({ projectId: PROJECT_ID, organizationId: ORGANIZATION_ID, visibility });
+
+    return { projects };
+  },
+});
+
+const FIXTURES: Readonly<Record<string, readonly ResourceFixture[]>> = {
+  'GET /api/v1/projects/:projectId': [projectFixture('PUBLIC_ORG'), projectFixture('PRIVATE')],
+};
+
+/** A capability-only route is one cell; a resource-scoped one is one cell per fixture. */
+const cellsOf = (route: RouteDeclaration): readonly ResourceFixture[] =>
+  FIXTURES[keyOf(route)] ?? [{ label: '', options: () => ({}) }];
+
+const cellKey = (route: RouteDeclaration, fixture: ResourceFixture): string =>
+  fixture.label === '' ? keyOf(route) : `${keyOf(route)} [${fixture.label}]`;
 
 const guardedRoutes = (): RouteDeclaration[] =>
   createRouteRegistry(createTestApp().container.http).filter((route) => isGuardedRoute(route));
@@ -260,31 +312,38 @@ const measure = async (): Promise<Record<string, Record<string, string>>> => {
 
         if (call === undefined) throw new Error(`no call defined for ${keyOf(route)}`);
 
-        cell = createAuthApp({
-          capabilities: {
-            // The owner's actor carries an empty set on purpose — ownership short-circuits the
-            // capability layers rather than enumerating 331 keys.
-            isOwner: role === 'owner',
-            granted: role === 'owner' ? [] : [...SharedPermissions.SYSTEM_ROLE_PERMISSIONS[role]],
-            denied: [],
-            roleKeys: [],
-            permissionsVersion: 1,
-          },
-          capabilitiesByUser: {
-            [IVAN]: {
-              isOwner: false,
-              granted: [],
+        for (const fixture of cellsOf(route)) {
+          cell = createAuthApp({
+            ...fixture.options(),
+            capabilities: {
+              // The owner's actor carries an empty set on purpose — ownership short-circuits the
+              // capability layers rather than enumerating 331 keys.
+              isOwner: role === 'owner',
+              granted: role === 'owner' ? [] : [...SharedPermissions.SYSTEM_ROLE_PERMISSIONS[role]],
               denied: [],
-              roleKeys: [],
+              // The role's own key, because the resource dimension reads it: the implicit table
+              // answers `NONE` for `guest` on every object (`implicit-level.policy.ts`), and a guest
+              // measured with an empty `roleKeys` would be shown reading a public project it may
+              // not. The capability cells do not read it and are unchanged by it.
+              roleKeys: [role],
               permissionsVersion: 1,
             },
-          },
-        });
+            capabilitiesByUser: {
+              [IVAN]: {
+                isOwner: false,
+                granted: [],
+                denied: [],
+                roleKeys: [],
+                permissionsVersion: 1,
+              },
+            },
+          });
 
-        const token = await signIn(host);
-        const response = await call(host, token);
+          const token = await signIn(host);
+          const response = await call(host, token);
 
-        row[keyOf(route)] = outcomeOf(response.status, response.body);
+          row[cellKey(route, fixture)] = outcomeOf(response.status, response.body);
+        }
       }
 
       matrix[role] = row;
@@ -340,6 +399,16 @@ describe('the permission matrix of the system roles', () => {
 
     expect(routes.length).toBeGreaterThan(0);
     expect(routes.filter((route) => CALLS[route] === undefined)).toEqual([]);
+  });
+
+  it('CONTROL: every resource fixture names a route that is still mounted', () => {
+    // A fixture for a route that was renamed would silently stop being measured: `cellsOf` falls
+    // back to one empty cell, and the snapshot would lose its second dimension without a diff that
+    // says why.
+    const routes = new Set(guardedRoutes().map((route) => keyOf(route)));
+
+    expect(Object.keys(FIXTURES).filter((route) => !routes.has(route))).toEqual([]);
+    expect(Object.keys(FIXTURES).length).toBeGreaterThan(0);
   });
 
   it('matches the committed snapshot, cell by cell', async () => {

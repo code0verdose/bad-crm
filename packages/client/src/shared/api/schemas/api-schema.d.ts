@@ -1473,6 +1473,39 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/projects/{projectId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * One project, as the project card reads it.
+         * @description The first read behind a **resource-scoped** permission: `project:read` carries
+         *     `requiredLevel: VIEWER`, and holding the key is only the first half of the decision. The
+         *     second half is the ACL chain of the project (`PROJECT → ORGANIZATION`), resolved inside the
+         *     use-case before the row is read — a member of the organization is `VIEWER` on a `PUBLIC_ORG`
+         *     project by the implicit table, and nobody at all on a `PRIVATE` one they are not on.
+         *
+         *     **Every outsider is `404`.** A project of another organization, a `PRIVATE` project the caller
+         *     is not on, a deleted one and an id that never named anything are one answer with one body;
+         *     `403` is only «you hold no `project:read`», inside the caller's own organization. The two are
+         *     deliberately ordered: a caller without the key is refused before a statement about the
+         *     project is sent, so the refusal carries nothing of the row.
+         *
+         *     No `permissions` block yet: `{ canEdit, canManageMembers, canArchive }` arrives with the first
+         *     write route of the project (STORY-014-05, acceptance 5; STORY-011-08, acceptance 12).
+         */
+        get: operations["getProject"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/employees": {
         parameters: {
             query?: never;
@@ -2372,6 +2405,43 @@ export interface components {
             teamRole: "MEMBER" | "LEAD";
         };
         /**
+         * @description One project, as the card reads it. `key` is the prefix of every task number of the project
+         *     (`BAD-14`) and never changes once set; `taskCounter` is how many numbers it has handed out.
+         *
+         *     No financial field is here and none will be added to this schema: budget and rates are
+         *     behind `project:view_budget` and `project:view_financials`, and a caller without them must
+         *     not receive the keys at all (STORY-014-05, acceptance 9; `T-PROJ-05`).
+         */
+        ProjectDetail: {
+            /** Format: uuid */
+            id: string;
+            /** @example BAD */
+            key: string;
+            name: string;
+            description: string | null;
+            /** @enum {string} */
+            status: "ACTIVE" | "ON_HOLD" | "ARCHIVED" | "CLOSED";
+            /**
+             * @description `PUBLIC_ORG` — every member of the organization is `VIEWER` on it; `PRIVATE` — only the
+             *     people on it and the subjects of an explicit grant, and everybody else is answered 404.
+             * @enum {string}
+             */
+            visibility: "PUBLIC_ORG" | "PRIVATE";
+            /** Format: uuid */
+            leadId: string;
+            /** @description A name from the palette of the design system, never a hex literal. */
+            color: string;
+            /** @description Live memberships only — people who left the project are not on it. */
+            memberCount: number;
+            /** Format: date-time */
+            startedAt: string | null;
+            /** Format: date-time */
+            dueAt: string | null;
+            taskCounter: number;
+            /** Format: date-time */
+            createdAt: string;
+        };
+        /**
          * @description A personnel record, in the shape this caller is allowed to see. The employment fields below
          *     the first block are present **only** for the person themselves and for
          *     `employee:view_personal_data`; a caller without it does not receive the keys at all.
@@ -3268,6 +3338,13 @@ export interface components {
          *     caller asked to remove something the organization does not have.
          */
         TeamMemberUserId: string;
+        /**
+         * @description Identifier of a project the caller may see. Another organization's id is 404, and so are a
+         *     `PRIVATE` project the caller is not on and a project that has been deleted — the row survives
+         *     as a soft deletion so that its `key` can be reused, and confirming that an id once named a
+         *     project here would be a fact about data the caller cannot see.
+         */
+        ProjectId: string;
         /**
          * @description Identifier of an invitation of the caller's organization. Another organization's id is 404,
          *     and so is one that was already revoked — a revoked invitation is a deleted row, because the
@@ -5481,6 +5558,41 @@ export interface operations {
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
             409: components["responses"]["Conflict"];
+            422: components["responses"]["ValidationFailed"];
+            429: components["responses"]["RateLimited"];
+            500: components["responses"]["InternalError"];
+            503: components["responses"]["ServiceUnavailable"];
+        };
+    };
+    getProject: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /**
+                 * @description Identifier of a project the caller may see. Another organization's id is 404, and so are a
+                 *     `PRIVATE` project the caller is not on and a project that has been deleted — the row survives
+                 *     as a soft deletion so that its `key` can be reused, and confirming that an id once named a
+                 *     project here would be a fact about data the caller cannot see.
+                 */
+                projectId: components["parameters"]["ProjectId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The project. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProjectDetail"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
             422: components["responses"]["ValidationFailed"];
             429: components["responses"]["RateLimited"];
             500: components["responses"]["InternalError"];

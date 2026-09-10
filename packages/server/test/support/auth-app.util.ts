@@ -30,7 +30,16 @@ import { GetMyPermissionsQuery } from '@/application/iam/use-cases/get-my-permis
 import { GetUserPermissionsQuery } from '@/application/iam/use-cases/get-user-permissions.query.js';
 import { ProvisionSystemRolesUseCase } from '@/application/iam/use-cases/provision-system-roles.use-case.js';
 import { DeleteCustomRoleUseCase } from '@/application/iam/use-cases/delete-custom-role.use-case.js';
-import { type IamDependencies } from '@/presentation/http/http-server.types.js';
+import {
+  type IamDependencies,
+  type ProjectDependencies,
+} from '@/presentation/http/http-server.types.js';
+import {
+  bestEffortDeniedAccessAudit,
+  RecordDeniedAccessUseCase,
+} from '@/application/access/use-cases/record-denied-access.use-case.js';
+import { ResolveAclQuery } from '@/application/access/use-cases/resolve-acl.query.js';
+import { GetProjectDetailQuery } from '@/application/project/use-cases/get-project-detail.query.js';
 import { AcceptInvitationUseCase } from '@/application/iam/use-cases/accept-invitation.use-case.js';
 import { DeactivateUserUseCase } from '@/application/iam/use-cases/deactivate-user.use-case.js';
 import { ResetUserMfaUseCase } from '@/application/iam/use-cases/reset-user-mfa.use-case.js';
@@ -121,6 +130,7 @@ import {
   FakeTeamRepository,
   FakeUserRoleRepository,
 } from './iam-doubles.util.js';
+import { FakeProjectStore } from './project-doubles.util.js';
 
 /**
  * The real HTTP surface over in-memory ports.
@@ -161,10 +171,14 @@ export interface AuthApp {
   readonly customRoles: FakeCustomRoleRepository;
   /** Teams, so a suite can seed one and read back what a membership change did. */
   readonly teams: FakeTeamRepository;
+  /** Projects, memberships and ACL grants — the three ports a read of one project goes through. */
+  readonly projects: FakeProjectStore;
   readonly invitations: FakeInvitationRepository;
   readonly employeeProfiles: FakeEmployeeProfileRepository;
   /** The assembled IAM use-cases, for the few cases that assert on one directly. */
   readonly iam: IamDependencies;
+  /** The project surface, assembled over the same unit of work and the same store as `projects`. */
+  readonly project: ProjectDependencies;
   /** Every privileged action the application filed, in order — the trail as a test can read it. */
   readonly audit: FakeAuditLogger;
   /**
@@ -239,6 +253,11 @@ export interface AuthAppOptions {
   readonly customRoles?: FakeCustomRoleRepository;
   /** State the team commands act on. */
   readonly teams?: FakeTeamRepository;
+  /**
+   * The projects of the installation, with their rosters and grants. Unbound when handed in — the
+   * harness binds the store to its own unit of work, which is where the store reads the tenant.
+   */
+  readonly projects?: FakeProjectStore;
   readonly invitations?: FakeInvitationRepository;
   readonly employeeProfiles?: FakeEmployeeProfileRepository;
   readonly employeeDirectory?: FakeEmployeeDirectoryRepository;
@@ -546,6 +565,7 @@ export const createAuthApp = (options: AuthAppOptions = {}): AuthApp => {
   const overrides = options.overrides ?? new FakePermissionOverrideRepository();
   const customRoles = options.customRoles ?? new FakeCustomRoleRepository();
   const teams = options.teams ?? new FakeTeamRepository();
+  const projects = (options.projects ?? new FakeProjectStore()).bindTo(unitOfWork);
   const invitations = options.invitations ?? new FakeInvitationRepository();
   const employeeProfiles = options.employeeProfiles ?? new FakeEmployeeProfileRepository();
   const employeeDirectory = options.employeeDirectory ?? new FakeEmployeeDirectoryRepository();
@@ -705,7 +725,40 @@ export const createAuthApp = (options: AuthAppOptions = {}): AuthApp => {
     mfaCoverageReport: new MfaCoverageReportQuery(unitOfWork, mfaPolicyReader, mfaPolicy, clock),
   };
 
-  const app = createHttpServer({ ...platform.http, identity, iam, organization });
+  /**
+   * The project surface over the same store three times: repository, access reader and ACL reader
+   * are one object here because they are one set of rows on a database (`project-doubles.util.ts`).
+   * The resolver is the real one, so a foreign id is `missing` by the same walk production takes.
+   */
+  const project: ProjectDependencies = {
+    getProjectDetail: new GetProjectDetailQuery(
+      unitOfWork,
+      projects,
+      new ResolveAclQuery({ acl: projects, projects, clock, logger }),
+    ),
+  };
+
+  /**
+   * The refusal trail, over this harness's own sink rather than the cached platform's.
+   *
+   * `platform.http.deniedAccessAudit` writes through the shared container, whose audit logger has
+   * no database behind it — a refusal there is logged and lost, and `test.audit` never sees it. The
+   * same wrapper the composition root uses, over the same fakes every other trail entry of a suite
+   * goes through, so a suite can state «this refusal leaves no row» beside «this one does».
+   */
+  const deniedAccessAudit = bestEffortDeniedAccessAudit(
+    new RecordDeniedAccessUseCase({ rateLimit, unitOfWork, audit }),
+    { logger },
+  );
+
+  const app = createHttpServer({
+    ...platform.http,
+    deniedAccessAudit,
+    identity,
+    iam,
+    organization,
+    project,
+  });
 
   let listening: Server | undefined;
   const server = (): Server => {
@@ -736,6 +789,7 @@ export const createAuthApp = (options: AuthAppOptions = {}): AuthApp => {
     app,
     server,
     iam,
+    project,
     userLifecycle,
     ownership,
     clock,
@@ -758,6 +812,7 @@ export const createAuthApp = (options: AuthAppOptions = {}): AuthApp => {
     invitations,
     employeeProfiles,
     customRoles,
+    projects,
     teams,
     audit,
     logLines: platform.logLines,

@@ -61,6 +61,7 @@ import { type RefreshSessionUseCase } from '@/application/identity/use-cases/ref
 import { type RegenerateRecoveryCodesUseCase } from '@/application/identity/use-cases/regenerate-recovery-codes.use-case.js';
 import { type RegisterOrganizationUseCase } from '@/application/identity/use-cases/register-organization.use-case.js';
 import { type MfaCoverageReportQuery } from '@/application/organization/use-cases/mfa-coverage-report.query.js';
+import { type GetProjectDetailQuery } from '@/application/project/use-cases/get-project-detail.query.js';
 import { type ReadSecurityPolicyQuery } from '@/application/organization/use-cases/read-security-policy.query.js';
 import { type UpdateSecurityPolicyUseCase } from '@/application/organization/use-cases/update-security-policy.use-case.js';
 import { type RequestPasswordResetUseCase } from '@/application/identity/use-cases/request-password-reset.use-case.js';
@@ -189,6 +190,18 @@ export interface IamDependencies {
   readonly removeTeamMember: RemoveTeamMemberUseCase;
 }
 
+/**
+ * The project context, as the HTTP surface needs it.
+ *
+ * Its own group, like `organization`, and for a stronger reason: this is the first slice whose
+ * use-cases decide over a **resource** — the query below asks the ACL resolver about one project
+ * before it reads the row — and keeping it beside the permission layer would blur which side of
+ * «capability ∧ ACL» each use-case is (`docs/security/permission-model.md` §7 (в)).
+ */
+export interface ProjectDependencies {
+  readonly getProjectDetail: GetProjectDetailQuery;
+}
+
 export interface HttpServerDependencies {
   readonly config: HttpServerConfig;
   readonly logger: LoggerPort;
@@ -224,4 +237,5 @@ export interface HttpServerDependencies {
   readonly identity: IdentityDependencies;
   readonly iam: IamDependencies;
   readonly organization: OrganizationDependencies;
+  readonly project: ProjectDependencies;
 }

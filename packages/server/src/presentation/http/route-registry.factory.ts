@@ -17,6 +17,7 @@ import { createOwnershipController } from '@/presentation/http/controllers/owner
 import { createSecurityPolicyController } from '@/presentation/http/controllers/security-policy.controller.js';
 import { createUserLifecycleController } from '@/presentation/http/controllers/user-lifecycle.controller.js';
 import { createUserSecurityController } from '@/presentation/http/controllers/user-security.controller.js';
+import { createProjectController } from '@/presentation/http/controllers/project.controller.js';
 import { createTeamController } from '@/presentation/http/controllers/team.controller.js';
 import { createUserRoleController } from '@/presentation/http/controllers/user-role.controller.js';
 import { allowedOrigins } from '@/presentation/http/cors-origin.util.js';
@@ -83,6 +84,7 @@ import {
   teamMemberParamsSchema,
   updateTeamBodySchema,
 } from '@/presentation/http/validators/team.validator.js';
+import { projectIdParamsSchema } from '@/presentation/http/validators/project.validator.js';
 import {
   deactivateUserBodySchema,
   userLifecycleParamsSchema,
@@ -244,6 +246,13 @@ export const createRouteRegistry = (
     body: addTeamMemberBodySchema,
   });
   const teamMemberValidator = validate({ params: teamMemberParamsSchema });
+
+  const projectIdValidator = validate({ params: projectIdParamsSchema });
+
+  const projects = createProjectController({
+    getProjectDetail: dependencies.project.getProjectDetail,
+    projectIdValidator,
+  });
 
   const teams = createTeamController({
     listTeams: dependencies.iam.listTeams,
@@ -668,6 +677,17 @@ export const createRouteRegistry = (
       handlers: [teamMemberValidator.handler, teams.removeMember],
       permission: 'team:manage_members',
       aclCheckedIn: 'RemoveTeamMemberUseCase',
+    },
+    {
+      method: 'get',
+      path: `${API_PREFIX}/projects/:projectId`,
+      handlers: [projectIdValidator.handler, projects.detail],
+      permission: 'project:read',
+      // The first key with a `requiredLevel` behind a route that reads a resource. The guard answers
+      // «may this caller read projects at all»; whether *this* id names one they may see — a
+      // `PRIVATE` project they are not on, another organization's, a deleted row — is the ACL chain,
+      // resolved inside the use-case and answered 404 rather than 403 for every outsider.
+      aclCheckedIn: 'GetProjectDetailQuery',
     },
     {
       method: 'post',

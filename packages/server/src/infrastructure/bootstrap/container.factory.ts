@@ -68,6 +68,8 @@ import { ListInvitationsQuery } from '@/application/iam/use-cases/list-invitatio
 import { ListRolesQuery } from '@/application/iam/use-cases/list-roles.query.js';
 import { ListTeamsQuery } from '@/application/iam/use-cases/list-teams.query.js';
 import { GetTeamDetailQuery } from '@/application/iam/use-cases/get-team-detail.query.js';
+import { ResolveAclQuery } from '@/application/access/use-cases/resolve-acl.query.js';
+import { GetProjectDetailQuery } from '@/application/project/use-cases/get-project-detail.query.js';
 import { DeleteTeamUseCase } from '@/application/iam/use-cases/delete-team.use-case.js';
 import {
   AddTeamMemberUseCase,
@@ -138,6 +140,9 @@ import { AesFieldEncryption } from '@/infrastructure/crypto/field-encryption.ada
 import { PrismaEmployeeDirectoryRepository } from '@/infrastructure/persistence/prisma/employee-directory.repository.js';
 import { PrismaOwnershipRepository } from '@/infrastructure/persistence/prisma/ownership.repository.js';
 import { PrismaTeamRepository } from '@/infrastructure/persistence/prisma/team.repository.js';
+import { PrismaAclReader } from '@/infrastructure/persistence/prisma/acl-reader.adapter.js';
+import { PrismaProjectAccessReader } from '@/infrastructure/persistence/prisma/project-access-reader.adapter.js';
+import { PrismaProjectRepository } from '@/infrastructure/persistence/prisma/project.repository.js';
 import { PrismaUserLifecycleRepository } from '@/infrastructure/persistence/prisma/user-lifecycle.repository.js';
 import { PrismaEmployeeProfileRepository } from '@/infrastructure/persistence/prisma/employee-profile.repository.js';
 import { PrismaInvitationRepository } from '@/infrastructure/persistence/prisma/invitation.repository.js';
@@ -172,6 +177,7 @@ import { API_VERSION } from '@/presentation/http/api-version.constant.js';
 import {
   type IamDependencies,
   type OrganizationDependencies,
+  type ProjectDependencies,
   type IdentityDependencies,
 } from '@/presentation/http/http-server.types.js';
 
@@ -487,6 +493,10 @@ export const buildContainer = (input: ContainerInput): AppContainer => {
         logger,
         clock,
       }),
+      // The first context with a resource layer under its routes: the resolver walks the ACL chain
+      // of one project before the row is read. Built here so that the three readers it needs —
+      // projects, memberships, grants — are the Prisma adapters and nothing a test would substitute.
+      project: buildProject({ database: input.database, clock, logger }),
       iam: buildIam({
         database: input.database,
         audit,
@@ -577,6 +587,37 @@ const buildOrganization = (input: {
       input.audit,
     ),
     mfaCoverageReport: new MfaCoverageReportQuery(unitOfWork, reader, policies, input.clock),
+  };
+};
+
+/**
+ * The project surface: one query today, over the resolver the domain's policy decides with.
+ *
+ * `ResolveAclQuery` is assembled here and only here — it is the seam every resource read of every
+ * later domain goes through, and a second instance built elsewhere would be a second registry of
+ * chains to keep in step (`resolve-acl.query.ts`, «A registry of chains»). No audit port: a read
+ * files nothing, and a refusal is the error handler's to record (`deniedAccessAudit` above).
+ */
+const buildProject = (input: {
+  readonly database: DatabaseConnection | undefined;
+  readonly clock: SystemClockAdapter;
+  readonly logger: LoggerPort;
+}): ProjectDependencies => {
+  const unitOfWork =
+    input.database === undefined ? detachedUnitOfWork() : new PrismaUnitOfWork(input.database.base);
+  const resolveAcl = new ResolveAclQuery({
+    acl: new PrismaAclReader(),
+    projects: new PrismaProjectAccessReader(),
+    clock: input.clock,
+    logger: input.logger,
+  });
+
+  return {
+    getProjectDetail: new GetProjectDetailQuery(
+      unitOfWork,
+      new PrismaProjectRepository(),
+      resolveAcl,
+    ),
   };
 };
 

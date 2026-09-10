@@ -56,7 +56,9 @@ const AWAITING_A_ROUTE: Readonly<Record<string, string>> = {
   employee: 'employment, cost rate and personal data are the paid half of the card (M3)',
   permission: 'the catalogue itself and `explain` need the resource layer (STORY-011-06)',
   acl: 'blocked with STORY-011-06: no domain owns a resource to hang an ACL on',
-  project: 'projects are EPIC-014, the epic that also unblocks the resource layer',
+  project:
+    'EPIC-014 in progress: `project:read` is routed and described; the eleven keys of the write ' +
+    'side wait for their routes (create, update, members, visibility, archive, budget)',
   board: 'boards arrive with tasks (M3)',
   task: 'tasks are M3 — the largest domain of the catalogue and none of it exists',
   sprint: 'sprints arrive with tasks (M3)',

@@ -2165,8 +2165,15 @@ it.each(cases)('$name', ({ actor, scope, expected, reason }) => {
   (`test/support/auth-app.util.ts`): проверяется маршрут + гвард + use-case + politика, то есть ровно
   тот шов, где «забыли подключить проверку». Testcontainers здесь не нужен и стоил бы минуты на
   каждую из 189 ячеек.
-- **Формат снапшота — `{ catalogSize, matrix }`**, где `matrix` — `роль → "МЕТОД /путь" → исход`.
-  Полей `snapshotVersion`, `roles[]`, `endpoints[]`, `fixture`, `requiredLevel` в файле нет.
+- **Формат снапшота — `{ catalogSize, dangerous, matrix }`**, где `matrix` —
+  `роль → "МЕТОД /путь" → исход`. Полей `snapshotVersion`, `roles[]`, `endpoints[]`, `requiredLevel`
+  в файле нет. **Второе измерение появилось 2026-09-06** вместе с первым маршрутом, чей use-case
+  читает уровень (`GET /api/v1/projects/:projectId`, `project:read` с `requiredLevel: VIEWER`):
+  такой маршрут измеряется не одной ячейкой, а по одной на **фикстуру ресурса**, и фикстура входит
+  в ключ ячейки — `"GET /api/v1/projects/:projectId [PUBLIC_ORG project, caller not on it]"` и
+  `"… [PRIVATE project, caller not on it]"`. Фикстуры объявлены в самом тесте (`FIXTURES`), маршрут
+  без фикстуры по-прежнему одна ячейка. Форма файла от этого не изменилась — это и было условием,
+  под которое она выбиралась.
 
 ```jsonc
 // packages/server/test/permissions/__snapshots__/permission-matrix.json
@@ -2176,8 +2183,17 @@ it.each(cases)('$name', ({ actor, scope, expected, reason }) => {
     "owner": {
       "GET /api/v1/roles": "allow",
       "PATCH /api/v1/roles/:roleId": "deny:role_not_found",
-      "GET /api/v1/users/:userId/permissions": "allow"
-      // …27 маршрутов
+      "GET /api/v1/users/:userId/permissions": "allow",
+      // маршрут с ресурсом — по ячейке на фикстуру; владелец MANAGER на корне без обхода
+      "GET /api/v1/projects/:projectId [PUBLIC_ORG project, caller not on it]": "allow",
+      "GET /api/v1/projects/:projectId [PRIVATE project, caller not on it]": "allow"
+      // …
+    },
+    "developer": {
+      "GET /api/v1/projects/:projectId [PUBLIC_ORG project, caller not on it]": "allow",
+      // закрытый контур: «не ваш» читается как «нет такого», не как 403
+      "GET /api/v1/projects/:projectId [PRIVATE project, caller not on it]": "deny:resource_not_found"
+      // …
     },
     "viewer": {
       "GET /api/v1/roles": "deny:role_forbidden"
@@ -2231,8 +2247,11 @@ node -e "const m=require('./packages/server/test/permissions/__snapshots__/permi
 сейчас, печатает
 
 ```bash
-node -e "const m=require('./packages/server/test/permissions/__snapshots__/permission-matrix.json').matrix; console.log(Object.keys(m[Object.keys(m)[0]]).length)"
+node -e "const m=require('./packages/server/test/permissions/__snapshots__/permission-matrix.json').matrix; console.log(new Set(Object.keys(m[Object.keys(m)[0]]).map((k)=>k.replace(/ \\[.*$/,''))).size)"
 ```
+
+(ключ ячейки обрезается до маршрута: у маршрута с ресурсом ячеек столько, сколько фикстур, а
+маршрут один).
 
 Таблица ниже сверена с `route-registry.factory.ts` 2026-08-27; расхождение её длины с этой командой
 означает, что сверку не повторили. Колонка `aclCheckedIn` — имя use-case, который принимает
@@ -2268,11 +2287,19 @@ node -e "const m=require('./packages/server/test/permissions/__snapshots__/permi
 | `GET /api/v1/users/:userId/permissions` | `permission:override_read` | `GetUserPermissionsQuery` |
 | `PUT /api/v1/users/:userId/permission-overrides/:permission` | `permission:override` | `WritePermissionOverrideUseCase` |
 | `DELETE /api/v1/users/:userId/permission-overrides/:permission` | `permission:override` | `RemovePermissionOverrideUseCase` |
+| `GET /api/v1/projects/:projectId` | `project:read` | `GetProjectDetailQuery` |
 
-Ни у одного из этих прав `requiredLevel` не задан (`null`) — ресурсного слоя в продукте ещё нет,
-поэтому каждая ячейка снапшота сегодня отражает **только** capability. С первым ACL-доменом
-(EPIC-014) у матрицы появится второе измерение, и форма файла выбрана так, чтобы это было
-дополнением, а не переписыванием.
+До 2026-09-06 каждая ячейка снапшота отражала **только** capability — не потому, что у всех прав на
+маршрутах `requiredLevel` был `null` (`organization:manage_security_policy` несёт `MANAGER` на трёх
+маршрутах), а потому, что ни у одного такого маршрута не стояло ридера ресурса. Последняя строка
+таблицы это изменила: `project:read` (`VIEWER`) — первый ключ, за которым use-case резолвит цепочку
+ACL (`PROJECT → ORGANIZATION`) **до** чтения строки. У матрицы появилось второе измерение — фикстура
+ресурса в ключе ячейки (см. «Формат снапшота» выше), — и форма файла осталась прежней, как и было
+задумано. Снятый по этому маршруту снимок показывает модель целиком: на `PUBLIC_ORG`-проекте все
+системные роли, кроме `guest`, — `allow`; на `PRIVATE`-проекте, где вызывающий не участник, те же
+роли — `deny:resource_not_found` (закрытый контур, §5), владелец — `allow` на обоих (правило 5
+разрешения), `guest` — `deny:resource_not_found` на обоих (неявный уровень `NONE`, §5, последняя
+строка). Ни одна прежняя ячейка при этом не сдвинулась.
 
 ### (в) CI-правило «нет маршрута без объявленной permission»
 
