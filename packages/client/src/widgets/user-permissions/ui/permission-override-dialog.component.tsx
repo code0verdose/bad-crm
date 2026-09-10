@@ -100,7 +100,7 @@ export function PermissionOverrideDialog({
               title={t('permissions.form.refused')}
               variant="light"
             >
-              {refusal.values === undefined ? t(refusal.key) : t(refusal.key, refusal.values ?? {})}
+              {t(refusal.key, refusal.values ?? {})}
             </Alert>
           )}
 

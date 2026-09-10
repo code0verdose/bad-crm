@@ -8,6 +8,7 @@ describe('the weak-password check', () => {
     ['a dictionary word with leetspeak', 'P@ssw0rd1234'],
     ['the product name', 'badcrm123456'],
     ['one character repeated', 'aaaaaaaaaaaa'],
+    ['a single character, which is not a run either', 'a'],
     ['an ascending run', 'abcdefghijkl'],
     ['a descending run', 'lkjihgfedcba'],
     ['a digit run', '0123456789'],
@@ -22,6 +23,7 @@ describe('the weak-password check', () => {
     ['generated noise', 'x7Qv-2mB!kR9tLpZ'],
     ['a walk buried in the middle', 'my-cat-qwerty-hat'],
     ['a word that merely contains one', 'brassword-mixer-92'],
+    ['a run that breaks after two characters', 'abd'],
   ])('accepts %s', (_case, password) => {
     expect(isWeakPassword(password)).toBe(false);
   });

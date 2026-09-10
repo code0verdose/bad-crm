@@ -81,12 +81,28 @@ const isSingleCharacter = (password: string): boolean =>
 
 /** `abcdefghijkl`, `123456789012`, and the same runs backwards. */
 const isSequentialRun = (password: string): boolean => {
-  const codes = [...password.toLowerCase()].map((character) => character.charCodeAt(0));
-  const step = (codes[1] ?? 0) - (codes[0] ?? 0);
+  const [first, second, ...rest] = [...password.toLowerCase()].map((character) =>
+    character.charCodeAt(0),
+  );
+
+  // One character is not a run — and it is judged here before the repeated-character check so
+  // that this branch is reachable through `isWeakPassword` rather than dead code kept for the
+  // type checker.
+  if (first === undefined || second === undefined) return false;
+
+  const step = second - first;
 
   if (step !== 1 && step !== -1) return false;
 
-  return codes.every((code, index) => index === 0 || code - (codes[index - 1] ?? 0) === step);
+  let previous = second;
+
+  for (const code of rest) {
+    if (code - previous !== step) return false;
+
+    previous = code;
+  }
+
+  return true;
 };
 
 /**
@@ -106,8 +122,8 @@ export const isWeakPassword = (password: string): boolean => {
   // fold rewrites digits into letters, which is exactly what turns `123456789012` — a run — into a
   // string that is no longer one. The fold exists to see through decoration in a word, and a digit
   // run is not decorated.
-  if (isSingleCharacter(trimmed)) return true;
   if (isSequentialRun(trimmed)) return true;
+  if (isSingleCharacter(trimmed)) return true;
 
   // Digits only. Twelve characters of them is a search space of 10^12, which is hours on one GPU
   // against argon2id at these parameters and minutes against a leaked list — and it is also the

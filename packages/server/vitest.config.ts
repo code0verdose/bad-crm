@@ -15,6 +15,18 @@ export default defineConfig({
     /** A share of the machine — see the root `vitest.config.ts` for why, and why it is derived. */
     maxWorkers: Math.max(1, Math.floor(availableParallelism() / 4)),
     /**
+     * Four times vitest's default of five seconds — a budget against a misattributed failure, not a
+     * lowered bar. Measured 2026-09-10: alone, with coverage, the slowest test of this package takes
+     * 1.1 s (`permission-matrix.test.ts`, 3 316 tests green three runs in a row). Under
+     * `pnpm turbo run test` the client suite runs at the same time with its own workers, and the
+     * auth HTTP specs — each of which computes real argon2id hashes — started timing out at 5 000 ms
+     * on a different test every run (`change-password`, `user-lifecycle`, `sign-out`). Nothing in
+     * those tests is slow; the machine is shared. Budget assertions that mean something
+     * (`audit-port-cost`, `login-flood-memory`) are relative or measure memory, so this does not
+     * loosen them.
+     */
+    testTimeout: 20_000,
+    /**
      * `test/integration/http/**` runs here on purpose: those specs drive the Express application
      * through supertest, which needs no container and no external service, so keeping them out of
      * `pnpm test` would mean the HTTP surface is only exercised by a task nobody runs locally. The

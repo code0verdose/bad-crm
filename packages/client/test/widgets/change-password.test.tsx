@@ -405,15 +405,20 @@ describe('the strength meter', () => {
   });
 
   /**
-   * It never blocks. There is no strength policy on the server — `passwordSchema` is a length range
-   * and nothing else — so a meter that refused a submission would enforce a rule the product does
-   * not have, on the one screen where somebody is trying to secure their account.
+   * The meter never blocks. What the server refuses is a *shape* — a repeated character, a run, a
+   * keyboard walk (`SharedValidation.isWeakPassword`) — and since 2026-09-06 the form refuses the
+   * same shapes under the field through `newPasswordSchema`. The meter's *score* is a different
+   * thing: a lowercase word the meter rates weak is still a password the server accepts, and a
+   * meter that refused it would enforce a rule the product does not have, on the one screen where
+   * somebody is trying to secure their account. (Until 2026-09-10 this case typed `aaaaaaaaaaaa`,
+   * which the server has refused as a repeated character all along — the case only passed because
+   * the form did not yet mirror that refusal.)
    */
   it('does not stand between a weak-but-legal password and the server', async () => {
     const user = userEvent.setup();
 
     await startAt();
-    await submit(user, await fill(user, { next: 'aaaaaaaaaaaa', confirm: 'aaaaaaaaaaaa' }));
+    await submit(user, await fill(user, { next: 'sunflowerbob', confirm: 'sunflowerbob' }));
 
     await waitFor(() => {
       expect(callsTo('/auth/change-password', 'POST')).toHaveLength(1);
