@@ -101,6 +101,18 @@ describe('which audit actions may degrade when their row cannot be written', () 
     expect(quietButDangerous).toContain('permission.inspected');
   });
 
+  /**
+   * Pinned by name, unlike everything else here, because the derivation above cannot notice this
+   * one going back: it reads the expected set from the same map the function does. Registration
+   * commits without its row if this action degrades — it did, while it was `INFO`, and the only
+   * other test that sees it needs a container
+   * (`test/integration/db/registration-audit-atomicity.test.ts`).
+   */
+  it('holds the registration of an organization, whatever the map says tomorrow', () => {
+    expect(SharedAudit.severityOf('organization.registered')).toBe('WARNING');
+    expect(isDegradableAuditAction('organization.registered')).toBe(false);
+  });
+
   /** CONTROL: the catalogue has both kinds, so the derivation did not pass over an empty side. */
   it('CONTROL: the catalogue holds actions on both sides of the line', () => {
     const degradable = SharedAudit.AUDIT_ACTIONS.filter(isDegradableAuditAction);

@@ -8,7 +8,11 @@ import {
 } from '@/application/iam/ports/invitation-repository.port.js';
 import { AcceptInvitationUseCase } from '@/application/iam/use-cases/accept-invitation.use-case.js';
 import { type AuditEvent } from '@/application/platform/ports/audit-logger.port.js';
-import { InvitationNotValidError, RateLimitedError } from '@/domain/shared/errors/app.errors.js';
+import {
+  InvitationNotValidError,
+  RateLimitedError,
+  ValidationError,
+} from '@/domain/shared/errors/app.errors.js';
 
 import {
   FakeClock,
@@ -117,12 +121,22 @@ class FakeInvitations implements InvitationRepositoryPort {
   }
 }
 
+/**
+ * Every digest the resolver was asked about, so a case can state that it was asked nothing: a
+ * refusal that comes before it must not spend the `SECURITY DEFINER` read, and «before» is only
+ * proved by a resolver that counts.
+ */
+let resolverDigests: string[] = [];
+
 /** The org-less resolver: a digest in, an organization out — or nothing at all. */
 const lookupThatFinds = (state: FakeState) => ({
-  findInvitation: () =>
-    Promise.resolve(
+  findInvitation: (digest: string) => {
+    resolverDigests.push(digest);
+
+    return Promise.resolve(
       'resolved' in state ? state.resolved : { invitationId: INVITATION, organizationId: ORG },
-    ),
+    );
+  },
 });
 
 class FakeRoles {
@@ -157,6 +171,7 @@ let sessions: { issued: { userId: string }[] };
 let audit: { events: AuditEvent[]; port: { record: (event: AuditEvent) => Promise<void> } };
 
 beforeEach(() => {
+  resolverDigests = [];
   unitOfWork = new FakeUnitOfWork();
   clock = new FakeClock(new Date('2026-08-10T10:00:00.000Z'));
   tokens = new FakeResetTokens();
@@ -311,6 +326,8 @@ describe('accepting an invitation', () => {
       InvitationNotValidError,
     );
     expect(hasher.hashed).toEqual([]);
+    // CONTROL for the counter the weak-password case relies on: the resolver was asked once here.
+    expect(resolverDigests).toHaveLength(1);
   });
 
   it('refuses once the address has spent its budget, before anything is read', async () => {
@@ -321,6 +338,30 @@ describe('accepting an invitation', () => {
     await expect(accept(invitations)).rejects.toBeInstanceOf(RateLimitedError);
     expect(hasher.hashed).toEqual([]);
     expect(unitOfWork.scopes).toEqual([]);
+  });
+
+  /**
+   * The fourth path that sets a password, and until 2026-09-10 the only one that applied the bounds
+   * alone: `qwertyuiop12` was refused at registration, at reset and at change, and accepted here.
+   * Same answer as the registration — `422` on the field, `custom`, nothing about which shape —
+   * and in the same position: after the budget, so a guess costs an attempt, and before the
+   * resolver and the hasher, so a weak password neither reveals whether the token exists nor buys
+   * argon2. (Reset and change answer `invalid_value`, and check before their budget.)
+   */
+  it('refuses a weak password on the field, after the budget and before anything else', async () => {
+    const invitations = new FakeInvitations();
+
+    const refusal = accept(invitations, {}, { password: 'qwertyuiop12' }); // scan-secrets:allow gitleaks:allow
+
+    await expect(refusal).rejects.toBeInstanceOf(ValidationError);
+    await expect(refusal).rejects.toMatchObject({
+      issues: [{ path: 'password', code: 'custom' }],
+    });
+    expect(rateLimit.consumed).toHaveLength(1);
+    expect(resolverDigests).toEqual([]);
+    expect(hasher.hashed).toEqual([]);
+    expect(unitOfWork.scopes).toEqual([]);
+    expect(invitations.accounts).toEqual([]);
   });
 
   it('counts the attempt against the address, which is the only subject there is', async () => {

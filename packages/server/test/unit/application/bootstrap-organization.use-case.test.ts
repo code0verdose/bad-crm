@@ -174,6 +174,14 @@ describe('BootstrapOrganizationUseCase', () => {
    * the same scope (a record written outside would be refused by the adapter or land in no
    * transaction), after the roles (the tenant it describes is complete), and a rejection there
    * rolls the tenant back rather than leaving it standing unrecorded.
+   *
+   * The third property is the seam's and only the seam's. The double below *rejects*; the audit
+   * writer the process wires rejects only for an action it may not degrade — a `WARNING` or
+   * `CRITICAL` one, or an `INFO` one behind a dangerous key (`degradable-audit-actions.util.ts`).
+   * For the rest it swallows, and this case stays green while the tenant commits without its row,
+   * which is what happened to `organization.registered` until it was raised to `WARNING`
+   * (2026-09-10). What the product does with the real chain is proved where the real chain is:
+   * `test/integration/db/registration-audit-atomicity.test.ts`.
    */
   describe('inSameTransaction', () => {
     it('runs inside the scope that created the organization, after the roles, with both ids', async () => {
@@ -200,7 +208,7 @@ describe('BootstrapOrganizationUseCase', () => {
       expect(database.scopes).toHaveLength(1);
     });
 
-    it('propagates its rejection, so the caller sees the tenant was not committed', async () => {
+    it('propagates a rejection from the step, so a sink that refuses undoes the tenant', async () => {
       const database = new InMemoryDatabase();
 
       await expect(

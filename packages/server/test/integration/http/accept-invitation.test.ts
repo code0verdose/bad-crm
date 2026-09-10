@@ -193,6 +193,30 @@ describe('POST /api/v1/invitations/accept', () => {
     expect((accepted.body as { status: string }).status).toBe('authenticated');
   });
 
+  /**
+   * The half of the policy the schema leaves to the use-case, on the wire: the same `422` the
+   * registration answers with, on `password`, with `custom` and no trace of the password. The link
+   * stays usable — a weak password is corrected, not restarted — and the hasher never ran for it.
+   */
+  it('refuses a weak password on the field, with no password in the answer', async () => {
+    const invitations = new FakeInvitationRepository();
+    const test = createAuthApp({ invitations });
+    const { token } = await openInvitation(test, invitations);
+
+    const refused = await accept(test, token, { password: 'qwertyuiop12' }).expect(422); // scan-secrets:allow gitleaks:allow
+
+    expect(refused.body).toMatchObject({
+      code: 'validation_failed',
+      errors: [{ path: 'password', code: 'custom', message: expect.any(String) }],
+    });
+    expect(JSON.stringify(refused.body)).not.toContain('qwertyuiop12');
+    expect(test.hasher.hashed).toEqual([]);
+
+    const accepted = await accept(test, token).expect(201);
+
+    expect((accepted.body as { status: string }).status).toBe('authenticated');
+  });
+
   it('accepts an invitation that carried no role', async () => {
     const invitations = new FakeInvitationRepository();
     const test = createAuthApp({ invitations });

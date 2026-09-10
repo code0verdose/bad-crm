@@ -45,6 +45,48 @@ describe('a problem document becomes a typed error', () => {
     ]);
   });
 
+  /**
+   * `errors[].code` selects an i18n key the same way the top-level `code` does, and an entry whose
+   * code this build has never heard of would select none: `VALIDATION_ISSUE_MESSAGE_KEY[code]` is
+   * `undefined`, and a form would hand `t(undefined)` to the screen. The catalogue guards the
+   * top-level code at this boundary; the per-field codes are guarded here too, for the same reason
+   * — an entry that cannot be rendered is dropped, and the document's own code says the rest.
+   */
+  it('drops a per-field issue whose code is not in the catalogue, and keeps the ones that are', () => {
+    const problem = {
+      ...validationProblem,
+      errors: [
+        { path: 'title', code: 'too_small', message: 'short' },
+        { path: 'owner.password', code: 'not_a_zod_code', message: 'a code from the future' },
+        { path: 'slug', code: 'invalid_format', message: 'bad' },
+      ],
+    };
+
+    expect(apiErrorOf(problem, problemResponse(422, problem)).issues).toEqual([
+      { path: 'title', code: 'too_small', message: 'short' },
+      { path: 'slug', code: 'invalid_format', message: 'bad' },
+    ]);
+  });
+
+  it('drops an entry that is not the shape of an issue at all', () => {
+    const problem = {
+      ...validationProblem,
+      errors: [
+        'not an object',
+        null,
+        { code: 'too_small', message: 'no path' },
+        { path: 42, code: 'too_small', message: 'path is not a string' },
+        { path: 'title', code: 7, message: 'code is not a string' },
+        { path: 'title', code: 'too_small' },
+        { path: 'title', code: 'too_small', message: 'kept' },
+      ],
+    };
+
+    expect(apiErrorOf(problem, problemResponse(422, problem)).issues).toEqual([
+      { path: 'title', code: 'too_small', message: 'kept' },
+    ]);
+  });
+
   it('reports no issues when the problem carries none', () => {
     const problem = {
       ...validationProblem,

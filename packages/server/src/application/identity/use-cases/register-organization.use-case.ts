@@ -68,7 +68,17 @@ export interface RegistrationDefaults {
  * allowed to fail and leave the tenant standing, and the record must not be. Until 2026-09-06 it
  * was beside the session, and an installation whose first session insert failed had an organization
  * with no `organization.registered` row. `BootstrapOrganizationUseCase.inSameTransaction` is the
- * seam: the record is written after the roles, with the owner's id, and rolls back with the tenant.
+ * seam: the record is written after the roles, with the owner's id.
+ *
+ * **The place is necessary and not sufficient: «rolls back with the tenant» is decided by the
+ * severity of the action, not by this call site.** The writer fences an `INFO` row behind no
+ * dangerous key in a savepoint and the decorator above it swallows the failure
+ * (`degradable-audit-actions.util.ts`) — so while `organization.registered` was `INFO`, a refused
+ * insert here rolled back to the savepoint, was reported as a log line, and the tenant committed
+ * without its row, exactly as if the record had never been moved. Every double in the unit suites
+ * rejects, so none of them could see it. The action is `WARNING` since 2026-09-10
+ * (`audit-severity.enums.ts`), which is what makes a failed row abort this transaction; the chain
+ * as the process wires it is proved in `test/integration/db/registration-audit-atomicity.test.ts`.
  */
 export class RegisterOrganizationUseCase {
   constructor(
@@ -151,8 +161,10 @@ export class RegisterOrganizationUseCase {
           // Inside the transaction that creates the tenant, like every other privileged action —
           // and not the one below, which may fail without undoing the tenant. An organization
           // created with no record of who created it is the one row an operator can least afford
-          // to find unexplained. The slug goes in `after`, the password does not — «after» carries
-          // what changed, never a credential.
+          // to find unexplained — and being in this transaction only *lets* a failed row undo the
+          // tenant; that it *does* is the action's `WARNING` severity, which the writer never
+          // degrades (`audit-severity.enums.ts`). The slug goes in `after`, the password does not —
+          // «after» carries what changed, never a credential.
           inSameTransaction: async (created) => {
             await this.audit.record({
               action: 'organization.registered',

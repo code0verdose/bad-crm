@@ -73,6 +73,30 @@ interface ProblemDocument {
 }
 
 /**
+ * One entry of `errors[]`, kept only when this build can render it.
+ *
+ * `errors[].code` selects an i18n key exactly the way the top-level `code` does
+ * (`VALIDATION_ISSUE_MESSAGE_KEY[code]`), and until 2026-09-10 it was the one field of the document
+ * that crossed this boundary on a type assertion alone: a code outside the catalogue — a newer
+ * server, a Zod release with a new issue kind — reached the registration and change-password forms
+ * as `{ key: undefined }`, and `t(undefined)` put an empty sentence under the field. Guarded here
+ * for the reason `code` and `reason` are: an entry with nothing to say is dropped, and the
+ * document's own code is what the form states instead — a refusal that is never silent.
+ */
+const asValidationIssue = (entry: unknown): SharedErrors.ValidationIssue | undefined => {
+  if (typeof entry !== 'object' || entry === null) return undefined;
+
+  const candidate = entry as { path?: unknown; code?: unknown; message?: unknown };
+
+  if (typeof candidate.path !== 'string' || typeof candidate.message !== 'string') return undefined;
+  if (typeof candidate.code !== 'string' || !SharedErrors.isValidationIssueCode(candidate.code)) {
+    return undefined;
+  }
+
+  return { path: candidate.path, code: candidate.code, message: candidate.message };
+};
+
+/**
  * A body is a problem document only if it carries a code this client can act on.
  *
  * Anything else — a gateway's HTML, a proxy's plain text, a future code this build has never heard
@@ -99,7 +123,11 @@ const asProblemDocument = (body: unknown): ProblemDocument | undefined => {
     code: candidate.code,
     requestId: candidate.requestId,
     ...(Array.isArray(candidate.errors)
-      ? { errors: candidate.errors as readonly SharedErrors.ValidationIssue[] }
+      ? {
+          errors: candidate.errors
+            .map(asValidationIssue)
+            .filter((issue): issue is SharedErrors.ValidationIssue => issue !== undefined),
+        }
       : {}),
     // Guarded by the catalogue for the same reason `code` is: a reason this build has never heard
     // of selects no sentence, and letting it through would put an unknown string in front of code

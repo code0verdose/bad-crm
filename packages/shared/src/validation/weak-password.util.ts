@@ -6,13 +6,15 @@
  * are a dependency and a data file, and both belong to the same decision an operator makes about
  * password policy rather than to the sign-up path of M1.
  *
- * **One copy, shared, since 2026-09-06.** It lived in the server's domain layer, and the three
- * use-cases that set a password applied it after the schema had passed the bounds. The client
- * validated with the bounds alone, so a password the server would refuse crossed the wire, came
- * back as `422`, and the registration form said «check the highlighted fields» with nothing
+ * **One copy, shared, since 2026-09-06.** It lived in the server's domain layer, and three of the
+ * four use-cases that set a password applied it after the schema had passed the bounds — the
+ * fourth, accepting an invitation, applied the bounds alone until 2026-09-10, on both sides. The
+ * client validated with the bounds alone, so a password the server would refuse crossed the wire,
+ * came back as `422`, and the registration form said «check the highlighted fields» with nothing
  * highlighted — there was no field error to attach, because the client had no way to know the
  * rule. Here, it is the same function on both sides: `newPasswordSchema` refuses the shape before
- * the round trip, the use-cases refuse it after the rate limit, and the two cannot drift.
+ * the round trip, the use-cases refuse it too — registration and invitation after their rate limit,
+ * reset and change before theirs — and the two cannot drift.
  *
  * What is refused is what twelve characters still lets through: a keyboard walk lengthened until it
  * fits, one character repeated, and a plain ascending run. Every rule below is a *shape*, not a

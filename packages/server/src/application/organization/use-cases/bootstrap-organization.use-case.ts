@@ -19,7 +19,11 @@ export interface BootstrapOrganizationInput {
    * the transaction after this one — the session — is permitted to fail and leave the tenant
    * standing (`register-organization.use-case.ts`). A record written there was a record that could
    * be missing for a tenant that exists, which is the row an operator can least afford to find
-   * unexplained. A rejection here rolls the tenant back, which is the point.
+   * unexplained. A rejection here rolls the tenant back, which is the point — and whether a
+   * failed row *becomes* a rejection is not this step's to decide: the audit writer swallows the
+   * failure of an `INFO` row behind no dangerous key (`degradable-audit-actions.util.ts`), and did
+   * so for this very record until its action was raised to `WARNING` on 2026-09-10. The step
+   * offers the transaction; the severity is what makes the caller's row hold it.
    *
    * A step rather than an audit port on this class: this use-case is about tenancy and holds no
    * opinion on what a registration is; the seed and the integration suites build it without one.

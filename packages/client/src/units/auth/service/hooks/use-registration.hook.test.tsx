@@ -359,6 +359,43 @@ describe('registering an organization', () => {
     });
   });
 
+  /**
+   * A per-field code this build has never heard of is dropped at the boundary
+   * (`problem.errors.ts`), so the verdict falls through to the document's own code above the fields
+   * — never to `{ key: undefined }` on the password, which `t()` would render as nothing at all.
+   */
+  it('states a password issue with a code it cannot translate above the fields, not as no key', async () => {
+    vi.stubGlobal('fetch', () =>
+      Promise.resolve(
+        json(
+          {
+            type: 'https://bad-crm.dev/problems/validation_failed',
+            title: 'Validation failed',
+            status: 422,
+            code: 'validation_failed',
+            requestId: 'req-register',
+            errors: [{ path: OWNER_PASSWORD, code: 'from_a_newer_server', message: 'unknown' }],
+          },
+          422,
+        ),
+      ),
+    );
+
+    const { AuthService } = await freshUnit();
+    const { result } = renderHook(() => AuthService.useRegistration(), {
+      wrapper: harness().wrapper,
+    });
+
+    act(() => {
+      result.current.submit(VALUES);
+    });
+
+    await waitFor(() => {
+      expect(result.current.notice).toEqual({ key: 'errors.code.validation_failed' });
+    });
+    expect(result.current.passwordError).toBeUndefined();
+  });
+
   /** A `422` naming nothing this form has is still said, above the fields, so a refusal is never silent. */
   it('states a field issue it cannot place above the fields', async () => {
     vi.stubGlobal('fetch', () =>

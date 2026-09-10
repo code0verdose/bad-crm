@@ -145,7 +145,11 @@ estimate: M
       рисков — за человеком**. `db-reviewer` — PASS, «организация и владелец одним оператором» подтверждено
       (data-modifying CTE, составной `NO ACTION`, без `DEFERRABLE`). `production-readiness` — FAIL → закрыт:
       H1 `{{seconds}}` в форме и тот же класс во всех хуках — `c826ea3`; M1 спека обещала replay по
-      `Idempotency-Key` — снято; M2 `organization.registered` теперь в транзакции создания — `c826ea3`;
+      `Idempotency-Key` — снято; M2 `organization.registered` теперь в транзакции создания — `c826ea3`
+      (место оказалось необходимым, но не достаточным: при `INFO` писатель огораживал вставку
+      `SAVEPOINT`, декоратор проглатывал отказ, и организация коммитилась без строки; действие
+      поднято до `WARNING` 2026-09-10, атомарность доказана на живой цепочке —
+      `test/integration/db/registration-audit-atomicity.test.ts`);
       M3 слабые пароли — один список в `packages/shared` для формы и сервера — `c826ea3`; M4 шаги первого
       входа называют slug и путь для закрытого контура; M5 прокси — `fca2ecf`. `commit-hygiene` — PASS.
 - [x] Документация обновлена (docs/ + запись в `docs/brain/`)

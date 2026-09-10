@@ -1,3 +1,5 @@
+import { SharedValidation } from '@bad-crm/shared';
+
 import { type InvitationRepositoryPort } from '@/application/iam/ports/invitation-repository.port.js';
 import { type UserRoleRepositoryPort } from '@/application/iam/ports/user-role-repository.port.js';
 import { type AuthLookupPort } from '@/application/identity/ports/auth-lookup.port.js';
@@ -16,7 +18,11 @@ import { type RateLimitPort } from '@/application/platform/ports/rate-limit.port
 import { type UnitOfWorkPort } from '@/application/platform/ports/unit-of-work.port.js';
 import { maskIpAddress } from '@/domain/identity/mask-ip-address.util.js';
 import { SECURITY_EVENTS } from '@/domain/identity/security-event.constant.js';
-import { InvitationNotValidError, RateLimitedError } from '@/domain/shared/errors/app.errors.js';
+import {
+  InvitationNotValidError,
+  RateLimitedError,
+  ValidationError,
+} from '@/domain/shared/errors/app.errors.js';
 import { refundingHashRefusals } from '@/application/platform/rate-limit/hash-refusal-refund.util.js';
 
 export interface AcceptInvitationInput {
@@ -55,6 +61,11 @@ export interface AcceptedInvitationResult {
  *    is the only subject a counter can have — and a limiter checked after an argon2id run over
  *    19 MiB is a memory-exhaustion vector rather than a defence (`T-IAM-08`). Keying it on anything
  *    derived from the token would hand every guess a fresh budget, which is not a limit.
+ *    **Then the half of the password policy the schema leaves to the use-case** — the shapes
+ *    `isWeakPassword` names — before the resolver and the hasher: a weak password costs an
+ *    attempt, reveals nothing about whether the token exists, and buys no argon2. This is the
+ *    fourth path that sets a password, and until 2026-09-10 the only one that applied the bounds
+ *    alone; the answer is the registration's, `422` on the field with `custom`.
  * 2. **The resolver next, and it is cheap.** One indexed read of a digest, before the tenant is
  *    known — the fifth `SECURITY DEFINER` path (`docs/security/rls-design.md`, «Особые пути»).
  *    Nothing is hashed for a token it does not find.
@@ -113,6 +124,15 @@ export class AcceptInvitationUseCase {
     const ipMasked = maskIpAddress(input.client.ipAddress);
 
     await this.spendBudget(input, ipMasked);
+
+    // Reported as `validation_failed` on the field, exactly like a password that is too short: from
+    // the person's side it is the same problem, and a distinct code would tell somebody which of
+    // their guesses was nearly acceptable (`register-organization.use-case.ts` says the same).
+    if (SharedValidation.isWeakPassword(input.password)) {
+      throw new ValidationError([
+        { path: 'password', code: 'custom', message: 'Password is a known weak pattern' },
+      ]);
+    }
 
     const resolved = await this.authLookup.findInvitation(this.resetTokens.hash(input.token));
 

@@ -1,4 +1,4 @@
-import { localeSchema, passwordSchema } from '@bad-crm/shared/validation';
+import { localeSchema, newPasswordSchema } from '@bad-crm/shared/validation';
 import { z } from 'zod';
 
 /** i18next key of «the two passwords differ» — a key, never a sentence (`rules/i18n.mdc` §1). */
@@ -17,7 +17,10 @@ const PASSWORD_MISMATCH_MESSAGE_KEY = 'validation.password.mismatch';
  */
 export const acceptInvitationFormSchema = z
   .object({
-    password: passwordSchema,
+    // The whole policy, not the bounds alone: `newPasswordSchema` is what the other three forms
+    // that set a password use, and until 2026-09-10 this one used `passwordSchema` — so a keyboard
+    // walk passed here, crossed the wire, and came back as a `422` with nothing to highlight.
+    password: newPasswordSchema,
     // No policy of its own: it is right when it equals the first field and wrong otherwise, and a
     // second «too short» under it would be one mistake reported twice.
     confirmPassword: z.string(),

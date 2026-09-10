@@ -21,8 +21,21 @@ export type AuditSeverity = (typeof AUDIT_SEVERITIES)[number];
  * here does not compile.
  */
 export const AUDIT_ACTION_SEVERITY: Readonly<Record<AuditAction, AuditSeverity>> = {
-  // Creating an organization is the ordinary start of everything; loud only in aggregate.
-  'organization.registered': 'INFO',
+  /**
+   * `WARNING`, and the level is what makes the registration atomic — not the place the record is
+   * written from. Creating a tenant is the one event without which the trail of an installation
+   * cannot be read: every later entry names an organization, and this is the entry that says who
+   * created it and when. It was `INFO` until 2026-09-10 on the reading «the ordinary start of
+   * everything, loud only in aggregate» — and `INFO` behind no key is exactly the class the writer
+   * may degrade (`degradable-audit-actions.util.ts`): the insert was fenced in a savepoint, the
+   * failure swallowed one layer up, and an organization committed with no record of who created
+   * it, while the use-case's docstring promised the opposite. A promise made by a call site was
+   * only as good as the severity underneath it. At `WARNING` the degradation is forbidden by
+   * construction — a failed row aborts the transaction that is creating the tenant, and the
+   * registration is refused rather than left unexplained. Same level as `invitation.accepted`:
+   * a person entering the trail, and this is the person who opened it.
+   */
+  'organization.registered': 'WARNING',
   'session.signed_in': 'INFO',
   // A session ending is routine; the interesting version of it — a family revoked because a token
   // was replayed — is the separate `session.refresh_reuse_detected` entry below.

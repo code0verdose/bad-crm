@@ -29,9 +29,11 @@ import { type SharedAudit } from '@bad-crm/shared';
  * - **`organization.registered`** — the docstrings around the sink used to claim registration
  *   happens «before any organization is known». It does not: `register-organization.use-case.ts`
  *   records it inside the `withTenant` that *creates* the organization
- *   (`BootstrapOrganizationUseCase.inSameTransaction`), so the row commits with the tenant or not
- *   at all. Listing it would excuse a real hole in the one event an operator can least afford to
- *   find missing.
+ *   (`BootstrapOrganizationUseCase.inSameTransaction`). That the row commits with the tenant or
+ *   not at all is the action's `WARNING` severity, not the call site: an `INFO` row there was
+ *   fenced and swallowed like any other, and the tenant committed without it until 2026-09-10
+ *   (`audit-severity.enums.ts`). Listing it here would excuse a real hole in the one event an
+ *   operator can least afford to find missing.
  * - **`session.signed_in`** — offered as «a refused sign-in has no tenant yet». There is no audit
  *   action for a refused sign-in: `AUDIT_ACTIONS` records what happened, refusals are logged and
  *   rate-limited instead. A successful sign-in always resolved an account, so it always has an
