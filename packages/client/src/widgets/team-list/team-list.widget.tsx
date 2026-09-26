@@ -1,8 +1,9 @@
 import { Button, Group, Stack } from '@mantine/core';
 import { useDisclosure } from '@mantine/hooks';
+import { useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { SharedUi } from '@shared';
+import { SharedHooks, SharedUi } from '@shared';
 
 import { IamService } from '@units/iam';
 import { TeamService, TeamUi, type TeamModel } from '@units/team';
@@ -45,6 +46,10 @@ export function TeamList({ search, navigate }: TeamListProps) {
   const directory = TeamService.TeamHooks.useTeamList(search, navigate);
   const mayCreate = can('team:create');
   const [createOpened, createControls] = useDisclosure(false);
+  // The reset is drawn only while something is filtered, so pressing it removes it; focus goes to
+  // the search box rather than falling to `<body>`.
+  const searchRef = useRef<HTMLInputElement>(null);
+  const handOffFocus = SharedHooks.useFocusHandoff(searchRef);
   const { filters, page } = directory;
 
   return (
@@ -52,13 +57,13 @@ export function TeamList({ search, navigate }: TeamListProps) {
       <TeamUi.TeamAccessNotice />
 
       <Group align="flex-end" justify="space-between" wrap="wrap">
-        <TeamFiltersBar filters={filters} />
+        <TeamFiltersBar filters={filters} searchRef={searchRef} />
         {mayCreate && <Button onClick={createControls.open}>{t('teams.create.action')}</Button>}
       </Group>
 
       {filters.isFiltered && (
         <Group>
-          <Button onClick={filters.reset} size="compact-sm" variant="subtle">
+          <Button onClick={filters.reset} ref={handOffFocus} size="compact-sm" variant="subtle">
             {t('teams.filters.reset')}
           </Button>
         </Group>

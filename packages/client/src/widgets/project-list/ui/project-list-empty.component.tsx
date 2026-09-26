@@ -1,7 +1,8 @@
 import { Button } from '@mantine/core';
+import { type RefObject } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { SharedUi } from '@shared';
+import { SharedHooks, SharedUi } from '@shared';
 
 import { IamUi } from '@units/iam';
 
@@ -9,6 +10,11 @@ export interface ProjectListEmptyProps {
   /** Whether a filter emptied the list, rather than the reader having no projects at all. */
   readonly isFiltered: boolean;
   readonly onReset: () => void;
+  /**
+   * Where focus goes when the reset takes itself away — pressing it ends the filtered branch, and
+   * the button with it.
+   */
+  readonly returnFocusTo: RefObject<HTMLElement | null>;
 }
 
 /**
@@ -25,14 +31,15 @@ export interface ProjectListEmptyProps {
  * (`ux-architecture.md`, principle 6). The action slot of `EmptyState` takes it the day the route
  * lands.
  */
-export function ProjectListEmpty({ isFiltered, onReset }: ProjectListEmptyProps) {
+export function ProjectListEmpty({ isFiltered, onReset, returnFocusTo }: ProjectListEmptyProps) {
   const { t } = useTranslation();
+  const handOffFocus = SharedHooks.useFocusHandoff(returnFocusTo);
 
   if (isFiltered) {
     return (
       <SharedUi.EmptyState
         action={
-          <Button onClick={onReset} variant="light">
+          <Button onClick={onReset} ref={handOffFocus} variant="light">
             {t('projects.list.empty.reset')}
           </Button>
         }

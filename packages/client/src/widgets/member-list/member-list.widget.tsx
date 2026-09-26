@@ -1,7 +1,8 @@
 import { Button, Group, SegmentedControl, Stack } from '@mantine/core';
+import { useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { SharedUi } from '@shared';
+import { SharedHooks, SharedUi } from '@shared';
 
 import { EmployeeService, type EmployeeModel } from '@units/employee';
 import { IamService } from '@units/iam';
@@ -30,9 +31,14 @@ const SKELETON_ROWS = 8;
  * **The chart is behind its own permission**, so the toggle appears only for somebody who holds it:
  * an option that always answers 403 is a dead end the reader has to walk into to discover
  * (`ux-architecture.md`, принцип 6). The guard is a hint — the endpoint refuses on its own authority.
+ *
+ * **The reset hands focus to the search box.** It is drawn only while something is filtered, so
+ * pressing it removes it, and focus would otherwise fall to `<body>` (`SharedHooks.useFocusHandoff`).
  */
 export function MemberList({ search, navigate }: MemberListProps) {
   const { t } = useTranslation();
+  const searchRef = useRef<HTMLInputElement>(null);
+  const handOffFocus = SharedHooks.useFocusHandoff(searchRef);
   const { can } = IamService.IamHooks.useCan();
   const maySeeChart = can('employee:view_org_chart');
   const showChart = search.view === 'chart' && maySeeChart;
@@ -42,7 +48,7 @@ export function MemberList({ search, navigate }: MemberListProps) {
   return (
     <Stack gap="md">
       <Group align="flex-start" justify="space-between" wrap="wrap">
-        <MemberFiltersBar facets={page?.facets} filters={filters} />
+        <MemberFiltersBar facets={page?.facets} filters={filters} searchRef={searchRef} />
         {maySeeChart && (
           <SegmentedControl
             aria-label={t('members.view.label')}
@@ -60,7 +66,7 @@ export function MemberList({ search, navigate }: MemberListProps) {
 
       {filters.isFiltered && (
         <Group>
-          <Button onClick={filters.reset} size="compact-sm" variant="subtle">
+          <Button onClick={filters.reset} ref={handOffFocus} size="compact-sm" variant="subtle">
             {t('members.filters.reset')}
           </Button>
         </Group>

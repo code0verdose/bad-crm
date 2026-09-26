@@ -489,6 +489,57 @@ describe('/projects', () => {
     expect(screen.getByLabelText('projects.list.filters.search')).toHaveValue('');
   });
 
+  /**
+   * Every control that takes the filters off also takes itself off the page — the reset in the
+   * empty state, the reset in the bar, the last chip's cross. Focus on a removed node falls to
+   * `<body>`, and a keyboard or screen reader user is thrown to the top of the document with no word
+   * about where the list went (`rules/a11y.mdc` §5, §9). The search box is always on the screen.
+   */
+  it("keeps the focus on the search box when the empty state's reset takes itself away", async () => {
+    const user = userEvent.setup();
+
+    await startAt({ path: `/projects?q=%22zzz%22`, list: () => json(pageOf([], 0)) });
+
+    await user.click(await screen.findByRole('button', { name: 'projects.list.empty.reset' }));
+
+    await waitFor(() => {
+      expect(screen.queryByRole('button', { name: 'projects.list.empty.reset' })).toBeNull();
+    });
+    expect(document.activeElement).toBe(screen.getByLabelText('projects.list.filters.search'));
+  });
+
+  it("keeps the focus on the search box when the bar's reset takes itself away", async () => {
+    const user = userEvent.setup();
+
+    await startAt({ path: `/projects?member=%22me%22` });
+
+    await screen.findByRole('link', { name: 'Project 1' });
+    await user.click(screen.getByRole('button', { name: 'filter.reset' }));
+
+    await waitFor(() => {
+      expect(screen.queryByRole('button', { name: 'filter.reset' })).toBeNull();
+    });
+    expect(document.activeElement).toBe(screen.getByLabelText('projects.list.filters.search'));
+  });
+
+  it('keeps the focus on the search box when the last chip is taken off from the keyboard', async () => {
+    const user = userEvent.setup();
+
+    await startAt({ path: `/projects?member=%22me%22` });
+
+    await screen.findByRole('link', { name: 'Project 1' });
+    // From the keyboard: the cross swallows `mousedown`, so a click would never have focused it.
+    act(() => {
+      screen.getByRole('button', { name: 'filter.remove' }).focus();
+    });
+    await user.keyboard('{Enter}');
+
+    await waitFor(() => {
+      expect(screen.queryByRole('button', { name: 'filter.remove' })).toBeNull();
+    });
+    expect(document.activeElement).toBe(screen.getByLabelText('projects.list.filters.search'));
+  });
+
   it('tells somebody who may create a project where their projects will appear', async () => {
     await startAt({ list: () => json(pageOf([], 0)) });
 

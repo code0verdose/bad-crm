@@ -1,4 +1,5 @@
 import { Chip, Group, NativeSelect, Stack, TextInput } from '@mantine/core';
+import { type Ref } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { ProjectModel, type ProjectLib, type ProjectService } from '@units/project';
@@ -9,6 +10,8 @@ export interface ProjectFiltersBarProps {
   readonly filters: ProjectService.ProjectHooks.ProjectFilters;
   /** The leads of the projects the reader can see — the answer's facet, named where possible. */
   readonly leadOptions: readonly ProjectLib.ProjectLeadOption[];
+  /** The search box — always drawn, so it is where focus goes when a reset takes itself away. */
+  readonly searchRef: Ref<HTMLInputElement>;
 }
 
 /**
@@ -33,7 +36,7 @@ const SORT_KEYS: Readonly<Record<ProjectModel.ProjectListSort, string>> = {
  *
  * There is no «client» control: the server has no such filter until STORY-014-07.
  */
-export function ProjectFiltersBar({ filters, leadOptions }: ProjectFiltersBarProps) {
+export function ProjectFiltersBar({ filters, leadOptions, searchRef }: ProjectFiltersBarProps) {
   const { t } = useTranslation();
 
   return (
@@ -47,6 +50,7 @@ export function ProjectFiltersBar({ filters, leadOptions }: ProjectFiltersBarPro
             filters.setQuery(event.currentTarget.value);
           }}
           placeholder={t('projects.list.filters.searchPlaceholder')}
+          ref={searchRef}
           type="search"
           value={filters.typed}
         />
