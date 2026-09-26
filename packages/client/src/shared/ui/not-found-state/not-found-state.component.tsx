@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next';
 import { PAGE_TITLE_ID } from '@shared/ui';
 
 import classes from './not-found-state.module.css';
+import { NOT_FOUND_TITLE_KEY } from './not-found-title-key.constant.js';
 
 export interface NotFoundStateProps {
   /** The way out. Supplied by the caller, because `shared/ui` knows no routes. */
@@ -31,7 +32,7 @@ export function NotFoundState({ action }: NotFoundStateProps) {
   return (
     <Stack align="center" className={classes['root']} gap="sm" data-testid="not-found-state">
       <Title id={PAGE_TITLE_ID} order={1} size="h3" tabIndex={-1}>
-        {t('errors.not_found.title')}
+        {t(NOT_FOUND_TITLE_KEY)}
       </Title>
       <Text c="var(--bc-text-muted)" ta="center">
         {t('errors.not_found.description')}

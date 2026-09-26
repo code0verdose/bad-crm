@@ -1,5 +1,7 @@
 import { createFileRoute } from '@tanstack/react-router';
 
+import { SharedUi } from '@shared';
+
 import { RouteNotFound } from '@app/ui';
 
 /**
@@ -14,7 +16,11 @@ import { RouteNotFound } from '@app/ui';
  * A splat under `_authenticated` rather than at the root, so an unknown URL is still behind the
  * session guard: an anonymous visitor gets the login screen, not a 404 that confirms the
  * installation exists.
+ *
+ * The crumb is the screen's own heading key, so the tab title and the route announcement name the
+ * page the reader landed on — the same name a guard's `notFound()` gives any other route.
  */
 export const Route = createFileRoute('/_authenticated/$')({
   component: RouteNotFound,
+  staticData: { crumbKey: SharedUi.NOT_FOUND_TITLE_KEY },
 });

@@ -318,7 +318,9 @@ describe('/projects/$projectId', () => {
     async ({ status, code }) => {
       await startAt({ detail: () => problem(status, code) });
 
-      expect(await screen.findByText('errors.not_found.title')).toBeInTheDocument();
+      expect(
+        await screen.findByRole('heading', { level: 1, name: 'errors.not_found.title' }),
+      ).toBeInTheDocument();
       expect(screen.queryByRole('tablist')).not.toBeInTheDocument();
       expect(
         screen.queryByRole('heading', { level: 1, name: 'projects.detail.title' }),
@@ -345,7 +347,7 @@ describe('/projects/$projectId', () => {
     async ({ status, code }) => {
       const { router } = await startAt({ detail: () => problem(status, code) });
 
-      await screen.findByText('errors.not_found.title');
+      await screen.findByRole('heading', { level: 1, name: 'errors.not_found.title' });
       await router.navigate({ to: '/dashboard' });
       await screen.findByRole('heading', { level: 1, name: /dashboard/ });
 
@@ -362,10 +364,50 @@ describe('/projects/$projectId', () => {
     },
   );
 
+  /**
+   * The document title, the live region and the focused `h1` are three voices of one page, and a
+   * reader hears all three. On a refusal the route's own crumb («Project») would still name the
+   * page while the heading under focus says «not found» — the screen reader announces a project
+   * that is not there. The not-found screen stands in for the route, so it names the page too.
+   */
+  it.each([
+    { status: 404, code: 'project_not_found' },
+    { status: 403, code: 'user_forbidden' },
+  ])(
+    'names the not-found screen, not the project, in the title and the announcement on a $status',
+    async ({ status, code }) => {
+      await startAt({ detail: () => problem(status, code) });
+
+      await screen.findByRole('heading', { level: 1, name: 'errors.not_found.title' });
+
+      await waitFor(() => {
+        expect(document.title).toBe('errors.not_found.title · Bad CRM');
+      });
+      expect(screen.getByTestId('route-announcer')).toHaveTextContent(
+        exactly('errors.not_found.title'),
+      );
+    },
+  );
+
+  it('names the project in the title and the announcement when the card opens', async () => {
+    await startAt();
+
+    await screen.findByRole('heading', { level: 2, name: 'Bad CRM' });
+
+    await waitFor(() => {
+      expect(document.title).toBe('projects.detail.title · Bad CRM');
+    });
+    expect(screen.getByTestId('route-announcer')).toHaveTextContent(
+      exactly('projects.detail.title'),
+    );
+  });
+
   it('does not ask for a project at all without project:read — the same not-found screen', async () => {
     await startAt({ granted: [] });
 
-    expect(await screen.findByText('errors.not_found.title')).toBeInTheDocument();
+    expect(
+      await screen.findByRole('heading', { level: 1, name: 'errors.not_found.title' }),
+    ).toBeInTheDocument();
     expect(projectCalls()).toEqual([]);
   });
 
@@ -461,10 +503,10 @@ describe.each(['en', 'ru'] as const)('/projects/$projectId in %s', (language) =>
   let i18n: I18n;
 
   /** The catalogue's own sentence for `key` — never the key itself, never the fallback language. */
-  const phrase = (key: string): string => {
-    const value: unknown = i18n.getResource(language, 'projects', key);
+  const phrase = (key: string, namespace = 'projects'): string => {
+    const value: unknown = i18n.getResource(language, namespace, key);
 
-    assert(typeof value === 'string' && value.trim() !== '', `projects.${key} is empty`);
+    assert(typeof value === 'string' && value.trim() !== '', `${namespace}.${key} is empty`);
     // «Translated» and not «present»: an English sentence pasted into the Russian catalogue passes
     // every parity gate and still leaves a Russian reader with English.
     if (language === 'ru') expect(value).toMatch(/\p{Script=Cyrillic}/u);
@@ -525,6 +567,32 @@ describe.each(['en', 'ru'] as const)('/projects/$projectId in %s', (language) =>
     ]);
     // One sign per value: a `%` left in the catalogue doubles it.
     expect(screen.queryByText(/%\s*%/)).toBeNull();
+  });
+
+  it('names the not-found screen in the title and the announcement, in words', async () => {
+    await startAt({ i18n, language, detail: () => problem(404, 'project_not_found') });
+
+    const notFound = phrase('not_found.title', 'errors');
+
+    await screen.findByRole('heading', { level: 1, name: notFound });
+
+    await waitFor(() => {
+      expect(document.title).toBe(`${notFound} · Bad CRM`);
+    });
+    expect(screen.getByTestId('route-announcer')).toHaveTextContent(exactly(notFound));
+  });
+
+  it('names the project in the title and the announcement, in words', async () => {
+    await startAt({ i18n, language });
+
+    await screen.findByRole('tablist');
+
+    await waitFor(() => {
+      expect(document.title).toBe(`${phrase('detail.title')} · Bad CRM`);
+    });
+    expect(screen.getByTestId('route-announcer')).toHaveTextContent(
+      exactly(phrase('detail.title')),
+    );
   });
 
   it('says in words that the project is archived', async () => {

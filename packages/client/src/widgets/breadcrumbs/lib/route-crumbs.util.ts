@@ -1,3 +1,7 @@
+import { SharedUi } from '@shared';
+
+import { IamLib } from '@units/iam';
+
 /**
  * Turns the matched routes into the trail shown above the page title.
  *
@@ -11,6 +15,10 @@
 export interface RouteCrumbSource {
   readonly pathname: string;
   readonly staticData?: { readonly crumbKey?: string };
+  /** The router's status of the match. Absent in pure cases, which then read as loaded. */
+  readonly status?: string;
+  /** What the match failed with, when `status` is `error`. */
+  readonly error?: unknown;
 }
 
 export interface RouteCrumb {
@@ -21,14 +29,50 @@ export interface RouteCrumb {
   readonly isCurrent: boolean;
 }
 
-export const routeCrumbs = (matches: readonly RouteCrumbSource[]): RouteCrumb[] => {
-  const labelled = matches.filter((match) => match.staticData?.crumbKey !== undefined);
+/**
+ * The screen that replaced this match, if one did — named by that screen's own heading key.
+ *
+ * Two do, and both render the page's `h1`: the not-found screen (`notFound()` from a guard, the
+ * closed contour's refusal included) and the 403 screen (`PermissionDeniedError`, routed there by
+ * `app/ui/route-error.component.tsx` through the same predicate). A match that merely failed is
+ * **not** replaced: the error state sits inside the page, «Retry» brings the same page back, and
+ * the page keeps its own name.
+ *
+ * Without this the document title and the route announcement kept the route's static crumb —
+ * «Project» — while focus sat on a heading saying «Nothing here»: three voices of one page, and the
+ * screen reader announced a project that was not on screen.
+ */
+const standInKey = (match: RouteCrumbSource): string | undefined => {
+  if (match.status === 'notFound') return SharedUi.NOT_FOUND_TITLE_KEY;
+  if (match.status === 'error' && IamLib.isPermissionDenied(match.error)) {
+    return SharedUi.FORBIDDEN_TITLE_KEY;
+  }
 
-  return labelled.map((match, index) => ({
-    labelKey: match.staticData?.crumbKey as string,
-    pathname: match.pathname,
-    isCurrent: index === labelled.length - 1,
-  }));
+  return undefined;
+};
+
+/** Labels in route order, stopping at the first match a stand-in screen replaced. */
+const crumbLabels = (matches: readonly RouteCrumbSource[]) => {
+  const labels: { labelKey: string; pathname: string }[] = [];
+
+  for (const match of matches) {
+    const standIn = standInKey(match);
+
+    // Nothing under a replaced match renders, so nothing under it names the page.
+    if (standIn !== undefined) return [...labels, { labelKey: standIn, pathname: match.pathname }];
+
+    const crumbKey = match.staticData?.crumbKey;
+
+    if (crumbKey !== undefined) labels.push({ labelKey: crumbKey, pathname: match.pathname });
+  }
+
+  return labels;
+};
+
+export const routeCrumbs = (matches: readonly RouteCrumbSource[]): RouteCrumb[] => {
+  const labels = crumbLabels(matches);
+
+  return labels.map((label, index) => ({ ...label, isCurrent: index === labels.length - 1 }));
 };
 
 /** The `h1` of the page, which is the last crumb — or nothing, on a route that declares none. */
