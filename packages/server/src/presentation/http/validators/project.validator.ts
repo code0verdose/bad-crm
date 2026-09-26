@@ -1,4 +1,10 @@
-import { isoDateTimeSchema, projectIdSchema, userIdSchema } from '@bad-crm/shared/validation';
+import {
+  MAX_PAGE,
+  MAX_PAGE_SIZE,
+  isoDateTimeSchema,
+  projectIdSchema,
+  userIdSchema,
+} from '@bad-crm/shared/validation';
 import { z } from 'zod';
 
 import { PROJECT_LIST_SORTS } from '@/application/project/ports/project-list-query.port.js';
@@ -145,16 +151,12 @@ export const projectMembersQuerySchema = z.strictObject({
   includeLeft: z.stringbool().default(false),
 });
 
-/** How many projects one page may carry. The `OffsetPage` envelope of the spec bounds it at 100. */
-const LIST_PER_PAGE_MAX = 100;
-const LIST_PER_PAGE_DEFAULT = 25;
-
 /**
- * The last page whose offset, `(page - 1) * perPage`, still fits a 32-bit signed integer at the
- * largest page size — `page * perPage` ≤ 2^31 − 1. Beyond it the number is not a page anybody can
- * reach by paging, only a value that has to be carried to the database and back.
+ * How many projects one page may carry by default. The cap is the shared `MAX_PAGE_SIZE`, and the
+ * last page is the shared `MAX_PAGE` — `page × perPage` ≤ 2^31 − 1 holds only while the two stay
+ * paired, which is why neither is a local number (`pagination.schema.ts`).
  */
-const LIST_PAGE_MAX = Math.floor((2 ** 31 - 1) / LIST_PER_PAGE_MAX);
+const LIST_PER_PAGE_DEFAULT = 25;
 
 /** A name or a key; beyond that it is not a search. */
 const LIST_QUERY_MAX = 64;
@@ -183,12 +185,12 @@ export const projectListQuerySchema = z.strictObject({
   sort: z.enum(PROJECT_LIST_SORTS).optional().default('name'),
   // `coerce`, because a query string carries digits and not numbers; `int()` after it, so that
   // `?page=1.5` is refused rather than floored into a page nobody asked for.
-  page: z.coerce.number().int().min(1).max(LIST_PAGE_MAX).optional().default(1),
+  page: z.coerce.number().int().min(1).max(MAX_PAGE).optional().default(1),
   perPage: z.coerce
     .number()
     .int()
     .min(1)
-    .max(LIST_PER_PAGE_MAX)
+    .max(MAX_PAGE_SIZE)
     .optional()
     .default(LIST_PER_PAGE_DEFAULT),
 });

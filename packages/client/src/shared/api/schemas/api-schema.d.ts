@@ -3894,7 +3894,7 @@ export interface components {
          *     just read.
          */
         SessionId: string;
-        /** @description 1-based page number of an offset-paginated list. */
+        /** @description 1-based page number of an offset-paginated list. Bounded so that the offset of the page at the largest page size fits a 32-bit integer (page × perPage ≤ 2^31 − 1); a larger page is 422, not an empty page. */
         Page: number;
         /** @description Page size of an offset-paginated list. Bounded, so one caller cannot ask for the table. */
         PerPage: number;
@@ -6726,6 +6726,7 @@ export interface operations {
                 role?: string[];
                 team?: string[];
                 sort?: "name" | "-name" | "hiredAt" | "-hiredAt";
+                /** @description Bounded so that the offset of the page at the largest page size fits a 32-bit integer (page × perPage ≤ 2^31 − 1); a larger page is 422, not an empty page. */
                 page?: number;
                 perPage?: number;
             };

@@ -139,6 +139,35 @@ describe('GET /api/v1/employees', () => {
     expect((response.body as { code: string }).code).toBe('validation_failed');
   });
 
+  // One past the last page whose rows, at the largest page size, an int4 offset still holds — the
+  // bound `/projects` has, and the shared `MAX_PAGE`.
+  it.each<[string, string]>([
+    ['one past the last page an int4 offset holds', '?page=21474837'],
+    ['a page no integer holds', '?page=1e20'],
+  ])('422 on %s, named on page', async (_case, query) => {
+    const { test, token } = await signedIn({ capabilities: capabilities(['employee:read']) });
+
+    const response = await list(test, token, query).expect(422);
+
+    expect((response.body as { code: string }).code).toBe('validation_failed');
+    const paths = (response.body as { errors: { path: string }[] }).errors.map((e) => e.path);
+
+    expect(new Set(paths)).toEqual(new Set(['page']));
+  });
+
+  it('CONTROL: the last page the bound allows is an empty page, not a refusal', async () => {
+    const { test, token } = await signedIn({
+      employeeDirectory: populated(),
+      capabilities: capabilities(['employee:read']),
+    });
+
+    const body = (await list(test, token, '?page=21474836&perPage=100').expect(200))
+      .body as ListBody;
+
+    expect(body.items).toEqual([]);
+    expect(body.total).toBe(1);
+  });
+
   it('refuses an unknown parameter outright', async () => {
     const { test, token } = await signedIn({ capabilities: capabilities(['employee:read']) });
 
