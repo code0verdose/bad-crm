@@ -1,5 +1,6 @@
 import {
   IconBuilding,
+  IconFolders,
   IconKey,
   IconLayoutDashboard,
   IconShieldLock,
@@ -24,6 +25,7 @@ export interface NavItem {
   /** A path of the route tree. Widening this to `string` would give up the compile-time check. */
   readonly to:
     | '/dashboard'
+    | '/projects'
     | '/settings/security'
     | '/admin/members'
     | '/admin/teams'
@@ -64,6 +66,18 @@ export const NAV_SECTIONS: readonly NavSection[] = [
        * (subtract `2fa/verify`, which belongs to the login screen, not to this one).
        */
       { to: '/settings/security', labelKey: 'nav.settingsSecurity', icon: IconKey },
+    ],
+  },
+  {
+    titleKey: 'nav.section.work',
+    items: [
+      /**
+       * Gated on the capability `project:read`. Every system role holds it — `guest` too, whose list
+       * is empty without a grant — so the gate is for a custom role or a personal DENY. The section
+       * is «Работа команды» of `ux-architecture.md`, opened by its first screen (STORY-014-04);
+       * which projects the list then shows is the server's answer, not this entry's.
+       */
+      { to: '/projects', labelKey: 'nav.projects', icon: IconFolders, permission: 'project:read' },
     ],
   },
   {

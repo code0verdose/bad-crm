@@ -13,6 +13,7 @@
   },
   "section": {
     "personal": "Личное",
+    "work": "Работа команды",
     "administration": "Администрирование"
   },
   "sidebar": {
@@ -23,5 +24,6 @@
   "adminTeams": "Команды",
   "adminRoles": "Роли и права",
   "settingsSecurity": "Безопасность",
-  "adminOrganization": "Организация"
+  "adminOrganization": "Организация",
+  "projects": "Проекты"
 }

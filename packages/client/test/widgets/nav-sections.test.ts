@@ -59,6 +59,18 @@ describe('what NAV_SECTIONS actually requires', () => {
     expect(labels).toEqual(['nav.dashboard', 'nav.settingsSecurity', 'nav.adminOrganization']);
   });
 
+  it('shows «Проекты» to somebody who holds project:read, in its own section', () => {
+    const sections = visibleSections(NAV_SECTIONS, (permission) => permission === 'project:read');
+
+    expect(sections.map((section) => section.titleKey)).toEqual([
+      'nav.section.personal',
+      'nav.section.work',
+    ]);
+    expect(sections[1]?.items.map((item) => [item.labelKey, item.to])).toEqual([
+      ['nav.projects', '/projects'],
+    ]);
+  });
+
   it('hides every administrative entry, «Команды» included, from somebody granted nothing', () => {
     const sections = visibleSections(NAV_SECTIONS, () => false);
     const labels = sections.flatMap((section) => section.items.map((item) => item.labelKey));
