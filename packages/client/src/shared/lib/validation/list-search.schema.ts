@@ -1,3 +1,4 @@
+import { SharedValidation } from '@bad-crm/shared';
 import { z } from 'zod';
 
 /**
@@ -41,7 +42,17 @@ const optionalText = z
   .catch(undefined);
 
 export const listSearchSchema = z.object({
-  page: z.coerce.number().int().min(1).catch(DEFAULT_PAGE).default(DEFAULT_PAGE),
+  /**
+   * Bounded by the server's last page (`page × perPage` must fit 32 bits): a link past it would
+   * render the error state instead of the list, so it falls back like any other rubbish.
+   */
+  page: z.coerce
+    .number()
+    .int()
+    .min(1)
+    .max(SharedValidation.MAX_PAGE)
+    .catch(DEFAULT_PAGE)
+    .default(DEFAULT_PAGE),
   perPage: z.coerce
     .number()
     .int()

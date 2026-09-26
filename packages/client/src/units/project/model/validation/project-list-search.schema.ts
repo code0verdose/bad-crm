@@ -1,4 +1,3 @@
-import { SharedValidation } from '@bad-crm/shared';
 import { z } from 'zod';
 
 import { SharedLib } from '@shared';
@@ -11,13 +10,10 @@ import { PROJECT_STATUSES } from '@units/project/model/enums/project-status.enum
  *
  * **It extends the shared list schema** (`rules/frontend-fsd.mdc` rule 13) for `perPage`, and takes
  * `sort` from its whitelist factory (rule 14), so «page size» and «an order this list supports» mean
- * the same as on every other list. Two of the shared fields are restated on purpose, each because the
- * shared one is looser than this endpoint:
- *
- *   * `q` — the server refuses more than 64 characters (`listProjects`, `q.maxLength`), and a link
- *     carrying 65 would render the error state instead of the list;
- *   * `page` — the server refuses a page past `MAX_PAGE` (`page × perPage` must fit 32 bits), with
- *     the same result.
+ * the same as on every other list, and `page` — bounded by the server's `MAX_PAGE` in the shared
+ * schema itself. One shared field is restated on purpose, because the shared one is looser than this
+ * endpoint: `q` — the server refuses more than 64 characters (`listProjects`, `q.maxLength`), and a
+ * link carrying 65 would render the error state instead of the list.
  *
  * `cursor` is dropped: projects are an offset table (`rules/lists-and-filters.mdc` §9).
  *
@@ -70,7 +66,6 @@ export const projectListSearchSchema = SharedLib.listSearchSchemaWithSort(
       .transform((value) => (value === '' ? undefined : value))
       .optional()
       .catch(undefined),
-    page: z.coerce.number().int().min(1).max(SharedValidation.MAX_PAGE).catch(1).default(1),
     /** Empty means the server's default — everything but the archive. */
     status: z.array(z.enum(PROJECT_STATUSES)).max(PROJECT_STATUSES.length).catch([]).default([]),
     lead: z.uuid().optional().catch(undefined),
