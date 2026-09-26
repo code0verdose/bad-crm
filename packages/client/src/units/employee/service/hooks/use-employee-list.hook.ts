@@ -17,12 +17,12 @@ export interface EmployeeDirectory {
   readonly page: EmployeeDirectoryPage | undefined;
   readonly isPending: boolean;
   readonly isError: boolean;
-  readonly refetch: () => void;
+  readonly refetch: () => Promise<unknown>;
   readonly chart: {
     readonly tree: readonly OrgTreeNode<OrgChartNode>[];
     readonly isPending: boolean;
     readonly isError: boolean;
-    readonly refetch: () => void;
+    readonly refetch: () => Promise<unknown>;
   };
 }
 
@@ -65,16 +65,12 @@ export const useEmployeeDirectory = (
     page: list.data,
     isPending: list.isPending,
     isError: list.isError,
-    refetch: () => {
-      void list.refetch();
-    },
+    refetch: () => list.refetch(),
     chart: {
       tree,
       isPending: chart.isPending && showChart,
       isError: chart.isError,
-      refetch: () => {
-        void chart.refetch();
-      },
+      refetch: () => chart.refetch(),
     },
   };
 };

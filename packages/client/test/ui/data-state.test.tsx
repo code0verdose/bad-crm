@@ -1,7 +1,7 @@
 import { MantineProvider } from '@mantine/core';
-import { render, screen } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { type ReactNode } from 'react';
+import { StrictMode, type ReactNode } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 
 import { SharedUi } from '@shared';
@@ -59,7 +59,7 @@ describe('DataState', () => {
 
   it('offers a retry on failure, and calls it', async () => {
     const user = userEvent.setup();
-    const onRetry = vi.fn();
+    const onRetry = vi.fn(() => Promise.resolve());
     render(
       <Themed scheme="light">
         <SharedUi.DataState
@@ -80,34 +80,164 @@ describe('DataState', () => {
   });
 
   /**
-   * The retry button is about to disappear — a successful reload unmounts the whole alert — so the
-   * press hands focus to the heading of the section it sits in, which survives either outcome.
-   * Without it focus falls to `<body>` the moment the data arrives.
+   * Where focus goes around a retry, and when.
+   *
+   * Focus stays on «Retry» until the reload answers: if it fails again, the alert is the same DOM
+   * with the same sentence and a live region says nothing — the button the reader is on is the only
+   * thing that can tell them. Only a success unmounts the button, and only then does focus move, to
+   * the heading of the section it sat in; without that it would fall to `<body>`.
    */
-  it('moves focus to the heading of its section on retry — not the neighbouring one', async () => {
-    const user = userEvent.setup();
-    render(
+  describe('around a retry', () => {
+    const TEAM = 'projects.overview.team';
+
+    /** A reload the case settles by hand. */
+    const reload = () => {
+      let settle = (): void => undefined;
+      const promise = new Promise<void>((resolve) => {
+        settle = resolve;
+      });
+
+      return { onRetry: vi.fn(() => promise), settle };
+    };
+
+    const inSections = (status: SharedUi.DataStatus, onRetry: () => Promise<unknown>) => (
       <Themed scheme="light">
         {/* CONTROL: a section before it, so «the first section heading» is not the answer. */}
         <SharedUi.Section titleKey="projects.overview.about">
-          <p>about</p>
+          <input aria-label="elsewhere" />
         </SharedUi.Section>
-        <SharedUi.Section titleKey="projects.overview.team">
-          <SharedUi.DataState onRetry={() => undefined} skeleton={SKELETON} status="error">
+        <SharedUi.Section titleKey={TEAM}>
+          <SharedUi.DataState onRetry={onRetry} skeleton={SKELETON} status={status}>
             <p>rows</p>
           </SharedUi.DataState>
         </SharedUi.Section>
-      </Themed>,
+      </Themed>
     );
 
-    await user.click(screen.getByRole('button', { name: 'common.retry' }));
+    it('keeps focus on the button, busy, while the reload is on its way', async () => {
+      const user = userEvent.setup();
+      const { onRetry } = reload();
 
-    expect(screen.getByRole('heading', { name: 'projects.overview.team' })).toHaveFocus();
+      render(inSections('error', onRetry));
+
+      const retry = screen.getByRole('button', { name: 'common.retry' });
+
+      await user.click(retry);
+
+      expect(retry).toHaveFocus();
+      expect(retry).toHaveAttribute('aria-disabled', 'true');
+      // Busy and still focusable: a native `disabled` would push focus off the one control the
+      // reader is waiting on (the HTML focus fixup rule), which is the failure this state avoids.
+      expect(retry).not.toBeDisabled();
+    });
+
+    it('does not ask twice while the first reload is still on its way', async () => {
+      const user = userEvent.setup();
+      const { onRetry } = reload();
+
+      render(inSections('error', onRetry));
+
+      const retry = screen.getByRole('button', { name: 'common.retry' });
+
+      await user.click(retry);
+      await user.click(retry);
+      await user.keyboard('{Enter}');
+
+      expect(onRetry).toHaveBeenCalledOnce();
+    });
+
+    it('leaves focus on the button, ready again, when the reload fails once more', async () => {
+      const user = userEvent.setup();
+      const { onRetry, settle } = reload();
+
+      render(inSections('error', onRetry));
+
+      const retry = screen.getByRole('button', { name: 'common.retry' });
+
+      await user.click(retry);
+      await act(async () => {
+        settle();
+        await Promise.resolve();
+      });
+
+      expect(retry).toHaveFocus();
+      expect(retry).not.toHaveAttribute('aria-disabled');
+      expect(screen.getByRole('heading', { name: TEAM })).not.toHaveFocus();
+    });
+
+    it('moves focus to the heading of its section once the reload succeeds — not the neighbouring one', async () => {
+      const user = userEvent.setup();
+      const { onRetry } = reload();
+      const { rerender } = render(inSections('error', onRetry));
+
+      await user.click(screen.getByRole('button', { name: 'common.retry' }));
+      rerender(inSections('success', onRetry));
+
+      expect(screen.getByText('rows')).toBeInTheDocument();
+      expect(screen.getByRole('heading', { name: TEAM })).toHaveFocus();
+    });
+
+    /**
+     * The hand-off is for a button that *had* focus. `StrictMode` — how the application mounts —
+     * detaches and re-attaches every new ref once, outside the commit, so a hand-off that did not
+     * ask where focus was would pull it into the section each time an error state appears.
+     *
+     * (A reader who moved elsewhere before a *success* needs no case of its own: React puts focus
+     * back on the element that held it before the commit when that element is still in the document,
+     * so that outcome is the renderer's, not this component's — measured: the case stays green with
+     * the check removed.)
+     */
+    it('takes no focus when it appears — not even under the double mount of StrictMode', () => {
+      const { onRetry } = reload();
+      const { rerender } = render(<StrictMode>{inSections('pending', onRetry)}</StrictMode>);
+      const elsewhere = screen.getByRole('textbox', { name: 'elsewhere' });
+
+      act(() => {
+        elsewhere.focus();
+      });
+      rerender(<StrictMode>{inSections('error', onRetry)}</StrictMode>);
+
+      expect(screen.getByRole('button', { name: 'common.retry' })).toBeInTheDocument();
+      expect(elsewhere).toHaveFocus();
+    });
+
+    it('asks again once the previous reload has answered', async () => {
+      const user = userEvent.setup();
+      const onRetry = vi.fn(() => Promise.resolve());
+
+      render(inSections('error', onRetry));
+
+      const retry = screen.getByRole('button', { name: 'common.retry' });
+
+      await user.click(retry);
+      await waitFor(() => {
+        expect(retry).not.toHaveAttribute('aria-disabled');
+      });
+      await user.click(retry);
+
+      expect(onRetry).toHaveBeenCalledTimes(2);
+    });
+
+    it('is ready again when the reload itself rejects', async () => {
+      const user = userEvent.setup();
+      const onRetry = vi.fn(() => Promise.reject(new Error('router gave up')));
+
+      render(inSections('error', onRetry));
+
+      const retry = screen.getByRole('button', { name: 'common.retry' });
+
+      await user.click(retry);
+
+      await waitFor(() => {
+        expect(retry).not.toHaveAttribute('aria-disabled');
+      });
+      expect(retry).toHaveFocus();
+    });
   });
 
   it('leaves focus on the button outside a section — the route announcer owns that case', async () => {
     const user = userEvent.setup();
-    const onRetry = vi.fn();
+    const onRetry = vi.fn(() => Promise.resolve());
     render(
       <Themed scheme="light">
         <SharedUi.DataState onRetry={onRetry} skeleton={SKELETON} status="error">
@@ -277,7 +407,11 @@ describe.each(['light', 'dark'] as const)('accessibility in the %s scheme', (sch
   it.each([
     [
       'the error state',
-      <SharedUi.ErrorState key="e" messageKey="errors.conflict" onRetry={() => undefined} />,
+      <SharedUi.ErrorState
+        key="e"
+        messageKey="errors.conflict"
+        onRetry={() => Promise.resolve()}
+      />,
       'button-name',
     ],
     [

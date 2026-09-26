@@ -12,7 +12,7 @@ const NO_ROLES: readonly RoleListEntry[] = [];
 export interface RoleMatrix {
   readonly status: 'pending' | 'error' | 'success';
   readonly roles: readonly RoleListEntry[];
-  readonly refetch: () => void;
+  readonly refetch: () => Promise<unknown>;
   /** The unsaved cells, bound to the roles that arrived. */
   readonly draft: RoleMatrixDraft;
   /** The summary that precedes a save, and the save itself. */
@@ -47,9 +47,7 @@ export const useRoleMatrix = (): RoleMatrix => {
   return {
     status: query.status,
     roles,
-    refetch: () => {
-      void query.refetch();
-    },
+    refetch: () => query.refetch(),
     draft,
     review,
   };

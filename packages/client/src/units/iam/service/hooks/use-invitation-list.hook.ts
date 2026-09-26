@@ -37,7 +37,7 @@ export interface InvitationAction {
 export interface InvitationList {
   readonly status: 'pending' | 'error' | 'success';
   readonly items: readonly OpenInvitation[];
-  readonly refetch: () => void;
+  readonly refetch: () => Promise<unknown>;
   readonly resend: InvitationAction;
   /**
    * The link the last re-issue produced — the **only** copy that will ever exist.
@@ -73,9 +73,7 @@ export const useInvitationList = (): InvitationList => {
       invitation,
       isExpired: isInvitationExpired(invitation.expiresAt, now),
     })),
-    refetch: () => {
-      void query.refetch();
-    },
+    refetch: () => query.refetch(),
     resend: {
       isPending: resend.isPending,
       failure: resend.error === null ? undefined : errorMessage(resend.error),

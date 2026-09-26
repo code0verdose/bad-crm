@@ -43,11 +43,6 @@ export function RouteError({ error }: ErrorComponentProps) {
   if (IamLib.isPermissionDenied(error)) return <RouteForbidden permission={error.permission} />;
 
   return (
-    <SharedUi.ErrorState
-      messageKey="errors.route.failed"
-      onRetry={() => {
-        void router.invalidate();
-      }}
-    />
+    <SharedUi.ErrorState messageKey="errors.route.failed" onRetry={() => router.invalidate()} />
   );
 }

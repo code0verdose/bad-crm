@@ -5,7 +5,7 @@ export interface TeamDetailView {
   readonly status: 'pending' | 'error' | 'success';
   /** The team, or `undefined` until it has arrived — the screen renders nothing for it either way. */
   readonly team: TeamDetail | undefined;
-  readonly refetch: () => void;
+  readonly refetch: () => Promise<unknown>;
 }
 
 /**
@@ -25,8 +25,6 @@ export const useTeamDetail = (teamId: string): TeamDetailView => {
   return {
     status: query.isError ? 'error' : query.isPending ? 'pending' : 'success',
     team: query.data,
-    refetch: () => {
-      void query.refetch();
-    },
+    refetch: () => query.refetch(),
   };
 };

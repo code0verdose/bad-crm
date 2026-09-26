@@ -14,7 +14,7 @@ export interface RecoveryCodes {
   readonly total: number;
   readonly remaining: number;
   readonly isLow: boolean;
-  readonly retry: () => void;
+  readonly retry: () => Promise<unknown>;
   /** A freshly issued set, for as long as the person is looking at it. */
   readonly issuedCodes: readonly string[] | undefined;
   readonly isRegenerating: boolean;
@@ -50,9 +50,7 @@ export const useRecoveryCodes = (): RecoveryCodes => {
     total,
     remaining,
     isLow: total > 0 && remaining <= RECOVERY_CODES_LOW_THRESHOLD,
-    retry: () => {
-      void status.refetch();
-    },
+    retry: () => status.refetch(),
     issuedCodes: reissue.data?.codes,
     isRegenerating: reissue.isPending,
     failure: reissue.error === null ? undefined : errorMessage(reissue.error),

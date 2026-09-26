@@ -6,7 +6,7 @@ export interface SecurityPolicyView {
   /** The stored policy, once it has arrived. */
   readonly policy: SecurityPolicy | undefined;
   readonly status: DataStatus;
-  readonly refetch: () => void;
+  readonly refetch: () => Promise<unknown>;
 }
 
 /**
@@ -25,8 +25,6 @@ export const useSecurityPolicy = (): SecurityPolicyView => {
   return {
     policy: query.data,
     status: query.status,
-    refetch: () => {
-      void query.refetch();
-    },
+    refetch: () => query.refetch(),
   };
 };

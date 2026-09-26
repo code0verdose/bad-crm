@@ -16,7 +16,7 @@ export interface MfaCoveragePreview {
    * component (`rules/naming-and-structure.mdc` §D).
    */
   readonly status: DataStatus;
-  readonly refetch: () => void;
+  readonly refetch: () => Promise<unknown>;
 }
 
 /**
@@ -46,8 +46,6 @@ export const useMfaCoveragePreview = (draft: PolicyDraft, enabled: boolean): Mfa
       (row) => row.gate === 'grace' || row.gate === 'enrollment_required',
     ),
     status: report.status,
-    refetch: () => {
-      void report.refetch();
-    },
+    refetch: () => report.refetch(),
   };
 };

@@ -9,7 +9,11 @@ export interface DataStateProps {
   readonly status: DataStatus;
   /** i18n key for the failure, chosen from the error `code` by the unit hook that owns the query. */
   readonly errorMessageKey?: string;
-  readonly onRetry?: () => void;
+  /**
+   * The reload behind «Retry». Return its promise — the query's `refetch()` — and the button is busy
+   * until it settles; see `ErrorState`.
+   */
+  readonly onRetry?: () => Promise<unknown>;
   /** What to show while the first answer is on its way — a skeleton, never a spinner. */
   readonly skeleton: ReactNode;
   /** Shown instead of `children` when the answer arrived and contains nothing. */

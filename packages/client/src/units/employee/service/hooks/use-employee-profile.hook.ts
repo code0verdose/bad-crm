@@ -24,7 +24,7 @@ export interface EmployeeProfileCard {
    * person. `false` while there is no document, which is what the form renders anyway.
    */
   readonly carriesEmergencyContact: boolean;
-  readonly refetch: () => void;
+  readonly refetch: () => Promise<unknown>;
   readonly isSaving: boolean;
   readonly save: (patch: EmployeeProfilePatch) => void;
 }
@@ -55,9 +55,7 @@ export const useEmployeeProfile = (userId: string): EmployeeProfileCard => {
     profile,
     initialValues: profile === undefined ? undefined : employeeFormValues(profile),
     carriesEmergencyContact: profile !== undefined && 'emergencyContact' in profile,
-    refetch: () => {
-      void query.refetch();
-    },
+    refetch: () => query.refetch(),
     isSaving: editor.isSaving,
     save: editor.save,
   };

@@ -46,7 +46,7 @@ export interface UserPermissionsController {
    * `write-permission-override.mutation.ts`).
    */
   readonly writeError: unknown;
-  readonly refetch: () => void;
+  readonly refetch: () => Promise<unknown>;
   /** A position was chosen on one row: opens the form, or removes the exception outright. */
   readonly choose: (permission: string, choice: PermissionChoice) => void;
   readonly cancel: () => void;
@@ -190,9 +190,7 @@ export const useUserPermissions = ({
     [writeMutate, userId],
   );
 
-  const refetch = useCallback(() => {
-    void queryRefetch();
-  }, [queryRefetch]);
+  const refetch = useCallback(() => queryRefetch(), [queryRefetch]);
 
   const isOwner = query.data?.isOwner ?? false;
   const roles = query.data?.roles ?? NO_ROLES;

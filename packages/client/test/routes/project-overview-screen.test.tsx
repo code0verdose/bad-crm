@@ -88,8 +88,8 @@ const person = (userId: string, firstName: string, lastName: string) => ({
 
 interface ServerOptions {
   readonly granted?: readonly string[];
-  readonly detail?: () => Response;
-  readonly members?: () => Response;
+  readonly detail?: () => Response | Promise<Response>;
+  readonly members?: () => Response | Promise<Response>;
 }
 
 const stubServer = ({
@@ -472,6 +472,89 @@ describe('/projects/$projectId', () => {
     expect(document.activeElement).toBe(
       screen.getByRole('heading', { level: 2, name: 'projects.overview.team' }),
     );
+  });
+
+  /**
+   * A retry of a list that never loaded — the roster had no data — goes back to the skeleton: the
+   * query is `pending` again, not `error`, so the alert and the pressed button leave the page at the
+   * press. Focus goes to the section heading rather than to `<body>`, and a second failure is a
+   * *new* alert, inserted — which is what a screen reader announces — not the old one left as it was.
+   */
+  it('announces a roster reload that fails again with a fresh alert, focus kept in the section', async () => {
+    const user = userEvent.setup();
+    // While `held`, the roster request waits for the case to answer it; otherwise it fails at once.
+    let held = false;
+    let answer: ((response: Response) => void) | undefined;
+
+    await startAt({
+      members: () =>
+        held
+          ? new Promise<Response>((resolve) => {
+              answer = resolve;
+            })
+          : problem(500, 'internal_error'),
+    });
+
+    await screen.findByText('projects.team.failed', {}, { timeout: 5_000 });
+
+    const heading = screen.getByRole('heading', { level: 2, name: 'projects.overview.team' });
+    const section = heading.closest('section');
+
+    assert(section !== null, 'the roster is not in a section');
+
+    const firstAlert = within(section).getByRole('alert');
+
+    held = true;
+    await user.click(within(section).getByRole('button', { name: 'common.retry' }));
+
+    expect(await within(section).findByTestId('text-skeleton')).toBeInTheDocument();
+    expect(heading).toHaveFocus();
+
+    // The query's own retry after this answer must fail at once, not wait on a second hold.
+    held = false;
+    assert(answer !== undefined, 'the reload never reached the server');
+    answer(problem(500, 'internal_error'));
+
+    const secondAlert = await within(section).findByRole('alert', {}, { timeout: 5_000 });
+
+    expect(secondAlert).toHaveTextContent('projects.team.failed');
+    expect(secondAlert).not.toBe(firstAlert);
+    expect(heading).toHaveFocus();
+  });
+
+  /**
+   * A route in error stays on its error state while `router.invalidate()` runs, so here the button
+   * is what carries the reload: busy on itself, and still holding focus until the answer.
+   */
+  it('keeps focus on the route retry, busy, until the reload answers', async () => {
+    const user = userEvent.setup();
+    let held = false;
+    let answer: ((response: Response) => void) | undefined;
+
+    await startAt({
+      detail: () =>
+        held
+          ? new Promise<Response>((resolve) => {
+              answer = resolve;
+            })
+          : problem(500, 'internal_error'),
+    });
+
+    const retry = await screen.findByRole('button', { name: 'common.retry' }, { timeout: 5_000 });
+
+    held = true;
+    await user.click(retry);
+
+    await waitFor(() => {
+      expect(retry).toHaveAttribute('aria-disabled', 'true');
+    });
+    expect(retry).toHaveFocus();
+
+    held = false;
+    assert(answer !== undefined, 'the reload never reached the server');
+    answer(json(card()));
+
+    expect(await screen.findByRole('heading', { level: 2, name: 'Bad CRM' })).toBeInTheDocument();
   });
 
   it('has no axe violations on the rendered card', async () => {
