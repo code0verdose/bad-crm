@@ -1669,7 +1669,7 @@ LIMIT 1;                      -- ближайший узел с записями
 форму (примеры ниже с доменом `task` — иллюстрации: домена `task` в продукте нет, первым доменом с
 ACL стал проект — EPIC-014, kickoff 2026-09-06: `ProjectAccessReaderPort`, его адаптер,
 `resolve-acl.query.ts`, policy `domain/project/access/project-access.policy.ts` и первое ресурсное
-чтение `get-project-detail.query.ts` отгружены; маршрутов `acl:*` ещё нет, а `project:*` на маршрутах с 2026-09-10 семь ключей — `read`, `create`, `update`, `manage_visibility`, `archive`, `delete`, `manage_members` — см. таблицу маршрутов в §8).
+чтение `get-project-detail.query.ts` отгружены; маршруты `acl:*` — `GET`/`POST /acl` и `DELETE /acl/{aclId}` — с 2026-09-26, а `project:*` на маршрутах с 2026-09-10 семь ключей — `read`, `create`, `update`, `manage_visibility`, `archive`, `delete`, `manage_members` — см. таблицу маршрутов в §8).
 
 | Слой | Роль | Сегодня | Чего здесь нет |
 |---|---|---|---|
@@ -1682,7 +1682,7 @@ ACL стал проект — EPIC-014, kickoff 2026-09-06: `ProjectAccessReader
 | `infrastructure` | Redis-кеш прав | — (`PermissionCachePort` не заведён) | — |
 | `presentation` | fail-fast по capability | `presentation/http/middleware/require-permission.middleware.ts` | ACL (не знает `resourceId`) |
 | `client` | видимость элементов | `units/iam/service/hooks/use-can.hook.ts`, `units/iam/ui/can.component.tsx` | безопасность |
-| `domain` / `application` / `infrastructure` | ACL: правило разрешения, неявные уровни, policy выдачи; порт ридера и резолвер; один SQL | `domain/access/{acl-resolution,implicit-level,acl-management}.policy.ts`, `application/access/ports/{acl-reader,acl-repository,project-access-reader}.port.ts`, `application/access/use-cases/resolve-acl.query.ts`, `persistence/prisma/acl-reader.adapter.ts` | маршруты `acl:*` (следующий шаг EPIC-014); access-reader'ы доменов кроме проекта |
+| `domain` / `application` / `infrastructure` | ACL: правило разрешения, неявные уровни, policy выдачи; порт ридера и резолвер; один SQL | `domain/access/{acl-resolution,implicit-level,acl-management}.policy.ts`, `application/access/ports/{acl-reader,acl-repository,project-access-reader}.port.ts`, `application/access/use-cases/{resolve-acl,list-resource-acl}.query.ts`, `{grant,revoke}-acl.use-case.ts`, `persistence/prisma/{acl-reader.adapter,resource-acl.repository}.ts`; маршруты `/acl` в `route-registry.factory.ts` | access-reader'ы доменов кроме проекта; `resourceType` на маршрутах — только `ORGANIZATION` и `PROJECT` (`resolvable-acl-resource-types.constant.ts`) |
 
 ### (а) Domain — чистые policy-функции
 
@@ -2062,7 +2062,7 @@ scan. Именно поэтому TTL не выполняет роль инва�
 | `Role` удалена | всем бывшим носителям | ✅ |
 | `UserPermissionOverride` создан / изменён / удалён | этому пользователю | ✅ |
 | `UserPermissionOverride` истёк | этому пользователю | — (та же причина) |
-| `ResourceAcl` создан / изменён / удалён | субъекту (`USER`), всем носителям роли (`ROLE`), всем членам команды (`TEAM`) | ✅ `grant-acl.use-case.ts`, `revoke-acl.use-case.ts` — `AclRepositoryPort.subjectUserIds` + один `UPDATE` (маршрута ещё нет); снятие каскадом при удалении роли или команды покрыто бампом самой операции (строка `Role` удалена, роспуск команды) |
+| `ResourceAcl` создан / изменён / удалён | субъекту (`USER`), всем носителям роли (`ROLE`), всем членам команды (`TEAM`) | ✅ `grant-acl.use-case.ts`, `revoke-acl.use-case.ts` — `AclRepositoryPort.subjectUserIds` + один `UPDATE`; маршруты `POST /acl`, `DELETE /acl/{aclId}`; снятие каскадом при удалении роли или команды покрыто бампом самой операции (строка `Role` удалена, роспуск команды) |
 | `TeamMember` добавлен / удалён | этому пользователю | ✅ |
 | `ProjectMember` добавлен / удалён / `leftAt` | этому пользователю | — (проектов нет, EPIC-014) |
 | `User.status → SUSPENDED`, `deletedAt` | этому пользователю (плюс отзыв сессий) | ✅ |

@@ -38,7 +38,8 @@ RLS — второй независимый рубеж, не замена policy
    дереве не было. Сегодня: порт `application/access/ports/project-access-reader.port.ts` приносит
    факты для policy, резолвер `application/access/use-cases/resolve-acl.query.ts` отдаёт `AclScope`
    (`missing` → 404, `unavailable` → 503, иначе уровень), правило разрешения —
-   `domain/access/acl-resolution.policy.ts`. Чего ещё нет: маршрутов `acl:*` и access-reader'ов
+   `domain/access/acl-resolution.policy.ts`; маршруты `acl:*` отгружены 2026-09-26 (`GET`/`POST /acl`,
+   `DELETE /acl/{aclId}`). Чего ещё нет: access-reader'ов
    доменов кроме проекта — `git ls-files | grep access-reader` печатает три файла, и все три про
    проект: порт, адаптер `infrastructure/persistence/prisma/project-access-reader.adapter.ts` и
    его тест `test/unit/persistence/project-access-reader.test.ts`; второго домена в выводе нет.

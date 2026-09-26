@@ -2918,6 +2918,167 @@ paths:
         '503':
           $ref: '#/components/responses/ServiceUnavailable'
 
+  /acl:
+    get:
+      operationId: listResourceAcl
+      summary: Who holds what on one object.
+      description: |
+        The live grants of **this** object, oldest first — ids and levels, no names: who a user, a
+        role or a team is belongs to `GET /employees` and `GET /roles`, each behind its own
+        permission. A grant on an ancestor reaches the object through the chain and is listed on the
+        ancestor, not here. A grant whose `expiresAt` has passed decides nothing and is not listed.
+
+        `acl:read` and `VIEWER` on the object. An object the caller cannot see — another
+        organization's id, a `PRIVATE` project they are not on — is the object's own `404`
+        (`project_not_found`), the same answer the project card gives: a project is a closed contour,
+        and its grants are as closed as it is.
+
+        `resourceType` is the set of kinds whose chain the server can walk today (`AclResourceType`);
+        a kind outside it is `422`, not `503`.
+      tags: [iam]
+      x-permission: acl:read
+      parameters:
+        - name: resourceType
+          in: query
+          required: true
+          description: The kind of the object whose grants are listed.
+          schema:
+            $ref: '#/components/schemas/AclResourceType'
+        - name: resourceId
+          in: query
+          required: true
+          description: The object's id.
+          schema:
+            type: string
+            format: uuid
+          examples:
+            badCrm:
+              value: 018f4a3b-2c1d-7a41-9f00-2b7c1d0e5b01
+      responses:
+        '200':
+          description: The live grants on the object.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ResourceAclEntry'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+
+    post:
+      operationId: grantResourceAcl
+      summary: Give a person, a role or a team a level on one object.
+      description: |
+        Writes the grant — or **replaces** the one already there for the same subject on the same
+        object: one opinion per pair, so a repeat with another level is a change, filed with both
+        sides. Everybody the grant reaches — the person, every holder of the role, every member of
+        the team — has their permission version bumped in the same transaction, and the grant is
+        filed as `acl.granted` at `WARNING`.
+
+        `acl:grant` and `MANAGER` on the object (`dangerous`). A caller who sees the object with a
+        lower level is `403 project_forbidden`; one who cannot see it at all is `404
+        project_not_found`, decided **before** the subject is looked at, so the form cannot be used
+        to learn which team ids exist. A subject that is not in this organization (or has left, or
+        was disbanded) is the subject's own `404` — `user_not_found`, `role_not_found`,
+        `team_not_found`. `NONE` on one's own `USER` entry is `409 self_lockout`.
+
+        `NONE` is a level like the others: the explicit refusal on this node and below. An
+        `expiresAt` in the past is accepted and decides nothing from the moment it is written.
+      tags: [iam]
+      x-permission: acl:grant
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ResourceAclGrant'
+      responses:
+        '200':
+          description: The grant as it now stands, by id — new or replaced.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [id]
+                properties:
+                  id:
+                    type: string
+                    format: uuid
+                    examples: ['018f4a3b-2c1d-7a41-9f00-2b7c1d0e5d01']
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+
+  /acl/{aclId}:
+    delete:
+      operationId: revokeResourceAcl
+      summary: Take one grant away.
+      description: |
+        Removes the grant the id names. Everybody it reached has their permission version bumped in
+        the same transaction; the grant is filed as `acl.revoked` at `WARNING` with what was removed,
+        because the row itself is gone.
+
+        `acl:revoke` and `MANAGER` on the object the grant is about (`dangerous`), decided in that
+        order: the key first — without it the answer is the same for a real id and a made-up one —
+        then the grant, then the object it names. **Every outsider is one `404 acl_not_found`**: an
+        id nobody issued, another organization's grant, and a grant on a project the caller cannot
+        see read alike, because telling them apart would test grant ids for existence. A caller who
+        sees the object with a lower level is `403 acl_forbidden` — they can list the grant with
+        `GET /acl`, so its existence is no secret to them.
+      tags: [iam]
+      x-permission: acl:revoke
+      parameters:
+        - $ref: '#/components/parameters/AclId'
+      responses:
+        '204':
+          description: The grant is gone.
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+
   /employees:
     get:
       operationId: listEmployees
@@ -4171,6 +4332,9 @@ components:
         - dashboard_not_found
         - dashboard_forbidden
         - dashboard_already_exists
+        - acl_not_found
+        - acl_forbidden
+        - acl_already_exists
 
     ValidationIssueCode:
       type: string
@@ -4631,6 +4795,88 @@ components:
           type: integer
           minimum: 0
           maximum: 100
+
+    AclResourceType:
+      type: string
+      enum: [ORGANIZATION, PROJECT]
+      description: |
+        The kinds of object a grant can be read, written or revoked on — the ones whose ancestor
+        chain the server resolves today. The table itself accepts twelve kinds
+        (`data-model.md`, `ResourceAcl`); each joins this list with the domain that makes it
+        resolvable, as a compatible widening of the request.
+
+    ResourceAclEntry:
+      type: object
+      additionalProperties: false
+      required:
+        [id, resourceType, resourceId, subjectType, subjectId, accessLevel, expiresAt, grantedById, grantedAt]
+      description: |
+        One grant on one object. Ids only — who the subject and the grantor are is the directory's
+        and the roles screen's to say. `grantedById` is `null` when the grantor's account is gone;
+        who gave the grant then lives in the audit trail.
+      properties:
+        id:
+          type: string
+          format: uuid
+          examples: ['018f4a3b-2c1d-7a41-9f00-2b7c1d0e5d01']
+        resourceType:
+          $ref: '#/components/schemas/AclResourceType'
+        resourceId:
+          type: string
+          format: uuid
+          examples: ['018f4a3b-2c1d-7a41-9f00-2b7c1d0e5b01']
+        subjectType:
+          type: string
+          enum: [USER, ROLE, TEAM]
+        subjectId:
+          type: string
+          format: uuid
+          examples: ['018f4a3b-2c1d-7a41-9f00-2b7c1d0e5b21']
+        accessLevel:
+          type: string
+          enum: [NONE, VIEWER, COMMENTER, EDITOR, MANAGER]
+          description: |
+            `NONE < VIEWER < COMMENTER < EDITOR < MANAGER`. `NONE` is an explicit refusal on this
+            node and below.
+        expiresAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: The instant the grant stops deciding anything; `null` is «until revoked».
+        grantedById:
+          type: string
+          format: uuid
+          nullable: true
+        grantedAt:
+          type: string
+          format: date-time
+
+    ResourceAclGrant:
+      type: object
+      additionalProperties: false
+      required: [resourceType, resourceId, subjectType, subjectId, accessLevel]
+      properties:
+        resourceType:
+          $ref: '#/components/schemas/AclResourceType'
+        resourceId:
+          type: string
+          format: uuid
+          examples: ['018f4a3b-2c1d-7a41-9f00-2b7c1d0e5b01']
+        subjectType:
+          type: string
+          enum: [USER, ROLE, TEAM]
+        subjectId:
+          type: string
+          format: uuid
+          examples: ['018f4a3b-2c1d-7a41-9f00-2b7c1d0e5b21']
+        accessLevel:
+          type: string
+          enum: [NONE, VIEWER, COMMENTER, EDITOR, MANAGER]
+        expiresAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: Absent or `null` is «until revoked».
 
     EmployeeProfile:
       type: object
@@ -5702,6 +5948,20 @@ components:
       examples:
         ivan:
           value: 018f4a3b-2c1d-7a41-9f00-2b7c1d0e5b11
+
+    AclId:
+      name: aclId
+      in: path
+      required: true
+      description: |
+        Identifier of one grant, as `GET /acl` lists it. An id nobody issued, another organization's
+        grant and a grant on an object the caller cannot see are one `404 acl_not_found`.
+      schema:
+        type: string
+        format: uuid
+      examples:
+        teamEditor:
+          value: 018f4a3b-2c1d-7a41-9f00-2b7c1d0e5d01
 
     InvitationId:
       name: invitationId

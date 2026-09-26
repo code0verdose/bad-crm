@@ -156,16 +156,23 @@ estimate: L
       `unavailable` (503), не уровень.
 - [x] `application/access/use-cases/grant-acl.use-case.ts`, `revoke-acl.use-case.ts`; инкремент
       версий по субъекту — `AclRepositoryPort.subjectUserIds` + один `UPDATE … = ANY($n::uuid[])`.
-- [ ] `presentation/http/routes/registry.ts` — `acl:read`, `acl:grant`, `acl:revoke` — **следующий
-      шаг**, вместе с первым `project:*`-маршрутом (спека, `AWAITING_A_ROUTE`, снапшот матрицы,
-      описания прав на двух языках — четыре гейта разом). Use-case'ы в контейнер пока не собраны:
-      собирать нечего, пока нет маршрута.
+- [x] Маршруты (2026-09-26): `GET /api/v1/acl?resourceType=&resourceId=` (`acl:read`,
+      `ListResourceAclQuery`), `POST /api/v1/acl` (`acl:grant`, `GrantAclUseCase`, `Idempotency-Key`),
+      `DELETE /api/v1/acl/{aclId}` (`acl:revoke`, `RevokeAclUseCase`) — `route-registry.factory.ts`,
+      `acl.controller.ts`, `acl.validator.ts`, `acl.serializer.ts`; спека и `api-schema.d.ts`;
+      снапшот матрицы (+42 ячейки); описания прав EN/RU, строка `acl` из `AWAITING_A_ROUTE` снята;
+      сборка в контейнере — `buildAccess`, резолвер один на контейнер (поднят из `buildProject`).
 - [x] Тесты: `test/unit/domain/access/{acl-resolution-policy,implicit-level-policy,acl-management-policy,acl-error-resource}.test.ts`,
       `test/unit/application/{resolve-acl.query,grant-acl.use-case,revoke-acl.use-case}.test.ts`,
       `test/unit/persistence/{acl-reader,resource-acl-repository,project-access-reader}.test.ts`,
       интеграционный `test/integration/db/resource-acl-reader.test.ts` (счётчик SQL из лога
       драйвера, `EXPLAIN` на 20 000 строк, изоляция, `TEAM`/`ROLE`-субъекты, факты проекта против
       таблиц EPIC-014). `acl-list-consistency` (п. 12) — не написан, списков нет.
+- [x] Тесты маршрутов (2026-09-26): `test/integration/http/acl-endpoints.test.ts`,
+      `test/unit/application/list-resource-acl.query.test.ts`,
+      `test/unit/domain/access/acl-contour-policy.test.ts`, `test/unit/http/acl-serializer.test.ts`,
+      `test/contract/acl-resource-types.test.ts`; `findById`/`listOn` — рекордер и живой Postgres
+      (`resource-acl-reader.test.ts`); в `openapi.test.ts` — сверка ключа `x-permission` с реестром.
 
 ## Сделано (2026-09-06) — таблица, правило, резолвер, команды; без маршрута
 
@@ -173,9 +180,9 @@ estimate: L
 
 | # | Критерий | Состояние |
 |---|---|---|
-| 1 | выдача записи: `ResourceAcl`, бамп всем членам команды, `acl.granted` `WARNING` | **use-case закрыт** (`grant-acl.use-case.test.ts`); `POST /api/v1/acl` — ждёт маршрута |
+| 1 | выдача записи: `ResourceAcl`, бамп всем членам команды, `acl.granted` `WARNING` | закрыт: use-case (`grant-acl.use-case.test.ts`) и `POST /api/v1/acl` (`acl-endpoints.test.ts`, грант команде бампает обоих участников) |
 | 2 | ближайшая явная запись побеждает | закрыт (`acl-resolution-policy.test.ts`; на живом Postgres — порядок по глубине в `resource-acl-reader.test.ts`) |
-| 3 | `NONE` — явный запрет на узле и ниже | правило закрыто; **код ответа расходится**: история говорит 404, а `access.errors.ts` (STORY-011-07, прошёл гейты) отвечает `acl_explicit_none` как **403** `${resource}_forbidden`, и `assert-allowed.test.ts` это закрепляет. Не правил молча — решение за человеком: либо история приводится к коду (внутри своей организации 403 не оракул), либо `CODE_FOR` и тест меняются отдельным коммитом |
+| 3 | `NONE` — явный запрет на узле и ниже | правило закрыто; **код ответа расходится**: история говорит 404, а `access.errors.ts` (STORY-011-07, прошёл гейты) отвечает `acl_explicit_none` как **403** `${resource}_forbidden`, и `assert-allowed.test.ts` это закрепляет. Не правил молча — решение за человеком: либо история приводится к коду (внутри своей организации 403 не оракул), либо `CODE_FOR` и тест меняются отдельным коммитом. На маршрутах `/acl` для объекта `PROJECT` `NONE` отвечается 404 (`acl-contour.policy.ts` повторяет `closeTheContour` проекта), иначе `/acl` был бы оракулом `PRIVATE`-проекта; `access.errors.ts` не тронут |
 | 4 | максимум на одном узле | закрыт (домен + интеграция: `TEAM=EDITOR` и `USER=VIEWER` на одном узле) |
 | 5 | просроченные не учитываются | закрыт дважды — фильтр `expires_at > now()` в SQL (не индексом: `expires_at` в индексе join'а нет, просроченные строки объекта читаются и отбрасываются фильтром, их единицы на объект) и правило в policy с `ClockPort` |
 | 6 | `implicitLevel` вместо «разрешено всем» | закрыт для девяти строк §5 с предметом; шесть строк (`CHANNEL` ×4, личный ресурс ×2) — без предмета, перечислены по имени в тесте, заглушек нет. **Строк в таблице пятнадцать, а не тринадцать**, как написано в критерии |
@@ -183,7 +190,7 @@ estimate: L
 | 8 | один запрос, а не N | закрыт: счётчик из лога драйвера на цепочке в четыре узла; `EXPLAIN` держит `Index Scan using uq_resource_acl` |
 | 9 | оборванная иерархия → 404 + `logger.warn` с id | закрыт (`resolve-acl.query.test.ts`: `missing`, ридер не вызывается, `warn` с `resourceType`/`resourceId`) |
 | 10 | ошибка резолва → `acl_resolution_failed`, 503 | закрыт (`unavailable` из резолвера → `service_unavailable`) |
-| 11 | выдача шире собственного уровня → 403 | закрыт конъюнкцией `authorize` (`insufficient_acl_level` для `EDITOR` на объекте); отдельной ветки в `canGrantAcl` нет — `acl:grant` требует `MANAGER`, верх шкалы, шире которого выдать нечего, и тест-пин на `requiredLevel` в `acl-management-policy.test.ts` держит это на случай правки каталога. Единственная своя ветка `canGrantAcl` — `self_lockout` |
+| 11 | выдача шире собственного уровня → 403 | закрыт и на маршруте (`MEMBER` → `EDITOR` → 403 `insufficient_acl_level`), конъюнкцией `authorize` (`insufficient_acl_level` для `EDITOR` на объекте); отдельной ветки в `canGrantAcl` нет — `acl:grant` требует `MANAGER`, верх шкалы, шире которого выдать нечего, и тест-пин на `requiredLevel` в `acl-management-policy.test.ts` держит это на случай правки каталога. Единственная своя ветка `canGrantAcl` — `self_lockout` |
 | 12 | списки не резолвят построчно | **открыт**: списков ещё нет; «множество доступных родителей один раз» — отдельная задача при первом списочном маршруте с ACL |
 | 13 | удаление роли снимает её записи ACL | **закрыт 2026-09-26**: `delete-custom-role.use-case.ts` в той же транзакции зовёт `AclRepositoryPort.removeAllOfSubject` (один `DELETE … RETURNING` по `idx_resource_acl_subject`) и пишет `acl.revoked` на каждую снятую запись с `after.cause = 'role.deleted'`; версию носителям уже бампает `bumpHoldersOf` до удаления назначений. Юнит — `custom-role.use-cases.test.ts`, живой Postgres — `test/integration/db/acl-subject-cascade.test.ts` (чужая организация с тем же uuid субъекта не задета) |
 
@@ -228,8 +235,21 @@ estimate: L
    Адаптер — raw SQL по именам `data-model.md` §3; имена доказаны интеграционным тестом против
    миграции `20260906135656_projects_and_project_members`.
 
-Следующему шагу: маршруты `acl:*` (спека, реестр, снапшот матрицы, описания прав, сборка use-case'ов
-в контейнере), критерий 12 при первом списке, решение по коду ответа для критерия 3,
+## Сделано (2026-09-26) — маршруты `acl:*`
+
+1. **`DELETE` адресуется id гранта**, поэтому `RevokeAclUseCase` читает строку сам: ключ → строка →
+   объект → уровень (`canRevokeAcl` принимает scope thunk'ом, как `canReadProject`). Любой посторонний —
+   один `404 acl_not_found` (новый ресурс `acl` в `ERROR_RESOURCES`, спеке и локалях): закодированный
+   на объекте отказ различал бы «такого гранта нет» и «грант на невидимом проекте».
+2. **`resourceType` на маршрутах — только разрешимые виды** (`ORGANIZATION`, `PROJECT`,
+   `resolvable-acl-resource-types.constant.ts`, им же ключуется реестр цепочек резолвера): вид без
+   цепочки — `422`, а не `503`.
+3. **Список — только строки самого объекта, живые на момент `ClockPort`**, `{ items }` без пагинации
+   (как состав проекта).
+4. Побочно: middleware-отказ на ключе `acl:*` теперь `acl_forbidden`, а не `organization_forbidden`
+   (`refusalResourceOf` берёт ресурс ключа, раз он есть в словаре ошибок).
+
+Следующему шагу: критерий 12 при первом списке, решение по коду ответа для критерия 3,
 перенос `ProjectRole`/`ProjectVisibility` из `implicit-level.policy.ts` на `domain/project/project.enums.ts`
 (файл того же дня, ещё не в истории на момент этого коммита).
 

@@ -42,6 +42,11 @@
     "delete": "Delete a project — it disappears from every list and its key is freed; the people keep their history on it.",
     "manage_members": "Put people on a project, take them off, and decide the role each of them holds — and therefore what each of them may do there."
   },
+  "acl": {
+    "read": "See who has been given access to a project or to the organization, and at what level — on the objects the person can see themselves.",
+    "grant": "Give a person, a role or a team a level of access to one project or to the organization — or take it lower; everybody the grant reaches gets it on their next request.",
+    "revoke": "Take away a grant somebody was given on a project or on the organization; what it opened closes for everybody it reached."
+  },
   "permission": {
     "override_read": "Read another person's effective permissions together with the reason written beside each personal exception.",
     "override": "Grant or take away a single permission for one person, past their roles and past what those roles say."

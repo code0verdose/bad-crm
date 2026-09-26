@@ -3,6 +3,7 @@ import { type SharedPermissions } from '@bad-crm/shared';
 import {
   type AclEntryDraft,
   type AclEntryRow,
+  type AclListEntry,
   type AclRepositoryPort,
 } from '@/application/access/ports/acl-repository.port.js';
 import { type AclResourceRef, type AclSubjectRef } from '@/domain/access/acl-chain.types.js';
@@ -62,6 +63,73 @@ export class PrismaResourceAclRepository
             expiresAt: row.expiresAt,
             grantedById: row.grantedById,
           };
+    });
+  }
+
+  findById(id: string): Promise<AclEntryRow | null> {
+    return this.run('findById', async (tx) => {
+      const row = await tx.resourceAcl.findFirst({
+        where: { organizationId: this.organizationId('findById'), id },
+        select: {
+          id: true,
+          resourceType: true,
+          resourceId: true,
+          subjectType: true,
+          subjectId: true,
+          accessLevel: true,
+          expiresAt: true,
+          grantedById: true,
+        },
+      });
+
+      return row === null
+        ? null
+        : {
+            id: row.id,
+            resource: { type: row.resourceType, id: row.resourceId },
+            subject: { type: row.subjectType, id: row.subjectId },
+            level: row.accessLevel,
+            expiresAt: row.expiresAt,
+            grantedById: row.grantedById,
+          };
+    });
+  }
+
+  /**
+   * One statement, served by `uq_resource_acl`: its leading `(organization_id, resource_id,
+   * resource_type)` is exactly this predicate. The expiry is a filter over the handful of rows an
+   * object carries, not an index condition — the same trade the reader makes.
+   */
+  listOn(resource: AclResourceRef, now: Date): Promise<readonly AclListEntry[]> {
+    return this.run('listOn', async (tx) => {
+      const rows = await tx.resourceAcl.findMany({
+        where: {
+          organizationId: this.organizationId('listOn'),
+          resourceType: resource.type,
+          resourceId: resource.id,
+          OR: [{ expiresAt: null }, { expiresAt: { gt: now } }],
+        },
+        orderBy: [{ grantedAt: 'asc' }, { id: 'asc' }],
+        select: {
+          id: true,
+          subjectType: true,
+          subjectId: true,
+          accessLevel: true,
+          expiresAt: true,
+          grantedById: true,
+          grantedAt: true,
+        },
+      });
+
+      return rows.map((row) => ({
+        id: row.id,
+        resource,
+        subject: { type: row.subjectType, id: row.subjectId },
+        level: row.accessLevel,
+        expiresAt: row.expiresAt,
+        grantedById: row.grantedById,
+        grantedAt: row.grantedAt,
+      }));
     });
   }
 

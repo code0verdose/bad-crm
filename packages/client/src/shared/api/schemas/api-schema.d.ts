@@ -1702,6 +1702,85 @@ export interface paths {
         patch: operations["updateProjectMember"];
         trace?: never;
     };
+    "/acl": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Who holds what on one object.
+         * @description The live grants of **this** object, oldest first — ids and levels, no names: who a user, a
+         *     role or a team is belongs to `GET /employees` and `GET /roles`, each behind its own
+         *     permission. A grant on an ancestor reaches the object through the chain and is listed on the
+         *     ancestor, not here. A grant whose `expiresAt` has passed decides nothing and is not listed.
+         *
+         *     `acl:read` and `VIEWER` on the object. An object the caller cannot see — another
+         *     organization's id, a `PRIVATE` project they are not on — is the object's own `404`
+         *     (`project_not_found`), the same answer the project card gives: a project is a closed contour,
+         *     and its grants are as closed as it is.
+         *
+         *     `resourceType` is the set of kinds whose chain the server can walk today (`AclResourceType`);
+         *     a kind outside it is `422`, not `503`.
+         */
+        get: operations["listResourceAcl"];
+        put?: never;
+        /**
+         * Give a person, a role or a team a level on one object.
+         * @description Writes the grant — or **replaces** the one already there for the same subject on the same
+         *     object: one opinion per pair, so a repeat with another level is a change, filed with both
+         *     sides. Everybody the grant reaches — the person, every holder of the role, every member of
+         *     the team — has their permission version bumped in the same transaction, and the grant is
+         *     filed as `acl.granted` at `WARNING`.
+         *
+         *     `acl:grant` and `MANAGER` on the object (`dangerous`). A caller who sees the object with a
+         *     lower level is `403 project_forbidden`; one who cannot see it at all is `404
+         *     project_not_found`, decided **before** the subject is looked at, so the form cannot be used
+         *     to learn which team ids exist. A subject that is not in this organization (or has left, or
+         *     was disbanded) is the subject's own `404` — `user_not_found`, `role_not_found`,
+         *     `team_not_found`. `NONE` on one's own `USER` entry is `409 self_lockout`.
+         *
+         *     `NONE` is a level like the others: the explicit refusal on this node and below. An
+         *     `expiresAt` in the past is accepted and decides nothing from the moment it is written.
+         */
+        post: operations["grantResourceAcl"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/acl/{aclId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Take one grant away.
+         * @description Removes the grant the id names. Everybody it reached has their permission version bumped in
+         *     the same transaction; the grant is filed as `acl.revoked` at `WARNING` with what was removed,
+         *     because the row itself is gone.
+         *
+         *     `acl:revoke` and `MANAGER` on the object the grant is about (`dangerous`), decided in that
+         *     order: the key first — without it the answer is the same for a real id and a made-up one —
+         *     then the grant, then the object it names. **Every outsider is one `404 acl_not_found`**: an
+         *     id nobody issued, another organization's grant, and a grant on a project the caller cannot
+         *     see read alike, because telling them apart would test grant ids for existence. A caller who
+         *     sees the object with a lower level is `403 acl_forbidden` — they can list the grant with
+         *     `GET /acl`, so its existence is no secret to them.
+         */
+        delete: operations["revokeResourceAcl"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/employees": {
         parameters: {
             query?: never;
@@ -2466,7 +2545,7 @@ export interface components {
          *     reused with a different meaning.
          * @enum {string}
          */
-        ErrorCode: "validation_failed" | "unauthenticated" | "invalid_credentials" | "account_suspended" | "registration_disabled" | "password_reset_token_invalid" | "invitation_not_valid" | "mail_not_configured" | "route_not_found" | "payload_too_large" | "vault_locked" | "stale_version" | "idempotency_key_reuse" | "last_owner_required" | "period_locked" | "self_lockout" | "system_role_immutable" | "owner_immutable" | "invitation_already_accepted" | "manager_cycle_detected" | "employment_period_inverted" | "recipient_not_active" | "member_not_active" | "last_project_lead_required" | "invalid_recipient" | "not_the_owner" | "confirmation_required" | "invalid_totp_code" | "totp_code_replayed" | "mfa_already_enabled" | "reauthentication_required" | "recovery_code_invalid" | "mfa_token_expired" | "mfa_invalid_code" | "mfa_code_replayed" | "mfa_enrollment_required" | "mfa_required_by_policy" | "rate_limited" | "feature_disabled" | "service_unavailable" | "internal_error" | "organization_not_found" | "organization_forbidden" | "organization_already_exists" | "team_not_found" | "team_forbidden" | "team_already_exists" | "user_not_found" | "user_forbidden" | "user_already_exists" | "role_not_found" | "role_forbidden" | "role_already_exists" | "invitation_not_found" | "invitation_forbidden" | "invitation_already_exists" | "session_not_found" | "session_forbidden" | "session_already_exists" | "project_not_found" | "project_forbidden" | "project_already_exists" | "board_not_found" | "board_forbidden" | "board_already_exists" | "task_not_found" | "task_forbidden" | "task_already_exists" | "sprint_not_found" | "sprint_forbidden" | "sprint_already_exists" | "comment_not_found" | "comment_forbidden" | "comment_already_exists" | "doc_not_found" | "doc_forbidden" | "doc_already_exists" | "kb_note_not_found" | "kb_note_forbidden" | "kb_note_already_exists" | "file_not_found" | "file_forbidden" | "file_already_exists" | "vault_item_not_found" | "vault_item_forbidden" | "vault_item_already_exists" | "secure_link_not_found" | "secure_link_forbidden" | "secure_link_already_exists" | "time_entry_not_found" | "time_entry_forbidden" | "time_entry_already_exists" | "channel_not_found" | "channel_forbidden" | "channel_already_exists" | "message_not_found" | "message_forbidden" | "message_already_exists" | "dashboard_not_found" | "dashboard_forbidden" | "dashboard_already_exists";
+        ErrorCode: "validation_failed" | "unauthenticated" | "invalid_credentials" | "account_suspended" | "registration_disabled" | "password_reset_token_invalid" | "invitation_not_valid" | "mail_not_configured" | "route_not_found" | "payload_too_large" | "vault_locked" | "stale_version" | "idempotency_key_reuse" | "last_owner_required" | "period_locked" | "self_lockout" | "system_role_immutable" | "owner_immutable" | "invitation_already_accepted" | "manager_cycle_detected" | "employment_period_inverted" | "recipient_not_active" | "member_not_active" | "last_project_lead_required" | "invalid_recipient" | "not_the_owner" | "confirmation_required" | "invalid_totp_code" | "totp_code_replayed" | "mfa_already_enabled" | "reauthentication_required" | "recovery_code_invalid" | "mfa_token_expired" | "mfa_invalid_code" | "mfa_code_replayed" | "mfa_enrollment_required" | "mfa_required_by_policy" | "rate_limited" | "feature_disabled" | "service_unavailable" | "internal_error" | "organization_not_found" | "organization_forbidden" | "organization_already_exists" | "team_not_found" | "team_forbidden" | "team_already_exists" | "user_not_found" | "user_forbidden" | "user_already_exists" | "role_not_found" | "role_forbidden" | "role_already_exists" | "invitation_not_found" | "invitation_forbidden" | "invitation_already_exists" | "session_not_found" | "session_forbidden" | "session_already_exists" | "project_not_found" | "project_forbidden" | "project_already_exists" | "board_not_found" | "board_forbidden" | "board_already_exists" | "task_not_found" | "task_forbidden" | "task_already_exists" | "sprint_not_found" | "sprint_forbidden" | "sprint_already_exists" | "comment_not_found" | "comment_forbidden" | "comment_already_exists" | "doc_not_found" | "doc_forbidden" | "doc_already_exists" | "kb_note_not_found" | "kb_note_forbidden" | "kb_note_already_exists" | "file_not_found" | "file_forbidden" | "file_already_exists" | "vault_item_not_found" | "vault_item_forbidden" | "vault_item_already_exists" | "secure_link_not_found" | "secure_link_forbidden" | "secure_link_already_exists" | "time_entry_not_found" | "time_entry_forbidden" | "time_entry_already_exists" | "channel_not_found" | "channel_forbidden" | "channel_already_exists" | "message_not_found" | "message_forbidden" | "message_already_exists" | "dashboard_not_found" | "dashboard_forbidden" | "dashboard_already_exists" | "acl_not_found" | "acl_forbidden" | "acl_already_exists";
         /**
          * @description Why one field was rejected. The list mirrors
          *     `packages/shared/src/errors/validation-issue.enums.ts`; anything a validator produces
@@ -2745,6 +2824,76 @@ export interface components {
             /** @enum {string} */
             projectRole?: "LEAD" | "MEMBER" | "REVIEWER" | "OBSERVER";
             allocationPct?: number;
+        };
+        /**
+         * @description The kinds of object a grant can be read, written or revoked on — the ones whose ancestor
+         *     chain the server resolves today. The table itself accepts twelve kinds
+         *     (`data-model.md`, `ResourceAcl`); each joins this list with the domain that makes it
+         *     resolvable, as a compatible widening of the request.
+         * @enum {string}
+         */
+        AclResourceType: "ORGANIZATION" | "PROJECT";
+        /**
+         * @description One grant on one object. Ids only — who the subject and the grantor are is the directory's
+         *     and the roles screen's to say. `grantedById` is `null` when the grantor's account is gone;
+         *     who gave the grant then lives in the audit trail.
+         */
+        ResourceAclEntry: {
+            /**
+             * Format: uuid
+             * @example 018f4a3b-2c1d-7a41-9f00-2b7c1d0e5d01
+             */
+            id: string;
+            resourceType: components["schemas"]["AclResourceType"];
+            /**
+             * Format: uuid
+             * @example 018f4a3b-2c1d-7a41-9f00-2b7c1d0e5b01
+             */
+            resourceId: string;
+            /** @enum {string} */
+            subjectType: "USER" | "ROLE" | "TEAM";
+            /**
+             * Format: uuid
+             * @example 018f4a3b-2c1d-7a41-9f00-2b7c1d0e5b21
+             */
+            subjectId: string;
+            /**
+             * @description `NONE < VIEWER < COMMENTER < EDITOR < MANAGER`. `NONE` is an explicit refusal on this
+             *     node and below.
+             * @enum {string}
+             */
+            accessLevel: "NONE" | "VIEWER" | "COMMENTER" | "EDITOR" | "MANAGER";
+            /**
+             * Format: date-time
+             * @description The instant the grant stops deciding anything; `null` is «until revoked».
+             */
+            expiresAt: string | null;
+            /** Format: uuid */
+            grantedById: string | null;
+            /** Format: date-time */
+            grantedAt: string;
+        };
+        ResourceAclGrant: {
+            resourceType: components["schemas"]["AclResourceType"];
+            /**
+             * Format: uuid
+             * @example 018f4a3b-2c1d-7a41-9f00-2b7c1d0e5b01
+             */
+            resourceId: string;
+            /** @enum {string} */
+            subjectType: "USER" | "ROLE" | "TEAM";
+            /**
+             * Format: uuid
+             * @example 018f4a3b-2c1d-7a41-9f00-2b7c1d0e5b21
+             */
+            subjectId: string;
+            /** @enum {string} */
+            accessLevel: "NONE" | "VIEWER" | "COMMENTER" | "EDITOR" | "MANAGER";
+            /**
+             * Format: date-time
+             * @description Absent or `null` is «until revoked».
+             */
+            expiresAt?: string | null;
         };
         /**
          * @description A personnel record, in the shape this caller is allowed to see. The employment fields below
@@ -3655,6 +3804,11 @@ export interface components {
          *     404 — the caller asked to change something the organization does not have.
          */
         ProjectMemberUserId: string;
+        /**
+         * @description Identifier of one grant, as `GET /acl` lists it. An id nobody issued, another organization's
+         *     grant and a grant on an object the caller cannot see are one `404 acl_not_found`.
+         */
+        AclId: string;
         /**
          * @description Identifier of an invitation of the caller's organization. Another organization's id is 404,
          *     and so is one that was already revoked — a revoked invitation is a deleted row, because the
@@ -6310,6 +6464,141 @@ export interface operations {
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
             409: components["responses"]["Conflict"];
+            422: components["responses"]["ValidationFailed"];
+            429: components["responses"]["RateLimited"];
+            500: components["responses"]["InternalError"];
+            503: components["responses"]["ServiceUnavailable"];
+        };
+    };
+    listResourceAcl: {
+        parameters: {
+            query: {
+                /** @description The kind of the object whose grants are listed. */
+                resourceType: components["schemas"]["AclResourceType"];
+                /** @description The object's id. */
+                resourceId: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The live grants on the object. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: components["schemas"]["ResourceAclEntry"][];
+                    };
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["ValidationFailed"];
+            500: components["responses"]["InternalError"];
+            503: components["responses"]["ServiceUnavailable"];
+        };
+    };
+    grantResourceAcl: {
+        parameters: {
+            query?: never;
+            header: {
+                /**
+                 * @description Client-generated key, mandatory on every unsafe operation that creates an entity, sends
+                 *     mail or spends money or tokens.
+                 *
+                 *     **Today the server only requires the key; it does not yet store or replay a response.** The
+                 *     table keyed by `(key, request hash)` is a cross-cutting mechanism that has not been built —
+                 *     the open half is recorded in STORY-006-01. What the requirement buys now is that a client
+                 *     which never learned to send the header cannot be made idempotent later without a breaking
+                 *     change; what it does not buy is the convenience of getting the original `201` back instead
+                 *     of a `409` on retry. Where a lost response is genuinely ambiguous rather than merely
+                 *     inconvenient, the operation says so in its own description.
+                 *
+                 *     When the store lands: a replay carrying the same request hash will return the stored
+                 *     response, and the same key with a different hash will be refused with 409
+                 *     `idempotency_key_reuse`.
+                 *
+                 *     Declaring the parameter is not a claim that the operation will replay: the client attaches a
+                 *     key to every unsafe request, and nearly every unsafe operation therefore requires one. What
+                 *     the store will change differs per operation, and each says so in its own description:
+                 *
+                 *     * operations that create something, send mail or spend tokens are the ones a replay is *for*
+                 *       — today a lost response leaves the caller unable to tell «it did not happen» from «it
+                 *       happened and the answer was lost»;
+                 *     * operations idempotent by construction (`assignRole`, `deactivateUser`, `reactivateUser`)
+                 *       require the key but gain nothing from a stored response — asking twice for a state that is
+                 *       already there answers the same way. The key is required anyway, so a client written today
+                 *       keeps working when the store lands;
+                 *     * `POST /auth/login` and `POST /auth/refresh` will **never** replay: a stored response *is* a
+                 *       credential. Replaying it would hand back tokens that have since been rotated or revoked,
+                 *       and would let one key slip a repeat past the failed-attempt counter the lockout depends on.
+                 */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ResourceAclGrant"];
+            };
+        };
+        responses: {
+            /** @description The grant as it now stands, by id — new or replaced. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /**
+                         * Format: uuid
+                         * @example 018f4a3b-2c1d-7a41-9f00-2b7c1d0e5d01
+                         */
+                        id: string;
+                    };
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["ValidationFailed"];
+            429: components["responses"]["RateLimited"];
+            500: components["responses"]["InternalError"];
+            503: components["responses"]["ServiceUnavailable"];
+        };
+    };
+    revokeResourceAcl: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /**
+                 * @description Identifier of one grant, as `GET /acl` lists it. An id nobody issued, another organization's
+                 *     grant and a grant on an object the caller cannot see are one `404 acl_not_found`.
+                 */
+                aclId: components["parameters"]["AclId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The grant is gone. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
             422: components["responses"]["ValidationFailed"];
             429: components["responses"]["RateLimited"];
             500: components["responses"]["InternalError"];

@@ -41,6 +41,16 @@ export const ERROR_RESOURCES = [
   'channel',
   'message',
   'dashboard',
+  /**
+   * One grant of `resource_acl` (`ResourceAcl`), as addressed by `DELETE /api/v1/acl/{aclId}`.
+   *
+   * Its own sentence because the id names no object: the row is the first thing read, so «no such
+   * grant» and «a grant on a project you cannot see» have to be one answer — `acl_not_found` —
+   * rather than `acl_not_found` beside `project_not_found`, which would test grant ids for
+   * existence. Operations addressed by the object (`POST /acl`, `GET /acl`) keep the object's
+   * sentence (`domain/access/acl-error-resource.util.ts`).
+   */
+  'acl',
 ] as const;
 
 export type ErrorResource = (typeof ERROR_RESOURCES)[number];

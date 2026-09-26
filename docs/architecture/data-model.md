@@ -834,8 +834,9 @@ salt (`saltB`), а сервер хранит `argon2id(authVerifier, serverSalt)
 `domain/access/acl-resolution.policy.ts`, неявные уровни — `domain/access/implicit-level.policy.ts`,
 единственный запрос ридера — `infrastructure/persistence/prisma/acl-reader.adapter.ts`. Команда как
 субъект гранта (`subjectType = TEAM`) работает через подзапрос к `team_members` в том же запросе;
-критерии 3, 4 и 6 STORY-012-07 упираются теперь только в маршрут. **Маршрутов `acl:*` пока нет** —
-это следующий шаг EPIC-014 вместе с первым `project:*`-маршрутом.
+**маршруты `acl:*` отгружены 2026-09-26** — `GET /acl`, `POST /acl`, `DELETE /acl/{aclId}`
+(STORY-011-06). Критерии 3, 4 и 6 STORY-012-07 маршрутом больше не блокированы; сквозной проверки
+«грант команде через `POST /acl` → состав команды меняется → уровень меняется» пока нет.
 
 **Почему `Permission` — [G] и без tenancy.** Каталог прав определяется **кодом**, а не данными:
 право `vault_item:decrypt` существует потому, что в приложении есть соответствующий use-case. Тенант

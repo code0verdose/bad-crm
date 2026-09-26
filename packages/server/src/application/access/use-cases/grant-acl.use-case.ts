@@ -9,6 +9,7 @@ import {
   errorResourceOfAclResource,
   errorResourceOfAclSubject,
 } from '@/domain/access/acl-error-resource.util.js';
+import { closeContourOf } from '@/domain/access/acl-contour.policy.js';
 import { canGrantAcl } from '@/domain/access/acl-management.policy.js';
 import { type Actor } from '@/domain/access/actor.types.js';
 import { assertAllowed } from '@/domain/access/decision.util.js';
@@ -62,7 +63,10 @@ export class GrantAclUseCase {
         const scope = await this.resolver.resolve(input.actor, input.resource);
 
         assertAllowed(
-          canGrantAcl(input.actor, scope, { subject: input.subject, level: input.level }),
+          closeContourOf(
+            input.resource.type,
+            canGrantAcl(input.actor, scope, { subject: input.subject, level: input.level }),
+          ),
           errorResourceOfAclResource(input.resource.type),
         );
 

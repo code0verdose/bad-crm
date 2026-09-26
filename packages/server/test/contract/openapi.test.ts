@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { createRouteRegistry } from '../../src/presentation/http/route-registry.factory.js';
 import {
   authorizationFormOf,
+  isGuardedRoute,
   isPublicRoute,
   type AuthorizationForm,
 } from '../../src/presentation/http/route-registry.types.js';
@@ -240,6 +241,37 @@ describe('the registry and the specification agree on who may call each route', 
           `${key}: registry says ${form}, specification says ${documented.get(key) ?? 'nothing'}`,
       );
 
+    expect(disagreeing, disagreeing.join('; ')).toEqual([]);
+  });
+
+  /**
+   * The form agreeing is not the key agreeing. A route whose guard names `acl:read` while the
+   * document publishes `acl:revoke` passes both assertions around this one — the form is
+   * `permission` on both sides — and the snapshot of the matrix too, as long as the use-case still
+   * refuses by the right key: the drift is then invisible until the use-case is the one that
+   * changes. Found by injecting exactly that defect on `DELETE /acl/{aclId}` (STORY-011-06).
+   */
+  it('names the same permission key in the registry and in the document', () => {
+    const registered = new Map(
+      createRouteRegistry(createTestApp().container.http)
+        .filter((route) => isGuardedRoute(route))
+        .map((route) => [
+          `${route.method.toUpperCase()} ${normalizePath(route.path)}`,
+          isGuardedRoute(route) ? route.permission : undefined,
+        ]),
+    );
+    const compared = specOperationEntries(readOpenApiDocument()).filter((entry) =>
+      registered.has(entry.routeKey),
+    );
+    const disagreeing = compared
+      .filter((entry) => entry.operation['x-permission'] !== registered.get(entry.routeKey))
+      .map(
+        (entry) =>
+          `${entry.routeKey}: registry guards ${String(registered.get(entry.routeKey))}, ` +
+          `specification publishes ${String(entry.operation['x-permission'])}`,
+      );
+
+    expect(compared.length).toBeGreaterThan(10);
     expect(disagreeing, disagreeing.join('; ')).toEqual([]);
   });
 

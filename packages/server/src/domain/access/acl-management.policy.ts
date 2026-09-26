@@ -1,6 +1,6 @@
 import { type AclGrantDraft } from '@/domain/access/acl-chain.types.js';
 import { type Actor } from '@/domain/access/actor.types.js';
-import { authorize, type AclScope } from '@/domain/access/authorize.util.js';
+import { authorize, authorizeWith, type AclScope } from '@/domain/access/authorize.util.js';
 import { type Decision } from '@/domain/access/decision.types.js';
 import { allow, deny } from '@/domain/access/decision.util.js';
 
@@ -47,10 +47,21 @@ export const canGrantAcl = (actor: Actor, scope: AclScope, draft: AclGrantDraft)
   return allow();
 };
 
-/** Taking a grant away: `acl:revoke` and `MANAGER` on the object, nothing more. */
-export const canRevokeAcl = (actor: Actor | null, scope: AclScope): Decision =>
-  authorize(actor, 'acl:revoke', scope);
+/**
+ * Taking a grant away: `acl:revoke` and `MANAGER` on the object, nothing more.
+ *
+ * The scope comes as a thunk, and that is the point of the shape: revocation is addressed by the
+ * grant's id, so producing the scope means reading the row first — and a caller without the key
+ * must be refused before that read, or «no such grant» and «not yours» would come back differently
+ * to somebody who holds nothing. `authorizeWith` asks the thunk only once the capability holds.
+ */
+export const canRevokeAcl = (
+  actor: Actor | null,
+  resolveScope: () => Promise<AclScope>,
+): Promise<Decision> => authorizeWith(actor, 'acl:revoke', resolveScope);
 
-/** Seeing who has what on an object: `acl:read` and `VIEWER` on it. */
-export const canReadAcl = (actor: Actor | null, scope: AclScope): Decision =>
-  authorize(actor, 'acl:read', scope);
+/** Seeing who has what on an object: `acl:read` and `VIEWER` on it — the object read only after the key. */
+export const canReadAcl = (
+  actor: Actor | null,
+  resolveScope: () => Promise<AclScope>,
+): Promise<Decision> => authorizeWith(actor, 'acl:read', resolveScope);

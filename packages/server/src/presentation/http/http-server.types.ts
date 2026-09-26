@@ -61,6 +61,9 @@ import { type RefreshSessionUseCase } from '@/application/identity/use-cases/ref
 import { type RegenerateRecoveryCodesUseCase } from '@/application/identity/use-cases/regenerate-recovery-codes.use-case.js';
 import { type RegisterOrganizationUseCase } from '@/application/identity/use-cases/register-organization.use-case.js';
 import { type MfaCoverageReportQuery } from '@/application/organization/use-cases/mfa-coverage-report.query.js';
+import { type GrantAclUseCase } from '@/application/access/use-cases/grant-acl.use-case.js';
+import { type ListResourceAclQuery } from '@/application/access/use-cases/list-resource-acl.query.js';
+import { type RevokeAclUseCase } from '@/application/access/use-cases/revoke-acl.use-case.js';
 import { type ArchiveProjectUseCase } from '@/application/project/use-cases/archive-project.use-case.js';
 import { type ChangeProjectVisibilityUseCase } from '@/application/project/use-cases/change-project-visibility.use-case.js';
 import { type CreateProjectUseCase } from '@/application/project/use-cases/create-project.use-case.js';
@@ -222,6 +225,19 @@ export interface ProjectDependencies {
   readonly removeProjectMember: RemoveProjectMemberUseCase;
 }
 
+/**
+ * Grants on objects — the three `/acl` operations of STORY-011-06.
+ *
+ * A group of its own rather than a corner of `project`: a grant is about *any* resolvable object
+ * (the organization today, a board tomorrow), and the use-cases go through the same resolver the
+ * project slice reads with — built once in the composition root and handed to both.
+ */
+export interface AccessDependencies {
+  readonly listAcl: ListResourceAclQuery;
+  readonly grantAcl: GrantAclUseCase;
+  readonly revokeAcl: RevokeAclUseCase;
+}
+
 export interface HttpServerDependencies {
   readonly config: HttpServerConfig;
   readonly logger: LoggerPort;
@@ -258,4 +274,5 @@ export interface HttpServerDependencies {
   readonly iam: IamDependencies;
   readonly organization: OrganizationDependencies;
   readonly project: ProjectDependencies;
+  readonly access: AccessDependencies;
 }

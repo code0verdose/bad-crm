@@ -117,6 +117,9 @@ export const ERROR_MESSAGE_KEY: Readonly<Record<SharedErrors.ErrorCode, string>>
   dashboard_not_found: 'errors.code.dashboard_not_found',
   dashboard_forbidden: 'errors.code.dashboard_forbidden',
   dashboard_already_exists: 'errors.code.dashboard_already_exists',
+  acl_not_found: 'errors.code.acl_not_found',
+  acl_forbidden: 'errors.code.acl_forbidden',
+  acl_already_exists: 'errors.code.acl_already_exists',
 };
 
 /**

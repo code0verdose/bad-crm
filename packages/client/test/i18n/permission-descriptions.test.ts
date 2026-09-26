@@ -55,7 +55,6 @@ const AWAITING_A_ROUTE: Readonly<Record<string, string>> = {
   user: 'the account actions left — delete, impersonate, sessions — have no screen yet',
   employee: 'employment, cost rate and personal data are the paid half of the card (M3)',
   permission: 'the catalogue itself and `explain` need the resource layer (STORY-011-06)',
-  acl: 'blocked with STORY-011-06: no domain owns a resource to hang an ACL on',
   project:
     'EPIC-014 in progress: the seven keys of the card and the write routes are routed and ' +
     'described (read, create, update, manage_members, manage_visibility, archive, delete); ' +
