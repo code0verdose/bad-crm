@@ -154,10 +154,12 @@ export interface CustomRoleRepositoryPort {
    * Locks the role row `FOR UPDATE` for the rest of the caller's transaction; `false` when it is
    * not in this organization (any more).
    *
-   * Taken by the deletion **before** it removes the role's `ResourceAcl` grants — the gate's M-1.
-   * A grant reads the role `FOR KEY SHARE` (`AclRepositoryPort.subjectExists`), so the two now
-   * serialize: a grant already in flight is committed before the deletion collects the role's grants,
-   * and a grant arriving later waits and then finds no role. Without it the deletion's
+   * Taken by the deletion as its **first** statement — before the policy reads the composition and
+   * the actor's holding (the re-gate's L-2), and so before it removes the role's `ResourceAcl`
+   * grants (the gate's M-1). A grant reads the role `FOR KEY SHARE`
+   * (`AclRepositoryPort.subjectExists`), so the two now serialize: a grant already in flight is
+   * committed before the deletion collects the role's grants, and a grant arriving later waits and
+   * then finds no role. Without it the deletion's
    * `removeAllOfSubject` and its `DELETE FROM roles` leave a window in which a grant commits and
    * outlives the role.
    */

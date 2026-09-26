@@ -65,7 +65,8 @@ export interface DeleteTeamInput {
  * `team_members`, which this transaction empties — but it would still be a grant to a team nobody
  * can see or revoke from the interface. The cascade runs **after** `disband()` succeeds: a team
  * disbanded by somebody else in between keeps its grants for the transaction that did disband it.
- * Whom the grants reached is the former members, bumped above. Each removed grant files its own
+ * It runs **before** the bump — grants before people, the order a revocation takes; the opposite
+ * order deadlocked against it. Whom the grants reached is the former members, bumped right after. Each removed grant files its own
  * `acl.revoked` with `after.cause = 'team.deleted'`, after `team.deleted`.
  */
 export class DeleteTeamUseCase {
@@ -92,11 +93,14 @@ export class DeleteTeamUseCase {
         // team of another organization: from outside, both are «not there».
         if (disbanded === null) throw denyAccess('team', 'other_organization');
 
+        // The grants before the people, the order `RevokeAclUseCase` takes (the re-gate's deadlock,
+        // measured 5/5 `40P01` in `acl-subject-cascade.test.ts`): a revocation locks a grant row and
+        // then updates the members in `users`; bumping them first here would close the cycle.
+        const revoked = await this.acl.removeAllOfSubject({ type: 'TEAM', id: input.teamId });
+
         // One statement for everybody, not a loop: fifty round trips inside a transaction with a
         // five-second ceiling is a save that fails on arithmetic rather than on anything being wrong.
         await this.teams.bumpPermissionsVersionOf(disbanded.members.map((member) => member.userId));
-
-        const revoked = await this.acl.removeAllOfSubject({ type: 'TEAM', id: input.teamId });
 
         await this.audit.record({
           action: 'team.deleted',

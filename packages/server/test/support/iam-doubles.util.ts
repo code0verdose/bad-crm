@@ -380,6 +380,8 @@ export class FakeCustomRoleRepository implements CustomRoleRepositoryPort {
   }
 
   composition(roleId: string): Promise<RoleComposition | null> {
+    this.options.journal?.push(`role.composition:${roleId}`);
+
     return Promise.resolve(this.roles.get(roleId) ?? null);
   }
 
@@ -428,12 +430,14 @@ export class FakeCustomRoleRepository implements CustomRoleRepositoryPort {
   }
 
   bumpHoldersOf(roleId: string): Promise<void> {
+    this.options.journal?.push(`role.bumpHoldersOf:${roleId}`);
     this.versionBumps.push(...(this.holders.get(roleId) ?? []));
 
     return Promise.resolve();
   }
 
   remove(roleId: string): Promise<void> {
+    this.options.journal?.push(`role.remove:${roleId}`);
     this.roles.delete(roleId);
     // The cascade, modelled: `ON DELETE CASCADE` takes the assignments with the role. Without this
     // line a use-case that invalidated the holders *after* removing the role would still look
@@ -484,6 +488,8 @@ export class FakeCustomRoleRepository implements CustomRoleRepositoryPort {
   }
 
   holdsRole(userId: string, roleId: string): Promise<boolean> {
+    this.options.journal?.push(`role.holdsRole:${roleId}`);
+
     return Promise.resolve((this.holders.get(roleId) ?? []).includes(userId));
   }
 
