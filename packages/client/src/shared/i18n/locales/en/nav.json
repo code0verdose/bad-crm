@@ -13,6 +13,7 @@
   },
   "section": {
     "personal": "Personal",
+    "work": "Team work",
     "administration": "Administration"
   },
   "sidebar": {
@@ -23,5 +24,6 @@
   "adminTeams": "Teams",
   "adminRoles": "Roles and permissions",
   "settingsSecurity": "Security",
-  "adminOrganization": "Organization"
+  "adminOrganization": "Organization",
+  "projects": "Projects"
 }

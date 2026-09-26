@@ -1,4 +1,57 @@
 {
+  "list": {
+    "title": "Projects",
+    "failed": "The projects could not be loaded.",
+    "found_one": "{{count}} project found",
+    "found_other": "{{count}} projects found",
+    "foundNone": "No projects found",
+    "view": {
+      "label": "Show projects as",
+      "grid": "Cards",
+      "table": "Table"
+    },
+    "filters": {
+      "search": "Search",
+      "searchPlaceholder": "Name or key",
+      "sort": "Order",
+      "status": "Status",
+      "lead": "Lead",
+      "anyLead": "Any lead",
+      "mine": "My projects",
+      "chip": {
+        "query": "Search",
+        "lead": "Lead",
+        "mine": "My projects"
+      }
+    },
+    "sort": {
+      "name": "Name, A to Z",
+      "nameDesc": "Name, Z to A",
+      "key": "Key, A to Z",
+      "keyDesc": "Key, Z to A",
+      "createdAt": "Oldest first",
+      "createdAtDesc": "Newest first"
+    },
+    "column": {
+      "project": "Project",
+      "key": "Key",
+      "status": "Status",
+      "lead": "Lead",
+      "members": "People",
+      "visibility": "Visibility"
+    },
+    "card": {
+      "lead": "Lead: {{name}}"
+    },
+    "empty": {
+      "title": "No projects yet",
+      "canCreate": "Projects you create or are added to will appear here.",
+      "askLead": "Ask a project lead to add you to a project.",
+      "filteredTitle": "No projects match the filters",
+      "filtered": "Try a different search, or take a filter off.",
+      "reset": "Reset filters"
+    }
+  },
   "detail": {
     "title": "Project"
   },
