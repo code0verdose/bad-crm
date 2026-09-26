@@ -129,10 +129,27 @@ describe('the boundaries', () => {
   it('answers an unknown path with the not-found screen, inside the shell', async () => {
     renderApp({ path: '/nope' });
 
-    expect(await screen.findByText('errors.not_found.title')).toBeInTheDocument();
+    expect(
+      await screen.findByRole('heading', { level: 1, name: 'errors.not_found.title' }),
+    ).toBeInTheDocument();
     // Inside the shell, not alone on a blank page: the way out has to still be on screen.
     expect(screen.getByRole('navigation', { name: 'nav.primary.aria' })).toBeInTheDocument();
     expect(screen.getByRole('main')).toBeInTheDocument();
+  });
+
+  /**
+   * The page is the not-found screen, so it is named as one — in the tab, and to a screen reader.
+   * A title of the bare product name and a silent live region told nobody where they had landed.
+   */
+  it('names an unknown path as not found in the title and the announcement', async () => {
+    renderApp({ path: '/nope' });
+
+    await screen.findByRole('heading', { level: 1, name: 'errors.not_found.title' });
+
+    await waitFor(() => {
+      expect(document.title).toBe('errors.not_found.title · Bad CRM');
+    });
+    expect(screen.getByTestId('route-announcer').textContent).toBe('errors.not_found.title');
   });
 
   /** An unknown URL must not confirm that this installation exists to someone with no session. */

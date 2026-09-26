@@ -28,7 +28,7 @@ export interface SectionProps {
  *
  * **The heading takes focus by script and not by Tab** (`tabIndex={-1}`): it is where focus goes
  * when the control the reader pressed inside the section disappears — the «Retry» of a failed load,
- * gone the moment the load succeeds (`focusSectionHeading`, called by `ErrorState`). Without it
+ * gone the moment the load succeeds (`focusSectionHeading`, called by `ErrorState`'s `useRetry` when its button leaves the page). Without it
  * focus falls to `<body>` and the reader starts over from the top of the page.
  *
  * Anything richer — collapsing, a toolbar in the heading row, actions — belongs to the screen that

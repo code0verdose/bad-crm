@@ -6,6 +6,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { createAppRouter } from '@app/router.js';
 import { SharedApi, SharedUi } from '@shared';
+import { IamLib } from '@units/iam';
 import { BreadcrumbTrail, BreadcrumbsLib } from '@widgets/breadcrumbs';
 
 import { renderApp } from '../support/render-app.util.js';
@@ -50,6 +51,63 @@ describe('building the trail', () => {
 
   it('reports nothing on a route that declares no label at all', () => {
     expect(BreadcrumbsLib.currentCrumbKey([{ pathname: '/' }])).toBeUndefined();
+  });
+});
+
+/**
+ * A match the not-found or the 403 screen replaced is named by that screen's heading, and nothing
+ * under it names the page — it does not render. A failure that keeps the page (the error state with
+ * «Retry») keeps the page's own name.
+ */
+describe('a match a stand-in screen replaced', () => {
+  const projects = { pathname: '/projects', staticData: { crumbKey: 'nav.projects' } };
+  const project = { pathname: '/projects/42', staticData: { crumbKey: 'projects.detail.title' } };
+  const overview = { pathname: '/projects/42/', staticData: { crumbKey: 'projects.overview' } };
+
+  it('names the page by the not-found heading and drops what is under it', () => {
+    expect(
+      BreadcrumbsLib.routeCrumbs([
+        projects,
+        { ...project, status: 'notFound' },
+        { ...overview, status: 'pending' },
+      ]),
+    ).toEqual([
+      { labelKey: 'nav.projects', pathname: '/projects', isCurrent: false },
+      { labelKey: 'errors.not_found.title', pathname: '/projects/42', isCurrent: true },
+    ]);
+  });
+
+  it('names a replaced layout that declares no crumb of its own', () => {
+    expect(BreadcrumbsLib.currentCrumbKey([{ pathname: '/', status: 'notFound' }])).toBe(
+      'errors.not_found.title',
+    );
+  });
+
+  it('names the page by the 403 heading when the failure is a refusal', () => {
+    expect(
+      BreadcrumbsLib.currentCrumbKey([
+        projects,
+        { ...project, status: 'error', error: new IamLib.PermissionDeniedError('project:read') },
+      ]),
+    ).toBe('errors.forbidden.title');
+  });
+
+  it('keeps the page name on an ordinary failure, which «Retry» brings back', () => {
+    expect(
+      BreadcrumbsLib.currentCrumbKey([
+        projects,
+        { ...project, status: 'error', error: new Error('boom') },
+      ]),
+    ).toBe('projects.detail.title');
+  });
+
+  it('keeps the page name while it loads and once it has', () => {
+    expect(BreadcrumbsLib.currentCrumbKey([{ ...project, status: 'pending' }])).toBe(
+      'projects.detail.title',
+    );
+    expect(BreadcrumbsLib.currentCrumbKey([{ ...project, status: 'success' }])).toBe(
+      'projects.detail.title',
+    );
   });
 });
 

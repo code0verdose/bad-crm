@@ -32,7 +32,7 @@ export interface MfaCoverage {
   readonly roleOptions: readonly string[];
   /** The query's own three-state status, passed straight through to `DataState`. */
   readonly status: DataStatus;
-  readonly refetch: () => void;
+  readonly refetch: () => Promise<unknown>;
 }
 
 /**
@@ -79,8 +79,6 @@ export const useMfaCoverage = (
     rows,
     total: report.data?.rows.length ?? 0,
     status: report.status,
-    refetch: () => {
-      void report.refetch();
-    },
+    refetch: () => report.refetch(),
   };
 };

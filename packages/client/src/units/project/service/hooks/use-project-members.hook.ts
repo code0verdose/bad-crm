@@ -5,7 +5,8 @@ export interface ProjectMembersView {
   readonly status: 'pending' | 'error' | 'success';
   /** Empty until the roster arrives — the screen draws a skeleton for that, not an empty list. */
   readonly members: readonly ProjectMember[];
-  readonly refetch: () => void;
+  /** Resolves when the reload answers, so «Retry» can stay busy until then. */
+  readonly refetch: () => Promise<unknown>;
 }
 
 /**
@@ -21,8 +22,6 @@ export const useProjectMembers = (projectId: string): ProjectMembersView => {
   return {
     status: query.isError ? 'error' : query.isPending ? 'pending' : 'success',
     members: query.data ?? [],
-    refetch: () => {
-      void query.refetch();
-    },
+    refetch: () => query.refetch(),
   };
 };

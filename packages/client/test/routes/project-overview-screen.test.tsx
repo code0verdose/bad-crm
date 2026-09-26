@@ -88,8 +88,8 @@ const person = (userId: string, firstName: string, lastName: string) => ({
 
 interface ServerOptions {
   readonly granted?: readonly string[];
-  readonly detail?: () => Response;
-  readonly members?: () => Response;
+  readonly detail?: () => Response | Promise<Response>;
+  readonly members?: () => Response | Promise<Response>;
 }
 
 const stubServer = ({
@@ -318,7 +318,9 @@ describe('/projects/$projectId', () => {
     async ({ status, code }) => {
       await startAt({ detail: () => problem(status, code) });
 
-      expect(await screen.findByText('errors.not_found.title')).toBeInTheDocument();
+      expect(
+        await screen.findByRole('heading', { level: 1, name: 'errors.not_found.title' }),
+      ).toBeInTheDocument();
       expect(screen.queryByRole('tablist')).not.toBeInTheDocument();
       expect(
         screen.queryByRole('heading', { level: 1, name: 'projects.detail.title' }),
@@ -345,7 +347,7 @@ describe('/projects/$projectId', () => {
     async ({ status, code }) => {
       const { router } = await startAt({ detail: () => problem(status, code) });
 
-      await screen.findByText('errors.not_found.title');
+      await screen.findByRole('heading', { level: 1, name: 'errors.not_found.title' });
       await router.navigate({ to: '/dashboard' });
       await screen.findByRole('heading', { level: 1, name: /dashboard/ });
 
@@ -362,10 +364,50 @@ describe('/projects/$projectId', () => {
     },
   );
 
+  /**
+   * The document title, the live region and the focused `h1` are three voices of one page, and a
+   * reader hears all three. On a refusal the route's own crumb («Project») would still name the
+   * page while the heading under focus says «not found» — the screen reader announces a project
+   * that is not there. The not-found screen stands in for the route, so it names the page too.
+   */
+  it.each([
+    { status: 404, code: 'project_not_found' },
+    { status: 403, code: 'user_forbidden' },
+  ])(
+    'names the not-found screen, not the project, in the title and the announcement on a $status',
+    async ({ status, code }) => {
+      await startAt({ detail: () => problem(status, code) });
+
+      await screen.findByRole('heading', { level: 1, name: 'errors.not_found.title' });
+
+      await waitFor(() => {
+        expect(document.title).toBe('errors.not_found.title · Bad CRM');
+      });
+      expect(screen.getByTestId('route-announcer')).toHaveTextContent(
+        exactly('errors.not_found.title'),
+      );
+    },
+  );
+
+  it('names the project in the title and the announcement when the card opens', async () => {
+    await startAt();
+
+    await screen.findByRole('heading', { level: 2, name: 'Bad CRM' });
+
+    await waitFor(() => {
+      expect(document.title).toBe('projects.detail.title · Bad CRM');
+    });
+    expect(screen.getByTestId('route-announcer')).toHaveTextContent(
+      exactly('projects.detail.title'),
+    );
+  });
+
   it('does not ask for a project at all without project:read — the same not-found screen', async () => {
     await startAt({ granted: [] });
 
-    expect(await screen.findByText('errors.not_found.title')).toBeInTheDocument();
+    expect(
+      await screen.findByRole('heading', { level: 1, name: 'errors.not_found.title' }),
+    ).toBeInTheDocument();
     expect(projectCalls()).toEqual([]);
   });
 
@@ -432,6 +474,89 @@ describe('/projects/$projectId', () => {
     );
   });
 
+  /**
+   * A retry of a list that never loaded — the roster had no data — goes back to the skeleton: the
+   * query is `pending` again, not `error`, so the alert and the pressed button leave the page at the
+   * press. Focus goes to the section heading rather than to `<body>`, and a second failure is a
+   * *new* alert, inserted — which is what a screen reader announces — not the old one left as it was.
+   */
+  it('announces a roster reload that fails again with a fresh alert, focus kept in the section', async () => {
+    const user = userEvent.setup();
+    // While `held`, the roster request waits for the case to answer it; otherwise it fails at once.
+    let held = false;
+    let answer: ((response: Response) => void) | undefined;
+
+    await startAt({
+      members: () =>
+        held
+          ? new Promise<Response>((resolve) => {
+              answer = resolve;
+            })
+          : problem(500, 'internal_error'),
+    });
+
+    await screen.findByText('projects.team.failed', {}, { timeout: 5_000 });
+
+    const heading = screen.getByRole('heading', { level: 2, name: 'projects.overview.team' });
+    const section = heading.closest('section');
+
+    assert(section !== null, 'the roster is not in a section');
+
+    const firstAlert = within(section).getByRole('alert');
+
+    held = true;
+    await user.click(within(section).getByRole('button', { name: 'common.retry' }));
+
+    expect(await within(section).findByTestId('text-skeleton')).toBeInTheDocument();
+    expect(heading).toHaveFocus();
+
+    // The query's own retry after this answer must fail at once, not wait on a second hold.
+    held = false;
+    assert(answer !== undefined, 'the reload never reached the server');
+    answer(problem(500, 'internal_error'));
+
+    const secondAlert = await within(section).findByRole('alert', {}, { timeout: 5_000 });
+
+    expect(secondAlert).toHaveTextContent('projects.team.failed');
+    expect(secondAlert).not.toBe(firstAlert);
+    expect(heading).toHaveFocus();
+  });
+
+  /**
+   * A route in error stays on its error state while `router.invalidate()` runs, so here the button
+   * is what carries the reload: busy on itself, and still holding focus until the answer.
+   */
+  it('keeps focus on the route retry, busy, until the reload answers', async () => {
+    const user = userEvent.setup();
+    let held = false;
+    let answer: ((response: Response) => void) | undefined;
+
+    await startAt({
+      detail: () =>
+        held
+          ? new Promise<Response>((resolve) => {
+              answer = resolve;
+            })
+          : problem(500, 'internal_error'),
+    });
+
+    const retry = await screen.findByRole('button', { name: 'common.retry' }, { timeout: 5_000 });
+
+    held = true;
+    await user.click(retry);
+
+    await waitFor(() => {
+      expect(retry).toHaveAttribute('aria-disabled', 'true');
+    });
+    expect(retry).toHaveFocus();
+
+    held = false;
+    assert(answer !== undefined, 'the reload never reached the server');
+    answer(json(card()));
+
+    expect(await screen.findByRole('heading', { level: 2, name: 'Bad CRM' })).toBeInTheDocument();
+  });
+
   it('has no axe violations on the rendered card', async () => {
     const { container } = await startAt();
 
@@ -461,10 +586,10 @@ describe.each(['en', 'ru'] as const)('/projects/$projectId in %s', (language) =>
   let i18n: I18n;
 
   /** The catalogue's own sentence for `key` — never the key itself, never the fallback language. */
-  const phrase = (key: string): string => {
-    const value: unknown = i18n.getResource(language, 'projects', key);
+  const phrase = (key: string, namespace = 'projects'): string => {
+    const value: unknown = i18n.getResource(language, namespace, key);
 
-    assert(typeof value === 'string' && value.trim() !== '', `projects.${key} is empty`);
+    assert(typeof value === 'string' && value.trim() !== '', `${namespace}.${key} is empty`);
     // «Translated» and not «present»: an English sentence pasted into the Russian catalogue passes
     // every parity gate and still leaves a Russian reader with English.
     if (language === 'ru') expect(value).toMatch(/\p{Script=Cyrillic}/u);
@@ -525,6 +650,32 @@ describe.each(['en', 'ru'] as const)('/projects/$projectId in %s', (language) =>
     ]);
     // One sign per value: a `%` left in the catalogue doubles it.
     expect(screen.queryByText(/%\s*%/)).toBeNull();
+  });
+
+  it('names the not-found screen in the title and the announcement, in words', async () => {
+    await startAt({ i18n, language, detail: () => problem(404, 'project_not_found') });
+
+    const notFound = phrase('not_found.title', 'errors');
+
+    await screen.findByRole('heading', { level: 1, name: notFound });
+
+    await waitFor(() => {
+      expect(document.title).toBe(`${notFound} · Bad CRM`);
+    });
+    expect(screen.getByTestId('route-announcer')).toHaveTextContent(exactly(notFound));
+  });
+
+  it('names the project in the title and the announcement, in words', async () => {
+    await startAt({ i18n, language });
+
+    await screen.findByRole('tablist');
+
+    await waitFor(() => {
+      expect(document.title).toBe(`${phrase('detail.title')} · Bad CRM`);
+    });
+    expect(screen.getByTestId('route-announcer')).toHaveTextContent(
+      exactly(phrase('detail.title')),
+    );
   });
 
   it('says in words that the project is archived', async () => {

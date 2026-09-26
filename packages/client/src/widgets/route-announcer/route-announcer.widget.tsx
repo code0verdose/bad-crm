@@ -69,7 +69,12 @@ export function RouteAnnouncer() {
   }, [titleKey, phase]);
 
   return (
-    <div aria-live="polite" className={classes['announcer']} role="status">
+    <div
+      aria-live="polite"
+      className={classes['announcer']}
+      data-testid="route-announcer"
+      role="status"
+    >
       {titleKey === undefined ? null : t(titleKey)}
     </div>
   );

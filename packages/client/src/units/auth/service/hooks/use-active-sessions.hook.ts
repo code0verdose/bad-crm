@@ -18,7 +18,7 @@ export interface ActiveSessions {
    * that matters: a list that has not arrived yet has length zero and no current row either.
    */
   readonly hasOthers: boolean;
-  readonly retry: () => void;
+  readonly retry: () => Promise<unknown>;
   readonly isRevoking: boolean;
   /** The sentence for a refused revocation, chosen from the `code`. Absent while nothing was refused. */
   readonly failure: ErrorMessage | undefined;
@@ -78,9 +78,7 @@ export const useActiveSessions = (): ActiveSessions => {
     status: list.status,
     items,
     hasOthers: items.some((session) => !session.current),
-    retry: () => {
-      void list.refetch();
-    },
+    retry: () => list.refetch(),
     isRevoking: one.isPending || others.isPending,
     failure: failure === null ? undefined : errorMessage(failure),
     revoke,

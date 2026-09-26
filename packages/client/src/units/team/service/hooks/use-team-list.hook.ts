@@ -16,7 +16,7 @@ export interface TeamDirectory {
   readonly page: NarrowedTeams<TeamListEntry>;
   readonly perPage: number;
   readonly status: 'pending' | 'error' | 'success';
-  readonly refetch: () => void;
+  readonly refetch: () => Promise<unknown>;
 }
 
 /**
@@ -41,9 +41,7 @@ export const useTeamList = (search: TeamListSearch, navigate: SearchNavigation):
     page,
     perPage: TEAMS_PER_PAGE,
     status: statusOf(query),
-    refetch: () => {
-      void query.refetch();
-    },
+    refetch: () => query.refetch(),
   };
 };
 

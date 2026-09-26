@@ -1,15 +1,17 @@
-import { Alert, Button, Stack } from '@mantine/core';
+import { Alert, Stack } from '@mantine/core';
 import { useTranslation } from 'react-i18next';
 
-import { focusSectionHeading } from '@shared/ui';
-
 import classes from './error-state.module.css';
+import { RetryButton } from './retry-button.component.js';
 
 export interface ErrorStateProps {
   /** i18n key of the sentence shown to the user. Never a message from the server. */
   readonly messageKey: string;
-  /** Absent when there is nothing sensible to retry — then the state explains and stops. */
-  readonly onRetry?: () => void;
+  /**
+   * Absent when there is nothing sensible to retry — then the state explains and stops. Return the
+   * reload's promise (`refetch()`, `router.invalidate()`) and «Retry» stays busy until it settles.
+   */
+  readonly onRetry?: () => Promise<unknown>;
   readonly retryLabelKey?: string;
 }
 
@@ -32,15 +34,12 @@ export interface ErrorStateProps {
  * locale can tell them apart, and it was pointed at two happy-path routes where no error state
  * appears — `test/i18n/pseudo-locale.test.tsx` now covers this component directly.
  *
- * **Where focus goes after «Retry».** A successful retry unmounts this whole alert, the pressed
- * button with it, and focus would fall to `<body>`. Inside a `Section` the press moves focus to the
- * section's heading first — the one element that survives both outcomes and says where the reader
- * is. It happens in the handler, at the reader's action (`rules/frontend-fsd.mdc` rule 11), rather
- * than in an effect waiting for success: a query in `error` keeps that status while it refetches,
- * so there is no «loading» render to wait through, and the heading is already on screen. If the
- * retry fails again the alert stays, and the button is the next Tab stop. Outside a section — the
- * route's error boundary — nothing moves here; the route announcer returns focus to the page
- * heading once the route settles.
+ * **Where focus goes after «Retry»** — `useRetry` (`use-retry.hook.ts`) owns it. Focus stays on the
+ * button, busy, until the reload answers: a failure again leaves this alert unchanged, and an
+ * unchanged live region is silent, so the button is the only thing that can tell the reader. A
+ * success unmounts the alert with the button, and focus goes to the heading of the enclosing
+ * `Section` rather than falling to `<body>`. Outside a section — the route's error boundary —
+ * nothing moves here; the route announcer returns focus to the page heading once the route settles.
  */
 export function ErrorState({
   messageKey,
@@ -59,19 +58,7 @@ export function ErrorState({
       data-testid="error-state"
     >
       <Stack align="flex-start" gap="sm">
-        {onRetry !== undefined && (
-          <Button
-            color="danger"
-            onClick={(event) => {
-              focusSectionHeading(event.currentTarget);
-              onRetry();
-            }}
-            size="xs"
-            variant="outline"
-          >
-            {t(retryLabelKey)}
-          </Button>
-        )}
+        {onRetry !== undefined && <RetryButton labelKey={retryLabelKey} onRetry={onRetry} />}
       </Stack>
     </Alert>
   );

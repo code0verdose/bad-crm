@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next';
 import { PAGE_TITLE_ID } from '@shared/ui';
 
 import classes from './forbidden-state.module.css';
+import { FORBIDDEN_TITLE_KEY } from './forbidden-title-key.constant.js';
 
 export interface ForbiddenStateProps {
   /**
@@ -46,7 +47,7 @@ export function ForbiddenState({ permission, action }: ForbiddenStateProps) {
   return (
     <Stack className={classes['root']} gap="sm" data-testid="forbidden-state">
       <Title id={PAGE_TITLE_ID} order={1} size="h3" tabIndex={-1}>
-        {t('errors.forbidden.title')}
+        {t(FORBIDDEN_TITLE_KEY)}
       </Title>
       <Text>{t('errors.forbidden.description')}</Text>
       {/* Label and value, not a sentence with a hole in it: the key is an identifier from the

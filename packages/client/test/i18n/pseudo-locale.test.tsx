@@ -252,7 +252,7 @@ describe('the shared states in a pseudo locale', () => {
     const container = await mountState(
       <SharedUi.DataState
         errorMessageKey="errors.route.failed"
-        onRetry={() => undefined}
+        onRetry={() => Promise.resolve()}
         skeleton={<p>loading</p>}
         status="error"
       >
@@ -268,7 +268,7 @@ describe('the shared states in a pseudo locale', () => {
     const container = await mountState(
       <SharedUi.DataState
         errorMessageKey="errors.route.failed"
-        onRetry={() => undefined}
+        onRetry={() => Promise.resolve()}
         skeleton={<p>loading</p>}
         status="error"
       >

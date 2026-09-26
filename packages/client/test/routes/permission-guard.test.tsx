@@ -1,5 +1,5 @@
 import { isNotFound } from '@tanstack/react-router';
-import { screen } from '@testing-library/react';
+import { screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { IamLib, IamService } from '@units/iam';
@@ -180,6 +180,22 @@ describe('/admin/roles for somebody who may not read roles', () => {
     expect(screen.queryByText('errors.not_found.title')).not.toBeInTheDocument();
   });
 
+  /**
+   * The refusal replaces the page, and its heading is the page's `h1` — so the title and the live
+   * region say the refusal as well. The section's own crumb there would announce a matrix of roles
+   * that the reader cannot see, while focus sits on «you may not open this».
+   */
+  it('names the refusal, not the section, in the title and the announcement', async () => {
+    await startAt('/admin/roles', ['task:read']);
+
+    await screen.findByRole('heading', { level: 1, name: 'errors.forbidden.title' });
+
+    await waitFor(() => {
+      expect(document.title).toBe('errors.forbidden.title · Bad CRM');
+    });
+    expect(screen.getByTestId('route-announcer').textContent).toBe('errors.forbidden.title');
+  });
+
   it('leaves a way out, and asks the server for nothing the screen may not have', async () => {
     await startAt('/admin/roles', ['task:read']);
 
@@ -205,5 +221,9 @@ describe('/admin/roles for somebody who may not read roles', () => {
 
     expect(await screen.findByRole('alert')).toHaveTextContent('errors.route.failed');
     expect(screen.queryByTestId('forbidden-state')).not.toBeInTheDocument();
+    // A failure is still this section, only unloaded — «Retry» brings it back under the same name,
+    // so the title keeps the section's crumb rather than borrowing a refusal it is not.
+    expect(document.title).toBe('roles.title · Bad CRM');
+    expect(screen.getByTestId('route-announcer').textContent).toBe('roles.title');
   });
 });
