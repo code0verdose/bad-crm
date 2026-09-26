@@ -1,16 +1,14 @@
 import { type AclScopeResolver } from '@/application/access/use-cases/resolve-acl.query.js';
-import {
-  type ProjectDetail,
-  type ProjectRepositoryPort,
-} from '@/application/project/ports/project-repository.port.js';
+import { type ProjectRepositoryPort } from '@/application/project/ports/project-repository.port.js';
+import { type ProjectCard, projectReadFacts } from '@/application/project/project-card.util.js';
 import { type UnitOfWorkPort } from '@/application/platform/ports/unit-of-work.port.js';
 import { type Actor } from '@/domain/access/actor.types.js';
 import { assertAllowed } from '@/domain/access/decision.util.js';
 import {
   assertProjectAddressable,
   canReadProject,
-  type ProjectAccessFacts,
 } from '@/domain/project/access/project-access.policy.js';
+import { decideProjectPermissions } from '@/domain/project/access/project-permissions.policy.js';
 
 export interface GetProjectDetailInput {
   readonly actor: Actor;
@@ -31,6 +29,11 @@ export interface GetProjectDetailInput {
  * (`docs/security/permission-model.md` §5; the trace is held by
  * `get-project-detail.query.test.ts` and the statements by
  * `test/integration/db/project-read-access.test.ts`).
+ *
+ * **The `permissions` block costs no statement.** It is four more decisions over the facts the read
+ * decision already holds (`projectReadFacts` is memoized), each by the policy its command asserts
+ * (`decideProjectPermissions`; STORY-014-05, acceptance 5). It is decided after the entity is read
+ * only because a caller refused with a 404 has no block to be answered.
  *
  * **Both facts are read whether or not the first one found a row.** A `scope()` that answered
  * `null` could spare the resolver its reads, and deliberately does not: the decision would then be
@@ -55,14 +58,13 @@ export class GetProjectDetailQuery {
     private readonly acl: AclScopeResolver,
   ) {}
 
-  execute(input: GetProjectDetailInput): Promise<ProjectDetail> {
+  execute(input: GetProjectDetailInput): Promise<ProjectCard> {
     return this.unitOfWork.withTenant(
       { organizationId: input.actor.organizationId, userId: input.actor.userId },
       async () => {
-        assertAllowed(
-          await canReadProject(input.actor, () => this.facts(input.actor, input.projectId)),
-          'project',
-        );
+        const facts = projectReadFacts(this.projects, this.acl, input.actor, input.projectId);
+
+        assertAllowed(await canReadProject(input.actor, facts), 'project');
 
         const detail = await this.projects.detail(input.projectId);
 
@@ -70,15 +72,8 @@ export class GetProjectDetailQuery {
         // the same 404 rather than a `null` the compiler would let through.
         assertProjectAddressable(detail);
 
-        return detail;
+        return { ...detail, permissions: await decideProjectPermissions(input.actor, facts) };
       },
     );
-  }
-
-  private async facts(actor: Actor, projectId: string): Promise<ProjectAccessFacts> {
-    return {
-      scope: await this.projects.scope(projectId),
-      acl: await this.acl.resolve(actor, { type: 'PROJECT', id: projectId }),
-    };
   }
 }

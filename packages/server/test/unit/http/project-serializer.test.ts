@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { type ProjectDetail } from '@/application/project/ports/project-repository.port.js';
+import { type ProjectCard } from '@/application/project/project-card.util.js';
 import { serializeProjectDetail } from '@/presentation/http/serializers/project.serializer.js';
 
 /**
@@ -9,10 +9,12 @@ import { serializeProjectDetail } from '@/presentation/http/serializers/project.
  * `ProjectDetail` is a `ProjectScope`: it carries `isDeleted` so that the **policy** can decide on
  * it, and a serializer that spread its input would put that flag on the wire the day somebody added
  * a field to the read model. The `toEqual` below refuses a key it does not name, so the leak is a
- * red test rather than a contract drift found by a client.
+ * red test rather than a contract drift found by a client. The `permissions` block is whitelisted
+ * the same way, flag by flag: a decision added to the domain type reaches the wire only once the
+ * contract names it.
  */
 
-const detail: ProjectDetail = {
+const detail: ProjectCard = {
   projectId: '018f4a3b-2c1d-7a41-9f00-2b7c1d0e5b01',
   key: 'BAD',
   name: 'Bad CRM',
@@ -27,6 +29,7 @@ const detail: ProjectDetail = {
   taskCounter: 42,
   createdAt: new Date('2026-08-30T09:15:00.000Z'),
   isDeleted: false,
+  permissions: { canEdit: true, canManageMembers: false, canArchive: true, canDelete: false },
 };
 
 describe('serializeProjectDetail', () => {
@@ -45,7 +48,20 @@ describe('serializeProjectDetail', () => {
       dueAt: '2026-12-31T00:00:00.000Z',
       taskCounter: 42,
       createdAt: '2026-08-30T09:15:00.000Z',
+      permissions: { canEdit: true, canManageMembers: false, canArchive: true, canDelete: false },
     });
+  });
+
+  it('carries each flag as decided, not a copy of its neighbour', () => {
+    // Together with the fixture above, every pair of flags differs in one of the two: a serializer
+    // that wired any flag from a neighbour — `canArchive` from `canEdit`, say — agrees with at most
+    // one of them. (A fixture and its mirror image would not do: a mirror keeps equal pairs equal.)
+    const other = {
+      ...detail,
+      permissions: { canEdit: true, canManageMembers: true, canArchive: false, canDelete: false },
+    };
+
+    expect(serializeProjectDetail(other).permissions).toEqual(other.permissions);
   });
 
   it('keeps absent dates as null rather than as a string of nothing', () => {
@@ -57,10 +73,21 @@ describe('serializeProjectDetail', () => {
 
   it('CONTROL: a flag added to the read model does not reach the wire', () => {
     // The whitelist as a property rather than as a list of names: an extra key on the input is
-    // invisible on the output, whatever it is called.
-    const widened = { ...detail, organizationId: 'leak', isDeleted: true } as ProjectDetail;
+    // invisible on the output, whatever it is called — on the project and inside its block.
+    const widened = {
+      ...detail,
+      organizationId: 'leak',
+      isDeleted: true,
+      permissions: { ...detail.permissions, canManageVisibility: true },
+    } as ProjectCard;
 
     expect(Object.keys(serializeProjectDetail(widened))).not.toContain('organizationId');
     expect(Object.keys(serializeProjectDetail(widened))).not.toContain('isDeleted');
+    expect(Object.keys(serializeProjectDetail(widened).permissions)).toEqual([
+      'canEdit',
+      'canManageMembers',
+      'canArchive',
+      'canDelete',
+    ]);
   });
 });

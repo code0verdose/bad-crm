@@ -758,7 +758,7 @@ export const createAuthApp = (options: AuthAppOptions = {}): AuthApp => {
   const project: ProjectDependencies = {
     listProjects: new ListProjectsQuery(unitOfWork, projects, projects, clock, logger),
     getProjectDetail: new GetProjectDetailQuery(unitOfWork, projects, projectAcl),
-    createProject: new CreateProjectUseCase(unitOfWork, projects, projects, audit),
+    createProject: new CreateProjectUseCase(unitOfWork, projects, projects, projectAcl, audit),
     updateProject: new UpdateProjectUseCase(unitOfWork, projects, projects, projectAcl, audit),
     changeProjectVisibility: new ChangeProjectVisibilityUseCase(
       unitOfWork,

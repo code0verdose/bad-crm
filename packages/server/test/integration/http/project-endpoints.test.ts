@@ -125,6 +125,9 @@ describe('GET /api/v1/projects/{projectId}', () => {
       dueAt: null,
       taskCounter: 14,
       createdAt: '2026-09-06T12:00:00.000Z',
+      // A bystander of a `PUBLIC_ORG` project holding only `project:read`: `VIEWER` on the chain
+      // and no write key — every button of the card is absent.
+      permissions: { canEdit: false, canManageMembers: false, canArchive: false, canDelete: false },
     });
     // The capability was decided before a statement was sent, then the scope and the chain, and the
     // entity last — the order STORY-011-07 acceptance 4 asks for, seen from the wire.
@@ -141,6 +144,44 @@ describe('GET /api/v1/projects/{projectId}', () => {
     const response = await readProject(test, token, PROJECT_ID).expect(200);
 
     expect(response.body).toMatchObject({ id: PROJECT_ID, visibility: 'PRIVATE', memberCount: 1 });
+  });
+
+  /**
+   * The `permissions` block on the wire (STORY-014-05, acceptance 5): the same keys, two seats, two
+   * different blocks. A `MEMBER` is `EDITOR` — the card may offer «edit» and nothing that needs
+   * `MANAGER`; a `LEAD` is `MANAGER` and is offered all four. Which command each flag stands for is
+   * `project-card-permissions.test.ts`; here it is the shape the client reads, over the whole seam.
+   */
+  it.each([
+    [
+      'MEMBER',
+      { canEdit: true, canManageMembers: false, canArchive: false, canDelete: false },
+    ] as const,
+    ['LEAD', { canEdit: true, canManageMembers: true, canArchive: true, canDelete: true }] as const,
+  ])('answers the block a %s is owed, decided by the server', async (seat, expected) => {
+    const projects = seeded();
+
+    projects.addMember(PROJECT_ID, USER_ID, seat);
+
+    const { test, token } = await signedIn({
+      capabilities: {
+        ...READER,
+        granted: [
+          'project:read',
+          'project:update',
+          'project:manage_members',
+          'project:archive',
+          'project:delete',
+        ],
+      },
+      projects,
+    });
+
+    const response = await readProject(test, token, PROJECT_ID).expect(200);
+
+    expect((response.body as { permissions: unknown }).permissions).toEqual(expected);
+    // Four decisions over the facts the read already held: the trace is the control's, not longer.
+    expect(projects.trace).toEqual(['scope', 'aclFacts', 'entriesAlong', 'detail']);
   });
 
   /**

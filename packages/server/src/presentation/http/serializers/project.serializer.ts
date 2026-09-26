@@ -1,5 +1,5 @@
 import { type ProjectMemberEntry } from '@/application/project/ports/project-member-repository.port.js';
-import { type ProjectDetail } from '@/application/project/ports/project-repository.port.js';
+import { type ProjectCard } from '@/application/project/project-card.util.js';
 import {
   type ProjectRole,
   type ProjectStatus,
@@ -14,11 +14,17 @@ import {
  * that spread its input would put that flag on the wire the day somebody added a field. The unit
  * test holds the list with `toEqual`, so a key this file does not name never leaves the process.
  *
- * No `permissions` block yet. STORY-014-05 asks for `{ canEdit, canManageMembers, canArchive }`
- * on the DTO (STORY-011-08, acceptance 12); it did not arrive with the write routes either — the
- * levels those three read are decided by policies that now exist, but a block on the read DTO is
- * the card's half (STORY-014-05), and this delta is the routes' (STORY-014-01/02).
+ * `permissions` is whitelisted the same way, flag by flag: the block is what the server decided
+ * (`decideProjectPermissions`, STORY-014-05 acceptance 5, STORY-011-08 acceptance 12), and the
+ * serializer only copies it — it reads no role and no level of its own.
  */
+export interface ProjectPermissionsResponse {
+  readonly canEdit: boolean;
+  readonly canManageMembers: boolean;
+  readonly canArchive: boolean;
+  readonly canDelete: boolean;
+}
+
 export interface ProjectDetailResponse {
   readonly id: string;
   readonly key: string;
@@ -33,9 +39,10 @@ export interface ProjectDetailResponse {
   readonly dueAt: string | null;
   readonly taskCounter: number;
   readonly createdAt: string;
+  readonly permissions: ProjectPermissionsResponse;
 }
 
-export const serializeProjectDetail = (project: ProjectDetail): ProjectDetailResponse => ({
+export const serializeProjectDetail = (project: ProjectCard): ProjectDetailResponse => ({
   id: project.projectId,
   key: project.key,
   name: project.name,
@@ -49,6 +56,12 @@ export const serializeProjectDetail = (project: ProjectDetail): ProjectDetailRes
   dueAt: project.dueAt === null ? null : project.dueAt.toISOString(),
   taskCounter: project.taskCounter,
   createdAt: project.createdAt.toISOString(),
+  permissions: {
+    canEdit: project.permissions.canEdit,
+    canManageMembers: project.permissions.canManageMembers,
+    canArchive: project.permissions.canArchive,
+    canDelete: project.permissions.canDelete,
+  },
 });
 
 /**

@@ -38,6 +38,7 @@ const build = (harness = projectHarness()) => ({
     harness.unitOfWork,
     harness.store,
     harness.store,
+    harness.acl,
     harness.audit,
   ),
 });
@@ -95,6 +96,54 @@ describe('CreateProjectUseCase', () => {
 
     expect(created.memberCount).toBe(1);
     expect(harness.store.versionBumps).toEqual([IVAN]);
+  });
+
+  /**
+   * The response is the same `ProjectDetail` the card reads, so it carries the same block, decided
+   * the same way: the creator's fresh `LEAD` seat is `MANAGER` on the chain, and each flag is then
+   * what the caller's capability allows — `project:manage_members` needs `MANAGER`, so a `true`
+   * there is the seat written in this transaction being read back, not a default.
+   */
+  it('answers the permissions block over the seat it has just written', async () => {
+    const { useCase } = build();
+
+    const created = await useCase.execute({
+      actor: actorWith(['project:create', 'project:update', 'project:manage_members']),
+      ipAddress: undefined,
+      ...draft,
+    });
+
+    expect(created.permissions).toEqual({
+      canEdit: true,
+      canManageMembers: true,
+      canArchive: false,
+      canDelete: false,
+    });
+  });
+
+  /**
+   * The row is already written when the block is decided, so a chain that cannot be read must not
+   * undo the creation — and must not guess either: every flag is `false` (fail-closed), and the
+   * client learns the real answer from the next read of the card.
+   */
+  it('answers every flag false, and still creates, when the chain cannot be read', async () => {
+    const { harness, useCase } = build();
+
+    harness.store.aclFailure = new Error('chain read failed');
+
+    const created = await useCase.execute({
+      actor: actorWith(['project:create', 'project:update', 'project:manage_members']),
+      ipAddress: undefined,
+      ...draft,
+    });
+
+    expect(created.permissions).toEqual({
+      canEdit: false,
+      canManageMembers: false,
+      canArchive: false,
+      canDelete: false,
+    });
+    expect(harness.audit.events.map((event) => event.action)).toEqual(['project.created']);
   });
 
   it('refuses a caller without project:create before anything is read', async () => {
