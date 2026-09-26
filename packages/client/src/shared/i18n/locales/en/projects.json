@@ -1,0 +1,73 @@
+{
+  "detail": {
+    "title": "Project"
+  },
+  "status": {
+    "ACTIVE": "Active",
+    "ON_HOLD": "On hold",
+    "ARCHIVED": "Archived",
+    "CLOSED": "Closed"
+  },
+  "visibility": {
+    "PUBLIC_ORG": "Visible to the organization",
+    "PRIVATE": "Private"
+  },
+  "role": {
+    "LEAD": "Lead",
+    "MEMBER": "Member",
+    "REVIEWER": "Reviewer",
+    "OBSERVER": "Observer"
+  },
+  "header": {
+    "lead": "Lead",
+    "members_one": "{{count}} person on the project",
+    "members_other": "{{count}} people on the project",
+    "startedAt": "Started {{date}}",
+    "dueAt": "Due {{date}}"
+  },
+  "archived": {
+    "title": "This project is archived",
+    "description": "Nothing in it can be changed while it stays in the archive."
+  },
+  "section": {
+    "label": "Project sections",
+    "soon": "Soon",
+    "overview": "Overview",
+    "members": "Members",
+    "files": "Files",
+    "boards": "Boards",
+    "docs": "Documents",
+    "time": "Time",
+    "settings": "Settings"
+  },
+  "overview": {
+    "about": "About",
+    "noDescription": "Nobody has described this project yet.",
+    "dates": "Dates",
+    "team": "Team"
+  },
+  "dates": {
+    "noSpan": "Set a start and a deadline to see how far along the calendar the project is.",
+    "progressLabel": "Time elapsed between the start and the deadline",
+    "elapsed": "{{percent}}% of the time between the start and the deadline has passed",
+    "overdue": "The deadline has passed"
+  },
+  "team": {
+    "failed": "The team could not be loaded.",
+    "allocation": "{{percent}}%",
+    "column": {
+      "person": "Person",
+      "role": "Role",
+      "allocation": "Time on the project"
+    }
+  },
+  "upcoming": {
+    "title": "Coming next",
+    "description": "These parts of the project arrive with later releases.",
+    "later": "Arrives in a later release.",
+    "activity": "Recent changes",
+    "tasks": "Tasks",
+    "time": "Time",
+    "ci": "CI runs"
+  }
+}

@@ -138,6 +138,20 @@ export interface TeamQueryKeys {
 }
 
 /**
+ * Projects — one card and its roster, under one prefix.
+ *
+ * `members` is a second address because it is a second read (`GET /projects/{projectId}/members`),
+ * and it sits under the same `all` so that a write to the project — renaming it, putting somebody
+ * on it — reaches the card and the roster with one invalidation. No `list` yet: the list screen
+ * (STORY-014-04) adds it together with the operation behind it.
+ */
+export interface ProjectQueryKeys {
+  readonly all: readonly [string];
+  readonly detail: (id: string) => readonly [string, 'detail', string];
+  readonly members: (id: string) => readonly [string, 'members', string];
+}
+
+/**
  * The recovery-code counter — one address, and there will never be a second.
  *
  * `GET /auth/2fa/recovery-codes` answers `{ total, remaining }` about the caller and takes no
@@ -225,6 +239,11 @@ export const QueryKeys = {
     list: () => ['teams', 'list'],
     detail: (id: string) => ['teams', 'detail', id],
   } satisfies TeamQueryKeys,
+  Projects: {
+    all: ['projects'],
+    detail: (id: string) => ['projects', 'detail', id],
+    members: (id: string) => ['projects', 'members', id],
+  } satisfies ProjectQueryKeys,
   SecurityPolicy: {
     all: ['security-policy'],
     policy: () => ['security-policy', 'policy'],

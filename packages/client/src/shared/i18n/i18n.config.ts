@@ -16,6 +16,7 @@ import enOrganization from './locales/en/organization.json' with { type: 'json' 
 import enPagination from './locales/en/pagination.json' with { type: 'json' };
 import enPermission from './locales/en/permission.json' with { type: 'json' };
 import enPermissions from './locales/en/permissions.json' with { type: 'json' };
+import enProjects from './locales/en/projects.json' with { type: 'json' };
 import enTeams from './locales/en/teams.json' with { type: 'json' };
 import enValidation from './locales/en/validation.json' with { type: 'json' };
 import ruAuth from './locales/ru/auth.json' with { type: 'json' };
@@ -33,6 +34,7 @@ import ruOrganization from './locales/ru/organization.json' with { type: 'json' 
 import ruPagination from './locales/ru/pagination.json' with { type: 'json' };
 import ruPermission from './locales/ru/permission.json' with { type: 'json' };
 import ruPermissions from './locales/ru/permissions.json' with { type: 'json' };
+import ruProjects from './locales/ru/projects.json' with { type: 'json' };
 import ruTeams from './locales/ru/teams.json' with { type: 'json' };
 import ruValidation from './locales/ru/validation.json' with { type: 'json' };
 
@@ -60,6 +62,7 @@ const RESOURCES = {
     // for two different things, and they cannot collide: i18next splits a key on the first dot.
     permission: enPermission,
     permissions: enPermissions,
+    projects: enProjects,
     security: enSecurity,
     teams: enTeams,
     validation: enValidation,
@@ -79,6 +82,7 @@ const RESOURCES = {
     pagination: ruPagination,
     permission: ruPermission,
     permissions: ruPermissions,
+    projects: ruProjects,
     security: ruSecurity,
     teams: ruTeams,
     validation: ruValidation,
