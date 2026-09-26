@@ -5,10 +5,20 @@ import { afterAll, beforeAll, beforeEach, describe, expect, inject, it } from 'v
 
 import { type SharedPermissions } from '@bad-crm/shared';
 
+import {
+  type AclEntryDraft,
+  type AclEntryRow,
+} from '@/application/access/ports/acl-repository.port.js';
+import { GrantAclUseCase } from '@/application/access/use-cases/grant-acl.use-case.js';
+import { ResolveAclQuery } from '@/application/access/use-cases/resolve-acl.query.js';
 import { DeleteCustomRoleUseCase } from '@/application/iam/use-cases/delete-custom-role.use-case.js';
 import { DeleteTeamUseCase } from '@/application/iam/use-cases/delete-team.use-case.js';
+import { type AclSubjectRef } from '@/domain/access/acl-chain.types.js';
 import { type Actor } from '@/domain/access/actor.types.js';
+import { AppError } from '@/domain/shared/errors/app.errors.js';
+import { PrismaAclReader } from '@/infrastructure/persistence/prisma/acl-reader.adapter.js';
 import { PrismaCustomRoleRepository } from '@/infrastructure/persistence/prisma/custom-role.repository.js';
+import { PrismaProjectAccessReader } from '@/infrastructure/persistence/prisma/project-access-reader.adapter.js';
 import { PrismaResourceAclRepository } from '@/infrastructure/persistence/prisma/resource-acl.repository.js';
 import { PrismaTeamRepository } from '@/infrastructure/persistence/prisma/team.repository.js';
 import { PrismaUnitOfWork } from '@/infrastructure/persistence/prisma/unit-of-work.adapter.js';
@@ -386,4 +396,279 @@ describe('disbanding a team takes its grants (STORY-012-07, acceptance 5)', () =
       { cause: 'team.deleted' },
     ]);
   });
+});
+
+/**
+ * The gate's M-1: a grant racing the deletion of its subject. `resource_acl.subject_id` has no
+ * foreign key, so nothing in the schema serializes the two — the use-cases do, with row locks:
+ *
+ * - `TEAM`: the grant reads the team row `FOR SHARE` and re-checks `deleted_at` under the lock;
+ *   `disband()`'s `UPDATE` of that row waits for the grant, or the grant waits for the disbanding
+ *   and then sees `deleted_at` set. `FOR KEY SHARE` would not do — disbanding rewrites a non-key
+ *   column, which that mode does not conflict with.
+ * - `ROLE`: the grant reads the role row `FOR KEY SHARE`; the deletion locks it `FOR UPDATE` before
+ *   it removes the role's grants. The grant's lock alone is not enough: the deletion's
+ *   `removeAllOfSubject` runs before its `DELETE FROM roles`, so a grant committed between the two
+ *   would outlive the role.
+ *
+ * Each race is driven, not hoped for: the first transaction is held at its most dangerous point
+ * (the grant right after its row is written, the deletion right after its grants are removed) until
+ * the second one is observed waiting on a lock (`pg_locks … NOT granted`) — or until a short
+ * deadline, which is what an unlocked implementation reaches, and then the orphan is what the
+ * assertions see.
+ */
+describe('a grant racing the deletion of its subject leaves no orphan (gate M-1)', () => {
+  const ADDRESS = '203.0.113.9';
+  const WAIT_DEADLINE_MS = 1_500;
+
+  interface Gate {
+    readonly open: () => void;
+    readonly opened: Promise<void>;
+  }
+
+  const gate = (): Gate => {
+    let open = (): void => undefined;
+    const opened = new Promise<void>((resolve) => {
+      open = resolve;
+    });
+
+    return { open, opened };
+  };
+
+  /** The product's grants repository, held at one step until the test lets it go. */
+  class HeldAclRepository extends PrismaResourceAclRepository {
+    constructor(
+      private readonly holdAfter: 'upsert' | 'removeAllOfSubject',
+      private readonly reached: Gate,
+      private readonly release: Gate,
+    ) {
+      super();
+    }
+
+    override async upsert(draft: AclEntryDraft): Promise<string> {
+      const id = await super.upsert(draft);
+
+      if (this.holdAfter === 'upsert') await this.hold();
+
+      return id;
+    }
+
+    override async removeAllOfSubject(subject: AclSubjectRef): Promise<readonly AclEntryRow[]> {
+      const rows = await super.removeAllOfSubject(subject);
+
+      if (this.holdAfter === 'removeAllOfSubject') await this.hold();
+
+      return rows;
+    }
+
+    private async hold(): Promise<void> {
+      this.reached.open();
+      await this.release.opened;
+    }
+  }
+
+  const silentLogger = {
+    debug: () => undefined,
+    info: () => undefined,
+    warn: () => undefined,
+    error: () => undefined,
+    child: () => silentLogger,
+  };
+
+  let projectId: string;
+
+  beforeEach(async () => {
+    projectId = await asMaintenance(pools.owner, async (client) => {
+      const { rows } = await client.query<{ id: string }>(
+        `INSERT INTO projects (organization_id, key, name, lead_id, color, updated_at)
+         VALUES ($1::uuid, 'RACE', 'Race', $2::uuid, 'indigo', now())
+         RETURNING id`,
+        [ORG, seeded.ownerId],
+      );
+
+      return rows[0]?.id ?? '';
+    });
+  });
+
+  const subjectOf = (type: 'ROLE' | 'TEAM'): AclSubjectRef => ({
+    type,
+    id: type === 'ROLE' ? seeded.roleId : seeded.teamId,
+  });
+
+  const grantTo = (
+    subject: AclSubjectRef,
+    acl: PrismaResourceAclRepository = new PrismaResourceAclRepository(),
+  ): Promise<unknown> =>
+    new GrantAclUseCase(
+      new PrismaUnitOfWork(prisma),
+      new ResolveAclQuery({
+        acl: new PrismaAclReader(),
+        projects: new PrismaProjectAccessReader(),
+        clock: { now: () => new Date() },
+        logger: silentLogger,
+      }),
+      acl,
+      new FakeAuditLogger(),
+    ).execute({
+      actor: owner(),
+      resource: { type: 'PROJECT', id: projectId },
+      subject,
+      level: 'EDITOR',
+      expiresAt: null,
+      ipAddress: ADDRESS,
+    });
+
+  const deleteSubject = (
+    subject: AclSubjectRef,
+    acl: PrismaResourceAclRepository = new PrismaResourceAclRepository(),
+  ): Promise<void> =>
+    subject.type === 'ROLE'
+      ? new DeleteCustomRoleUseCase(
+          new PrismaUnitOfWork(prisma),
+          new PrismaCustomRoleRepository(),
+          acl,
+          new FakeAuditLogger(),
+        ).execute({ actor: owner(), roleId: subject.id, ipAddress: ADDRESS })
+      : new DeleteTeamUseCase(
+          new PrismaUnitOfWork(prisma),
+          new PrismaTeamRepository(),
+          acl,
+          new FakeAuditLogger(),
+        ).execute({ actor: owner(), teamId: subject.id, ipAddress: ADDRESS });
+
+  /** Grants of this organization whose subject is gone — a deleted role or a disbanded team. */
+  const orphans = (): Promise<number> =>
+    asMaintenance(pools.owner, async (client) => {
+      const { rows } = await client.query<{ count: number }>(
+        `SELECT count(*)::int AS count
+           FROM resource_acl a
+          WHERE a.organization_id = $1::uuid
+            AND ((a.subject_type = 'ROLE' AND NOT EXISTS (
+                   SELECT 1 FROM roles r
+                    WHERE r.organization_id = a.organization_id AND r.id = a.subject_id))
+              OR (a.subject_type = 'TEAM' AND NOT EXISTS (
+                   SELECT 1 FROM teams t
+                    WHERE t.organization_id = a.organization_id AND t.id = a.subject_id
+                      AND t.deleted_at IS NULL)))`,
+        [ORG],
+      );
+
+      return rows[0]?.count ?? Number.NaN;
+    });
+
+  const grantsOnRaceProject = (): Promise<number> =>
+    asMaintenance(pools.owner, async (client) => {
+      const { rows } = await client.query<{ count: number }>(
+        'SELECT count(*)::int AS count FROM resource_acl WHERE resource_id = $1::uuid',
+        [projectId],
+      );
+
+      return rows[0]?.count ?? Number.NaN;
+    });
+
+  /** Whether some backend is waiting on a lock, polled until `WAIT_DEADLINE_MS`. */
+  const somebodyWaitsOnALock = async (): Promise<boolean> => {
+    const deadline = Date.now() + WAIT_DEADLINE_MS;
+
+    while (Date.now() < deadline) {
+      const { rows } = await pools.owner.query<{ count: number }>(
+        'SELECT count(*)::int AS count FROM pg_locks WHERE NOT granted',
+      );
+
+      if ((rows[0]?.count ?? 0) > 0) return true;
+
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+
+    return false;
+  };
+
+  /**
+   * Runs `first` until it is held, starts `second`, waits for the lock queue, then lets both finish.
+   * A `first` that fails before it reaches the hold releases the test rather than hanging it.
+   */
+  const race = async (
+    first: (acl: PrismaResourceAclRepository) => Promise<unknown>,
+    holdAfter: 'upsert' | 'removeAllOfSubject',
+    second: () => Promise<unknown>,
+  ): Promise<{
+    readonly waited: boolean;
+    readonly first: PromiseSettledResult<unknown>;
+    readonly second: PromiseSettledResult<unknown>;
+  }> => {
+    const reached = gate();
+    const release = gate();
+    const firstRun = first(new HeldAclRepository(holdAfter, reached, release));
+
+    await Promise.race([reached.opened, firstRun.catch(() => undefined)]);
+
+    const secondRun = second();
+    const waited = await somebodyWaitsOnALock();
+
+    release.open();
+
+    const [firstOutcome, secondOutcome] = await Promise.allSettled([firstRun, secondRun]);
+
+    return { waited, first: firstOutcome, second: secondOutcome };
+  };
+
+  const codeOf = (outcome: PromiseSettledResult<unknown>): string | undefined =>
+    outcome.status === 'rejected' && outcome.reason instanceof AppError
+      ? outcome.reason.code
+      : undefined;
+
+  it('CONTROL: without a deletion beside it, the grant writes its row and nothing is orphaned', async () => {
+    await grantTo(subjectOf('ROLE'));
+    await grantTo(subjectOf('TEAM'));
+
+    await expect(grantsOnRaceProject()).resolves.toBe(2);
+    await expect(orphans()).resolves.toBe(0);
+  });
+
+  it('CONTROL: the orphan count sees an orphan — a grant to a role that is not there', async () => {
+    await asMaintenance(pools.owner, (client) =>
+      grant(client, {
+        resourceId: projectId,
+        subjectType: 'ROLE',
+        subjectId: randomUUID(),
+        level: 'VIEWER',
+      }),
+    );
+
+    await expect(orphans()).resolves.toBe(1);
+  });
+
+  for (const type of ['ROLE', 'TEAM'] as const) {
+    it(`${type}: the grant first — the deletion waits for it and then takes its row too`, async () => {
+      const subject = subjectOf(type);
+
+      const outcome = await race(
+        (acl) => grantTo(subject, acl),
+        'upsert',
+        () => deleteSubject(subject),
+      );
+
+      expect(outcome.first.status).toBe('fulfilled');
+      expect(outcome.second.status).toBe('fulfilled');
+      await expect(orphans()).resolves.toBe(0);
+      await expect(grantsOnRaceProject()).resolves.toBe(0);
+      expect(outcome.waited).toBe(true);
+    });
+
+    it(`${type}: the deletion first — the grant waits for it and answers 404 for the subject`, async () => {
+      const subject = subjectOf(type);
+
+      const outcome = await race(
+        (acl) => deleteSubject(subject, acl),
+        'removeAllOfSubject',
+        () => grantTo(subject),
+      );
+
+      expect(outcome.first.status).toBe('fulfilled');
+      expect(codeOf(outcome.second)).toBe(type === 'ROLE' ? 'role_not_found' : 'team_not_found');
+      await expect(orphans()).resolves.toBe(0);
+      await expect(grantsOnRaceProject()).resolves.toBe(0);
+      expect(outcome.waited).toBe(true);
+    });
+  }
 });

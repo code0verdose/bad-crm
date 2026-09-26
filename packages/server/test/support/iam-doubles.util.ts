@@ -351,8 +351,18 @@ export class FakeCustomRoleRepository implements CustomRoleRepositoryPort {
       readonly duplicateKey?: boolean;
       /** The role is readable but gone by the time the update runs — the concurrent-delete window. */
       readonly vanishesBeforeUpdate?: boolean;
+      /** The role is readable but gone by the time the deletion locks it — the same window. */
+      readonly vanishesBeforeLock?: boolean;
+      /** Shared with the grants double, so a test can read the order of the two across ports. */
+      readonly journal?: string[];
     } = {},
   ) {}
+
+  lockForRemoval(roleId: string): Promise<boolean> {
+    this.options.journal?.push(`role.lockForRemoval:${roleId}`);
+
+    return Promise.resolve(this.options.vanishesBeforeLock !== true && this.roles.has(roleId));
+  }
 
   list(): Promise<readonly RoleListEntry[]> {
     return Promise.resolve(

@@ -68,10 +68,12 @@ const recordingClient = (
       grantedAt: Date;
     }[];
     deleted?: number;
-    counts?: { user?: number; role?: number; team?: number };
+    counts?: { user?: number };
     userRoles?: { userId: string }[];
     teamMembers?: { userId: string }[];
     removedRows?: RemovedRow[];
+    /** What a `SELECT … FOR [KEY] SHARE` of the subject row finds. */
+    locked?: { id?: string; deleted_at?: Date | null }[];
   } = {},
 ): Recorder => {
   const calls: Call[] = [];
@@ -94,10 +96,15 @@ const recordingClient = (
 
       return Promise.resolve(values.length);
     },
-    $queryRaw: (strings: TemplateStringsArray, ...values: unknown[]): Promise<RemovedRow[]> => {
-      raw.push({ sql: strings.join('?'), values });
+    $queryRaw: (strings: TemplateStringsArray, ...values: unknown[]): Promise<unknown[]> => {
+      const sql = strings.join('?');
 
-      return Promise.resolve(answers.removedRows ?? []);
+      raw.push({ sql, values });
+
+      // A locking read answers the subject row; anything else here is the cascade's `DELETE`.
+      return Promise.resolve(
+        /\bFOR (KEY )?SHARE\b/.test(sql) ? (answers.locked ?? []) : (answers.removedRows ?? []),
+      );
     },
     resourceAcl: {
       findFirst: record(
@@ -109,8 +116,6 @@ const recordingClient = (
       deleteMany: record('resourceAcl.deleteMany', { count: answers.deleted ?? 0 }),
     },
     user: { count: record('user.count', answers.counts?.user ?? 0) },
-    role: { count: record('role.count', answers.counts?.role ?? 0) },
-    team: { count: record('team.count', answers.counts?.team ?? 0) },
     userRole: { findMany: record('userRole.findMany', answers.userRoles ?? []) },
     teamMember: { findMany: record('teamMember.findMany', answers.teamMembers ?? []) },
   };
@@ -364,8 +369,8 @@ describe('PrismaResourceAclRepository', () => {
     });
   });
 
-  describe('subjectExists — a live thing of this organization', () => {
-    it('asks for a user that is not soft-deleted', async () => {
+  describe('subjectExists — a live thing of this organization, under a lock', () => {
+    it('asks for a user that is not soft-deleted, with a plain count', async () => {
       const recorder = recordingClient({ counts: { user: 1 } });
 
       await expect(
@@ -375,28 +380,51 @@ describe('PrismaResourceAclRepository', () => {
         name: 'user.count',
         args: { where: { organizationId: ORG, id: PETR, deletedAt: null } },
       });
+      expect(recorder.raw).toEqual([]);
     });
 
-    it('asks for a role of this organization', async () => {
-      const recorder = recordingClient({ counts: { role: 0 } });
+    /**
+     * The gate's M-1: the role row is read `FOR KEY SHARE` — the lock `DeleteCustomRoleUseCase`'s
+     * `FOR UPDATE` conflicts with — inside the tenant. The race itself is measured on PostgreSQL
+     * (`acl-subject-cascade.test.ts`); what a recorder can hold is the statement's shape.
+     */
+    it('reads a role of this organization FOR KEY SHARE, and answers whether a row came back', async () => {
+      const found = recordingClient({ locked: [{ id: TEAM }] });
+      const gone = recordingClient({ locked: [] });
 
       await expect(
-        inTenant(recorder, (repo) => repo.subjectExists({ type: 'ROLE', id: TEAM })),
+        inTenant(found, (repo) => repo.subjectExists({ type: 'ROLE', id: TEAM })),
+      ).resolves.toBe(true);
+      await expect(
+        inTenant(gone, (repo) => repo.subjectExists({ type: 'ROLE', id: TEAM })),
       ).resolves.toBe(false);
-      expect(recorder.calls[0]).toEqual({
-        name: 'role.count',
-        args: { where: { organizationId: ORG, id: TEAM } },
-      });
+      expect(found.raw[0]?.sql).toMatch(
+        /SELECT id FROM roles\s+WHERE organization_id = \?::uuid\s+AND id = \?::uuid\s+FOR KEY SHARE\s*$/,
+      );
+      expect(found.raw[0]?.values).toEqual([ORG, TEAM]);
+      expect(found.calls).toEqual([]);
     });
 
-    it('asks for a team that is not disbanded', async () => {
-      const recorder = recordingClient({ counts: { team: 1 } });
-
-      await expect(inTenant(recorder, (repo) => repo.subjectExists(team))).resolves.toBe(true);
-      expect(recorder.calls[0]).toEqual({
-        name: 'team.count',
-        args: { where: { organizationId: ORG, id: TEAM, deletedAt: null } },
+    /**
+     * `FOR SHARE`, not `FOR KEY SHARE`: disbanding rewrites `deleted_at`, a non-key column, and only
+     * the stronger mode conflicts with that `UPDATE`. `deleted_at` is read from the locked row — the
+     * value a waiting reader gets once the disbanding committed.
+     */
+    it('reads a team FOR SHARE and counts a disbanded one as absent', async () => {
+      const live = recordingClient({ locked: [{ deleted_at: null }] });
+      const disbanded = recordingClient({
+        locked: [{ deleted_at: new Date('2026-09-26T00:00:00Z') }],
       });
+      const none = recordingClient({ locked: [] });
+
+      await expect(inTenant(live, (repo) => repo.subjectExists(team))).resolves.toBe(true);
+      await expect(inTenant(disbanded, (repo) => repo.subjectExists(team))).resolves.toBe(false);
+      await expect(inTenant(none, (repo) => repo.subjectExists(team))).resolves.toBe(false);
+      expect(live.raw[0]?.sql).toMatch(
+        /SELECT deleted_at FROM teams\s+WHERE organization_id = \?::uuid\s+AND id = \?::uuid\s+FOR SHARE\s*$/,
+      );
+      expect(live.raw[0]?.values).toEqual([ORG, TEAM]);
+      expect(live.calls).toEqual([]);
     });
   });
 

@@ -266,6 +266,18 @@ export class PrismaCustomRoleRepository
     });
   }
 
+  lockForRemoval(roleId: string): Promise<boolean> {
+    return this.run('lockForRemoval', async (tx) => {
+      const rows = await tx.$queryRaw<{ id: string }[]>`
+        SELECT id FROM roles
+         WHERE organization_id = ${this.organizationId('lockForRemoval')}::uuid
+           AND id = ${roleId}::uuid
+         FOR UPDATE`;
+
+      return rows.length > 0;
+    });
+  }
+
   holdsRole(userId: string, roleId: string): Promise<boolean> {
     return this.run('holdsRole', async (tx) => {
       // Expired assignments are excluded here too, and the reason is sharper than tidiness: this

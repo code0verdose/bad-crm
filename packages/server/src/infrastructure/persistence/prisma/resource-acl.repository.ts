@@ -212,9 +212,52 @@ export class PrismaResourceAclRepository
     });
   }
 
+  /**
+   * Answers under a row lock held to the end of the caller's transaction — the gate's M-1, measured
+   * in `test/integration/db/acl-subject-cascade.test.ts`. `resource_acl.subject_id` has no foreign
+   * key, so without the lock a grant and the deletion of its subject can both proceed from the same
+   * stale fact and leave a grant to nobody:
+   *
+   * - `TEAM` — `FOR SHARE`, and `deleted_at` read **after** the lock is granted. Disbanding is an
+   *   `UPDATE` of a non-key column, which `FOR KEY SHARE` does not conflict with; a share lock makes
+   *   `disband()` wait for this grant (and its `DELETE … RETURNING` then sees the new row), or makes
+   *   this read wait for the disbanding and return the committed `deleted_at` — the same lock
+   *   `PrismaTeamRepository.scope` takes.
+   * - `ROLE` — `FOR KEY SHARE`, the lock a foreign key check would take; it conflicts with the
+   *   `SELECT … FOR UPDATE` `DeleteCustomRoleUseCase` takes on the role before removing its grants
+   *   (`CustomRoleRepositoryPort.lockForRemoval`). Waiting on a role that is then deleted returns no
+   *   row. This lock alone is not enough — the deletion removes the grants before the role, so a
+   *   grant committed between the two would outlive the role — and that is what the other half is for.
+   * - `USER` — a plain count, as before. The race is between a grant and a deletion that removes
+   *   the subject's grants, and only the two above do that; nothing removes a person's grants today.
+   */
   subjectExists(subject: AclSubjectRef): Promise<boolean> {
     return this.run('subjectExists', async (tx) => {
-      return (await this.countSubject(tx, subject)) > 0;
+      const organizationId = this.organizationId('subjectExists');
+
+      switch (subject.type) {
+        case 'USER':
+          return this.userExists(tx, subject.id);
+        case 'ROLE': {
+          const rows = await tx.$queryRaw<{ id: string }[]>`
+            SELECT id FROM roles
+             WHERE organization_id = ${organizationId}::uuid
+               AND id = ${subject.id}::uuid
+             FOR KEY SHARE`;
+
+          return rows.length > 0;
+        }
+        case 'TEAM': {
+          const rows = await tx.$queryRaw<{ deleted_at: Date | null }[]>`
+            SELECT deleted_at FROM teams
+             WHERE organization_id = ${organizationId}::uuid
+               AND id = ${subject.id}::uuid
+             FOR SHARE`;
+          const team = rows[0];
+
+          return team !== undefined && team.deleted_at === null;
+        }
+      }
     });
   }
 
@@ -224,7 +267,7 @@ export class PrismaResourceAclRepository
 
       switch (subject.type) {
         case 'USER':
-          return (await this.countSubject(tx, subject)) > 0 ? [subject.id] : [];
+          return (await this.userExists(tx, subject.id)) ? [subject.id] : [];
         case 'ROLE': {
           const rows = await tx.userRole.findMany({
             where: { organizationId, roleId: subject.id },
@@ -251,17 +294,10 @@ export class PrismaResourceAclRepository
     );
   }
 
-  /** How many rows the subject is — one or none — as a live thing of this organization. */
-  private countSubject(tx: TxClient, subject: AclSubjectRef): Promise<number> {
-    const organizationId = this.organizationId('countSubject');
+  /** Whether the person is a live account of this organization — not soft-deleted. */
+  private async userExists(tx: TxClient, userId: string): Promise<boolean> {
+    const organizationId = this.organizationId('userExists');
 
-    switch (subject.type) {
-      case 'USER':
-        return tx.user.count({ where: { organizationId, id: subject.id, deletedAt: null } });
-      case 'ROLE':
-        return tx.role.count({ where: { organizationId, id: subject.id } });
-      case 'TEAM':
-        return tx.team.count({ where: { organizationId, id: subject.id, deletedAt: null } });
-    }
+    return (await tx.user.count({ where: { organizationId, id: userId, deletedAt: null } })) > 0;
   }
 }

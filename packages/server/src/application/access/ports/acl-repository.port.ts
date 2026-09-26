@@ -79,6 +79,10 @@ export interface AclRepositoryPort {
    * Whether the subject exists **in this organization** — a live user, a role, a team that is not
    * disbanded. `false` is what the caller answers 404 to, never 403: the id of a team elsewhere
    * must not be confirmed by a grant that refuses differently from an unknown one.
+   *
+   * For a role or a team the answer is **held** to the end of the caller's transaction (a row lock),
+   * so the deletion of that subject cannot commit between this answer and the grant it permits and
+   * leave a grant to nobody (the gate's M-1). The adapter says which lock and why.
    */
   subjectExists(subject: AclSubjectRef): Promise<boolean>;
 
