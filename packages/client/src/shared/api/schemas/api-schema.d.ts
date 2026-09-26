@@ -6101,6 +6101,7 @@ export interface operations {
                 /** @description Only the projects the caller is on. */
                 member?: "me";
                 sort?: "name" | "-name" | "key" | "-key" | "createdAt" | "-createdAt";
+                /** @description Bounded so that the offset of the page at the largest page size fits a 32-bit integer (page × perPage ≤ 2^31 − 1); a larger page is 422, not an empty page. */
                 page?: number;
                 perPage?: number;
             };
