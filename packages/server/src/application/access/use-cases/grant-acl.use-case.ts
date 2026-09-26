@@ -70,7 +70,7 @@ export class GrantAclUseCase {
         const decision = await canGrantAcl(
           input.actor,
           scope,
-          { subject: input.subject, level: input.level },
+          { subject: input.subject, level: input.level, expiresAt: input.expiresAt },
           () => this.acl.subjectReaches(input.subject, input.actor.userId),
         );
 

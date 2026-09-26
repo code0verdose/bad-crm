@@ -60,7 +60,10 @@ const grantOf = (
 const draft = (
   level: SharedPermissions.AccessLevel,
   subject: AclGrantDraft['subject'] = { type: 'USER', id: PETR },
-): AclGrantDraft => ({ subject, level });
+  expiresAt: Date | null = null,
+): AclGrantDraft => ({ subject, level, expiresAt });
+
+const SOON = new Date('2026-10-01T00:00:00.000Z');
 
 describe('canGrantAcl — the conjunction', () => {
   it('allows a MANAGER on the object who holds acl:grant', async () => {
@@ -216,6 +219,42 @@ describe('canGrantAcl — no locking oneself out (permission-model.md, «Кра�
     }
   });
 
+  /**
+   * A `MANAGER` with a date holds the level only until that date — an expired entry is as if absent
+   * (resolution rule 3) — and what the actor falls to then is whatever else matches, which the
+   * policy cannot see. The plainest harm is the upsert: the actor's own permanent `MANAGER` row is
+   * replaced by one that runs out. So the grant is refused as a level below `MANAGER` would be.
+   */
+  it.each([
+    { name: 'own USER entry', subject: { type: 'USER', id: IVAN }, reaches: false },
+    { name: 'a ROLE the actor holds', subject: { type: 'ROLE', id: PETR }, reaches: true },
+    { name: 'a TEAM the actor is on', subject: { type: 'TEAM', id: PETR }, reaches: true },
+  ] as const)('refuses MANAGER with an expiry on $name', async ({ subject, reaches }) => {
+    await expect(
+      grantOf(
+        actorWith(['acl:grant']),
+        resolved('MANAGER'),
+        draft('MANAGER', subject, SOON),
+        reaches,
+      ),
+    ).resolves.toMatchObject({ allowed: false, reason: 'self_lockout' });
+  });
+
+  it.each([
+    { name: 'somebody else', subject: { type: 'USER', id: PETR } },
+    { name: 'a TEAM the actor is not on', subject: { type: 'TEAM', id: PETR } },
+  ] as const)('allows MANAGER with an expiry on $name', async ({ subject }) => {
+    await expect(
+      grantOf(actorWith(['acl:grant']), resolved('MANAGER'), draft('MANAGER', subject, SOON)),
+    ).resolves.toEqual({ allowed: true, reason: null });
+  });
+
+  it('lets the owner give themselves MANAGER with an expiry', async () => {
+    await expect(
+      grantOf(owner(), resolved('MANAGER'), draft('MANAGER', { type: 'USER', id: IVAN }, SOON)),
+    ).resolves.toEqual({ allowed: true, reason: null });
+  });
+
   it('allows narrowing somebody else, NONE included', async () => {
     await expect(
       grantOf(actorWith(['acl:grant']), resolved('MANAGER'), draft('NONE')),
@@ -271,7 +310,7 @@ describe('canRevokeAclEntry — no locking oneself out by taking a grant away', 
   const entry = (
     level: SharedPermissions.AccessLevel,
     subject: AclGrantDraft['subject'] = { type: 'USER', id: IVAN },
-  ): AclGrantDraft => ({ subject, level });
+  ): AclGrantDraft => ({ subject, level, expiresAt: null });
 
   const revokeOf = (actor: Actor, grant: AclGrantDraft, reachesActor = false): Promise<Decision> =>
     canRevokeAclEntry(actor, grant, () => Promise.resolve(reachesActor));
