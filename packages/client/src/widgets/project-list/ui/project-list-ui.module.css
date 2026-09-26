@@ -1,0 +1,57 @@
+/**
+ * The classes the cards, the table and the filters share, next to the components that use them —
+ * a relative parent import is forbidden (`rules/frontend-fsd.mdc`).
+ */
+
+.search {
+  flex: 1 1 16rem;
+}
+
+/**
+ * The link to a project, styled by hand rather than through `Anchor component={Link}`: the
+ * polymorphic wrapper widens the router to `AnyRouter` and takes the compile-time check on `params`
+ * with it (the directory's `personLink`, same trade). `--bc-link` rather than the anchor colour,
+ * for the striped table: the anchor colour falls below AA on `--bc-surface-raised`.
+ */
+.projectLink {
+  color: var(--bc-link);
+  text-decoration: none;
+}
+
+.projectLink:hover {
+  text-decoration: underline;
+}
+
+/**
+ * A card: a bordered surface, sized by its content — no fixed height, so 200 % text and a Russian
+ * name twice the English one still fit (`rules/a11y.mdc` §4, `rules/i18n.mdc` §15).
+ */
+.card {
+  background: var(--bc-surface-raised);
+  border: 1px solid var(--bc-border);
+  border-radius: var(--mantine-radius-md);
+  padding: var(--mantine-spacing-md);
+  margin: 0;
+}
+
+/**
+ * The grid is a list of cards; the bullets would be noise, the `ul`/`li` structure is not. Columns
+ * fill the width at a card's minimum, so a narrow screen gets one column and a wide one several,
+ * with no breakpoint to keep in step.
+ */
+.grid {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--mantine-spacing-md);
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 18rem), 1fr));
+}
+
+/**
+ * A wide table scrolls **inside its own box**, never the page — the directory's reason: a page that
+ * scrolls sideways takes the navigation and the heading with it.
+ */
+.scroller {
+  overflow-x: auto;
+}

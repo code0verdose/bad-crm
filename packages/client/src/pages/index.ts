@@ -19,3 +19,4 @@ export * from './team-detail/index.js';
 export * from './admin-organization/index.js';
 export * from './mfa-enrolment/index.js';
 export * from './project/index.js';
+export * from './projects/index.js';
