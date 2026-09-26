@@ -73,8 +73,10 @@ export interface VisibleProjectPage {
  * projects», a list without the grants would say more than it may; neither is «we could not check».
  *
  * A `*.query.ts` in the sense of `rules/hexagonal-backend.mdc` 7: it reads, writes nothing, and its
- * one tenant scope is the transaction the three statements share — the count and the page are of
- * the same moment.
+ * one tenant scope is the transaction the statements share. That transaction is READ COMMITTED
+ * (`withTenant`'s default; `UnitOfWorkPort` offers no other), so each statement sees its own
+ * snapshot: a write committed between the count and the page can make `total` disagree with the
+ * rows by that write. It cannot widen what is shown — every statement applies the plan itself.
  */
 export class ListProjectsQuery {
   constructor(

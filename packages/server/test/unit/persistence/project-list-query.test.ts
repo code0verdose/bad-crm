@@ -92,7 +92,7 @@ describe('PrismaProjectListQuery.page', () => {
     expect(recorder.statements).toHaveLength(2);
 
     for (const statement of recorder.statements) {
-      expect(statement.sql).toContain('WITH grants AS');
+      expect(statement.sql).toContain('WITH subjects (subject_type, subject_id) AS');
       expect(statement.sql).toContain('p.deleted_at IS NULL');
       expect(statement.sql).toContain('pm.left_at IS NULL');
       // The organization, the caller and the plan, bound — never interpolated.
@@ -214,7 +214,7 @@ describe('PrismaProjectListQuery.facets', () => {
     const [statement] = recorder.statements;
 
     assert(statement !== undefined, 'the facets were asked for');
-    expect(statement.sql).toContain('WITH grants AS');
+    expect(statement.sql).toContain('WITH subjects (subject_type, subject_id) AS');
     expect(statement.sql).not.toContain('ILIKE');
     expect(statement.values).toContain(ORG);
     expect(statement.values).toContain(IVAN);

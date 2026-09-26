@@ -64,20 +64,32 @@ const NOT_A_MEMBER = '-';
  * owners, guests, or what `NONE` on the organization means: all of that is already inside the
  * arrays. `test/integration/db/project-list.test.ts` holds this against `can()` project by project.
  *
- * **Subjects are matched inside the statement**, as in `acl-reader.adapter.ts`: the caller's own
- * `USER` rows, the `ROLE` rows of every unexpired assignment, the `TEAM` rows of every team. The
- * row-level `WITH grants` is one pass over the caller's grants on projects, grouped by project —
- * not one resolution per row.
+ * **Subjects first, grants second.** `WITH subjects` lists who the caller is to the ACL — the
+ * caller as `USER`, every unexpired role assignment as `ROLE`, every team as `TEAM` — and
+ * `WITH grants` joins those few rows to `resource_acl` on `(organization_id, subject_id)`, the
+ * leading columns of `idx_resource_acl_subject`, then folds the caller's grants on projects to one
+ * level per project: one pass, not one resolution per row. The shape is measured, not a style:
+ * matching the three kinds of subject by `OR` and `IN (subquery)` on the ACL row itself left
+ * `subject_id` out of every index condition, and the plan read the organization's whole ACL — a
+ * parallel seq scan of ~17 400 buffers and ~130 ms per statement on 1 010 000 grants, against an
+ * index scan of 18 buffers and ~1 ms in this form (PostgreSQL 16, `pgvector/pgvector:0.8.6-pg16`,
+ * 2026-09-26; `test/integration/db/project-list.test.ts` holds the plan).
+ * `acl-reader.adapter.ts` keeps the `OR` form on purpose: there `resource_id` is the index
+ * condition and selects a handful of rows before the subjects are looked at (4 buffers, 0.02 ms on
+ * the same volume).
  *
- * **The tenant predicate is written into every join** although the policy would apply it anyway:
- * it is the leading column of every index the plan can use (`idx_projects_org_status`,
- * `idx_project_members_org_user`, `idx_resource_acl_subject`), and a statement that relied on the
- * policy alone would have no leading column to seek on. It is also bound, never interpolated — the
- * unit suite holds the values.
+ * **The tenant predicate is written into every join** although the policy would apply it anyway: a
+ * statement that relied on the policy alone would have no leading column to seek on. Measured on
+ * 1 000 projects and 10 000 memberships, the plan seeks `idx_project_members_org_user`,
+ * `idx_user_roles_org_user`, `idx_team_members_org_user` and `idx_resource_acl_subject` on it;
+ * `projects` itself is read by a seq scan there, since one organization is the whole table, and
+ * `idx_projects_org_status` is not chosen. It is also bound, never interpolated — the unit suite
+ * holds the values.
  *
- * `resource_type = 'PROJECT'` is a filter and not an index condition, and cannot be one: `enum_eq`
- * is not leakproof, so under row-level security the planner will not evaluate it ahead of the
- * policy (the same measurement that reordered `uq_resource_acl`, STORY-011-06).
+ * `resource_type = 'PROJECT'` and `subject_type` are filters and not index conditions, and cannot
+ * be: `enum_eq` is not leakproof, so under row-level security the planner will not evaluate them
+ * ahead of the policy (`docs/security/rls-design.md`, «Ловушки», 6). Both sit after the uuid they
+ * qualify, where they cost a filter over the caller's own grants and nothing more.
  */
 export class PrismaProjectListQuery extends TenantScopedRepository implements ProjectListQueryPort {
   protected readonly resource = 'project' as const;
@@ -88,8 +100,11 @@ export class PrismaProjectListQuery extends TenantScopedRepository implements Pr
       const visible = this.visibleSet(viewer, 'page');
       const narrowed = narrowing(filter);
 
-      // Counted with the page's own predicate, in the page's transaction: a total of a different
-      // moment is a pager that promises rows the next page does not have.
+      // Counted with the page's own predicate, in the page's transaction — but not of the page's
+      // moment: under READ COMMITTED every statement takes its own snapshot, so a project created,
+      // archived or regranted between the two can make `total` differ from the rows by that much.
+      // Each statement applies the visibility plan itself, so the gap can never show a hidden row;
+      // it is a pager that is off by a concurrent write until the next request.
       const counted = await tx.$queryRaw<{ total: number }[]>(Prisma.sql`
         ${visible}
         SELECT count(*)::int AS total
@@ -135,8 +150,8 @@ export class PrismaProjectListQuery extends TenantScopedRepository implements Pr
   }
 
   /**
-   * `WITH grants …, visible …` — the caller's visible projects with their membership, as a prefix
-   * every statement of this adapter starts with.
+   * `WITH subjects …, grants …, visible …` — the caller's visible projects with their membership,
+   * as a prefix every statement of this adapter starts with.
    */
   /**
    * An empty list in the plan is an empty array — «nothing is visible through this branch» — and the
@@ -151,26 +166,31 @@ export class PrismaProjectListQuery extends TenantScopedRepository implements Pr
     );
 
     return Prisma.sql`
-      WITH grants AS (
+      WITH subjects (subject_type, subject_id) AS (
+        SELECT 'USER'::acl_subject_type, ${viewer.userId}::uuid
+        UNION ALL
+        SELECT 'ROLE'::acl_subject_type, ur.role_id
+          FROM user_roles ur
+         WHERE ur.organization_id = ${organizationId}::uuid
+           AND ur.user_id         = ${viewer.userId}::uuid
+           AND (ur.expires_at IS NULL OR ur.expires_at > now())
+        UNION ALL
+        SELECT 'TEAM'::acl_subject_type, tm.team_id
+          FROM team_members tm
+         WHERE tm.organization_id = ${organizationId}::uuid
+           AND tm.user_id         = ${viewer.userId}::uuid
+      ),
+      grants AS (
         SELECT a.resource_id AS project_id,
                CASE WHEN bool_or(a.access_level = 'NONE') THEN 'NONE'
                     ELSE max(a.access_level)::text END AS level
-          FROM resource_acl a
-         WHERE a.organization_id = ${organizationId}::uuid
-           AND a.resource_type   = 'PROJECT'
+          FROM subjects s
+          JOIN resource_acl a
+            ON a.organization_id = ${organizationId}::uuid
+           AND a.subject_id      = s.subject_id
+           AND a.subject_type    = s.subject_type
+         WHERE a.resource_type = 'PROJECT'
            AND (a.expires_at IS NULL OR a.expires_at > now())
-           AND (
-                 (a.subject_type = 'USER' AND a.subject_id = ${viewer.userId}::uuid)
-              OR (a.subject_type = 'ROLE' AND a.subject_id IN (
-                    SELECT ur.role_id
-                      FROM user_roles ur
-                     WHERE ur.user_id = ${viewer.userId}::uuid
-                       AND (ur.expires_at IS NULL OR ur.expires_at > now())))
-              OR (a.subject_type = 'TEAM' AND a.subject_id IN (
-                    SELECT tm.team_id
-                      FROM team_members tm
-                     WHERE tm.user_id = ${viewer.userId}::uuid))
-               )
          GROUP BY a.resource_id
       ),
       visible AS (

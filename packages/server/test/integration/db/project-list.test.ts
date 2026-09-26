@@ -624,6 +624,96 @@ const explain = (statement: { query: string; params: string }): Promise<string> 
 const executionMs = (plan: string): number =>
   Number(/Execution Time: ([\d.]+) ms/.exec(plan)?.[1] ?? Number.NaN);
 
+/** The count, the page and the facets of one list — every statement that builds the visible set. */
+const visibleSetPlans = async (actor: Actor): Promise<string[]> => {
+  recorded.length = 0;
+  await list(actor, { statuses: [], perPage: 25, sort: 'name' });
+  await drain();
+
+  const statements = recorded.filter((entry) => entry.query.includes('FROM visible v'));
+
+  return Promise.all(statements.map((statement) => explain(statement)));
+};
+
+/**
+ * An index node on `resource_acl` whose index condition names `subject_id` — the grants reached by
+ * the caller's subjects, read within that node (the lookahead stops at the next `->`). An index
+ * scan seeking on `organization_id` alone, with the subjects left to a filter, reads the
+ * organization's whole ACL and does not match.
+ */
+const SUBJECT_SEEK =
+  /(?:Index|Index Only|Bitmap Index) Scan using idx_resource_acl_subject(?: on resource_acl)?[^\n]*\n(?:(?![^\n]*->)[^\n]*\n)*?\s*Index Cond: \([^\n]*subject_id/;
+
+describe('the caller’s grants are found by subject, not by reading the ACL', () => {
+  beforeAll(async () => {
+    // Tens of thousands of grants the caller has nothing to do with, in the proportions that make
+    // «read the organization's ACL and filter» the expensive shape: most of them in the caller's
+    // own organization (so its leading column selects nothing), on projects and on other kinds of
+    // resource, to other users, roles and teams; a slice in the neighbouring organization; and a
+    // few of the caller's own on other kinds of resource, which the list must not count either.
+    await asMaintenance(pools.owner, async (client) => {
+      await client.query(
+        `INSERT INTO resource_acl (organization_id, resource_type, resource_id, subject_type,
+                                   subject_id, access_level, updated_at)
+         SELECT $1::uuid,
+                (ARRAY['PROJECT','BOARD','TASK','DOC_PAGE']::acl_resource_type[])[1 + i % 4],
+                gen_random_uuid(),
+                (ARRAY['USER','ROLE','TEAM']::acl_subject_type[])[1 + i % 3],
+                gen_random_uuid(),
+                (ARRAY['NONE','VIEWER','EDITOR']::access_level[])[1 + i % 3],
+                now()
+           FROM generate_series(1, 40000) AS i`,
+        [ORG],
+      );
+      await client.query(
+        `INSERT INTO resource_acl (organization_id, resource_type, resource_id, subject_type,
+                                   subject_id, access_level, updated_at)
+         SELECT $1::uuid, 'PROJECT', gen_random_uuid(), 'USER', gen_random_uuid(), 'MANAGER', now()
+           FROM generate_series(1, 10000)`,
+        [OTHER_ORG],
+      );
+      await client.query(
+        `INSERT INTO resource_acl (organization_id, resource_type, resource_id, subject_type,
+                                   subject_id, access_level, updated_at)
+         SELECT $1::uuid, (ARRAY['BOARD','TASK']::acl_resource_type[])[1 + i % 2],
+                gen_random_uuid(), 'USER', $2::uuid, 'MANAGER', now()
+           FROM generate_series(1, 200) AS i`,
+        [ORG, seeded.ivanId],
+      );
+      await client.query('ANALYZE resource_acl');
+    });
+  });
+
+  it('CONTROL: the noise changes nothing Ivan sees — the list is still can(), row by row', async () => {
+    const ivan = actorFor(seeded.ivanId);
+    const page = await list(ivan);
+    // The sixty public projects of the cost suite are visible to everybody; the combinations that
+    // grants decide are the seeded ones.
+    const seededIds = new Set(everyProjectId());
+    const listed = page.items
+      .map((item) => item.projectId)
+      .filter((projectId) => seededIds.has(projectId))
+      .toSorted();
+
+    expect(listed).toEqual(byKey(['P01', 'P02', 'P05', 'P07', 'P10']));
+    expect((await readableOneByOne(ivan)).toSorted()).toEqual(listed);
+  });
+
+  it.each([
+    ['Ivan — a user grant, a team grant, grants on other kinds of resource', () => seeded.ivanId],
+    ['Petr — through a role', () => seeded.petrId],
+  ])('%s: every statement seeks the ACL by subject', async (_who, userId) => {
+    const plans = await visibleSetPlans(actorFor(userId()));
+
+    expect(plans).toHaveLength(3);
+
+    for (const plan of plans) {
+      expect(plan, plan).not.toContain('Seq Scan on resource_acl');
+      expect(plan, plan).toMatch(SUBJECT_SEEK);
+    }
+  });
+});
+
 describe('measured on the volume the story names — 1 000 projects, 10 000 memberships', () => {
   beforeAll(async () => {
     await asMaintenance(pools.owner, async (client) => {
@@ -681,7 +771,7 @@ describe('measured on the volume the story names — 1 000 projects, 10 000 memb
     await drain();
 
     // The count, the page and the facets — every statement that builds the visible set.
-    const statements = recorded.filter((entry) => entry.query.includes('WITH grants AS'));
+    const statements = recorded.filter((entry) => entry.query.includes('FROM visible v'));
     const plans = await Promise.all(statements.map((statement) => explain(statement)));
     const memberships = await asMaintenance(pools.owner, async (client) =>
       Number(
