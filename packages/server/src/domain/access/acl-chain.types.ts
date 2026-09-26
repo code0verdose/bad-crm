@@ -43,8 +43,9 @@ export interface AclEntryOnChain {
   readonly expiresAt: Date | null;
 }
 
-/** What a grant asks for: who, and how much. */
+/** What a grant asks for: who, how much, and until when (`null` — for good). */
 export interface AclGrantDraft {
   readonly subject: AclSubjectRef;
   readonly level: SharedPermissions.AccessLevel;
+  readonly expiresAt: Date | null;
 }

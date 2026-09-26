@@ -6,6 +6,15 @@ export const DEFAULT_PAGE_SIZE = 50;
 /** Hard upper bound: a client cannot ask for an unbounded page. */
 export const MAX_PAGE_SIZE = 100;
 
+/**
+ * The last page an offset list serves: `page × MAX_PAGE_SIZE` ≤ 2^31 − 1, so the offset of any
+ * page at any allowed size fits a 32-bit signed integer. Beyond it the number is not a page anybody
+ * reaches by paging, only a value to be carried to the database and back — a larger one is refused
+ * (`422` on `page`), not answered with an empty page. Every offset list shares it, whatever its own
+ * page size, as long as that size is capped at `MAX_PAGE_SIZE`.
+ */
+export const MAX_PAGE = Math.floor((2 ** 31 - 1) / MAX_PAGE_SIZE);
+
 const pageSize = z.coerce
   .number({ error: 'validation.pagination.invalid' })
   .int({ error: 'validation.pagination.invalid' })
@@ -25,6 +34,7 @@ export const offsetPageSchema = z.object({
     .number({ error: 'validation.pagination.invalid' })
     .int({ error: 'validation.pagination.invalid' })
     .min(1, { error: 'validation.pagination.invalid' })
+    .max(MAX_PAGE, { error: 'validation.pagination.too_large' })
     .default(1),
   perPage: pageSize,
 });

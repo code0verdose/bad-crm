@@ -43,6 +43,9 @@ const lockoutIfReaches = async (
  * them on this node (resolution rule 1; an explicit entry also replaces the implicit level, so a
  * project lead granting their own team `EDITOR` is the everyday form of this), and they are left
  * with that level and no way to undo it. `NONE` is the extreme of the same case, not a separate one.
+ * **`MANAGER` with an expiry is the same case too**: it holds the level only until the date (an
+ * expired entry is as if absent, resolution rule 3), and the upsert may be replacing the actor's own
+ * permanent `MANAGER` row with it.
  *
  * **Fail-closed, and deliberately so.** The node's level is the maximum over everything matching the
  * actor there (rule 2), and the policy does not see the other entries: a narrowing that another
@@ -51,8 +54,8 @@ const lockoutIfReaches = async (
  *
  * Whether a role or a team reaches the actor is a fact about their memberships, so it comes as a
  * thunk and is asked **only** when it decides the answer: the capability and the level hold, the
- * actor is not the owner, the level is below `MANAGER` and the subject is not a person (a person is
- * compared by id). Every other grant costs no membership read — until 2026-09-26 this file declined
+ * actor is not the owner, the level is below `MANAGER` or `MANAGER` with an expiry, and the subject
+ * is not a person (a person is compared by id). Every other grant costs no membership read — until 2026-09-26 this file declined
  * the team case on exactly that price, and the thunk is what removes it.
  *
  * The owner passes: ownership replaces the layers rather than enumerating them, and nothing can
@@ -66,7 +69,15 @@ export const canGrantAcl = async (
 ): Promise<Decision> => {
   const conjunction = authorize(actor, 'acl:grant', scope);
 
-  if (!conjunction.allowed || actor.isOwner || draft.level === 'MANAGER') return conjunction;
+  // Only a `MANAGER` for good keeps the level: one with a date runs out (resolution rule 3), and
+  // what the actor falls to then is what the policy cannot see — the re-gate's security Low.
+  if (
+    !conjunction.allowed ||
+    actor.isOwner ||
+    (draft.level === 'MANAGER' && draft.expiresAt === null)
+  ) {
+    return conjunction;
+  }
 
   return lockoutIfReaches(actor, draft.subject, reachesActor);
 };

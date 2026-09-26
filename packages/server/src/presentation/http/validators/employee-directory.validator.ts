@@ -1,4 +1,4 @@
-import { roleIdSchema, teamIdSchema } from '@bad-crm/shared/validation';
+import { MAX_PAGE, MAX_PAGE_SIZE, roleIdSchema, teamIdSchema } from '@bad-crm/shared/validation';
 import { z } from 'zod';
 
 import {
@@ -20,9 +20,12 @@ import { repeatable } from '@/presentation/http/validators/repeatable-query.util
  * everybody» would hide the defect behind a plausible page.
  */
 
-/** How many rows one page may carry. The `OffsetPage` envelope of the spec bounds it at 100. */
+/**
+ * How many rows one page may carry by default. The cap is the shared `MAX_PAGE_SIZE` and the last
+ * page the shared `MAX_PAGE`: `page × perPage` ≤ 2^31 − 1 holds only while the two stay paired
+ * (`pagination.schema.ts`), the same bound `/projects` has.
+ */
 const PER_PAGE_MIN = 1;
-const PER_PAGE_MAX = 100;
 const PER_PAGE_DEFAULT = 25;
 
 /** Long enough for a full name plus a job title; beyond that it is not a search. */
@@ -35,13 +38,14 @@ export const employeeDirectoryQuerySchema = z.strictObject({
   team: repeatable(teamIdSchema),
   sort: z.enum(DIRECTORY_SORTS).optional().default('name'),
   // `coerce`, because a query string carries digits and not numbers. `int()` after it, so that
-  // `?page=1.5` is refused rather than floored into a page nobody asked for.
-  page: z.coerce.number().int().min(1).optional().default(1),
+  // `?page=1.5` is refused rather than floored into a page nobody asked for; a page past `MAX_PAGE`
+  // is refused rather than carried to the database as an offset no int4 holds.
+  page: z.coerce.number().int().min(1).max(MAX_PAGE).optional().default(1),
   perPage: z.coerce
     .number()
     .int()
     .min(PER_PAGE_MIN)
-    .max(PER_PAGE_MAX)
+    .max(MAX_PAGE_SIZE)
     .optional()
     .default(PER_PAGE_DEFAULT),
 });

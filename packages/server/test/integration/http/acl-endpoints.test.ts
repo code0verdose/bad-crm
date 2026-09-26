@@ -373,6 +373,44 @@ describe('POST /api/v1/acl', () => {
     expect(projects.grants).toEqual([]);
   });
 
+  /**
+   * The re-gate's security Low: `MANAGER` with a date keeps the caller's level only until the date,
+   * so on anything that reaches the caller it is refused like a level below `MANAGER`.
+   */
+  it('refuses MANAGER with an expiry on the caller’s own entry and a held role as 409 self_lockout', async () => {
+    const projects = seeded();
+    projects.aclSubjects.set(`ROLE:${ROLE}`, [USER_ID]);
+    const { test, token } = await signedIn({ capabilities: MANAGER, projects });
+
+    for (const body of [
+      { ...teamEditor, subjectType: 'USER', subjectId: USER_ID },
+      { ...teamEditor, subjectType: 'ROLE', subjectId: ROLE },
+    ]) {
+      const response = await grant(test, token, {
+        ...body,
+        accessLevel: 'MANAGER',
+        expiresAt: '2026-12-31T00:00:00.000Z',
+      }).expect(409);
+
+      expect(response.body).toMatchObject({ code: 'self_lockout', reason: 'self_lockout' });
+    }
+    expect(projects.grants).toEqual([]);
+  });
+
+  it('CONTROL: MANAGER for good on the caller’s own entry goes through', async () => {
+    const projects = seeded();
+    const { test, token } = await signedIn({ capabilities: MANAGER, projects });
+
+    await grant(test, token, {
+      ...teamEditor,
+      subjectType: 'USER',
+      subjectId: USER_ID,
+      accessLevel: 'MANAGER',
+    }).expect(200);
+
+    expect(projects.grants).toHaveLength(1);
+  });
+
   it('refuses a caller without acl:grant with 403 before any port is asked', async () => {
     const projects = seeded();
     const { test, token } = await signedIn({ capabilities: holder(['acl:read']), projects });

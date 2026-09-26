@@ -11,6 +11,7 @@ import {
 } from '@/application/access/ports/acl-repository.port.js';
 import { GrantAclUseCase } from '@/application/access/use-cases/grant-acl.use-case.js';
 import { ResolveAclQuery } from '@/application/access/use-cases/resolve-acl.query.js';
+import { RevokeAclUseCase } from '@/application/access/use-cases/revoke-acl.use-case.js';
 import { DeleteCustomRoleUseCase } from '@/application/iam/use-cases/delete-custom-role.use-case.js';
 import { DeleteTeamUseCase } from '@/application/iam/use-cases/delete-team.use-case.js';
 import { type AclSubjectRef } from '@/domain/access/acl-chain.types.js';
@@ -435,10 +436,12 @@ describe('a grant racing the deletion of its subject leaves no orphan (gate M-1)
     return { open, opened };
   };
 
+  type HoldPoint = 'upsert' | 'removeAllOfSubject' | 'removeById';
+
   /** The product's grants repository, held at one step until the test lets it go. */
   class HeldAclRepository extends PrismaResourceAclRepository {
     constructor(
-      private readonly holdAfter: 'upsert' | 'removeAllOfSubject',
+      private readonly holdAfter: HoldPoint,
       private readonly reached: Gate,
       private readonly release: Gate,
     ) {
@@ -459,6 +462,14 @@ describe('a grant racing the deletion of its subject leaves no orphan (gate M-1)
       if (this.holdAfter === 'removeAllOfSubject') await this.hold();
 
       return rows;
+    }
+
+    override async removeById(id: string): Promise<AclEntryRow | null> {
+      const row = await super.removeById(id);
+
+      if (this.holdAfter === 'removeById') await this.hold();
+
+      return row;
     }
 
     private async hold(): Promise<void> {
@@ -589,7 +600,7 @@ describe('a grant racing the deletion of its subject leaves no orphan (gate M-1)
    */
   const race = async (
     first: (acl: PrismaResourceAclRepository) => Promise<unknown>,
-    holdAfter: 'upsert' | 'removeAllOfSubject',
+    holdAfter: HoldPoint,
     second: () => Promise<unknown>,
   ): Promise<{
     readonly waited: boolean;
@@ -668,6 +679,72 @@ describe('a grant racing the deletion of its subject leaves no orphan (gate M-1)
       expect(codeOf(outcome.second)).toBe(type === 'ROLE' ? 'role_not_found' : 'team_not_found');
       await expect(orphans()).resolves.toBe(0);
       await expect(grantsOnRaceProject()).resolves.toBe(0);
+      expect(outcome.waited).toBe(true);
+    });
+  }
+
+  /**
+   * The re-gate's deadlock (db-reviewer, measured 5/5 `40P01`): a revocation locks the grant row
+   * (`removeById`) and then bumps its subject's people (`UPDATE users`); the deletion of the subject
+   * used to bump the same people first and then reach for the grant row — two orders over one pair
+   * of rows. Both now take the grants first and the people second, and the race is driven at the
+   * point where the old order closed the cycle: the revocation held with the grant row locked, the
+   * deletion started and observed waiting.
+   */
+  const revokeGrant = (aclId: string, acl: PrismaResourceAclRepository): Promise<void> =>
+    new RevokeAclUseCase(
+      new PrismaUnitOfWork(prisma),
+      new ResolveAclQuery({
+        acl: new PrismaAclReader(),
+        projects: new PrismaProjectAccessReader(),
+        clock: { now: () => new Date() },
+        logger: silentLogger,
+      }),
+      acl,
+      new FakeAuditLogger(),
+    ).execute({ actor: owner(), aclId, ipAddress: ADDRESS });
+
+  /** A grant on the race project, written by the migrator; its id is what the revocation names. */
+  const grantOnRaceProject = (subject: AclSubjectRef): Promise<string> =>
+    asMaintenance(pools.owner, async (client) => {
+      const { rows } = await client.query<{ id: string }>(
+        `INSERT INTO resource_acl
+           (organization_id, resource_type, resource_id, subject_type, subject_id, access_level,
+            updated_at)
+         VALUES ($1::uuid, 'PROJECT', $2::uuid, $3::acl_subject_type, $4::uuid, 'EDITOR', now())
+         RETURNING id`,
+        [ORG, projectId, subject.type, subject.id],
+      );
+
+      return rows[0]?.id ?? '';
+    });
+
+  /** `fulfilled`, or the reason in words — so a deadlock fails the assertion by its own message. */
+  const settled = (outcome: PromiseSettledResult<unknown>): string =>
+    outcome.status === 'fulfilled'
+      ? 'fulfilled'
+      : outcome.reason instanceof Error
+        ? outcome.reason.message
+        : String(outcome.reason);
+
+  for (const type of ['ROLE', 'TEAM'] as const) {
+    it(`${type}: a revocation and the deletion of its subject both finish — no deadlock`, async () => {
+      const subject = subjectOf(type);
+      const aclId = await grantOnRaceProject(subject);
+
+      // CONTROL: the grant the revocation names is on the race project before the race.
+      await expect(grantsOnRaceProject()).resolves.toBe(1);
+
+      const outcome = await race(
+        (acl) => revokeGrant(aclId, acl),
+        'removeById',
+        () => deleteSubject(subject),
+      );
+
+      expect(settled(outcome.first)).toBe('fulfilled');
+      expect(settled(outcome.second)).toBe('fulfilled');
+      await expect(grantsOnRaceProject()).resolves.toBe(0);
+      await expect(orphans()).resolves.toBe(0);
       expect(outcome.waited).toBe(true);
     });
   }

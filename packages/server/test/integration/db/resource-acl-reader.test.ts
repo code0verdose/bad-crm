@@ -655,6 +655,63 @@ describe('PrismaResourceAclRepository — subjects and versions on real rows', (
   });
 
   /**
+   * The re-gate's security Low: the membership fact is the tenant's own. Another organization's
+   * role and team, each holding a person of that organization, are asked about with the very same
+   * `(subjectId, userId)` pair from both sides — reached there, not reached here. The positive
+   * control is the other organization's own scope: without it a `false` here would pass on a
+   * statement that finds nothing anywhere.
+   */
+  it('does not reach through another organization’s role or team, for the same person', async () => {
+    const foreign = await asMaintenance(pools.owner, async (client) => {
+      const userId = await insertUser(client, OTHER_ORG);
+      const roleId = randomUUID();
+      const teamId = randomUUID();
+
+      await client.query(
+        `INSERT INTO roles (id, organization_id, key, name, updated_at)
+         VALUES ($1::uuid, $2::uuid, 'tech_writer', 'Tech writer', now())`,
+        [roleId, OTHER_ORG],
+      );
+      await client.query(
+        `INSERT INTO user_roles (organization_id, user_id, role_id, updated_at)
+         VALUES ($1::uuid, $2::uuid, $3::uuid, now())`,
+        [OTHER_ORG, userId, roleId],
+      );
+      await client.query(
+        `INSERT INTO teams (id, organization_id, name, slug, updated_at)
+         VALUES ($1::uuid, $2::uuid, 'Backend', 'backend', now())`,
+        [teamId, OTHER_ORG],
+      );
+      await client.query(
+        `INSERT INTO team_members (organization_id, team_id, user_id, updated_at)
+         VALUES ($1::uuid, $2::uuid, $3::uuid, now())`,
+        [OTHER_ORG, teamId, userId],
+      );
+
+      return { userId, roleId, teamId };
+    });
+    const inOther = <T>(work: (repo: PrismaResourceAclRepository) => Promise<T>): Promise<T> =>
+      withTenant(prisma, { organizationId: OTHER_ORG, userId: null }, () =>
+        work(new PrismaResourceAclRepository()),
+      );
+
+    for (const subject of [
+      { type: 'ROLE' as const, id: foreign.roleId },
+      { type: 'TEAM' as const, id: foreign.teamId },
+    ]) {
+      // CONTROL: in its own organization the subject reaches the person.
+      await expect(
+        inOther((repo) => repo.subjectReaches(subject, foreign.userId)),
+        `${subject.type} in its own organization`,
+      ).resolves.toBe(true);
+      await expect(
+        inTenant((repo) => repo.subjectReaches(subject, foreign.userId)),
+        `${subject.type} from this organization`,
+      ).resolves.toBe(false);
+    }
+  });
+
+  /**
    * The gate's L-1 on a real PostgreSQL: `DELETE … RETURNING` by id is accepted under `FORCE RLS` as
    * `app_user`, returns the row with its subject, removes it once — the second call finds nothing —
    * and cannot reach the other organization's row by its id.

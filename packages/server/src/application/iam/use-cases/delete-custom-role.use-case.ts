@@ -40,10 +40,12 @@ export interface DeleteCustomRoleInput {
  * over `subjectUserIds` would bump the same people twice for one loss. Each removed grant files its
  * own `acl.revoked` with `after.cause = 'role.deleted'`, after `role.deleted`.
  *
- * **The role row is locked `FOR UPDATE` before the grants are collected** (the gate's M-1, measured
- * in `test/integration/db/acl-subject-cascade.test.ts`): a concurrent grant to this role reads it
- * `FOR KEY SHARE`, and without the lock it could commit between `removeAllOfSubject` and the
- * `DELETE` of the role and outlive it.
+ * **The role row is locked `FOR UPDATE` first, before the policy reads anything** (the gate's M-1
+ * and the re-gate's L-2, measured in `test/integration/db/acl-subject-cascade.test.ts`): a
+ * concurrent grant to this role reads it `FOR KEY SHARE`, and without the lock it could commit
+ * between `removeAllOfSubject` and the `DELETE` of the role and outlive it. Then the grants, then
+ * the holders' bump, then the role — grants before people is the order a revocation takes, and the
+ * opposite order deadlocked against it.
  */
 export class DeleteCustomRoleUseCase {
   constructor(
@@ -57,7 +59,14 @@ export class DeleteCustomRoleUseCase {
     return this.unitOfWork.withTenant(
       { organizationId: input.actor.organizationId, userId: input.actor.userId },
       async () => {
-        const role = await this.roles.composition(input.roleId);
+        // The role row first, before anything the policy reads (the gate's M-1 and the re-gate's
+        // L-2): the composition, the actor's holding and what they keep elsewhere are then read
+        // under the lock and cannot move before the decision is acted on. A grant reads the role
+        // `FOR KEY SHARE`, so one in flight commits first and is collected below, and one arriving
+        // later waits and finds no role. No row — another organization's, or gone — is «not there».
+        const role = (await this.roles.lockForRemoval(input.roleId))
+          ? await this.roles.composition(input.roleId)
+          : null;
 
         if (role === null) throw denyAccess('role', 'other_organization');
 
@@ -82,18 +91,14 @@ export class DeleteCustomRoleUseCase {
           'role',
         );
 
-        // The role row, locked before its grants are collected (the gate's M-1): a grant reads it
-        // `FOR KEY SHARE`, so one in flight commits first and is collected below, and one arriving
-        // later waits and finds no role. Deleted by somebody else since `composition` read it — the
-        // same «not there» as a role of another organization.
-        if (!(await this.roles.lockForRemoval(input.roleId))) {
-          throw denyAccess('role', 'other_organization');
-        }
+        // The grants before the people, the order `RevokeAclUseCase` takes (the re-gate's deadlock,
+        // measured 5/5 `40P01` in `acl-subject-cascade.test.ts`): a revocation locks a grant row and
+        // then updates its holders in `users`; bumping the holders first here would close the cycle.
+        const revoked = await this.acl.removeAllOfSubject({ type: 'ROLE', id: input.roleId });
 
         // Before the removal, not after: the cascade takes the assignments with the role, and a
         // statement looking for holders afterwards would find none and invalidate nobody.
         await this.roles.bumpHoldersOf(input.roleId);
-        const revoked = await this.acl.removeAllOfSubject({ type: 'ROLE', id: input.roleId });
         await this.roles.remove(input.roleId);
 
         await this.audit.record({

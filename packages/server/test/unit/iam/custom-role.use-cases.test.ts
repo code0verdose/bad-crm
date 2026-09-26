@@ -291,11 +291,18 @@ describe('deleting a role that is the subject of grants', () => {
   });
 
   /**
-   * The gate's M-1, as an order: the role row is locked before its grants are collected. The race
-   * itself is measured on PostgreSQL (`acl-subject-cascade.test.ts`); this pins that the lock is
-   * taken at all and ahead of `removeAllOfSubject`, which a recorder can say and a database cannot.
+   * The whole order, as one journal across both ports. Three rules live in it, and the races
+   * themselves are measured on PostgreSQL (`acl-subject-cascade.test.ts`); this pins each of them,
+   * which a recorder can say and a database cannot:
+   *
+   * - the role row is locked **first**, before the policy reads the composition or the actor's
+   *   holding (the re-gate's L-2) — and so before its grants are collected (the gate's M-1);
+   * - the grants go **before** the holders are bumped: a revocation locks a grant row and then
+   *   updates `users`, and the opposite order here deadlocked against it (5/5 `40P01`);
+   * - the holders are bumped **before** the role goes: its `ON DELETE CASCADE` takes the
+   *   assignments, and a bump after it would find nobody.
    */
-  it('locks the role before it collects the role’s grants (gate M-1)', async () => {
+  it('locks the role first, then reads, then grants, holders and the role — in that order', async () => {
     const journal: string[] = [];
     const roles = new FakeCustomRoleRepository({
       elsewhere: ['role:update', 'role:delete'],
@@ -326,14 +333,20 @@ describe('deleting a role that is the subject of grants', () => {
 
     expect(journal).toEqual([
       `role.lockForRemoval:${ROLE_ID}`,
+      `role.composition:${ROLE_ID}`,
+      `role.holdsRole:${ROLE_ID}`,
       `acl.removeAllOfSubject:${ROLE_ID}`,
+      `role.bumpHoldersOf:${ROLE_ID}`,
+      `role.remove:${ROLE_ID}`,
     ]);
   });
 
-  it('answers «not there» when the role is deleted between the read and the lock, removing nothing', async () => {
+  it('answers «not there» when the lock finds no role, reading and removing nothing', async () => {
+    const journal: string[] = [];
     const roles = new FakeCustomRoleRepository({
       elsewhere: ['role:update', 'role:delete'],
       vanishesBeforeLock: true,
+      journal,
     });
     const { acl } = grantsAround();
     const audit = auditSpy();
@@ -354,6 +367,7 @@ describe('deleting a role that is the subject of grants', () => {
         ipAddress: undefined,
       }),
     ).rejects.toMatchObject({ code: 'role_not_found' });
+    expect(journal).toEqual([`role.lockForRemoval:${ROLE_ID}`]);
     expect(acl.rows).toHaveLength(4);
     expect(roles.versionBumps).toEqual([]);
     expect(audit.events).toEqual([]);

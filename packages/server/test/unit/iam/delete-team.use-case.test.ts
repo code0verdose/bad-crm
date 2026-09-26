@@ -169,6 +169,44 @@ describe('DeleteTeamUseCase — the ACL cascade', () => {
     ]);
   });
 
+  /**
+   * Grants before people (the re-gate's deadlock, 5/5 `40P01` against a revocation, measured in
+   * `acl-subject-cascade.test.ts`): `RevokeAclUseCase` locks a grant row and then updates `users`,
+   * so this cascade takes the grant rows before it bumps the members. The disbanding stays first — a
+   * team somebody else disbanded keeps its grants for the transaction that did it.
+   */
+  it('disbands, then takes the grants, then bumps the members — in that order', async () => {
+    const { acl, teams, useCase } = setup();
+    const journal: string[] = [];
+    const disbandTeam = teams.disband.bind(teams);
+    const bump = teams.bumpPermissionsVersionOf.bind(teams);
+    const collect = acl.removeAllOfSubject.bind(acl);
+
+    teams.disband = (teamId) => {
+      journal.push(`team.disband:${teamId}`);
+
+      return disbandTeam(teamId);
+    };
+    teams.bumpPermissionsVersionOf = (userIds) => {
+      journal.push(`team.bumpPermissionsVersionOf:${userIds.join(',')}`);
+
+      return bump(userIds);
+    };
+    acl.removeAllOfSubject = (subject) => {
+      journal.push(`acl.removeAllOfSubject:${subject.id}`);
+
+      return collect(subject);
+    };
+
+    await useCase.execute(disband());
+
+    expect(journal).toEqual([
+      `team.disband:${TEAM}`,
+      `acl.removeAllOfSubject:${TEAM}`,
+      `team.bumpPermissionsVersionOf:${IVAN},${PETR}`,
+    ]);
+  });
+
   it('files only team.deleted for a team that held no grants', async () => {
     const { acl, audit, useCase } = setup();
 

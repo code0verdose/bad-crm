@@ -15,6 +15,7 @@ import {
   sortOrderSchema,
   sortSchema,
   timeZoneSchema,
+  MAX_PAGE,
   MAX_PAGE_SIZE,
   DEFAULT_PAGE_SIZE,
   MICROS_PER_UNIT,
@@ -126,8 +127,23 @@ describe('pagination', () => {
     ['fractional page', { page: '1.5' }],
     ['page size above the cap', { perPage: String(MAX_PAGE_SIZE + 1) }],
     ['non-numeric page', { page: 'first' }],
+    // One past the last page whose rows, at the largest page size, an int4 offset still holds.
+    ['page one past the int4 bound', { page: '21474837' }],
+    ['page no integer holds', { page: '1e20' }],
   ])('rejects a %s', (_case, value) => {
     expect(offsetPageSchema.safeParse(value).success).toBe(false);
+  });
+
+  it('bounds the page so page × the largest page size fits a 32-bit signed integer', () => {
+    expect(MAX_PAGE).toBe(21_474_836);
+    expect(MAX_PAGE * MAX_PAGE_SIZE).toBeLessThanOrEqual(2 ** 31 - 1);
+    expect((MAX_PAGE + 1) * MAX_PAGE_SIZE).toBeGreaterThan(2 ** 31 - 1);
+  });
+
+  it('CONTROL: accepts the last page the bound allows, at the largest page size', () => {
+    expect(
+      offsetPageSchema.parse({ page: String(MAX_PAGE), perPage: String(MAX_PAGE_SIZE) }),
+    ).toEqual({ page: MAX_PAGE, perPage: MAX_PAGE_SIZE });
   });
 
   it('defaults the cursor page to no cursor and the documented limit', () => {
