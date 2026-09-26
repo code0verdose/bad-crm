@@ -1255,7 +1255,9 @@ Error — inline `DataState` с retry, не тост. No-access: без `materia
 |---|---|---|
 | `DataState` | `data-state.component.tsx` | единая обёртка `loading / error / empty / content`; принимает `status`, `error`, `onRetry`, `skeleton`, `empty` |
 | `EmptyState` | `empty-state.component.tsx` | иконка, заголовок, объяснение, первичное действие, опциональная ссылка на доки |
-| `ErrorState` | `error-state.component.tsx` | текст ошибки + «Повторить»; используется в `errorComponent` маршрутов и внутри `DataState` |
+| `ErrorState` | `error-state.component.tsx` | текст ошибки + «Повторить»; без заголовка страницы — внутри `DataState` и в составе `PageErrorState` |
+| `PageErrorState` | `page-error-state.component.tsx` | экран отказа маршрута (`errorComponent`): `h1` с `PAGE_TITLE_ID` и `tabIndex=-1`, затем `ErrorState`; крошка, `document.title` и объявление берут его ключ `errors.route.title` |
+| `NotFoundState` | `not-found-state.component.tsx` | экран «не найдено» (`notFoundComponent`): `h1` с `PAGE_TITLE_ID`; `EmptyState` остаётся `h2` для пустых состояний внутри страницы |
 | `PageHeader` | `page-header.component.tsx` | хлебные крошки, `h1`, бейдж области видимости, действия справа, вкладки снизу |
 | `Section` | `section.component.tsx` | заголовок уровня `h2` + описание + контент; единственный способ делить страницу |
 | `Toolbar` | `toolbar.component.tsx` | поиск, фильтры, сортировка, переключатель вида, счётчик результатов, «Сбросить» |
