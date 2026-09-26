@@ -35,9 +35,10 @@ const SKELETON_ROWS = 8;
  * directory owns the other; the directory is read only by somebody who may read it, and everybody
  * else sees the lead's id rather than a blank.
  *
- * **Two announcements, on purpose.** The count of what the filter found is a live region of its own
- * (`rules/a11y.mdc` §15), because the pager — the other live region — is not on screen when nothing
- * was found, which is exactly the answer a person who just typed most needs to hear.
+ * **One announcement.** The count of what the filter found is a live region of its own
+ * (`rules/a11y.mdc` §15), because the pager is not on screen when nothing was found, which is
+ * exactly the answer a person who just typed most needs to hear. So the pager's range stays quiet
+ * here (`announce={false}`): two regions changing on one filter read the number out twice.
  *
  * **Focus has somewhere to go.** Every control that takes the filters off takes itself off with
  * them — the bar's reset and last chip, the empty state's reset — and each hands focus to the search
@@ -116,6 +117,7 @@ export function ProjectList({ search, navigate }: ProjectListProps) {
           </div>
         )}
         <SharedUi.PaginationBar
+          announce={false}
           onPageChange={filters.setPage}
           page={page?.page ?? 1}
           perPage={page?.perPage ?? 1}

@@ -452,6 +452,46 @@ describe('/projects', () => {
     expect(announced).toEqual(['projects.list.found']);
   });
 
+  /**
+   * One change, one announcement. The pager's range is a live region of its own on other lists;
+   * here the count sentence already says it, and two polite regions changing on one filter make a
+   * screen reader read the same number twice (`rules/a11y.mdc` §15). In English rather than
+   * `cimode`, because a key does not change when the number in it does.
+   */
+  it('announces a new result count from exactly one live region', async () => {
+    const user = userEvent.setup();
+
+    await startAt({
+      i18n: SharedI18n.createI18n('en'),
+      language: 'en',
+      list: (search) => json(pageOf([project(1)], search.get('sort') === '-name' ? 5 : 37)),
+    });
+
+    await screen.findByRole('link', { name: 'Project 1' });
+
+    const live = (): Element[] => [
+      ...document.querySelectorAll(
+        '[role="status"], [aria-live="polite"], [aria-live="assertive"]',
+      ),
+    ];
+    const mentions = (count: number): Element[] =>
+      live().filter((region) =>
+        new RegExp(`(^|\\D)${String(count)}(\\D|$)`).test(region.textContent ?? ''),
+      );
+
+    await waitFor(() => {
+      expect(mentions(37)).not.toHaveLength(0);
+    });
+
+    await user.selectOptions(screen.getByLabelText('Order'), 'Name, Z to A');
+
+    await waitFor(() => {
+      expect(mentions(5)).not.toHaveLength(0);
+    });
+    expect(mentions(5).map((region) => region.textContent)).toEqual(['5 projects found']);
+    expect(mentions(37)).toEqual([]);
+  });
+
   it('shows a chip per active filter and takes one off without the others', async () => {
     const user = userEvent.setup();
     const app = await startAt({
