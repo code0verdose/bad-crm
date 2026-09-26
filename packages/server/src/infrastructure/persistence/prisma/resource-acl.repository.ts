@@ -21,6 +21,12 @@ interface RemovedGrantRow {
   readonly granted_by_id: string | null;
 }
 
+/** The same, with the subject — for a delete addressed by id, which knows neither half in advance. */
+interface RemovedRow extends RemovedGrantRow {
+  readonly subject_type: SharedPermissions.AclSubjectType;
+  readonly subject_id: string;
+}
+
 /**
  * The grants of the current tenant, through Prisma, inside the scope the caller opened.
  *
@@ -171,19 +177,28 @@ export class PrismaResourceAclRepository
     });
   }
 
-  remove(resource: AclResourceRef, subject: AclSubjectRef): Promise<boolean> {
-    return this.run('remove', async (tx) => {
-      const { count } = await tx.resourceAcl.deleteMany({
-        where: {
-          organizationId: this.organizationId('remove'),
-          resourceType: resource.type,
-          resourceId: resource.id,
-          subjectType: subject.type,
-          subjectId: subject.id,
-        },
-      });
+  removeById(id: string): Promise<AclEntryRow | null> {
+    return this.run('removeById', async (tx) => {
+      // `DELETE … RETURNING`, one statement: a concurrent revocation of the same id waits on the row
+      // lock and then deletes nothing, and the row reported is the one that went — the gate's L-1.
+      const rows = await tx.$queryRaw<RemovedRow[]>`
+        DELETE FROM resource_acl
+         WHERE organization_id = ${this.organizationId('removeById')}::uuid
+           AND id = ${id}::uuid
+        RETURNING id, resource_type, resource_id, subject_type, subject_id, access_level,
+                  expires_at, granted_by_id`;
+      const row = rows[0];
 
-      return count > 0;
+      return row === undefined
+        ? null
+        : {
+            id: row.id,
+            resource: { type: row.resource_type, id: row.resource_id },
+            subject: { type: row.subject_type, id: row.subject_id },
+            level: row.access_level,
+            expiresAt: row.expires_at,
+            grantedById: row.granted_by_id,
+          };
     });
   }
 

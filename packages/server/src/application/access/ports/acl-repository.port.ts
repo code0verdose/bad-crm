@@ -61,8 +61,18 @@ export interface AclRepositoryPort {
    */
   upsert(draft: AclEntryDraft): Promise<string>;
 
-  /** `false` when there was nothing to remove — the same end state, and not an error. */
-  remove(resource: AclResourceRef, subject: AclSubjectRef): Promise<boolean>;
+  /**
+   * Removes the one grant with this id and answers it **as the statement removed it**, or `null`
+   * when there was nothing to remove (the gate's L-1).
+   *
+   * By id, not by the (object, subject) pair the id was read with: between the read and this call a
+   * concurrent revocation may have removed the row and a new grant may have taken the pair, and a
+   * delete by pair would take that new grant with the old decision. `null` is the second of two
+   * concurrent revocations — it removed nothing, so it must bump nobody and file no `acl.revoked`.
+   * The row comes from the delete itself, so the trail records the level that actually ended, even
+   * when the same id was re-granted in between.
+   */
+  removeById(id: string): Promise<AclEntryRow | null>;
 
   /**
    * Removes every grant the subject holds, on whatever object, and answers what it removed — for a

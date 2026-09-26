@@ -524,16 +524,16 @@ export class FakeProjectStore
     return Promise.resolve(id);
   }
 
-  remove(resource: AclResourceRef, subject: AclSubjectRef): Promise<boolean> {
-    this.trace.push('acl.remove');
+  removeById(id: string): Promise<AclEntryRow | null> {
+    this.trace.push('acl.removeById');
 
-    const existing = this.grantOf(resource, subject);
+    const existing = this.tenantGrants().find((candidate) => candidate.id === id);
 
-    if (existing === undefined) return Promise.resolve(false);
+    if (existing === undefined) return Promise.resolve(null);
 
     this.grants.splice(this.grants.indexOf(existing), 1);
 
-    return Promise.resolve(true);
+    return Promise.resolve(this.row(existing));
   }
 
   removeAllOfSubject(subject: AclSubjectRef): Promise<readonly AclEntryRow[]> {

@@ -32,6 +32,9 @@ interface RemovedRow {
   readonly access_level: string;
   readonly expires_at: Date | null;
   readonly granted_by_id: string | null;
+  /** Present when the delete was addressed by id and has to report the subject as well. */
+  readonly subject_type?: string;
+  readonly subject_id?: string;
 }
 
 interface Recorder {
@@ -67,7 +70,6 @@ const recordingClient = (
       grantedById: string | null;
       grantedAt: Date;
     }[];
-    deleted?: number;
     counts?: { user?: number };
     userRoles?: { userId: string }[];
     teamMembers?: { userId: string }[];
@@ -113,7 +115,6 @@ const recordingClient = (
       ),
       findMany: record('resourceAcl.findMany', answers.many ?? []),
       upsert: record('resourceAcl.upsert', { id: ROW }),
-      deleteMany: record('resourceAcl.deleteMany', { count: answers.deleted ?? 0 }),
     },
     user: { count: record('user.count', answers.counts?.user ?? 0) },
     userRole: { findMany: record('userRole.findMany', answers.userRoles ?? []) },
@@ -311,13 +312,43 @@ describe('PrismaResourceAclRepository', () => {
     });
   });
 
-  it('removes by the quadruple inside the tenant and reports whether a row went', async () => {
-    const gone = recordingClient({ deleted: 1 });
-    const nothing = recordingClient({ deleted: 0 });
+  /**
+   * The gate's L-1: the revocation deletes **by id** and reports what went, in one statement — not
+   * by the (object, subject) pair, which a grant given again after a concurrent revocation would
+   * share. `null` for nothing removed is what keeps the second of two revocations from filing.
+   */
+  it('removes one grant by id inside the tenant and answers it as it went, or null', async () => {
+    const gone = recordingClient({
+      removedRows: [
+        {
+          id: ROW,
+          resource_type: 'PROJECT',
+          resource_id: PROJECT,
+          subject_type: 'TEAM',
+          subject_id: TEAM,
+          access_level: 'VIEWER',
+          expires_at: null,
+          granted_by_id: PETR,
+        },
+      ],
+    });
+    const nothing = recordingClient({ removedRows: [] });
 
-    await expect(inTenant(gone, (repo) => repo.remove(resource, team))).resolves.toBe(true);
-    await expect(inTenant(nothing, (repo) => repo.remove(resource, team))).resolves.toBe(false);
-    expect(gone.calls[0]?.args['where']).toMatchObject({ organizationId: ORG, subjectId: TEAM });
+    await expect(inTenant(gone, (repo) => repo.removeById(ROW))).resolves.toEqual({
+      id: ROW,
+      resource,
+      subject: team,
+      level: 'VIEWER',
+      expiresAt: null,
+      grantedById: PETR,
+    });
+    await expect(inTenant(nothing, (repo) => repo.removeById(ROW))).resolves.toBeNull();
+    expect(gone.raw).toHaveLength(1);
+    expect(gone.raw[0]?.sql).toMatch(
+      /^\s*DELETE FROM resource_acl\s+WHERE organization_id = \?::uuid\s+AND id = \?::uuid\s+RETURNING /,
+    );
+    expect(gone.raw[0]?.values).toEqual([ORG, ROW]);
+    expect(gone.calls).toEqual([]);
   });
 
   /**
