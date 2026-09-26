@@ -30,11 +30,12 @@ estimate: M
 >
 > **Блок `permissions` в DTO — это открытый критерий соседней истории.** Критерии 5 и 9 требуют,
 > чтобы решение о видимости кнопок бралось из `permissions: { canEdit, canManageMembers, canArchive }`
-> внутри DTO проекта. Такого блока сегодня не отдаёт **ни один** сериализатор: это критерий 12
+> внутри DTO проекта. Это же критерий 12
 > [STORY-011-08](../../epic-011-rbac-permissions/stories/story-011-08-effective-permissions.md),
 > оставленный открытым с формулировкой «некуда класть, пока нет ресурса ни у одного домена:
 > STORY-011-06, EPIC-014». Проект — тот самый первый ресурс, поэтому здесь блок появляется впервые,
-> и закрывает он не только эту историю.
+> и закрывает он не только эту историю. **Серверная половина отгружена 2026-09-27** — раздел
+> «Блок `permissions`: серверная половина» ниже.
 >
 > **Метрика расхождения из критерия 6.** `ui_server_permission_mismatch_total` не существует;
 > это половина критерия 13 той же STORY-011-08, открытая по причине «нужен канал клиентской
@@ -87,7 +88,7 @@ estimate: M
 >
 > **Чего в этой дельте нет.** Клиентской карточки (критерии 1–8, 10 целиком), блока `permissions`
 > в DTO (критерий 5 — приходит с первым маршрутом записи, когда `canUpdateProject` и соседи
-> получат потребителя), финансовых полей и их сокрытия (критерий 9 — полей ещё нет ни в схеме
+> получат потребителя; *отгружен 2026-09-27, см. ниже*), финансовых полей и их сокрытия (критерий 9 — полей ещё нет ни в схеме
 > ответа, ни в модели чтения, поэтому скрывать нечего; в `ProjectDetail` спеки записано, что они
 > сюда не добавляются).
 
@@ -182,8 +183,10 @@ estimate: M
       (шаг 3, `f156ee9`); маршрут, контракт, контроллер, сериализатор, валидатор и сборка в
       контейнере — 2026-09-06. **Без** `permissions` (`canEdit`, `canManageMembers`, `canArchive`)
       и без состава участников: и то и другое — вместе с первым маршрутом записи.
-- [ ] Серверная половина критерия 5: блок `permissions` (`canEdit`, `canManageMembers`,
-      `canArchive`) в `ProjectDetail` — в контракте его нет.
+- [x] Серверная половина критерия 5 (2026-09-27): блок `permissions` в `ProjectDetail` —
+      `domain/project/access/project-permissions.policy.ts` (`decideProjectPermissions`),
+      `application/project/project-card.util.ts` (`ProjectCard`, мемоизированные `projectReadFacts`),
+      сериализатор-whitelist, схема `ProjectPermissions` в контракте, типы клиента перегенерированы.
 - [x] i18n: `shared/i18n/locales/{en,ru}/projects.json` (namespace `projects`).
 - [x] Тесты клиента: `units/project/**/*.test.ts(x)` (утилиты, гард, хуки),
       `test/routes/project-overview-screen.test.tsx` (всё приложение: п. 1–4, 7, 8, 10 + axe),
@@ -198,8 +201,9 @@ estimate: M
   ролями и загрузкой, «появится в следующем релизе» для активности, задач, времени, CI), 7 (баннер
   архива), 8 (skeleton; inline-ошибка с повтором у карточки и у состава, без тоста; 404-экран),
   10 (tablist, иерархия заголовков, цвет декоративен, EN+RU, axe без нарушений).
-- **Открыты:** 5 и 6 — ждут `permissions` в DTO; изменяющих действий на экране пока нет, оборачивать
-  в `<Can>` и сопровождать тостом/метрикой нечего. 8 — кнопка «к списку проектов»: списка
+- **Открыты:** 5 и 6 — ждали `permissions` в DTO (серверная половина 5 отгружена 2026-09-27,
+  раздел ниже; клиентская — читать блок в `<Can>`/кнопках — открыта); изменяющих действий на экране
+  пока нет, оборачивать в `<Can>` и сопровождать тостом/метрикой нечего. 8 — кнопка «к списку проектов»: списка
   (STORY-014-04) нет, 404-экран ведёт на дашборд. 9 — на клиенте нечего скрывать (финансовых полей
   в контракте нет); снапшот сериализатора — серверная часть.
 - **Попутно исправлено:** `app/ui/route-error.component.tsx` — «Повторить» вызывал `reset`
@@ -211,6 +215,60 @@ estimate: M
   `PAGE_TITLE_ID`) вместо `EmptyState`, у которого был `h2` без id. «EN+RU» критерия 10 до этого был
   доказан только в `cimode`; теперь имена tablist, progressbar, отключённой вкладки и баннер архива
   проверяются на настоящих словарях обоих языков, проценты — через `SharedLib.formatPercent`.
+
+## Блок `permissions`: серверная половина критерия 5 (2026-09-27)
+
+**Форма в контракте** (`docs/api/openapi.yaml`, схема `ProjectPermissions`, обязательное поле
+`permissions` у `ProjectDetail`): `{ canEdit, canManageMembers, canArchive, canDelete }`, все четыре —
+`boolean`, `additionalProperties: false`.
+
+**Набор флагов — объединение документов, а не выбор.** Эта история называет `canEdit`,
+`canManageMembers`, `canArchive`; критерий 12 STORY-011-08 и `ux-architecture.md` — ещё `canDelete`.
+Флаг заводится только там, где есть команда, решение которой он обещает: у `project:manage_settings`
+маршрута нет, `project:manage_visibility` флагом не называет ни один документ — их в блоке нет.
+
+| Флаг | Функция policy | Команда, которая её же вызывает |
+|---|---|---|
+| `canEdit` | `canUpdateProject` (`project:update`, `EDITOR`) | `UpdateProjectUseCase` (без смены лида) |
+| `canManageMembers` | `canManageProjectMembers` (`project:manage_members`, `MANAGER`) | `Add/Update/RemoveProjectMemberUseCase`, смена `leadId` в `UpdateProjectUseCase` |
+| `canArchive` | `canArchiveProject` (`project:archive`, `MANAGER`) | `ArchiveProjectUseCase` |
+| `canDelete` | `canDeleteProject` (`project:delete`, `MANAGER`) | `DeleteProjectUseCase` |
+
+**Второй точки вычисления нет (R-15).** `decideProjectPermissions` вызывает те же четыре функции
+над теми же фактами (`scope()` + резолвер цепочки), на которых `GetProjectDetailQuery` только что
+решил `project:read`; факты мемоизированы (`projectReadFacts`), поэтому блок не добавляет ни одного
+оператора — след портов тот же `scope → acl → detail`. Архивный проект флаги не гасят: команды на
+нём сегодня не отказывают (правило «только чтение» — STORY-014-07), и блок обязан совпадать с
+командами, а не с замыслом.
+
+**`POST /projects` отдаёт тот же блок** — ответ описан как «проект, каким его прочтёт
+`GET /projects/{projectId}`», и схема у них одна. `CreateProjectUseCase` получил резолвер и решает
+флаги над только что записанным `LEAD`-местом создателя. Отказ резолвера здесь не 503, а
+`false` во всех флагах (fail-closed): строка уже записана, и ронять создание из-за подсказки нельзя.
+
+**Список (`GET /projects`) блока не получает**: STORY-014-04 его не требует, а в элементе списка
+кнопок изменения нет.
+
+**Тесты.** `test/unit/application/project-card-permissions.test.ts` — таблица «7 системных ролей +
+admin с DENY на `project:archive`» × «зритель `PUBLIC_ORG`, `OBSERVER`, `REVIEWER`, `MEMBER`, `LEAD`,
+`PRIVATE` без места»: эталон справа — **сама команда** на свежем сторе с тем же посевом, а не
+выписанная руками таблица; контроль, что каждый флаг принимает оба значения и что `canEdit` ≠
+`canArchive` хотя бы в одной строке; контроль «ни одного лишнего чтения». HTTP-форма —
+`project-endpoints.test.ts` (зритель — все `false`; `MEMBER` и `LEAD` — два разных блока, след тот
+же) и `project-write-endpoints.test.ts` (`201` с блоком). Сериализатор — `project-serializer.test.ts`
+(whitelist внутри блока; две фикстуры, различающие каждую пару флагов).
+
+**Доказательство красного** (внесён дефект — точное падение — откат):
+- `canArchive` вычислен `canUpdateProject` → 7 падений таблицы, например
+  `admin · MEMBER: every flag is what its command decides` с `-"canArchive": false / +"canArchive": true`;
+- мемоизация фактов снята → `expected [ 'scope', 'scope', 'scope', …(2) ] to have a length of 1 but got 5`;
+- `CreateProjectUseCase` решает флаги на `NO_PROJECT_YET` →
+  `expected { canEdit: false, …(3) } to deeply equal { canEdit: true, …(3) }`;
+- сериализатор копирует `canArchive` из `canEdit` → падает `carries each flag as decided, not a copy
+  of its neighbour` (первая версия теста с «зеркальной» фикстурой этот дефект **не** ловила —
+  зеркало сохраняет равные пары; заменена).
+
+**Открыто:** клиентская половина критерия 5 (кнопки через блок), критерий 6.
 
 ## Ссылки
 
