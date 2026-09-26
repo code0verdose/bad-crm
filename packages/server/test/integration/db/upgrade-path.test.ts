@@ -41,7 +41,7 @@ const PACKAGE_ROOT = fileURLToPath(new URL('../../..', import.meta.url));
 const SQL_DIR = fileURLToPath(new URL('../../../prisma/sql', import.meta.url));
 const PRISMA_BIN = fileURLToPath(new URL('../../../node_modules/.bin/prisma', import.meta.url));
 
-const IMAGE = 'pgvector/pgvector:0.8.5-pg16';
+const IMAGE = 'pgvector/pgvector:0.8.6-pg16';
 const DATABASE = 'bad_crm';
 const SUPERUSER = 'bad_crm';
 

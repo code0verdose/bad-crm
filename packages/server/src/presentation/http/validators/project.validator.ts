@@ -149,6 +149,13 @@ export const projectMembersQuerySchema = z.strictObject({
 const LIST_PER_PAGE_MAX = 100;
 const LIST_PER_PAGE_DEFAULT = 25;
 
+/**
+ * The last page whose offset, `(page - 1) * perPage`, still fits a 32-bit signed integer at the
+ * largest page size — `page * perPage` ≤ 2^31 − 1. Beyond it the number is not a page anybody can
+ * reach by paging, only a value that has to be carried to the database and back.
+ */
+const LIST_PAGE_MAX = Math.floor((2 ** 31 - 1) / LIST_PER_PAGE_MAX);
+
 /** A name or a key; beyond that it is not a search. */
 const LIST_QUERY_MAX = 64;
 
@@ -176,7 +183,7 @@ export const projectListQuerySchema = z.strictObject({
   sort: z.enum(PROJECT_LIST_SORTS).optional().default('name'),
   // `coerce`, because a query string carries digits and not numbers; `int()` after it, so that
   // `?page=1.5` is refused rather than floored into a page nobody asked for.
-  page: z.coerce.number().int().min(1).optional().default(1),
+  page: z.coerce.number().int().min(1).max(LIST_PAGE_MAX).optional().default(1),
   perPage: z.coerce
     .number()
     .int()

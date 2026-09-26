@@ -47,7 +47,7 @@ alwaysApply: true
    `pnpm test:integration`: граница между командами — «нужен ли контейнер», а не слово «интеграция».
    Образ Postgres для Testcontainers пинуется в
    `packages/server/test/integration/db/setup/testcontainers.setup.ts` (сейчас
-   `pgvector/pgvector:0.8.5-pg16`) и отдельно — в `docker-compose.yml` для dev-стека; сверяй файл,
+   `pgvector/pgvector:0.8.6-pg16`) и отдельно — в `docker-compose.yml` для dev-стека; сверяй файл,
    а не память.
 
    **Новая директория под `test/integration/` обязана быть заявлена в конфиге** — в `include`

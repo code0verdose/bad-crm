@@ -252,6 +252,30 @@ describe('GET /api/v1/projects', () => {
     expect(response.body).toMatchObject({ code: 'validation_failed' });
   });
 
+  it.each<[string, string]>([
+    // One past the last page whose offset, at the largest page size, still fits a 32-bit integer.
+    ['one past the last page an int4 offset holds', '?page=21474837'],
+    ['a page no integer holds', '?page=1e20'],
+  ])('422 on %s, named on page', async (_case, query) => {
+    const { test, token } = await signedIn({ capabilities: READER, projects: store() });
+
+    const response = await listProjects(test, token, query).expect(422);
+
+    expect(response.body).toMatchObject({ code: 'validation_failed' });
+    const paths = (response.body as { errors: { path: string }[] }).errors.map((e) => e.path);
+
+    // Every issue is the page's — `1e20` fails both `int()` and the bound, and says so twice.
+    expect(new Set(paths)).toEqual(new Set(['page']));
+  });
+
+  it('CONTROL: the last page the bound allows is an empty page, not a refusal', async () => {
+    const { test, token } = await signedIn({ capabilities: READER, projects: store() });
+
+    const response = await listProjects(test, token, '?page=21474836&perPage=100').expect(200);
+
+    expect(response.body).toMatchObject({ items: [], total: 2, page: 21_474_836, perPage: 100 });
+  });
+
   it('503 service_unavailable when the grants cannot be read — not an empty list', async () => {
     const projects = store();
 
