@@ -12,8 +12,9 @@ import { FakeAuditLogger, FakeUnitOfWork } from '../../support/identity-doubles.
 import { FakeAclRepository, FakeAclResolver, actorWith, ids } from './acl-doubles.util.js';
 
 /**
- * `POST /acl` without the route: the command that writes a grant — STORY-011-06, acceptance 1
- * and 11.
+ * The command behind `POST /acl`, without HTTP (the route itself is in
+ * `test/integration/http/acl-endpoints.test.ts`): the command that writes a grant — STORY-011-06,
+ * acceptance 1 and 11.
  *
  * The order inside the transaction is the whole test: the object is resolved and the policy runs
  * **before** the subject is looked at, so a caller who may not grant on a project cannot use the

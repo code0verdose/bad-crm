@@ -957,7 +957,7 @@ enum AclResourceType {
   @@map("acl_resource_type")
 }
 
-/// Who a grant is for. `ROLE` has no route yet and is kept for the reason the shared list gives.
+/// Who a grant is for — the shared `ACL_SUBJECT_TYPES`; all three are accepted by `POST /acl`.
 enum AclSubjectType {
   USER
   ROLE
@@ -988,12 +988,11 @@ enum AccessLevel {
 /// - `organizationId` is a column of this row and not derived from the object: without a key the
 ///   database cannot know the object exists, let alone which tenant it belongs to, and the policy
 ///   compares this column (`rules/polymorphic-access.mdc`, 5);
-/// - a grant on a deleted object is harmless and is cleaned by schedule, not by cascade. There is
-///   no cascade in the other direction either — not in the database (no key to hang it on) and,
-///   as of 2026-09-06, not in a use-case: `delete-custom-role.use-case.ts` and
-///   `delete-team.use-case.ts` leave `resource_acl` untouched. Removing a role's grants
-///   (STORY-011-06, acceptance 13) and a team's (STORY-012-07, acceptance 5) is the next step,
-///   alongside the `acl:*` routes; `idx_resource_acl_subject` is already the index it will use.
+/// - a grant on a deleted object is harmless and is cleaned by schedule, not by cascade. The
+///   other direction has no cascade in the database (no key to hang it on); since 2026-09-26 it
+///   lives in the use-cases: `delete-custom-role.use-case.ts` and `delete-team.use-case.ts` remove
+///   the subject's grants in their own transaction (STORY-011-06, acceptance 13; STORY-012-07,
+///   acceptance 5), through `idx_resource_acl_subject`, and file one `acl.revoked` per grant.
 ///
 /// One opinion per (object, subject): `uq_resource_acl`. Two different levels for the same subject
 /// on the same object would be a conflict the resolution rules were written to make impossible.
