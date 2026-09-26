@@ -1,3 +1,4 @@
+import { type AclRepositoryPort } from '@/application/access/ports/acl-repository.port.js';
 import { type TeamRepositoryPort } from '@/application/iam/ports/team-repository.port.js';
 import { type AuditLoggerPort } from '@/application/platform/ports/audit-logger.port.js';
 import { type UnitOfWorkPort } from '@/application/platform/ports/unit-of-work.port.js';
@@ -58,17 +59,20 @@ export interface DeleteTeamInput {
  * the release that made membership matter would leave every token minted before it trusting a
  * membership that had already been revoked.
  *
- * **What this does not do yet is cascade over `ResourceAcl`.** Acceptance 5 of STORY-012-07 asks
- * for a disbanded team's grants to be removed in the same transaction; the table and the resolver
- * exist (see above), but no `AclRepositoryPort` is wired here and the rows stay. That criterion is
- * open and closes together with the `acl:*` routes — until then a stale `TEAM` row is harmless:
- * the reader matches team subjects through `team_members`, which this transaction empties, so the
- * grant already resolves for nobody. `idx_resource_acl_subject` is the index the cascade will use.
+ * **The team's `ResourceAcl` grants go in the same transaction** (acceptance 5 of STORY-012-07).
+ * The subject of a grant is polymorphic and has no foreign key, so nothing in the database removes
+ * them. A stale `TEAM` row would resolve for nobody — the reader matches team subjects through
+ * `team_members`, which this transaction empties — but it would still be a grant to a team nobody
+ * can see or revoke from the interface. The cascade runs **after** `disband()` succeeds: a team
+ * disbanded by somebody else in between keeps its grants for the transaction that did disband it.
+ * Whom the grants reached is the former members, bumped above. Each removed grant files its own
+ * `acl.revoked` with `after.cause = 'team.deleted'`, after `team.deleted`.
  */
 export class DeleteTeamUseCase {
   constructor(
     private readonly unitOfWork: UnitOfWorkPort,
     private readonly teams: TeamRepositoryPort,
+    private readonly acl: AclRepositoryPort,
     private readonly audit: AuditLoggerPort,
   ) {}
 
@@ -92,6 +96,8 @@ export class DeleteTeamUseCase {
         // five-second ceiling is a save that fails on arithmetic rather than on anything being wrong.
         await this.teams.bumpPermissionsVersionOf(disbanded.members.map((member) => member.userId));
 
+        const revoked = await this.acl.removeAllOfSubject({ type: 'TEAM', id: input.teamId });
+
         await this.audit.record({
           action: 'team.deleted',
           actor: {
@@ -103,7 +109,7 @@ export class DeleteTeamUseCase {
           // The name and the full roster, each with the role they held: `team_members` has no
           // `deleted_at`, so after this transaction this entry is the only record the team had
           // anybody on it at all — and the only place `teamRole` survives, for whoever grants these
-          // people access again once STORY-011-06 gives a team something to grant.
+          // people access again.
           before: {
             name: disbanded.name,
             members: disbanded.members.map((member) => ({
@@ -113,6 +119,32 @@ export class DeleteTeamUseCase {
           },
           requestId: undefined,
         });
+
+        // Literals, not a helper and not a shorthand: `audit-privileged-ip-address.test.ts` reads
+        // each `audit.record({ … })` from the source, and an entry built elsewhere is one it
+        // cannot see. `before` is the grant as it stood (the shape `RevokeAclUseCase` writes);
+        // `after.cause` tells this cascade apart from a revocation by hand.
+        for (const grant of revoked) {
+          await this.audit.record({
+            action: 'acl.revoked',
+            actor: {
+              userId: input.actor.userId,
+              organizationId: input.actor.organizationId,
+              ipAddress: input.ipAddress,
+            },
+            target: { type: 'RESOURCE_ACL', id: grant.id },
+            before: {
+              resourceType: grant.resource.type,
+              resourceId: grant.resource.id,
+              subjectType: grant.subject.type,
+              subjectId: grant.subject.id,
+              accessLevel: grant.level,
+              expiresAt: grant.expiresAt?.toISOString() ?? null,
+            },
+            after: { cause: 'team.deleted' },
+            requestId: undefined,
+          });
+        }
       },
     );
   }

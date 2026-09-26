@@ -151,6 +151,7 @@ import { AesFieldEncryption } from '@/infrastructure/crypto/field-encryption.ada
 import { PrismaEmployeeDirectoryRepository } from '@/infrastructure/persistence/prisma/employee-directory.repository.js';
 import { PrismaOwnershipRepository } from '@/infrastructure/persistence/prisma/ownership.repository.js';
 import { PrismaTeamRepository } from '@/infrastructure/persistence/prisma/team.repository.js';
+import { PrismaResourceAclRepository } from '@/infrastructure/persistence/prisma/resource-acl.repository.js';
 import { PrismaAclReader } from '@/infrastructure/persistence/prisma/acl-reader.adapter.js';
 import { PrismaProjectAccessReader } from '@/infrastructure/persistence/prisma/project-access-reader.adapter.js';
 import { PrismaProjectMemberRepository } from '@/infrastructure/persistence/prisma/project-member.repository.js';
@@ -701,6 +702,9 @@ const buildIam = (input: {
   const userLifecycle = new PrismaUserLifecycleRepository();
   const ownership = new PrismaOwnershipRepository();
   const teams = new PrismaTeamRepository();
+  // The grants a deleted role or disbanded team takes with it (STORY-011-06 acceptance 13,
+  // STORY-012-07 acceptance 5) — the only consumers until the `acl:*` routes are wired.
+  const grants = new PrismaResourceAclRepository();
 
   const buildActor = new BuildActorQuery(unitOfWork, permissions);
 
@@ -729,12 +733,12 @@ const buildIam = (input: {
     applyChanges: new ApplyRoleChangesUseCase(unitOfWork, customRoles, input.audit),
     createRole: new CreateCustomRoleUseCase(unitOfWork, customRoles, input.audit),
     updateRole: new UpdateCustomRoleUseCase(unitOfWork, customRoles, input.audit),
-    deleteRole: new DeleteCustomRoleUseCase(unitOfWork, customRoles, input.audit),
+    deleteRole: new DeleteCustomRoleUseCase(unitOfWork, customRoles, grants, input.audit),
     listTeams: new ListTeamsQuery(unitOfWork, teams),
     getTeamDetail: new GetTeamDetailQuery(unitOfWork, teams),
     createTeam: new CreateTeamUseCase(unitOfWork, teams, input.audit),
     updateTeam: new UpdateTeamUseCase(unitOfWork, teams, input.audit),
-    deleteTeam: new DeleteTeamUseCase(unitOfWork, teams, input.audit),
+    deleteTeam: new DeleteTeamUseCase(unitOfWork, teams, grants, input.audit),
     addTeamMember: new AddTeamMemberUseCase(unitOfWork, teams, input.audit),
     removeTeamMember: new RemoveTeamMemberUseCase(unitOfWork, teams, input.audit),
     listInvitations: new ListInvitationsQuery(unitOfWork, invitations),

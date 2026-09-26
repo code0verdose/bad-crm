@@ -11,6 +11,7 @@ import { ConfirmationRequiredError, NotFoundError } from '@/domain/shared/errors
 
 import { FakeCustomRoleRepository } from '../../support/iam-doubles.util.js';
 import { FakeUnitOfWork } from '../../support/identity-doubles.util.js';
+import { FakeAclRepository } from '../application/acl-doubles.util.js';
 
 /**
  * The two commands where the actor is inside the change they are making.
@@ -101,7 +102,12 @@ const heldByActor = (
 describe('deleting a role the actor holds', () => {
   it('allows it when another role still grants the right to edit roles', async () => {
     const roles = heldByActor(['role:update', 'role:delete']);
-    const useCase = new DeleteCustomRoleUseCase(unitOfWork, roles, auditSpy().port);
+    const useCase = new DeleteCustomRoleUseCase(
+      unitOfWork,
+      roles,
+      new FakeAclRepository(),
+      auditSpy().port,
+    );
 
     await useCase.execute({ actor: actorWith(), roleId: ROLE_ID, ipAddress: undefined });
 
@@ -116,7 +122,12 @@ describe('deleting a role the actor holds', () => {
     const roles = heldByActor(['role:update', 'role:delete']);
     const audit = auditSpy();
 
-    await new DeleteCustomRoleUseCase(unitOfWork, roles, audit.port).execute({
+    await new DeleteCustomRoleUseCase(
+      unitOfWork,
+      roles,
+      new FakeAclRepository(),
+      audit.port,
+    ).execute({
       actor: actorWith(),
       roleId: ROLE_ID,
       ipAddress: '203.0.113.9',
@@ -144,12 +155,153 @@ describe('deleting a role the actor holds', () => {
 
   it('refuses when it would take away the actor’s own last way back', async () => {
     const roles = heldByActor();
-    const useCase = new DeleteCustomRoleUseCase(unitOfWork, roles, auditSpy().port);
+    const useCase = new DeleteCustomRoleUseCase(
+      unitOfWork,
+      roles,
+      new FakeAclRepository(),
+      auditSpy().port,
+    );
 
     await expect(
       useCase.execute({ actor: actorWith(), roleId: ROLE_ID, ipAddress: undefined }),
     ).rejects.toBeInstanceOf(AccessRefusedError);
     expect(roles.roles.size).toBe(1);
+  });
+});
+
+/**
+ * STORY-011-06 acceptance 13: a role that stops existing takes its `ResourceAcl` rows with it, in
+ * the same transaction. There is no foreign key to do it — the subject is polymorphic — so a row
+ * left behind is a grant to a role nobody can see or revoke from the interface.
+ */
+describe('deleting a role that is the subject of grants', () => {
+  const PROJECT_A = '018f4a3b-0000-7000-8000-0000000000d1';
+  const PROJECT_B = '018f4a3b-0000-7000-8000-0000000000d2';
+  const OTHER_ROLE = 'role-2';
+  const TEAM = '018f4a3b-0000-7000-8000-0000000000e1';
+
+  const grantsAround = (): { acl: FakeAclRepository; ids: string[] } => {
+    const acl = new FakeAclRepository();
+    const ids = [
+      acl.seed({
+        resource: { type: 'PROJECT', id: PROJECT_A },
+        subject: { type: 'ROLE', id: ROLE_ID },
+        level: 'EDITOR',
+        expiresAt: null,
+        grantedById: 'admin',
+      }),
+      acl.seed({
+        resource: { type: 'PROJECT', id: PROJECT_B },
+        subject: { type: 'ROLE', id: ROLE_ID },
+        level: 'VIEWER',
+        expiresAt: new Date('2026-12-31T00:00:00.000Z'),
+        grantedById: null,
+      }),
+    ];
+
+    // Neighbours the cascade must not touch: another role and a team, on the same project.
+    acl.seed({
+      resource: { type: 'PROJECT', id: PROJECT_A },
+      subject: { type: 'ROLE', id: OTHER_ROLE },
+      level: 'MANAGER',
+      expiresAt: null,
+      grantedById: 'admin',
+    });
+    acl.seed({
+      resource: { type: 'PROJECT', id: PROJECT_A },
+      subject: { type: 'TEAM', id: TEAM },
+      level: 'COMMENTER',
+      expiresAt: null,
+      grantedById: 'admin',
+    });
+
+    return { acl, ids };
+  };
+
+  it('removes exactly the grants of this role, and nobody else’s', async () => {
+    const roles = heldByActor(['role:update', 'role:delete']);
+    const { acl } = grantsAround();
+
+    await new DeleteCustomRoleUseCase(unitOfWork, roles, acl, auditSpy().port).execute({
+      actor: actorWith(),
+      roleId: ROLE_ID,
+      ipAddress: undefined,
+    });
+
+    expect(acl.rows.map((row) => `${row.subject.type}:${row.subject.id}`)).toEqual([
+      `ROLE:${OTHER_ROLE}`,
+      `TEAM:${TEAM}`,
+    ]);
+    // The people the grants reached are the holders, and they are bumped — once, by the same
+    // statement that covers the permissions the role itself carried.
+    expect(roles.versionBumps).toEqual(['admin', 'ivan']);
+    expect(unitOfWork.scopes).toEqual(scopeOfActor);
+  });
+
+  it('files acl.revoked for each grant it took, after role.deleted, with what was there', async () => {
+    const roles = heldByActor(['role:update', 'role:delete']);
+    const { acl, ids } = grantsAround();
+    const audit = auditSpy();
+
+    await new DeleteCustomRoleUseCase(unitOfWork, roles, acl, audit.port).execute({
+      actor: actorWith(),
+      roleId: ROLE_ID,
+      ipAddress: '203.0.113.9',
+    });
+
+    const actor = { userId: 'admin', organizationId: ORG, ipAddress: '203.0.113.9' };
+
+    expect(audit.events.map((event) => event.action)).toEqual([
+      'role.deleted',
+      'acl.revoked',
+      'acl.revoked',
+    ]);
+    expect(audit.events.slice(1)).toEqual([
+      {
+        action: 'acl.revoked',
+        actor,
+        target: { type: 'RESOURCE_ACL', id: ids[0] },
+        before: {
+          resourceType: 'PROJECT',
+          resourceId: PROJECT_A,
+          subjectType: 'ROLE',
+          subjectId: ROLE_ID,
+          accessLevel: 'EDITOR',
+          expiresAt: null,
+        },
+        after: { cause: 'role.deleted' },
+        requestId: undefined,
+      },
+      {
+        action: 'acl.revoked',
+        actor,
+        target: { type: 'RESOURCE_ACL', id: ids[1] },
+        before: {
+          resourceType: 'PROJECT',
+          resourceId: PROJECT_B,
+          subjectType: 'ROLE',
+          subjectId: ROLE_ID,
+          accessLevel: 'VIEWER',
+          expiresAt: '2026-12-31T00:00:00.000Z',
+        },
+        after: { cause: 'role.deleted' },
+        requestId: undefined,
+      },
+    ]);
+  });
+
+  it('leaves every grant in place when the deletion is refused', async () => {
+    const roles = heldByActor();
+    const { acl } = grantsAround();
+
+    await expect(
+      new DeleteCustomRoleUseCase(unitOfWork, roles, acl, auditSpy().port).execute({
+        actor: actorWith(),
+        roleId: ROLE_ID,
+        ipAddress: undefined,
+      }),
+    ).rejects.toBeInstanceOf(AccessRefusedError);
+    expect(acl.rows).toHaveLength(4);
   });
 });
 

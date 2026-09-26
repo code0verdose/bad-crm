@@ -142,6 +142,7 @@ import {
   FakeUserRoleRepository,
 } from './iam-doubles.util.js';
 import { FakeProjectStore } from './project-doubles.util.js';
+import { FakeAclRepository } from '../unit/application/acl-doubles.util.js';
 
 /**
  * The real HTTP surface over in-memory ports.
@@ -182,6 +183,8 @@ export interface AuthApp {
   readonly customRoles: FakeCustomRoleRepository;
   /** Teams, so a suite can seed one and read back what a membership change did. */
   readonly teams: FakeTeamRepository;
+  /** The grants a role or team deletion cascades over — seedable, and readable after. */
+  readonly grants: FakeAclRepository;
   /** Projects, memberships and ACL grants — the three ports a read of one project goes through. */
   readonly projects: FakeProjectStore;
   readonly invitations: FakeInvitationRepository;
@@ -264,6 +267,8 @@ export interface AuthAppOptions {
   readonly customRoles?: FakeCustomRoleRepository;
   /** State the team commands act on. */
   readonly teams?: FakeTeamRepository;
+  /** The grants a role or team deletion cascades over. */
+  readonly grants?: FakeAclRepository;
   /**
    * The projects of the installation, with their rosters and grants. Unbound when handed in — the
    * harness binds the store to its own unit of work, which is where the store reads the tenant.
@@ -576,6 +581,7 @@ export const createAuthApp = (options: AuthAppOptions = {}): AuthApp => {
   const overrides = options.overrides ?? new FakePermissionOverrideRepository();
   const customRoles = options.customRoles ?? new FakeCustomRoleRepository();
   const teams = options.teams ?? new FakeTeamRepository();
+  const grants = options.grants ?? new FakeAclRepository();
   const projects = (options.projects ?? new FakeProjectStore()).bindTo(unitOfWork);
   const invitations = options.invitations ?? new FakeInvitationRepository();
   const employeeProfiles = options.employeeProfiles ?? new FakeEmployeeProfileRepository();
@@ -624,12 +630,12 @@ export const createAuthApp = (options: AuthAppOptions = {}): AuthApp => {
     applyChanges: new ApplyRoleChangesUseCase(unitOfWork, customRoles, audit),
     createRole: new CreateCustomRoleUseCase(unitOfWork, customRoles, audit),
     updateRole: new UpdateCustomRoleUseCase(unitOfWork, customRoles, audit),
-    deleteRole: new DeleteCustomRoleUseCase(unitOfWork, customRoles, audit),
+    deleteRole: new DeleteCustomRoleUseCase(unitOfWork, customRoles, grants, audit),
     listTeams: new ListTeamsQuery(unitOfWork, teams),
     getTeamDetail: new GetTeamDetailQuery(unitOfWork, teams),
     createTeam: new CreateTeamUseCase(unitOfWork, teams, audit),
     updateTeam: new UpdateTeamUseCase(unitOfWork, teams, audit),
-    deleteTeam: new DeleteTeamUseCase(unitOfWork, teams, audit),
+    deleteTeam: new DeleteTeamUseCase(unitOfWork, teams, grants, audit),
     addTeamMember: new AddTeamMemberUseCase(unitOfWork, teams, audit),
     removeTeamMember: new RemoveTeamMemberUseCase(unitOfWork, teams, audit),
     listInvitations: new ListInvitationsQuery(unitOfWork, invitations),
@@ -854,6 +860,7 @@ export const createAuthApp = (options: AuthAppOptions = {}): AuthApp => {
     customRoles,
     projects,
     teams,
+    grants,
     audit,
     logLines: platform.logLines,
   };

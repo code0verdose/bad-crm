@@ -94,6 +94,16 @@ describe('which permission an audit action stands behind', () => {
     expect(severityOf('project.deleted')).toBe('WARNING');
   });
 
+  /**
+   * `acl.revoked` is filed by three use-cases: a revocation by hand, and the cascades of a role
+   * deletion and a team disbanding (STORY-011-06 acceptance 13, STORY-012-07 acceptance 5). The
+   * last two run under their own key, not under `acl:revoke`, so the row names all three.
+   */
+  it('reads acl.revoked as behind the revocation and both cascades that file it', () => {
+    expect(permissionsBehind('acl.revoked')).toEqual(['acl:revoke', 'role:delete', 'team:delete']);
+    expect(severityOf('acl.revoked')).toBe('WARNING');
+  });
+
   it('treats an action with two possible keys as dangerous if either one is', () => {
     expect(permissionsBehind('role.dangerous_granted')).toEqual(['role:create', 'role:update']);
     expect(PERMISSION_META['role:create'].dangerous).toBe(false);

@@ -76,7 +76,10 @@ export const AUDIT_ACTION_PERMISSIONS: Readonly<Record<AuditAction, readonly Per
   'permission.override.updated': ['permission:override'],
   'permission.override.deleted': ['permission:override'],
   'acl.granted': ['acl:grant'],
-  'acl.revoked': ['acl:revoke'],
+  // By hand under `acl:revoke`, and as the cascade of a deleted role or a disbanded team — those
+  // two run under their own key and say so in `after.cause` (`delete-custom-role.use-case.ts`,
+  // `delete-team.use-case.ts` on the server).
+  'acl.revoked': ['acl:revoke', 'role:delete', 'team:delete'],
   // A capability of the process, not of a person; nothing in the catalogue grants it.
   'rls.bypassed': [],
   'permission.inspected': ['permission:override_read'],
