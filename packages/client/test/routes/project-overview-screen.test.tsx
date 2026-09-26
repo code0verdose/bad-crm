@@ -441,6 +441,107 @@ describe('/projects/$projectId', () => {
     });
   });
 
+  /**
+   * A failed route replaces the whole card, heading included — so the error screen is the page and
+   * owes the page its `h1`. Without one the route announcer's focus move found no target: a keyboard
+   * user arrived at «this page could not be opened» with focus on `<body>`, and the title and the
+   * live region still named a project that was not on screen.
+   */
+  it('puts focus on the error heading — the only h1 — after navigating to a page that fails', async () => {
+    const { router } = await startAt({ detail: () => problem(500, 'internal_error') });
+
+    await screen.findByRole('button', { name: 'common.retry' }, { timeout: 5_000 });
+    await router.navigate({ to: '/dashboard' });
+    await screen.findByRole('heading', { level: 1, name: /dashboard/ });
+
+    await router.navigate({ to: '/projects/$projectId', params: { projectId: PROJECT } });
+
+    const heading = await screen.findByRole(
+      'heading',
+      { level: 1, name: 'errors.route.title' },
+      { timeout: 5_000 },
+    );
+
+    await waitFor(() => {
+      expect(document.activeElement).toBe(heading);
+    });
+    expect(screen.getAllByRole('heading', { level: 1 })).toEqual([heading]);
+    // CONTROL: the failure is still stated, and the retry is still there to act on it.
+    expect(screen.getByRole('alert')).toHaveTextContent('errors.route.failed');
+    expect(screen.getByRole('button', { name: 'common.retry' })).toBeInTheDocument();
+  });
+
+  /**
+   * CONTROL for the case above: a page the tab *opened* on is not a navigation, even when it opens
+   * on its error screen. Focus stays where the browser put it, so the skip link is the first Tab.
+   */
+  it('leaves focus alone when the page the tab opened on fails', async () => {
+    await startAt({ detail: () => problem(500, 'internal_error') });
+
+    const heading = await screen.findByRole(
+      'heading',
+      { level: 1, name: 'errors.route.title' },
+      { timeout: 5_000 },
+    );
+
+    expect(heading).not.toHaveFocus();
+    expect(document.activeElement).toBe(document.body);
+  });
+
+  it('names the failure, not the project, in the title and the announcement', async () => {
+    await startAt({ detail: () => problem(500, 'internal_error') });
+
+    await screen.findByRole(
+      'heading',
+      { level: 1, name: 'errors.route.title' },
+      { timeout: 5_000 },
+    );
+
+    await waitFor(() => {
+      expect(document.title).toBe('errors.route.title · Bad CRM');
+    });
+    expect(screen.getByTestId('route-announcer')).toHaveTextContent(exactly('errors.route.title'));
+  });
+
+  /**
+   * A retry of a failed route that fails again. The alert is the thing a screen reader announces,
+   * and an alert left in the DOM with the same sentence announces nothing: the reader pressed
+   * «Retry», the button went busy, came back — and nothing said the second attempt failed too. The
+   * second failure has to be a *new* alert, and focus must not be left on `<body>`.
+   */
+  it('announces a route reload that fails again with a fresh alert, focus kept off the body', async () => {
+    const user = userEvent.setup();
+
+    await startAt({ detail: () => problem(500, 'internal_error') });
+
+    const retry = await screen.findByRole('button', { name: 'common.retry' }, { timeout: 5_000 });
+    const firstAlert = screen.getByRole('alert');
+    const callsBefore = detailCalls().length;
+
+    await user.click(retry);
+
+    // The reload reached the server and answered; the retry is ready again.
+    await waitFor(
+      () => {
+        expect(detailCalls().length).toBeGreaterThan(callsBefore);
+        expect(screen.getByRole('button', { name: 'common.retry' })).not.toHaveAttribute(
+          'aria-busy',
+        );
+      },
+      { timeout: 5_000 },
+    );
+
+    const secondAlert = screen.getByRole('alert');
+
+    expect(secondAlert).toHaveTextContent('errors.route.failed');
+    expect(secondAlert).not.toBe(firstAlert);
+    expect(document.activeElement).not.toBe(document.body);
+    expect([
+      screen.getByRole('button', { name: 'common.retry' }),
+      screen.getByRole('heading', { level: 1, name: 'errors.route.title' }),
+    ]).toContain(document.activeElement);
+  });
+
   it('keeps the card on screen when only the roster fails, with an inline retry and no toast', async () => {
     const user = userEvent.setup();
     let failing = true;
@@ -454,6 +555,10 @@ describe('/projects/$projectId', () => {
       await screen.findByText('projects.team.failed', {}, { timeout: 5_000 }),
     ).toBeInTheDocument();
     expect(screen.getByRole('heading', { level: 2, name: 'Bad CRM' })).toBeInTheDocument();
+    // An error state inside a section is not a page: the page keeps its one h1, the card's title.
+    expect(
+      screen.getAllByRole('heading', { level: 1 }).map((heading) => heading.textContent),
+    ).toEqual(['projects.detail.title']);
     // One signal for one failure: the inline state, and no toast beside it.
     expect(document.querySelector('.mantine-Notification-root')).toBeNull();
 
@@ -663,6 +768,19 @@ describe.each(['en', 'ru'] as const)('/projects/$projectId in %s', (language) =>
       expect(document.title).toBe(`${notFound} · Bad CRM`);
     });
     expect(screen.getByTestId('route-announcer')).toHaveTextContent(exactly(notFound));
+  });
+
+  it('names a page that failed to load in the title, the heading and the announcement, in words', async () => {
+    await startAt({ i18n, language, detail: () => problem(500, 'internal_error') });
+
+    const failed = phrase('route.title', 'errors');
+
+    await screen.findByRole('heading', { level: 1, name: failed }, { timeout: 5_000 });
+
+    await waitFor(() => {
+      expect(document.title).toBe(`${failed} · Bad CRM`);
+    });
+    expect(screen.getByTestId('route-announcer')).toHaveTextContent(exactly(failed));
   });
 
   it('names the project in the title and the announcement, in words', async () => {

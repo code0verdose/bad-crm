@@ -6,7 +6,7 @@ import { useTranslation } from 'react-i18next';
 import { SharedUi } from '@shared';
 
 import { BreadcrumbsLib } from '@widgets/breadcrumbs';
-import { announcementStep, routePhase } from '@widgets/route-announcer/lib';
+import { announcementStep, openingPage, routePhase } from '@widgets/route-announcer/lib';
 
 import classes from './route-announcer.module.css';
 
@@ -25,9 +25,10 @@ const PRODUCT_NAME = 'Bad CRM';
  * on screen. Two things fix it, and both are needed: the document title changes, and focus moves to
  * the new `h1`, which makes the screen reader read the page it just arrived at.
  *
- * **The same move after a successful retry of a failed route.** The route's error state and its
- * content share one crumb, so «the page changed» never fires when «Retry» works — and the button
- * that was pressed goes away with the error, leaving focus on `<body>`. When exactly focus moves is
+ * **The same move after a retry of a failed route**, whichever way it ends. The button that was
+ * pressed goes away with the error screen that held it — on a success, and on a second failure
+ * too, because the router mounts a fresh error screen — leaving focus on `<body>`. When exactly
+ * focus moves (not while the page reloads, never on the page the tab opened on) is
  * `announcementStep`'s decision (`lib/announcement.util.ts`), pure and tested on its own; this
  * component only performs it.
  *
@@ -56,17 +57,64 @@ export function RouteAnnouncer() {
    * `StrictMode`, which is how the application actually mounts; the browser had been doing this all
    * along.
    */
-  const announced = useRef({ titleKey, failed: phase === 'failed' });
+  const announced = useRef(openingPage(titleKey, phase));
+
+  /** The heading this component last put focus on. */
+  const focused = useRef<HTMLElement | null>(null);
 
   // A real side effect with the outside world: moving focus is an imperative DOM call with no
   // declarative equivalent, and it is the only thing that tells a screen reader the page changed.
   // No cleanup: it neither subscribes nor allocates.
   useEffect(() => {
     const step = announcementStep(announced.current, titleKey, phase);
+    const heading = step.focus ? document.getElementById(SharedUi.PAGE_TITLE_ID) : null;
 
     announced.current = step.announced;
-    if (step.focus) document.getElementById(SharedUi.PAGE_TITLE_ID)?.focus();
+    if (heading === null) return;
+
+    focused.current = heading;
+    heading.focus();
   }, [titleKey, phase]);
+
+  /**
+   * While the page is failed, the heading that took focus may be replaced under the reader.
+   *
+   * A reload of a failed route that fails again reaches the screen in two commits: the match goes
+   * back to `error` over the old error screen — the moment this component hears of, and pays the
+   * focus move it owed on *that* screen's heading — and a commit later the router's error boundary
+   * catches the new failure and mounts a fresh screen, heading included. The heading that held
+   * focus leaves the document and focus falls to `<body>`, and nothing this component renders from
+   * has changed, so the effect above never hears of it. The DOM is the only witness, hence an
+   * observer: when a heading of ours is gone and focus is on `<body>`, the heading that replaced it
+   * takes focus. Only while failed, and a reader who moved elsewhere is not followed.
+   *
+   * A subscription to an external source with its cleanup (`rules/frontend-fsd.mdc` rule 11).
+   */
+  useEffect(() => {
+    if (phase !== 'failed') return undefined;
+
+    const observer = new MutationObserver(() => {
+      const heading = document.getElementById(SharedUi.PAGE_TITLE_ID);
+
+      if (heading === null) return;
+
+      const replaced =
+        focused.current !== null &&
+        !focused.current.isConnected &&
+        document.activeElement === document.body;
+
+      if (!replaced) return;
+
+      focused.current = heading;
+      heading.focus();
+    });
+
+    observer.observe(document.body, { childList: true, subtree: true });
+
+    return () => {
+      observer.disconnect();
+    };
+  }, [phase]);
 
   return (
     <div

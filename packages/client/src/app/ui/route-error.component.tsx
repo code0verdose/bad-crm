@@ -21,9 +21,16 @@ import { RouteForbidden } from './route-forbidden.component.js';
  * `test/routes/project-overview-screen.test.tsx` is where it is proved end to end. `invalidate`
  * reloads the matches and moves the router's `loadedAt`, which is the key the boundary resets on.
  *
- * A successful retry unmounts the button that was pressed. Focus is not handled here: the route
- * announcer sees the route go from failed to settled and moves focus to the page heading then —
- * the heading does not exist while this boundary is on screen.
+ * **It is the page.** The boundary replaces the route's content, heading included, so it renders
+ * `PageErrorState` — the page's `h1`, then the alert — rather than a bare `ErrorState`, which has no
+ * heading because it normally sits under one. The route announcer moves focus to that heading after
+ * a navigation, and the document title and the announcement name the failure, not the route
+ * (`widgets/breadcrumbs/lib/route-crumbs.util.ts`).
+ *
+ * Every retry, successful or not, replaces the pressed button: the router resets the boundary on
+ * each load, so a second failure is a new alert — which is what a screen reader announces — and
+ * the route announcer puts focus on the heading of whichever page took its place
+ * (`widgets/route-announcer`), rather than leaving it on `<body>`.
  *
  * The text is a key, and a generic one: the error object here is whatever the loader threw, and
  * turning it into a sentence for the user is the job of the layer that knew what it was asking for
@@ -43,6 +50,6 @@ export function RouteError({ error }: ErrorComponentProps) {
   if (IamLib.isPermissionDenied(error)) return <RouteForbidden permission={error.permission} />;
 
   return (
-    <SharedUi.ErrorState messageKey="errors.route.failed" onRetry={() => router.invalidate()} />
+    <SharedUi.PageErrorState messageKey="errors.route.failed" onRetry={() => router.invalidate()} />
   );
 }

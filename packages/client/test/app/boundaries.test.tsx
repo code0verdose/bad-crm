@@ -87,6 +87,13 @@ describe('the error boundary', () => {
     );
 
     expect(screen.getByRole('alert')).toHaveTextContent('errors.route.failed');
+    // The error screen replaces the page, heading included, so it carries the page's one `h1` —
+    // the target the route announcer moves focus to (`rules/a11y.mdc` §20–21).
+    const heading = screen.getByRole('heading', { level: 1, name: 'errors.route.title' });
+
+    expect(screen.getAllByRole('heading', { level: 1 })).toEqual([heading]);
+    expect(heading).toHaveAttribute('id', SharedUi.PAGE_TITLE_ID);
+    expect(heading).toHaveAttribute('tabindex', '-1');
 
     await user.click(screen.getByRole('button', { name: 'common.retry' }));
     expect(invalidate).toHaveBeenCalledOnce();

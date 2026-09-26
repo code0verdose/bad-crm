@@ -35,11 +35,16 @@ export interface ErrorStateProps {
  * appears — `test/i18n/pseudo-locale.test.tsx` now covers this component directly.
  *
  * **Where focus goes after «Retry»** — `useRetry` (`use-retry.hook.ts`) owns it. Focus stays on the
- * button, busy, until the reload answers: a failure again leaves this alert unchanged, and an
- * unchanged live region is silent, so the button is the only thing that can tell the reader. A
+ * button, busy, until the reload answers: a query that fails again leaves this alert unchanged, and
+ * an unchanged live region is silent, so the button is the only thing that can tell the reader. A
  * success unmounts the alert with the button, and focus goes to the heading of the enclosing
- * `Section` rather than falling to `<body>`. Outside a section — the route's error boundary —
- * nothing moves here; the route announcer returns focus to the page heading once the route settles.
+ * `Section` rather than falling to `<body>`. Outside a section nothing moves here: on a route's
+ * error screen (`PageErrorState`) every answer to the reload replaces the screen — the router
+ * mounts its error boundary afresh, so a second failure is a new alert — and the route announcer
+ * puts focus on the page heading that took its place.
+ *
+ * **No heading of its own.** It sits under the heading of the page or section it is in; the screen
+ * that *is* the page wraps it with the page's `h1` (`PageErrorState`).
  */
 export function ErrorState({
   messageKey,

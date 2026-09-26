@@ -221,9 +221,14 @@ describe('/admin/roles for somebody who may not read roles', () => {
 
     expect(await screen.findByRole('alert')).toHaveTextContent('errors.route.failed');
     expect(screen.queryByTestId('forbidden-state')).not.toBeInTheDocument();
-    // A failure is still this section, only unloaded — «Retry» brings it back under the same name,
-    // so the title keeps the section's crumb rather than borrowing a refusal it is not.
-    expect(document.title).toBe('roles.title · Bad CRM');
-    expect(screen.getByTestId('route-announcer').textContent).toBe('roles.title');
+    // A failure names the page by the failure's own heading — the `h1` the reader lands on — and
+    // not by the refusal it is not.
+    expect(
+      screen.getByRole('heading', { level: 1, name: 'errors.route.title' }),
+    ).toBeInTheDocument();
+    await waitFor(() => {
+      expect(document.title).toBe('errors.route.title · Bad CRM');
+    });
+    expect(screen.getByTestId('route-announcer').textContent).toBe('errors.route.title');
   });
 });

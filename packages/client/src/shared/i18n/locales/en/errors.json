@@ -135,7 +135,8 @@
     "title": "Nothing here"
   },
   "route": {
-    "failed": "This page could not be opened."
+    "failed": "This page could not be opened.",
+    "title": "The page did not load"
   },
   "unexpected": "Something went wrong. Try again, and tell an administrator if it keeps happening."
 }

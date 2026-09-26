@@ -55,9 +55,10 @@ describe('building the trail', () => {
 });
 
 /**
- * A match the not-found or the 403 screen replaced is named by that screen's heading, and nothing
- * under it names the page — it does not render. A failure that keeps the page (the error state with
- * «Retry») keeps the page's own name.
+ * A match a stand-in screen replaced — not found, 403, or an ordinary failure — is named by that
+ * screen's heading, and nothing under it names the page: it does not render. The failure too: its
+ * error screen replaces the card, heading included, and the `h1` the reader lands on says the page
+ * did not load, so the last crumb, the title and the announcement say the same.
  */
 describe('a match a stand-in screen replaced', () => {
   const projects = { pathname: '/projects', staticData: { crumbKey: 'nav.projects' } };
@@ -92,13 +93,17 @@ describe('a match a stand-in screen replaced', () => {
     ).toBe('errors.forbidden.title');
   });
 
-  it('keeps the page name on an ordinary failure, which «Retry» brings back', () => {
+  it('names the page by the error heading on an ordinary failure, and keeps the trail above it', () => {
     expect(
-      BreadcrumbsLib.currentCrumbKey([
+      BreadcrumbsLib.routeCrumbs([
         projects,
         { ...project, status: 'error', error: new Error('boom') },
+        { ...overview, status: 'pending' },
       ]),
-    ).toBe('projects.detail.title');
+    ).toEqual([
+      { labelKey: 'nav.projects', pathname: '/projects', isCurrent: false },
+      { labelKey: 'errors.route.title', pathname: '/projects/42', isCurrent: true },
+    ]);
   });
 
   it('keeps the page name while it loads and once it has', () => {
