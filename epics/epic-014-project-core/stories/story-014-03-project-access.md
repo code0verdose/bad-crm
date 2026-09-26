@@ -98,8 +98,17 @@ estimate: L
 > (`project:read`, `aclCheckedIn: 'GetProjectDetailQuery'`), и с ним снапшотная половина критерия 6:
 > матрица стала двумерной, у маршрута с ресурсом по ячейке на фикстуру (`PUBLIC_ORG` / `PRIVATE`,
 > вызывающий не участник), и подмена 404 → 403 на приватной фикстуре теперь видна как
-> «⚠ раскрытие существования» (`permission-matrix.test.ts`, `FIXTURES`). Открытыми остаются 4, 5,
+> «⚠ раскрытие существования» (`permission-matrix.test.ts`, `FIXTURES`). Открытыми оставались 4, 5,
 > 8, 9, 10, 11 и `visible-projects.policy.ts`.
+>
+> **2026-09-26 — с серверной половиной STORY-014-04.** `domain/project/access/visible-projects.policy.ts`
+> заведена: план видимости считается один раз из узла организации и **выводится из тех же трёх
+> функций**, что и построчное решение (`implicitLevel` → `resolveFromChain` → `authorizeResource`), —
+> табличный тест сверяет его с `can()` на 1 260 комбинациях. Критерии **8 и 9 закрыты на списке
+> проектов** (`test/integration/db/project-list.test.ts`: список ≡ деталь по каждому проекту для пяти
+> субъектов, счётчик SQL на 1 и 61 проекте, замер на 1 000 проектах). **4 — наполовину**: функция одна
+> и список идёт через неё, но других потребителей (автодополнение, дашборд, лента) ещё нет, и
+> архитектурного теста «второй реализации нет» тоже. Открыты 4 (тест), 5, 10, 11.
 
 ## Acceptance (Given/When/Then)
 
@@ -173,8 +182,8 @@ estimate: L
 - [x] `packages/server/src/domain/project/access/project-access.policy.ts` — `decideProjectAccess`
       и `canReadProject` c `Decision` (2026-09-06); `canUpdateProject`, `canManageProject`,
       `canArchiveProject` — вместе с их use-case'ами, поверх той же `decideProjectAccess`.
-- [ ] `packages/server/src/domain/project/policies/visible-projects.ts` — единственная функция
-      видимости (чистая, на вход — принципалы и записи ACL).
+- [x] `packages/server/src/domain/project/access/visible-projects.policy.ts` — единственная функция
+      видимости (2026-09-26, STORY-014-04): план из узла организации, строка — `isProjectVisible`.
 - [ ] ~~`packages/server/src/application/project/ports/project-access-reader.port.ts`~~ — второй
       порт не заводится (2026-09-06): ридер проекта живёт в
       `application/access/ports/project-access-reader.port.ts` и читается только резолвером, policy
