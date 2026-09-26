@@ -819,6 +819,10 @@ export interface paths {
          *     it loses what it granted — on their next request, because their permission version is bumped
          *     in the same transaction.
          *
+         *     The role's `ResourceAcl` grants are removed in the same transaction too: a grant whose subject
+         *     no longer exists would otherwise stay in `GET /acl` as a dangling id. Each removed grant is
+         *     recorded as its own `acl.revoked` entry with `after.cause = 'role.deleted'`.
+         *
          *     A system role is `system_role_immutable` (409), and so is a deletion that would take away the
          *     caller's own last way to manage roles (`self_lockout`).
          */
@@ -859,10 +863,10 @@ export interface paths {
         put?: never;
         /**
          * Create a team.
-         * @description A `Team` is an **org-structure** entity — «who works together» — and not a group of access.
-         *     Nothing is granted by belonging to one: the `ResourceAcl` that would make a team the subject
-         *     of a grant is not part of this release, and separate access groups (`subjectType = GROUP`)
-         *     are open question 3 of `permission-model.md` §12 rather than something M2 introduces.
+         * @description A `Team` is an **org-structure** entity — «who works together». Belonging to one grants
+         *     nothing by itself: a team reaches an object only through an explicit `ResourceAcl` grant
+         *     whose subject is the team (`POST /acl` with `subjectType: TEAM`), and every member then gets
+         *     that access. Disbanding the team removes those grants (`DELETE /teams/{teamId}`).
          *
          *     `slug` is unique **inside the organization** and among live teams only: disbanding a team
          *     frees its slug for reuse. A collision is `409 team_already_exists`.
@@ -904,6 +908,10 @@ export interface paths {
          *
          *     Every former member's permission version is bumped in the same transaction, in one
          *     statement, so the change applies on their next request rather than at their next sign-in.
+         *
+         *     The team's `ResourceAcl` grants are removed in the same transaction, after the team is
+         *     disbanded: former members lose whatever they had only through the team. Each removed grant
+         *     is recorded as its own `acl.revoked` entry with `after.cause = 'team.deleted'`.
          */
         delete: operations["deleteTeam"];
         options?: never;
