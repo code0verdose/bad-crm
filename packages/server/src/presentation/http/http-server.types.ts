@@ -66,6 +66,7 @@ import { type ChangeProjectVisibilityUseCase } from '@/application/project/use-c
 import { type CreateProjectUseCase } from '@/application/project/use-cases/create-project.use-case.js';
 import { type DeleteProjectUseCase } from '@/application/project/use-cases/delete-project.use-case.js';
 import { type GetProjectDetailQuery } from '@/application/project/use-cases/get-project-detail.query.js';
+import { type ListProjectsQuery } from '@/application/project/use-cases/list-projects.query.js';
 import { type ListProjectMembersQuery } from '@/application/project/use-cases/list-project-members.query.js';
 import {
   type AddProjectMemberUseCase,
@@ -210,6 +211,7 @@ export interface IamDependencies {
  * «capability ∧ ACL» each use-case is (`docs/security/permission-model.md` §7 (в)).
  */
 export interface ProjectDependencies {
+  readonly listProjects: ListProjectsQuery;
   readonly getProjectDetail: GetProjectDetailQuery;
   readonly createProject: CreateProjectUseCase;
   readonly updateProject: UpdateProjectUseCase;

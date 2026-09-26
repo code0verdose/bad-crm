@@ -75,6 +75,7 @@ import { CreateProjectUseCase } from '@/application/project/use-cases/create-pro
 import { DeleteProjectUseCase } from '@/application/project/use-cases/delete-project.use-case.js';
 import { GetProjectDetailQuery } from '@/application/project/use-cases/get-project-detail.query.js';
 import { ListProjectMembersQuery } from '@/application/project/use-cases/list-project-members.query.js';
+import { ListProjectsQuery } from '@/application/project/use-cases/list-projects.query.js';
 import {
   AddProjectMemberUseCase,
   RemoveProjectMemberUseCase,
@@ -153,6 +154,7 @@ import { PrismaOwnershipRepository } from '@/infrastructure/persistence/prisma/o
 import { PrismaTeamRepository } from '@/infrastructure/persistence/prisma/team.repository.js';
 import { PrismaAclReader } from '@/infrastructure/persistence/prisma/acl-reader.adapter.js';
 import { PrismaProjectAccessReader } from '@/infrastructure/persistence/prisma/project-access-reader.adapter.js';
+import { PrismaProjectListQuery } from '@/infrastructure/persistence/prisma/project-list-query.adapter.js';
 import { PrismaProjectMemberRepository } from '@/infrastructure/persistence/prisma/project-member.repository.js';
 import { PrismaProjectRepository } from '@/infrastructure/persistence/prisma/project.repository.js';
 import { PrismaUserLifecycleRepository } from '@/infrastructure/persistence/prisma/user-lifecycle.repository.js';
@@ -621,8 +623,9 @@ const buildProject = (input: {
 }): ProjectDependencies => {
   const unitOfWork =
     input.database === undefined ? detachedUnitOfWork() : new PrismaUnitOfWork(input.database.base);
+  const aclReader = new PrismaAclReader();
   const resolveAcl = new ResolveAclQuery({
-    acl: new PrismaAclReader(),
+    acl: aclReader,
     projects: new PrismaProjectAccessReader(),
     clock: input.clock,
     logger: input.logger,
@@ -631,6 +634,15 @@ const buildProject = (input: {
   const members = new PrismaProjectMemberRepository();
 
   return {
+    // The same grant reader the resolver walks the chain with: the list reads the organization
+    // node through it once per request, and the project node is the adapter's SQL.
+    listProjects: new ListProjectsQuery(
+      unitOfWork,
+      aclReader,
+      new PrismaProjectListQuery(),
+      input.clock,
+      input.logger,
+    ),
     getProjectDetail: new GetProjectDetailQuery(unitOfWork, projects, resolveAcl),
     createProject: new CreateProjectUseCase(unitOfWork, projects, members, input.audit),
     updateProject: new UpdateProjectUseCase(unitOfWork, projects, members, resolveAcl, input.audit),

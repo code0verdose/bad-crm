@@ -6,6 +6,7 @@ import { type CreateProjectUseCase } from '@/application/project/use-cases/creat
 import { type DeleteProjectUseCase } from '@/application/project/use-cases/delete-project.use-case.js';
 import { type GetProjectDetailQuery } from '@/application/project/use-cases/get-project-detail.query.js';
 import { type ListProjectMembersQuery } from '@/application/project/use-cases/list-project-members.query.js';
+import { type ListProjectsQuery } from '@/application/project/use-cases/list-projects.query.js';
 import {
   type AddProjectMemberUseCase,
   type RemoveProjectMemberUseCase,
@@ -14,6 +15,7 @@ import {
 import { type UpdateProjectUseCase } from '@/application/project/use-cases/update-project.use-case.js';
 import { readActor } from '@/presentation/http/middleware/require-permission.middleware.js';
 import { type RequestValidator } from '@/presentation/http/middleware/validate.middleware.js';
+import { serializeProjectListPage } from '@/presentation/http/serializers/project-list-item.serializer.js';
 import {
   serializeProjectDetail,
   serializeProjectMember,
@@ -24,6 +26,7 @@ import {
   type changeProjectVisibilityBodySchema,
   type createProjectBodySchema,
   type projectIdParamsSchema,
+  type projectListQuerySchema,
   type projectMemberParamsSchema,
   type projectMembersQuerySchema,
   type updateProjectBodySchema,
@@ -38,6 +41,7 @@ import {
 const CONFIRM_DANGEROUS = 'x-confirm-dangerous';
 
 export interface ProjectControllerDependencies {
+  readonly listProjects: ListProjectsQuery;
   readonly getProjectDetail: GetProjectDetailQuery;
   readonly createProject: CreateProjectUseCase;
   readonly updateProject: UpdateProjectUseCase;
@@ -48,6 +52,7 @@ export interface ProjectControllerDependencies {
   readonly addMember: AddProjectMemberUseCase;
   readonly updateMember: UpdateProjectMemberUseCase;
   readonly removeMember: RemoveProjectMemberUseCase;
+  readonly listValidator: RequestValidator<{ query: typeof projectListQuerySchema }>;
   readonly projectIdValidator: RequestValidator<{ params: typeof projectIdParamsSchema }>;
   readonly createValidator: RequestValidator<{ body: typeof createProjectBodySchema }>;
   readonly updateValidator: RequestValidator<{
@@ -85,6 +90,7 @@ export interface ProjectControllerDependencies {
 export const createProjectController = (
   dependencies: ProjectControllerDependencies,
 ): {
+  readonly list: RequestHandler;
   readonly detail: RequestHandler;
   readonly create: RequestHandler;
   readonly update: RequestHandler;
@@ -96,6 +102,29 @@ export const createProjectController = (
   readonly updateMember: RequestHandler;
   readonly removeMember: RequestHandler;
 } => ({
+  /**
+   * The projects this caller can see. `member=me` becomes a flag here and nothing else: whose
+   * memberships it means is the actor's, which the use-case takes from the session.
+   */
+  list: async (_request, response) => {
+    const { query } = dependencies.listValidator.read(response);
+
+    const page = await dependencies.listProjects.execute({
+      actor: readActor(response),
+      filter: {
+        query: query.q,
+        statuses: query.status,
+        leadId: query.lead ?? null,
+        memberOnly: query.member === 'me',
+        sort: query.sort,
+        page: query.page,
+        perPage: query.perPage,
+      },
+    });
+
+    response.status(200).json(serializeProjectListPage(page));
+  },
+
   detail: async (_request, response) => {
     const { params } = dependencies.projectIdValidator.read(response);
 

@@ -1,8 +1,14 @@
 import { isoDateTimeSchema, projectIdSchema, userIdSchema } from '@bad-crm/shared/validation';
 import { z } from 'zod';
 
+import { PROJECT_LIST_SORTS } from '@/application/project/ports/project-list-query.port.js';
 import { PROJECT_KEY_PATTERN, normalizeProjectKey } from '@/domain/project/project-key.value.js';
-import { PROJECT_ROLES, PROJECT_VISIBILITIES } from '@/domain/project/project.enums.js';
+import {
+  PROJECT_ROLES,
+  PROJECT_STATUSES,
+  PROJECT_VISIBILITIES,
+} from '@/domain/project/project.enums.js';
+import { repeatable } from '@/presentation/http/validators/repeatable-query.util.js';
 
 /**
  * The request schemas of the project surface.
@@ -137,4 +143,45 @@ export const updateProjectMemberBodySchema = z
 /** `?includeLeft=true` shows the people who left beside the live roster (acceptance 10). */
 export const projectMembersQuerySchema = z.strictObject({
   includeLeft: z.stringbool().default(false),
+});
+
+/** How many projects one page may carry. The `OffsetPage` envelope of the spec bounds it at 100. */
+const LIST_PER_PAGE_MAX = 100;
+const LIST_PER_PAGE_DEFAULT = 25;
+
+/** A name or a key; beyond that it is not a search. */
+const LIST_QUERY_MAX = 64;
+
+/**
+ * The query string of `GET /projects` (STORY-014-04).
+ *
+ * `status` repeats (`?status=ACTIVE&status=ON_HOLD`), as every multi-value filter of this API does
+ * — `repeatable` normalises one value and many to one shape. `member` has one value, `me`, and it
+ * is a **word**, not an id: whose memberships «me» means is the session's to say, and a client that
+ * could name somebody else's id here would be asking a question about another person's projects
+ * (STORY-014-04, acceptance 8).
+ *
+ * There is no `client` parameter: `Project.clientId` is in `data-model.md` and not in the schema,
+ * and a filter that accepted an id and matched nothing would be a promise the server cannot keep.
+ * `strictObject` answers it `422` on the field until STORY-014-07 brings clients.
+ *
+ * A rejected value is a `422`, never a silent default — the directory's reasoning
+ * (`employee-directory.validator.ts`): a hand-edited address bar is the client schema's to forgive.
+ */
+export const projectListQuerySchema = z.strictObject({
+  q: z.string().trim().max(LIST_QUERY_MAX).optional().default(''),
+  status: repeatable(z.enum(PROJECT_STATUSES)),
+  lead: userIdSchema.optional(),
+  member: z.enum(['me']).optional(),
+  sort: z.enum(PROJECT_LIST_SORTS).optional().default('name'),
+  // `coerce`, because a query string carries digits and not numbers; `int()` after it, so that
+  // `?page=1.5` is refused rather than floored into a page nobody asked for.
+  page: z.coerce.number().int().min(1).optional().default(1),
+  perPage: z.coerce
+    .number()
+    .int()
+    .min(1)
+    .max(LIST_PER_PAGE_MAX)
+    .optional()
+    .default(LIST_PER_PAGE_DEFAULT),
 });
