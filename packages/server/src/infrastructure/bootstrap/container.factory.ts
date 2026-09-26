@@ -736,7 +736,7 @@ const buildIam = (input: {
   const ownership = new PrismaOwnershipRepository();
   const teams = new PrismaTeamRepository();
   // The grants a deleted role or disbanded team takes with it (STORY-011-06 acceptance 13,
-  // STORY-012-07 acceptance 5) — the only consumers until the `acl:*` routes are wired.
+  // STORY-012-07 acceptance 5).
   const grants = new PrismaResourceAclRepository();
 
   const buildActor = new BuildActorQuery(unitOfWork, permissions);
