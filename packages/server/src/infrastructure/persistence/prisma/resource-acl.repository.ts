@@ -1,3 +1,5 @@
+import { type SharedPermissions } from '@bad-crm/shared';
+
 import {
   type AclEntryDraft,
   type AclEntryRow,
@@ -7,6 +9,16 @@ import { type AclResourceRef, type AclSubjectRef } from '@/domain/access/acl-cha
 import { bumpPermissionsVersionOf } from '@/infrastructure/persistence/prisma/permissions-version.util.js';
 import { TenantScopedRepository } from '@/infrastructure/persistence/prisma/tenant-scoped.repository.js';
 import { type TxClient } from '@/infrastructure/persistence/prisma/tenant.context.js';
+
+/** One row `DELETE … RETURNING` hands back, in the column names of `resource_acl`. */
+interface RemovedGrantRow {
+  readonly id: string;
+  readonly resource_type: SharedPermissions.AclResourceType;
+  readonly resource_id: string;
+  readonly access_level: SharedPermissions.AccessLevel;
+  readonly expires_at: Date | null;
+  readonly granted_by_id: string | null;
+}
 
 /**
  * The grants of the current tenant, through Prisma, inside the scope the caller opened.
@@ -104,6 +116,31 @@ export class PrismaResourceAclRepository
       });
 
       return count > 0;
+    });
+  }
+
+  removeAllOfSubject(subject: AclSubjectRef): Promise<readonly AclEntryRow[]> {
+    return this.run('removeAllOfSubject', async (tx) => {
+      // One statement that deletes and reports, not a `findMany` and a `deleteMany`: a grant
+      // committed between the two would be removed without the `acl.revoked` entry the caller files
+      // for each row. The predicate leads with the uuid columns of `idx_resource_acl_subject`; the
+      // enum after them is a filter, not an index condition, under `FORCE RLS` (`enum_eq` is not
+      // leakproof — `rules/polymorphic-access.mdc`, 9).
+      const rows = await tx.$queryRaw<RemovedGrantRow[]>`
+        DELETE FROM resource_acl
+         WHERE organization_id = ${this.organizationId('removeAllOfSubject')}::uuid
+           AND subject_id = ${subject.id}::uuid
+           AND subject_type = ${subject.type}::acl_subject_type
+        RETURNING id, resource_type, resource_id, access_level, expires_at, granted_by_id`;
+
+      return rows.map((row) => ({
+        id: row.id,
+        resource: { type: row.resource_type, id: row.resource_id },
+        subject,
+        level: row.access_level,
+        expiresAt: row.expires_at,
+        grantedById: row.granted_by_id,
+      }));
     });
   }
 

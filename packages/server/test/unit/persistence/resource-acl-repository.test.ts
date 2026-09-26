@@ -24,6 +24,16 @@ interface Call {
   readonly args: Record<string, unknown>;
 }
 
+/** What `DELETE … RETURNING` hands back, in the column names of the table. */
+interface RemovedRow {
+  readonly id: string;
+  readonly resource_type: string;
+  readonly resource_id: string;
+  readonly access_level: string;
+  readonly expires_at: Date | null;
+  readonly granted_by_id: string | null;
+}
+
 interface Recorder {
   readonly calls: Call[];
   readonly raw: { sql: string; values: unknown[] }[];
@@ -42,6 +52,7 @@ const recordingClient = (
     counts?: { user?: number; role?: number; team?: number };
     userRoles?: { userId: string }[];
     teamMembers?: { userId: string }[];
+    removedRows?: RemovedRow[];
   } = {},
 ): Recorder => {
   const calls: Call[] = [];
@@ -63,6 +74,11 @@ const recordingClient = (
       if (!sql.includes('set_config')) raw.push({ sql, values });
 
       return Promise.resolve(values.length);
+    },
+    $queryRaw: (strings: TemplateStringsArray, ...values: unknown[]): Promise<RemovedRow[]> => {
+      raw.push({ sql: strings.join('?'), values });
+
+      return Promise.resolve(answers.removedRows ?? []);
     },
     resourceAcl: {
       findFirst: record('resourceAcl.findFirst', answers.found ?? null),
@@ -171,6 +187,55 @@ describe('PrismaResourceAclRepository', () => {
     await expect(inTenant(gone, (repo) => repo.remove(resource, team))).resolves.toBe(true);
     await expect(inTenant(nothing, (repo) => repo.remove(resource, team))).resolves.toBe(false);
     expect(gone.calls[0]?.args['where']).toMatchObject({ organizationId: ORG, subjectId: TEAM });
+  });
+
+  /**
+   * The cascade of STORY-011-06 acceptance 13 and STORY-012-07 acceptance 5: a role or a team that
+   * stops existing takes its grants with it. One statement that deletes and reports — a read then a
+   * `deleteMany` would let a grant committed in between go without its `acl.revoked` entry.
+   */
+  describe('removeAllOfSubject — every grant one subject holds', () => {
+    it('deletes in one statement, keyed by the tenant and the subject, and returns what went', async () => {
+      const recorder = recordingClient({
+        removedRows: [
+          {
+            id: ROW,
+            resource_type: 'PROJECT',
+            resource_id: PROJECT,
+            access_level: 'EDITOR',
+            expires_at: null,
+            granted_by_id: PETR,
+          },
+        ],
+      });
+
+      await expect(inTenant(recorder, (repo) => repo.removeAllOfSubject(team))).resolves.toEqual([
+        {
+          id: ROW,
+          resource,
+          subject: team,
+          level: 'EDITOR',
+          expiresAt: null,
+          grantedById: PETR,
+        },
+      ]);
+      expect(recorder.raw).toHaveLength(1);
+      expect(recorder.raw[0]?.sql).toMatch(/^\s*DELETE FROM resource_acl\s/);
+      expect(recorder.raw[0]?.sql).toMatch(
+        /WHERE organization_id = \?::uuid\s+AND subject_id = \?::uuid\s+AND subject_type = \?::acl_subject_type\s+RETURNING /,
+      );
+      // The tenant first, then exactly this subject — a statement that lost the type would take a
+      // user's grants along with a role that happened to share nothing but the uuid space.
+      expect(recorder.raw[0]?.values).toEqual([ORG, TEAM, 'TEAM']);
+      // Nothing through the typed client: `deleteMany` cannot say what it removed.
+      expect(recorder.calls).toEqual([]);
+    });
+
+    it('answers an empty list for a subject with no grants', async () => {
+      await expect(
+        inTenant(recordingClient(), (repo) => repo.removeAllOfSubject({ type: 'ROLE', id: TEAM })),
+      ).resolves.toEqual([]);
+    });
   });
 
   describe('subjectExists — a live thing of this organization', () => {

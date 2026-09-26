@@ -42,6 +42,17 @@ export interface AclRepositoryPort {
   remove(resource: AclResourceRef, subject: AclSubjectRef): Promise<boolean>;
 
   /**
+   * Removes every grant the subject holds, on whatever object, and answers what it removed — for a
+   * role or a team that stops existing (STORY-011-06 acceptance 13, STORY-012-07 acceptance 5).
+   *
+   * The subject is polymorphic and has no foreign key, so nothing in the database does this: a row
+   * left behind would be a grant to a subject nobody can see or revoke from the interface. The rows
+   * come back because the trail needs one `acl.revoked` per grant, and `resource_acl` has no
+   * `deleted_at` — after this call the entries are the only record the grants existed.
+   */
+  removeAllOfSubject(subject: AclSubjectRef): Promise<readonly AclEntryRow[]>;
+
+  /**
    * Whether the subject exists **in this organization** — a live user, a role, a team that is not
    * disbanded. `false` is what the caller answers 404 to, never 403: the id of a team elsewhere
    * must not be confirmed by a grant that refuses differently from an unknown one.

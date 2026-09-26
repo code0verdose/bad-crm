@@ -104,6 +104,14 @@ export class FakeAclRepository implements AclRepositoryPort {
     return Promise.resolve(true);
   }
 
+  removeAllOfSubject(subject: AclSubjectRef): Promise<readonly AclEntryRow[]> {
+    const removed = this.rows.filter((row) => keyOf(row.subject) === keyOf(subject));
+
+    for (const row of removed) this.rows.splice(this.rows.indexOf(row), 1);
+
+    return Promise.resolve(removed);
+  }
+
   subjectExists(subject: AclSubjectRef): Promise<boolean> {
     this.existenceChecks.push(subject);
 
