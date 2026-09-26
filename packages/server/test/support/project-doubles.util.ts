@@ -536,6 +536,18 @@ export class FakeProjectStore
     return Promise.resolve(true);
   }
 
+  removeAllOfSubject(subject: AclSubjectRef): Promise<readonly AclEntryRow[]> {
+    this.trace.push('acl.removeAllOfSubject');
+
+    const removed = this.tenantGrants().filter(
+      (grant) => refKey(grant.subject) === refKey(subject),
+    );
+
+    for (const grant of removed) this.grants.splice(this.grants.indexOf(grant), 1);
+
+    return Promise.resolve(removed.map((grant) => this.row(grant)));
+  }
+
   subjectExists(subject: AclSubjectRef): Promise<boolean> {
     this.trace.push('acl.subjectExists');
 
