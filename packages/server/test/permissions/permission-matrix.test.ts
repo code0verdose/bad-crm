@@ -163,6 +163,10 @@ const CALLS: Readonly<Record<string, Call>> = {
       .set('Authorization', `Bearer ${token}`)
       .set('Idempotency-Key', IDEMPOTENCY_KEY)
       .send({ key: 'MTX', name: 'Matrix', leadId: IVAN, color: 'indigo' }),
+  // One cell, like every capability-only route: which projects the answer holds is not a status
+  // code, and `test/integration/db/project-list.test.ts` holds the list against `can()` per row.
+  'GET /api/v1/projects': (app, token) =>
+    request(app).get('/api/v1/projects').set('Authorization', `Bearer ${token}`),
   'GET /api/v1/projects/:projectId': (target, token) =>
     request(target).get(`/api/v1/projects/${PROJECT_ID}`).set('Authorization', `Bearer ${token}`),
   'PATCH /api/v1/projects/:projectId': (app, token) =>

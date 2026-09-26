@@ -90,6 +90,7 @@ import {
   changeProjectVisibilityBodySchema,
   createProjectBodySchema,
   projectIdParamsSchema,
+  projectListQuerySchema,
   projectMemberParamsSchema,
   projectMembersQuerySchema,
   updateProjectBodySchema,
@@ -262,6 +263,7 @@ export const createRouteRegistry = (
   });
   const teamMemberValidator = validate({ params: teamMemberParamsSchema });
 
+  const projectListValidator = validate({ query: projectListQuerySchema });
   const projectIdValidator = validate({ params: projectIdParamsSchema });
   const createProjectValidator = validate({ body: createProjectBodySchema });
   const updateProjectValidator = validate({
@@ -287,6 +289,7 @@ export const createRouteRegistry = (
   const projectMemberValidator = validate({ params: projectMemberParamsSchema });
 
   const projects = createProjectController({
+    listProjects: dependencies.project.listProjects,
     getProjectDetail: dependencies.project.getProjectDetail,
     createProject: dependencies.project.createProject,
     updateProject: dependencies.project.updateProject,
@@ -297,6 +300,7 @@ export const createRouteRegistry = (
     addMember: dependencies.project.addProjectMember,
     updateMember: dependencies.project.updateProjectMember,
     removeMember: dependencies.project.removeProjectMember,
+    listValidator: projectListValidator,
     projectIdValidator,
     createValidator: createProjectValidator,
     updateValidator: updateProjectValidator,
@@ -743,6 +747,17 @@ export const createRouteRegistry = (
       handlers: [teamMemberValidator.handler, teams.removeMember],
       permission: 'team:manage_members',
       aclCheckedIn: 'RemoveTeamMemberUseCase',
+    },
+    {
+      method: 'get',
+      path: `${API_PREFIX}/projects`,
+      handlers: [projectListValidator.handler, projects.list],
+      permission: 'project:read',
+      // The guard answers «may this caller read projects at all». Which projects — a `PRIVATE` one
+      // they are not on, an explicit `NONE`, a grant through a team — is the visibility plan the
+      // query computes once and the adapter applies in SQL to the page, the count and the facets
+      // (`visible-projects.policy.ts`); nothing is filtered after the fetch.
+      aclCheckedIn: 'ListProjectsQuery',
     },
     {
       method: 'post',

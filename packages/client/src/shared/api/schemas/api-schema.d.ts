@@ -1482,7 +1482,31 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /**
+         * The projects the caller can see.
+         * @description A page of projects, with the values its own filters can take.
+         *
+         *     **Only what the caller can see, everywhere in the answer.** A `PRIVATE` project they are
+         *     not on, a project an explicit `NONE` closes for them, a deleted one — none of them is in
+         *     `items`, none is counted in `total`, and none contributes a status or a lead to `facets`.
+         *     The set is the one `GET /projects/{projectId}` would answer `200` for, project by project:
+         *     the membership, the grants of the caller, their teams and their roles on the project and on
+         *     the organization, and the implicit level (`PUBLIC_ORG` — every member of the organization
+         *     reads it; a guest reads nothing without a grant) are applied **in SQL**, once, and never
+         *     after the fetch. The owner of the organization sees every live project.
+         *
+         *     **The archive is hidden unless asked for.** With no `status`, the list is
+         *     `ACTIVE`, `ON_HOLD` and `CLOSED`; `status=ARCHIVED` shows the archive.
+         *
+         *     `member=me` narrows to the projects the caller is on (a live membership; one they left
+         *     does not count). It takes one value and it is a word, not an id: whose memberships «me»
+         *     means is the session's to say.
+         *
+         *     No financial field is here: budget and burn are behind `project:view_budget`, and the list
+         *     item carries neither the values nor the keys (STORY-014-04, acceptance 6). There is no
+         *     `client` filter yet — a project has no client until clients exist (STORY-014-07).
+         */
+        get: operations["listProjects"];
         put?: never;
         /**
          * Create a project.
@@ -2678,6 +2702,44 @@ export interface components {
              * @enum {string}
              */
             teamRole: "MEMBER" | "LEAD";
+        };
+        /**
+         * @description One project as the list shows it — the card's identity without its description, dates or
+         *     counters. No financial field, and none will be added here (`T-PROJ-05`).
+         */
+        ProjectListItem: {
+            /** Format: uuid */
+            id: string;
+            /** @example BAD */
+            key: string;
+            name: string;
+            /** @enum {string} */
+            status: "ACTIVE" | "ON_HOLD" | "ARCHIVED" | "CLOSED";
+            /** @enum {string} */
+            visibility: "PUBLIC_ORG" | "PRIVATE";
+            /** Format: uuid */
+            leadId: string;
+            /** @description A name from the palette of the design system, never a hex literal. */
+            color: string;
+            /** @description Live memberships only — people who left the project are not on it. */
+            memberCount: number;
+        };
+        ProjectListPage: {
+            items: components["schemas"]["ProjectListItem"][];
+            /** @description Visible projects matching the filters, before pagination. */
+            total: number;
+            page: number;
+            perPage: number;
+            /** @enum {string} */
+            sort: "name" | "-name" | "key" | "-key" | "createdAt" | "-createdAt";
+            /**
+             * @description The values the filters can take among the projects this caller can see, before the
+             *     caller's own filters — a status or a lead of a hidden project never appears.
+             */
+            facets: {
+                statuses: ("ACTIVE" | "ON_HOLD" | "ARCHIVED" | "CLOSED")[];
+                leadIds: string[];
+            };
         };
         /**
          * @description One project, as the card reads it. `key` is the prefix of every task number of the project
@@ -6023,6 +6085,43 @@ export interface operations {
             409: components["responses"]["Conflict"];
             422: components["responses"]["ValidationFailed"];
             429: components["responses"]["RateLimited"];
+            500: components["responses"]["InternalError"];
+            503: components["responses"]["ServiceUnavailable"];
+        };
+    };
+    listProjects: {
+        parameters: {
+            query?: {
+                /** @description Matched, case-insensitively, against the name and the key. */
+                q?: string;
+                /** @description Repeated for several values. Absent means everything but `ARCHIVED`. */
+                status?: ("ACTIVE" | "ON_HOLD" | "ARCHIVED" | "CLOSED")[];
+                /** @description Only the projects this account leads. */
+                lead?: string;
+                /** @description Only the projects the caller is on. */
+                member?: "me";
+                sort?: "name" | "-name" | "key" | "-key" | "createdAt" | "-createdAt";
+                page?: number;
+                perPage?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description One page of the projects this caller can see. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProjectListPage"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            422: components["responses"]["ValidationFailed"];
             500: components["responses"]["InternalError"];
             503: components["responses"]["ServiceUnavailable"];
         };

@@ -1,7 +1,7 @@
 ---
 id: STORY-014-04
 epic: EPIC-014
-status: backlog
+status: in-progress
 blocked: false
 priority: must
 estimate: M
@@ -47,6 +47,43 @@ estimate: M
 > [STORY-014-03](story-014-03-project-access.md), и правильный её адрес —
 > `domain/project/access/visible-projects.policy.ts` (каталога `policies/` в домене нет, а пороги
 > покрытия 100/100 стоят на `src/domain/**/access/*.policy.ts`, `packages/server/vitest.config.ts:59`).
+
+## Сделано (2026-09-26) — серверная половина; клиентская открыта
+
+`GET /api/v1/projects` (`project:read`, `aclCheckedIn: 'ListProjectsQuery'`): спека
+(`listProjects`, `ProjectListPage`, `ProjectListItem`) и типы клиента, `ListProjectsQuery`,
+порт `project-list-query.port.ts` (первый `*-query.port.ts` дерева), адаптер
+`project-list-query.adapter.ts`, `visible-projects.policy.ts`, сериализатор, валидатор, ячейка
+матрицы прав (семь `allow`: у `guest` ответ пуст по неявной таблице, как `404` на его карточке).
+
+| # | Критерий | Состояние |
+|---|---|---|
+| 1–4, 7, 11 | URL, debounce, сброс страницы, `keepPreviousData`, пустое состояние, a11y/i18n | **открыты** — клиент |
+| 5 | приватное не видно ни в выдаче, ни в `total`, ни в фасетах | **закрыт на сервере**: одна видимая выборка (`WITH grants … visible`) под страницей, счётом и фасетами; список ≡ деталь по каждому проекту для пяти субъектов на живом Postgres (`test/integration/db/project-list.test.ts`), фасеты без статуса и лида скрытого проекта — с контролем у владельца |
+| 6 | финансы не в списке | **закрыт на сервере**: полей бюджета в схеме нет вовсе, сериализатор — whitelist, HTTP-тест держит тело `toEqual` |
+| 8 | `member=me` — активное участие, резолв на сервере | **закрыт**: параметр — слово `me`, не id; `left_at IS NULL`; покинутый проект не в счёт |
+| 9 | 1 000 проектов / 10 000 участий, p95 < 300 мс, без N+1 | **закрыт замером** (ниже) |
+| 10 | кросс-тенантность | **закрыт**: одинаковые ключи в двух организациях, контроль — субъект соседней видит свой проект; тенант связан в каждом операторе (юнит по `values`, `project-list-query.test.ts`) |
+
+**Замер (2026-09-26)**, Testcontainers `pgvector/pgvector:0.8.5-pg16` на Docker Desktop (macOS),
+роль `app_user` под `FORCE RLS`, 1 072 живых проекта организации, свыше 10 000 участий (10 000 массовых плюс фикстура), сортировка по имени
+(худшая форма — индекса под порядок нет): `EXPLAIN (ANALYZE, BUFFERS)` — счёт 3,4 мс, страница
+4,7 мс, фасеты 5,7 мс; весь запрос через `ListProjectsQuery` — p95 **39,1 мс** на 20 прогонах.
+Операторов на список — четыре (узел организации, счёт, страница, фасеты) плюс транзакция, **одни и
+те же** на 1 и на 61 видимом проекте. План ходит **не** теми индексами, что называет критерий:
+`projects` — `Seq Scan` по строкам организации (счёт видит все видимые проекты, это его природа), при
+сортировке по ключу — `uq_projects_org_key` с ранней остановкой; участие вызывающего —
+`idx_project_members_org_user`; число участников — `uq_project_members`. `idx_projects_org_status` не
+выбирается ни в одной форме.
+
+**Расхождения с текстом истории, не правленные молча:**
+
+- `status[]=` в URL критерия 1 — в API `status=ACTIVE&status=ON_HOLD` (повтор ключа, как у
+  справочника сотрудников). Клиентской схеме решать, какой вид в адресной строке.
+- `client` — **нет**: `Project.clientId` есть в `data-model.md`, в схеме нет; параметр отвергается
+  `422` до STORY-014-07.
+- По умолчанию архив скрыт (`ACTIVE`, `ON_HOLD`, `CLOSED`) — по STORY-014-07, критерий 1.
+- Сортировки: `name`, `key`, `createdAt` в обе стороны, `id` — последним ключом.
 
 ## Acceptance (Given/When/Then)
 
@@ -116,10 +153,11 @@ estimate: M
 
 ## Задачи
 
-- [ ] `packages/server/src/application/project/queries/list-projects.query.ts` — read-модель,
-      фильтры, сортировка, пагинация, `accessibleProjectIds` одним запросом.
-- [ ] `packages/server/src/presentation/http/serializers/project-list-item.serializer.ts`.
-- [ ] `packages/server/src/presentation/http/routes/registry.ts` — `project:read` с `aclCheckedIn`.
+- [x] `application/project/use-cases/list-projects.query.ts` + порт
+      `application/project/ports/project-list-query.port.ts` + адаптер
+      `infrastructure/persistence/prisma/project-list-query.adapter.ts` (2026-09-26).
+- [x] `presentation/http/serializers/project-list-item.serializer.ts`.
+- [x] `presentation/http/route-registry.factory.ts` — `project:read`, `aclCheckedIn: 'ListProjectsQuery'`.
 - [ ] `packages/client/src/app/routes/_authenticated/projects/index.tsx` —
       `validateSearch: zodValidator(projectListSearchSchema)`, `beforeLoad: requireSession`,
       `loader: ensureQueryData(projectListQueryOptions)`.
@@ -133,9 +171,13 @@ estimate: M
       `ui/project-table.component.tsx`, `ui/project-empty-state.component.tsx`,
       `shared/ui/skeletons/project-card.skeleton.tsx`.
 - [ ] i18n: `packages/client/src/app/i18n/{en,ru}/project.json`.
-- [ ] Тесты: `use-project-filters.hook.spec.ts` (парсинг, whitelist, сброс страницы),
-      `list-projects.query.spec.ts` (п. 5, 9), компонентные на п. 7, e2e `project-list.spec.ts`
-      (п. 1, 3) + axe.
+- [x] Серверные тесты: `test/unit/domain/project/visible-projects-policy.test.ts`,
+      `test/unit/application/list-projects.query.test.ts`,
+      `test/unit/persistence/project-list-query.test.ts`,
+      `test/integration/http/project-list-endpoints.test.ts`,
+      `test/integration/db/project-list.test.ts` (п. 5, 8, 9, 10).
+- [ ] Клиентские тесты: `use-project-filters.hook.test.ts` (парсинг, whitelist, сброс страницы),
+      компонентные на п. 7, e2e `project-list.spec.ts` (п. 1, 3) + axe.
 
 ## Ссылки
 

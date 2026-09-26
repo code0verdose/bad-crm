@@ -10,6 +10,13 @@ import {
   type AclRepositoryPort,
 } from '@/application/access/ports/acl-repository.port.js';
 import {
+  type ProjectListFacets,
+  type ProjectListFilter,
+  type ProjectListPage,
+  type ProjectListQueryPort,
+  type ProjectListViewer,
+} from '@/application/project/ports/project-list-query.port.js';
+import {
   type ProjectMemberEntry,
   type ProjectMemberPatch,
   type ProjectMemberRepositoryPort,
@@ -30,12 +37,16 @@ import {
 } from '@/domain/access/acl-chain.types.js';
 import { type ProjectRole, type ProjectVisibility } from '@/domain/access/implicit-level.policy.js';
 import {
+  explicitLevelOn,
+  isProjectVisible,
+} from '@/domain/project/access/visible-projects.policy.js';
+import {
   type ProjectMembership,
   type ProjectScope,
   type ProjectSubject,
   type ProjectSummary,
 } from '@/domain/project/project.entity.js';
-import { type ProjectStatus } from '@/domain/project/project.enums.js';
+import { PROJECT_STATUSES, type ProjectStatus } from '@/domain/project/project.enums.js';
 import { ConflictError } from '@/domain/shared/errors/app.errors.js';
 
 /** A project as the store keeps it: the detail plus the tenant it belongs to. */
@@ -89,7 +100,8 @@ export class FakeProjectStore
     ProjectMemberRepositoryPort,
     ProjectAccessReaderPort,
     AclReaderPort,
-    AclRepositoryPort
+    AclRepositoryPort,
+    ProjectListQueryPort
 {
   readonly rows: StoredProject[] = [];
   /** Every membership the store ever wrote, live and ended alike. */
@@ -111,6 +123,11 @@ export class FakeProjectStore
    * each with the accounts it stands for — the rows `user_roles` and `team_members` would hold.
    */
   readonly aclSubjects = new Map<string, readonly string[]>();
+  /**
+   * Grants on the project node for the list, by project id — the explicit half of the plan. Kept
+   * apart from `entries`, which answer every chain alike and so stand for the organization node.
+   */
+  readonly projectGrants = new Map<string, AclEntryOnChain[]>();
   /** Every chain the resolver asked about, in order. */
   readonly chains: (readonly AclChainNode[])[] = [];
   /** Every call that reached a port, in order — the trace `get-project-detail.query.test.ts` also holds. */
@@ -579,6 +596,70 @@ export class FakeProjectStore
       visibility: row.visibility,
       memberRole: this.liveOf(projectId, userId)?.projectRole ?? null,
     });
+  }
+
+  /**
+   * The list, under the plan — `isProjectVisible` row by row over the tenant's live projects. The
+   * domain's own predicate rather than a second rendition of it: this double stands for the SQL
+   * the integration suite proves equal to that predicate, and the HTTP suite measures the seam.
+   */
+  page(viewer: ProjectListViewer, filter: ProjectListFilter): Promise<ProjectListPage> {
+    this.trace.push('page');
+
+    const needle = filter.query.toLowerCase();
+    const matching = this.visibleTo(viewer).filter(
+      (row) =>
+        filter.statuses.includes(row.status) &&
+        (needle === '' ||
+          row.name.toLowerCase().includes(needle) ||
+          row.key.toLowerCase().includes(needle)) &&
+        (filter.leadId === null || row.leadId === filter.leadId) &&
+        (!filter.memberOnly || this.liveOf(row.projectId, viewer.userId) !== undefined),
+    );
+    const start = (filter.page - 1) * filter.perPage;
+
+    return Promise.resolve({
+      items: matching
+        .toSorted((a, b) => a.name.localeCompare(b.name))
+        .slice(start, start + filter.perPage)
+        .map(({ projectId, key, name, status, visibility, leadId, color, memberCount }) => ({
+          projectId,
+          key,
+          name,
+          status,
+          visibility,
+          leadId,
+          color,
+          memberCount,
+        })),
+      total: matching.length,
+    });
+  }
+
+  facets(viewer: ProjectListViewer): Promise<ProjectListFacets> {
+    this.trace.push('facets');
+
+    const visible = this.visibleTo(viewer);
+
+    return Promise.resolve({
+      statuses: PROJECT_STATUSES.filter((status) => visible.some((row) => row.status === status)),
+      leadIds: [...new Set(visible.map((row) => row.leadId))].toSorted(),
+    });
+  }
+
+  private visibleTo(viewer: ProjectListViewer): StoredProject[] {
+    const now = new Date('2026-09-06T12:00:00.000Z');
+
+    return this.rows
+      .filter((row) => row.organizationId === this.tenant && !row.isDeleted)
+      .map((row) => this.withCount(row))
+      .filter((row) =>
+        isProjectVisible(viewer.plan, {
+          visibility: row.visibility,
+          memberRole: this.liveOf(row.projectId, viewer.userId)?.projectRole ?? null,
+          explicitLevel: explicitLevelOn(this.projectGrants.get(row.projectId) ?? [], now),
+        }),
+      );
   }
 
   /** The chain read; `aclFailure` makes it fail the way an unreachable database does. */

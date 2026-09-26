@@ -78,6 +78,7 @@ import { CreateProjectUseCase } from '@/application/project/use-cases/create-pro
 import { DeleteProjectUseCase } from '@/application/project/use-cases/delete-project.use-case.js';
 import { GetProjectDetailQuery } from '@/application/project/use-cases/get-project-detail.query.js';
 import { ListProjectMembersQuery } from '@/application/project/use-cases/list-project-members.query.js';
+import { ListProjectsQuery } from '@/application/project/use-cases/list-projects.query.js';
 import {
   AddProjectMemberUseCase,
   RemoveProjectMemberUseCase,
@@ -157,6 +158,7 @@ import { PrismaTeamRepository } from '@/infrastructure/persistence/prisma/team.r
 import { PrismaResourceAclRepository } from '@/infrastructure/persistence/prisma/resource-acl.repository.js';
 import { PrismaAclReader } from '@/infrastructure/persistence/prisma/acl-reader.adapter.js';
 import { PrismaProjectAccessReader } from '@/infrastructure/persistence/prisma/project-access-reader.adapter.js';
+import { PrismaProjectListQuery } from '@/infrastructure/persistence/prisma/project-list-query.adapter.js';
 import { PrismaProjectMemberRepository } from '@/infrastructure/persistence/prisma/project-member.repository.js';
 import { PrismaProjectRepository } from '@/infrastructure/persistence/prisma/project.repository.js';
 import { PrismaUserLifecycleRepository } from '@/infrastructure/persistence/prisma/user-lifecycle.repository.js';
@@ -523,7 +525,7 @@ export const buildContainer = (input: ContainerInput): AppContainer => {
       // The first context with a resource layer under its routes: the resolver walks the ACL chain
       // of one project before the row is read. Built here so that the three readers it needs —
       // projects, memberships, grants — are the Prisma adapters and nothing a test would substitute.
-      project: buildProject({ database: input.database, audit, resolveAcl }),
+      project: buildProject({ database: input.database, audit, clock, logger, resolveAcl }),
       // The grants themselves — `/acl`. Over the same resolver instance as the project slice: one
       // registry of chains, so a grant is decided on exactly the walk a read of the object takes.
       access: buildAccess({ database: input.database, audit, clock, resolveAcl }),
@@ -632,15 +634,27 @@ const buildOrganization = (input: {
 const buildProject = (input: {
   readonly database: DatabaseConnection | undefined;
   readonly audit: AuditLoggerPort;
+  readonly clock: SystemClockAdapter;
+  readonly logger: LoggerPort;
   readonly resolveAcl: ResolveAclQuery;
 }): ProjectDependencies => {
   const unitOfWork =
     input.database === undefined ? detachedUnitOfWork() : new PrismaUnitOfWork(input.database.base);
   const resolveAcl = input.resolveAcl;
+  const aclReader = new PrismaAclReader();
   const projects = new PrismaProjectRepository();
   const members = new PrismaProjectMemberRepository();
 
   return {
+    // The same grant reader the resolver walks the chain with: the list reads the organization
+    // node through it once per request, and the project node is the adapter's SQL.
+    listProjects: new ListProjectsQuery(
+      unitOfWork,
+      aclReader,
+      new PrismaProjectListQuery(),
+      input.clock,
+      input.logger,
+    ),
     getProjectDetail: new GetProjectDetailQuery(unitOfWork, projects, resolveAcl),
     createProject: new CreateProjectUseCase(unitOfWork, projects, members, input.audit),
     updateProject: new UpdateProjectUseCase(unitOfWork, projects, members, resolveAcl, input.audit),

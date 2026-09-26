@@ -167,7 +167,8 @@ estimate: L
       `test/unit/persistence/{acl-reader,resource-acl-repository,project-access-reader}.test.ts`,
       интеграционный `test/integration/db/resource-acl-reader.test.ts` (счётчик SQL из лога
       драйвера, `EXPLAIN` на 20 000 строк, изоляция, `TEAM`/`ROLE`-субъекты, факты проекта против
-      таблиц EPIC-014). `acl-list-consistency` (п. 12) — не написан, списков нет.
+      таблиц EPIC-014). Согласованность списка (п. 12) — `test/integration/db/project-list.test.ts`
+      (2026-09-26, STORY-014-04).
 - [x] Тесты маршрутов (2026-09-26): `test/integration/http/acl-endpoints.test.ts`,
       `test/unit/application/list-resource-acl.query.test.ts`,
       `test/unit/domain/access/acl-contour-policy.test.ts`, `test/unit/http/acl-serializer.test.ts`,
@@ -191,7 +192,7 @@ estimate: L
 | 9 | оборванная иерархия → 404 + `logger.warn` с id | закрыт (`resolve-acl.query.test.ts`: `missing`, ридер не вызывается, `warn` с `resourceType`/`resourceId`) |
 | 10 | ошибка резолва → `acl_resolution_failed`, 503 | закрыт (`unavailable` из резолвера → `service_unavailable`) |
 | 11 | выдача шире собственного уровня → 403 | закрыт и на маршруте (`MEMBER` → `EDITOR` → 403 `insufficient_acl_level`), конъюнкцией `authorize` (`insufficient_acl_level` для `EDITOR` на объекте); отдельной ветки в `canGrantAcl` нет — `acl:grant` требует `MANAGER`, верх шкалы, шире которого выдать нечего, и тест-пин на `requiredLevel` в `acl-management-policy.test.ts` держит это на случай правки каталога. Единственная своя ветка `canGrantAcl` — `self_lockout` |
-| 12 | списки не резолвят построчно | **открыт**: списков ещё нет; «множество доступных родителей один раз» — отдельная задача при первом списочном маршруте с ACL |
+| 12 | списки не резолвят построчно | **закрыт 2026-09-26 на списке проектов** (STORY-014-04): узел организации читается один раз, узел проекта — одним `GROUP BY` по `resource_acl` внутри того же оператора, что строит страницу; «список = построчный `can()`» на живом Postgres — `test/integration/db/project-list.test.ts`. Списков задач нет — для них критерий повторится с их цепочкой |
 | 13 | удаление роли снимает её записи ACL | **закрыт 2026-09-26**: `delete-custom-role.use-case.ts` в той же транзакции зовёт `AclRepositoryPort.removeAllOfSubject` (один `DELETE … RETURNING` по `idx_resource_acl_subject`) и пишет `acl.revoked` на каждую снятую запись с `after.cause = 'role.deleted'`; версию носителям уже бампает `bumpHoldersOf` до удаления назначений. Юнит — `custom-role.use-cases.test.ts`, живой Postgres — `test/integration/db/acl-subject-cascade.test.ts` (чужая организация с тем же uuid субъекта не задета) |
 
 Что ещё решено по ходу и почему:
