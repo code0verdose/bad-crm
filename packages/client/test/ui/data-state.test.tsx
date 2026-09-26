@@ -126,6 +126,9 @@ describe('DataState', () => {
 
       expect(retry).toHaveFocus();
       expect(retry).toHaveAttribute('aria-disabled', 'true');
+      // Unavailable *and why*: `aria-busy` says the control is working, not merely switched off
+      // (`rules/a11y.mdc` §16).
+      expect(retry).toHaveAttribute('aria-busy', 'true');
       // Busy and still focusable: a native `disabled` would push focus off the one control the
       // reader is waiting on (the HTML focus fixup rule), which is the failure this state avoids.
       expect(retry).not.toBeDisabled();
@@ -162,6 +165,7 @@ describe('DataState', () => {
 
       expect(retry).toHaveFocus();
       expect(retry).not.toHaveAttribute('aria-disabled');
+      expect(retry).not.toHaveAttribute('aria-busy');
       expect(screen.getByRole('heading', { name: TEAM })).not.toHaveFocus();
     });
 

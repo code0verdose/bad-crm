@@ -18,7 +18,13 @@ export interface RetryButtonProps {
  * fixup rule focus goes back to `<body>` — off the very control `useRetry` keeps it on until the
  * outcome. `aria-disabled` plus the disabled look (`data-disabled`) says «unavailable» to a screen
  * reader and to the eye while the button keeps focus, the pattern `rules/a11y.mdc` §23 names for a
- * control that must stay reachable. A second press is refused by the hook, not by the attribute.
+ * control that must stay reachable. `aria-busy` rides along (`rules/a11y.mdc` §16): «unavailable»
+ * alone does not say the control is working on the reader's request.
+ *
+ * **Neither attribute blocks anything.** `aria-disabled` and `aria-busy` only describe; a busy
+ * button still receives the click, the Enter and the Space. The second reload is refused by
+ * `useRetry`'s in-flight guard, and that guard — not the markup — is what keeps a keyboard user
+ * from asking twice.
  */
 export function RetryButton({ onRetry, labelKey }: RetryButtonProps) {
   const { t } = useTranslation();
@@ -27,6 +33,7 @@ export function RetryButton({ onRetry, labelKey }: RetryButtonProps) {
   return (
     <Button
       ref={controlRef}
+      aria-busy={retrying || undefined}
       aria-disabled={retrying || undefined}
       color="danger"
       data-disabled={retrying}
