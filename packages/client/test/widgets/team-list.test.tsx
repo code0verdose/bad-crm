@@ -23,7 +23,7 @@ import {
  *     and the page are applied to the answer — which makes «is the URL still the state» a question
  *     worth asking rather than one the network answers by accident. It has to land in the URL, reset
  *     the page, and survive being followed as a link;
- *   * **a team is not a group of access**, and the screen says so. Criterion 10 of STORY-012-07 is a
+ *   * **membership alone grants nothing**, and the screen says so. Criterion 10 of STORY-012-07 is a
  *     sentence in the interface: without it an administrator who has just put five people on a team
  *     believes they have handed out five sets of permissions, and nothing else on this screen
  *     contradicts them;
@@ -165,11 +165,11 @@ describe('the team list', () => {
 
   /**
    * Criterion 10 of the story, and the reason it is a criterion: belonging to a team grants nothing
-   * in this release, and every other affordance on this screen — «add somebody», «disband» — reads
-   * exactly like the access management next door. The sentence is what stops an administrator
-   * concluding they have delegated something.
+   * by itself — a team reaches an object only through an explicit grant — and every other affordance
+   * on this screen — «add somebody», «disband» — reads exactly like the access management next door.
+   * The sentence is what stops an administrator concluding they have delegated something.
    */
-  it('says that a team grants nothing', async () => {
+  it('says that a team has access only where it was granted', async () => {
     await startAt();
 
     expect(await screen.findByText(/teams\.notAccessGroup\.title/)).toBeInTheDocument();

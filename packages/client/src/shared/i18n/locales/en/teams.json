@@ -1,8 +1,8 @@
 {
   "title": "Teams",
   "notAccessGroup": {
-    "title": "A team is org structure, not a group of access",
-    "description": "Putting somebody on a team says who they work with. It grants nothing on its own: projects, documents and vaults are shared with people and roles, and access groups are not part of this release."
+    "title": "A team has access only where it was granted",
+    "description": "Putting somebody on a team says who they work with, and on its own it opens nothing. A project, or the whole organization, opens to a team only when access is granted to that team, and then to everybody on it. There is no screen for granting it yet: that is done through the API."
   },
   "filters": {
     "search": "Search",
@@ -97,7 +97,7 @@
     "description": "«{{name}}» will stop existing as a team.",
     "consequence": {
       "members": "Everybody is taken off the team, in one go.",
-      "access": "Nobody loses access to anything: a team grants nothing.",
+      "access": "Access granted to the team is withdrawn: its members lose whatever they had only through the team.",
       "slug": "The address is freed and can be used by a new team."
     },
     "cancel": "Cancel",

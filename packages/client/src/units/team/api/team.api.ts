@@ -1,10 +1,10 @@
 import { apiClient, idempotencyParams, unwrapApiResult, type components } from '@shared/api';
 
 /**
- * A team as stored — an **org-structure** entity. Nothing is granted by belonging to one: the
- * `ResourceAcl` that would make a team the subject of a grant is not part of this release, and
- * separate access groups are an open question rather than something M2 introduces
- * (`permission-model.md` §12, open question 3).
+ * A team as stored — an **org-structure** entity. Belonging to one grants nothing by itself: a
+ * team reaches an object only through an explicit `ResourceAcl` grant whose subject is the team
+ * (`/api/v1/acl`, since 2026-09-26), and disbanding it withdraws those grants. The client has no
+ * screen for granting yet; this module does not call `/acl`.
  */
 export type Team = components['schemas']['Team'];
 
