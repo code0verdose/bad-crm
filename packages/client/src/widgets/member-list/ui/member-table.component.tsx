@@ -2,7 +2,7 @@ import { Badge, Group, Table, Text } from '@mantine/core';
 import { Link } from '@tanstack/react-router';
 import { useTranslation } from 'react-i18next';
 
-import { type EmployeeApi } from '@units/employee';
+import { EmployeeLib, type EmployeeApi } from '@units/employee';
 
 import classes from './member-list-ui.module.css';
 
@@ -60,7 +60,7 @@ export function MemberTable({ items }: MemberTableProps) {
                 params={{ userId: item.userId }}
                 to="/admin/members/$userId"
               >
-                {nameOf(item)}
+                {EmployeeLib.personLabel(item, item.email)}
               </Link>
               <Text c="var(--bc-text-muted)" size="sm">
                 {item.email}
@@ -101,10 +101,3 @@ export function MemberTable({ items }: MemberTableProps) {
     </Table>
   );
 }
-
-/** The e-mail stands in for a name nobody has filled in yet — never a blank cell. */
-const nameOf = (item: EmployeeApi.EmployeeListItem): string => {
-  const name = `${item.firstName} ${item.lastName}`.trim();
-
-  return name === '' ? item.email : name;
-};

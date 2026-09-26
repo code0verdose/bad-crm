@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
 import { nameOf } from './name-of.util.js';
-import { personLabel } from './person-label.util.js';
 import { projectRoster } from './project-roster.util.js';
 
 /**
@@ -18,22 +17,18 @@ const people = [
   { userId: 'u-other', firstName: 'Oleg', lastName: 'Petrov', email: 'oleg@example.test' },
 ];
 
-describe('personLabel', () => {
-  it('is the full name when there is one', () => {
-    expect(personLabel(people[0]!)).toBe('Anna Ivanova');
-  });
-
-  it('falls back to the address for somebody nobody has named yet', () => {
-    expect(
-      personLabel({ userId: 'u', firstName: ' ', lastName: '', email: 'x@example.test' }),
-    ).toBe('x@example.test');
-  });
-});
+// The label rule itself — name, or the fallback — is `EmployeeLib.personLabel`'s and is tested
+// there. What is pinned here is which fallback the project passes: the address, not the id.
+const unnamed = { userId: 'u-unnamed', firstName: '', lastName: ' ', email: 'x@example.test' };
 
 describe('nameOf', () => {
   it('is the name of the one account asked about, not of a neighbour', () => {
     expect(nameOf('u-lead', people)).toBe('Anna Ivanova');
     expect(nameOf('u-other', people)).toBe('Oleg Petrov');
+  });
+
+  it('is the address of somebody the directory knows but nobody has named', () => {
+    expect(nameOf('u-unnamed', [unnamed])).toBe('x@example.test');
   });
 
   it('is the id when the reader may see nobody', () => {
@@ -47,6 +42,12 @@ describe('projectRoster', () => {
       { userId: 'u-lead', projectRole: 'LEAD', allocationPct: 50, label: 'Anna Ivanova' },
       { userId: 'u-member', projectRole: 'MEMBER', allocationPct: 100, label: 'u-member' },
     ]);
+  });
+
+  it('labels somebody unnamed by their address', () => {
+    const joined = { userId: 'u-unnamed', projectRole: 'MEMBER', allocationPct: 10 } as const;
+
+    expect(projectRoster([joined], [unnamed]).map((row) => row.label)).toEqual(['x@example.test']);
   });
 
   it('shows the id — not a gap — when the reader may not see the directory at all', () => {

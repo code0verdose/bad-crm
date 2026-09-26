@@ -1,6 +1,5 @@
 import { type PersonName } from '@units/project/types';
-
-import { personLabel } from './person-label.util.js';
+import { EmployeeLib } from '@units/employee';
 
 /**
  * The name of one account among the people the reader may see, or its id when they may see none.
@@ -11,5 +10,5 @@ import { personLabel } from './person-label.util.js';
 export const nameOf = (userId: string, people: readonly PersonName[]): string => {
   const person = people.find((candidate) => candidate.userId === userId);
 
-  return person === undefined ? userId : personLabel(person);
+  return person === undefined ? userId : EmployeeLib.personLabel(person, person.email);
 };
