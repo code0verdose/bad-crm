@@ -290,6 +290,75 @@ describe('deleting a role that is the subject of grants', () => {
     ]);
   });
 
+  /**
+   * The gate's M-1, as an order: the role row is locked before its grants are collected. The race
+   * itself is measured on PostgreSQL (`acl-subject-cascade.test.ts`); this pins that the lock is
+   * taken at all and ahead of `removeAllOfSubject`, which a recorder can say and a database cannot.
+   */
+  it('locks the role before it collects the role’s grants (gate M-1)', async () => {
+    const journal: string[] = [];
+    const roles = new FakeCustomRoleRepository({
+      elsewhere: ['role:update', 'role:delete'],
+      journal,
+    });
+    const { acl } = grantsAround();
+    const collect = acl.removeAllOfSubject.bind(acl);
+
+    roles.roles.set(ROLE_ID, {
+      roleId: ROLE_ID,
+      key: 'tech_writer',
+      name: 'Technical writer',
+      description: null,
+      isSystem: false,
+      permissions: ['task:read'],
+    });
+    acl.removeAllOfSubject = (subject) => {
+      journal.push(`acl.removeAllOfSubject:${subject.id}`);
+
+      return collect(subject);
+    };
+
+    await new DeleteCustomRoleUseCase(unitOfWork, roles, acl, auditSpy().port).execute({
+      actor: actorWith(),
+      roleId: ROLE_ID,
+      ipAddress: undefined,
+    });
+
+    expect(journal).toEqual([
+      `role.lockForRemoval:${ROLE_ID}`,
+      `acl.removeAllOfSubject:${ROLE_ID}`,
+    ]);
+  });
+
+  it('answers «not there» when the role is deleted between the read and the lock, removing nothing', async () => {
+    const roles = new FakeCustomRoleRepository({
+      elsewhere: ['role:update', 'role:delete'],
+      vanishesBeforeLock: true,
+    });
+    const { acl } = grantsAround();
+    const audit = auditSpy();
+
+    roles.roles.set(ROLE_ID, {
+      roleId: ROLE_ID,
+      key: 'tech_writer',
+      name: 'Technical writer',
+      description: null,
+      isSystem: false,
+      permissions: ['task:read'],
+    });
+
+    await expect(
+      new DeleteCustomRoleUseCase(unitOfWork, roles, acl, audit.port).execute({
+        actor: actorWith(),
+        roleId: ROLE_ID,
+        ipAddress: undefined,
+      }),
+    ).rejects.toMatchObject({ code: 'role_not_found' });
+    expect(acl.rows).toHaveLength(4);
+    expect(roles.versionBumps).toEqual([]);
+    expect(audit.events).toEqual([]);
+  });
+
   it('leaves every grant in place when the deletion is refused', async () => {
     const roles = heldByActor();
     const { acl } = grantsAround();

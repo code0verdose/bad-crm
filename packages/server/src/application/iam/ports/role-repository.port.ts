@@ -151,6 +151,19 @@ export interface CustomRoleRepositoryPort {
   remove(roleId: string): Promise<void>;
 
   /**
+   * Locks the role row `FOR UPDATE` for the rest of the caller's transaction; `false` when it is
+   * not in this organization (any more).
+   *
+   * Taken by the deletion **before** it removes the role's `ResourceAcl` grants — the gate's M-1.
+   * A grant reads the role `FOR KEY SHARE` (`AclRepositoryPort.subjectExists`), so the two now
+   * serialize: a grant already in flight is committed before the deletion collects the role's grants,
+   * and a grant arriving later waits and then finds no role. Without it the deletion's
+   * `removeAllOfSubject` and its `DELETE FROM roles` leave a window in which a grant commits and
+   * outlives the role.
+   */
+  lockForRemoval(roleId: string): Promise<boolean>;
+
+  /**
    * The compositions of several roles at once, for a draft that spans them.
    *
    * One read rather than one per role: the matrix screen saves a dozen changes together, and a

@@ -628,6 +628,88 @@ describe('PrismaResourceAclRepository — subjects and versions on real rows', (
     await expect(inTenant((repo) => repo.findById(randomUUID()))).resolves.toBeNull();
   });
 
+  /**
+   * The self-lockout fact (the gate's L-2) on real rows: Petr holds the role, Ivan is on the team.
+   * An expired assignment does not reach — the reader's match, so the rule refuses exactly when the
+   * grant would have mattered to the resolution.
+   */
+  it('says whether a role or a team reaches a person — and an expired assignment does not', async () => {
+    const role = { type: 'ROLE' as const, id: seeded.roleId };
+    const team = { type: 'TEAM' as const, id: seeded.teamId };
+
+    // CONTROL: the holder and the member are reached.
+    await expect(inTenant((repo) => repo.subjectReaches(role, seeded.petrId))).resolves.toBe(true);
+    await expect(inTenant((repo) => repo.subjectReaches(team, seeded.ivanId))).resolves.toBe(true);
+    // And nobody else is.
+    await expect(inTenant((repo) => repo.subjectReaches(role, seeded.ivanId))).resolves.toBe(false);
+    await expect(inTenant((repo) => repo.subjectReaches(team, seeded.petrId))).resolves.toBe(false);
+
+    await asMaintenance(pools.owner, (client) =>
+      client.query(
+        `UPDATE user_roles SET expires_at = now() - interval '1 hour' WHERE user_id = $1::uuid`,
+        [seeded.petrId],
+      ),
+    );
+
+    await expect(inTenant((repo) => repo.subjectReaches(role, seeded.petrId))).resolves.toBe(false);
+  });
+
+  /**
+   * The gate's L-1 on a real PostgreSQL: `DELETE … RETURNING` by id is accepted under `FORCE RLS` as
+   * `app_user`, returns the row with its subject, removes it once — the second call finds nothing —
+   * and cannot reach the other organization's row by its id.
+   */
+  it('removes a grant by id once, reporting it, and never the other organization’s', async () => {
+    const ours = await inTenant((repo) =>
+      repo.upsert({
+        resource: { type: 'PROJECT', id: PROJECT },
+        subject: { type: 'TEAM', id: seeded.teamId },
+        level: 'EDITOR',
+        expiresAt: null,
+        grantedById: seeded.ownerId,
+      }),
+    );
+
+    await grant({
+      organizationId: OTHER_ORG,
+      subjectType: 'USER',
+      subjectId: randomUUID(),
+      level: 'MANAGER',
+    });
+
+    const theirs = await asMaintenance(pools.owner, async (client) => {
+      const { rows } = await client.query<{ id: string }>(
+        `SELECT id FROM resource_acl WHERE organization_id = $1::uuid`,
+        [OTHER_ORG],
+      );
+
+      return rows[0]?.id ?? '';
+    });
+
+    await expect(inTenant((repo) => repo.removeById(ours))).resolves.toEqual({
+      id: ours,
+      resource: { type: 'PROJECT', id: PROJECT },
+      subject: { type: 'TEAM', id: seeded.teamId },
+      level: 'EDITOR',
+      expiresAt: null,
+      grantedById: seeded.ownerId,
+    });
+    await expect(inTenant((repo) => repo.removeById(ours))).resolves.toBeNull();
+    expect(theirs).not.toBe('');
+    await expect(inTenant((repo) => repo.removeById(theirs))).resolves.toBeNull();
+    // CONTROL: the other organization's row is still there, counted past RLS.
+    await expect(
+      asMaintenance(pools.owner, async (client) => {
+        const { rows } = await client.query<{ count: number }>(
+          'SELECT count(*)::int AS count FROM resource_acl WHERE id = $1::uuid',
+          [theirs],
+        );
+
+        return rows[0]?.count;
+      }),
+    ).resolves.toBe(1);
+  });
+
   /** `GET /acl`: live at the given instant, this object only, this tenant only, in grant order. */
   it('lists the live grants of one object in the order they were given', async () => {
     const now = new Date();

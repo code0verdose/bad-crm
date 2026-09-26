@@ -16,12 +16,22 @@ export interface AddTeamMemberInput {
   readonly userId: string;
   /** `MEMBER` | `LEAD`, as `ck_team_members_role` constrains it. */
   readonly teamRole: string;
+  /**
+   * The caller's address, for the `WARNING`-severity trail entry a membership change writes since a
+   * team can hold `ResourceAcl` grants (2026-09-26) — the shape `DeleteTeamInput.ipAddress` carries.
+   */
+  readonly ipAddress: string | undefined;
 }
 
 export interface RemoveTeamMemberInput {
   readonly actor: Actor;
   readonly teamId: string;
   readonly userId: string;
+  /**
+   * The caller's address, for the `WARNING`-severity trail entry a membership change writes since a
+   * team can hold `ResourceAcl` grants (2026-09-26) — the shape `DeleteTeamInput.ipAddress` carries.
+   */
+  readonly ipAddress: string | undefined;
 }
 
 /**
@@ -72,20 +82,19 @@ export class AddTeamMemberUseCase {
 
         await this.teams.bumpPermissionsVersionOf([input.userId]);
 
-        const actor = {
-          userId: input.actor.userId,
-          organizationId: input.actor.organizationId,
-          ipAddress: undefined,
-        };
         // Filed against the team rather than the person in both branches: «what happened to this
         // team» is the question a membership change answers, and the person is in the payload.
-        const target = { type: 'TEAM', id: input.teamId } as const;
-
+        // Literals, not a shared `actor`/`target`: `audit-privileged-ip-address.test.ts` reads each
+        // `audit.record({ … })` from the source, and a shorthand is an entry it cannot judge.
         if (result.outcome === 'created') {
           await this.audit.record({
             action: 'team.member_added',
-            actor,
-            target,
+            actor: {
+              userId: input.actor.userId,
+              organizationId: input.actor.organizationId,
+              ipAddress: input.ipAddress,
+            },
+            target: { type: 'TEAM', id: input.teamId },
             after: { userId: input.userId, teamRole: input.teamRole },
             requestId: undefined,
           });
@@ -95,8 +104,12 @@ export class AddTeamMemberUseCase {
 
         await this.audit.record({
           action: 'team.member_role_changed',
-          actor,
-          target,
+          actor: {
+            userId: input.actor.userId,
+            organizationId: input.actor.organizationId,
+            ipAddress: input.ipAddress,
+          },
+          target: { type: 'TEAM', id: input.teamId },
           before: { userId: input.userId, teamRole: result.previousRole },
           after: { userId: input.userId, teamRole: input.teamRole },
           requestId: undefined,
@@ -145,7 +158,7 @@ export class RemoveTeamMemberUseCase {
           actor: {
             userId: input.actor.userId,
             organizationId: input.actor.organizationId,
-            ipAddress: undefined,
+            ipAddress: input.ipAddress,
           },
           target: { type: 'TEAM', id: input.teamId },
           before: { userId: input.userId },

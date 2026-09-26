@@ -252,6 +252,20 @@ estimate: L
    (как состав проекта).
 4. Побочно: middleware-отказ на ключе `acl:*` теперь `acl_forbidden`, а не `organization_forbidden`
    (`refusalResourceOf` берёт ресурс ключа, раз он есть в словаре ошибок).
+5. **Гонка «выдача ↔ удаление субъекта» закрыта блокировками (гейт M-1, 2026-09-26).** Выдача читает
+   строку команды `FOR SHARE` и перепроверяет `deleted_at` под блокировкой, строку роли — `FOR KEY
+   SHARE`; удаление роли берёт `SELECT … FOR UPDATE` на роль до `removeAllOfSubject`
+   (`CustomRoleRepositoryPort.lockForRemoval`). Замер на живом Postgres —
+   `test/integration/db/acl-subject-cascade.test.ts`: сирот 0 в обоих порядках для обоих субъектов,
+   вторая транзакция наблюдается в очереди блокировок; без `FOR UPDATE` на роли и с `FOR KEY SHARE`
+   на команде тест красный (сирота или взаимоблокировка).
+6. **`self_lockout` расширен до §11 (гейт L-2, 2026-09-26).** Отказ — не только `NONE` на свою
+   запись: любая выдача ниже `MANAGER` субъекту, который достаёт до актора (своя `USER`-запись, роль,
+   которую он держит, команда, в которой он состоит), и отзыв такой записи уровня `MANAGER`
+   (`canGrantAcl`, `canRevokeAclEntry` в `acl-management.policy.ts`; факт членства —
+   `AclRepositoryPort.subjectReaches`, спрашивается только когда решает). Отказ fail-closed: соседние
+   записи узла policy не видит, поэтому безвредное сужение тоже отклоняется — его делает другой
+   менеджер или владелец. Владелец не ограничен.
 
 Следующему шагу: критерий 12 при первом списке, решение по коду ответа для критерия 3,
 перенос `ProjectRole`/`ProjectVisibility` из `implicit-level.policy.ts` на `domain/project/project.enums.ts`

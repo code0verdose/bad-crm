@@ -43,6 +43,11 @@ const recordingClient = (overrides: Record<string, unknown> = {}): Recorder => {
 
       return Promise.resolve(1);
     },
+    $queryRaw: (strings: TemplateStringsArray, ...values: unknown[]): Promise<unknown[]> => {
+      raw.push({ sql: strings.join('?'), values });
+
+      return Promise.resolve((overrides['locked'] as unknown[] | undefined) ?? []);
+    },
     role: {
       findFirst: record('role.findFirst', overrides['role'] ?? null),
       findMany: record('role.findMany', overrides['roles'] ?? []),
@@ -371,6 +376,27 @@ describe('writing a role', () => {
       organizationId: ORG,
       id: 'role-1',
     });
+  });
+});
+
+describe('locking a role for its removal (gate M-1)', () => {
+  /**
+   * `FOR UPDATE` on the role row, inside the tenant — the lock a concurrent grant's `FOR KEY SHARE`
+   * (`PrismaResourceAclRepository.subjectExists`) conflicts with. The race it closes is measured on
+   * PostgreSQL in `acl-subject-cascade.test.ts`; the recorder holds the statement and the answer.
+   */
+  it('locks the row FOR UPDATE and answers whether it was there', async () => {
+    const present = recordingClient({ locked: [{ id: 'role-1' }] });
+    const gone = recordingClient();
+
+    expect(await inScope(present, (repository) => repository.lockForRemoval('role-1'))).toBe(true);
+    expect(await inScope(gone, (repository) => repository.lockForRemoval('role-1'))).toBe(false);
+    // The last statement: `withTenant` pins the scope with its own `set_config` first.
+    expect(present.raw.at(-1)?.sql).toMatch(
+      /SELECT id FROM roles\s+WHERE organization_id = \?::uuid\s+AND id = \?::uuid\s+FOR UPDATE\s*$/,
+    );
+    expect(present.raw.at(-1)?.values).toEqual([ORG, 'role-1']);
+    expect(present.calls).toEqual([]);
   });
 });
 

@@ -61,8 +61,18 @@ export interface AclRepositoryPort {
    */
   upsert(draft: AclEntryDraft): Promise<string>;
 
-  /** `false` when there was nothing to remove — the same end state, and not an error. */
-  remove(resource: AclResourceRef, subject: AclSubjectRef): Promise<boolean>;
+  /**
+   * Removes the one grant with this id and answers it **as the statement removed it**, or `null`
+   * when there was nothing to remove (the gate's L-1).
+   *
+   * By id, not by the (object, subject) pair the id was read with: between the read and this call a
+   * concurrent revocation may have removed the row and a new grant may have taken the pair, and a
+   * delete by pair would take that new grant with the old decision. `null` is the second of two
+   * concurrent revocations — it removed nothing, so it must bump nobody and file no `acl.revoked`.
+   * The row comes from the delete itself, so the trail records the level that actually ended, even
+   * when the same id was re-granted in between.
+   */
+  removeById(id: string): Promise<AclEntryRow | null>;
 
   /**
    * Removes every grant the subject holds, on whatever object, and answers what it removed — for a
@@ -79,6 +89,10 @@ export interface AclRepositoryPort {
    * Whether the subject exists **in this organization** — a live user, a role, a team that is not
    * disbanded. `false` is what the caller answers 404 to, never 403: the id of a team elsewhere
    * must not be confirmed by a grant that refuses differently from an unknown one.
+   *
+   * For a role or a team the answer is **held** to the end of the caller's transaction (a row lock),
+   * so the deletion of that subject cannot commit between this answer and the grant it permits and
+   * leave a grant to nobody (the gate's M-1). The adapter says which lock and why.
    */
   subjectExists(subject: AclSubjectRef): Promise<boolean>;
 
@@ -90,6 +104,17 @@ export interface AclRepositoryPort {
    * request, in the same transaction as the grant.
    */
   subjectUserIds(subject: AclSubjectRef): Promise<readonly string[]>;
+
+  /**
+   * Whether a grant to this subject reaches this person — by the same match the reader uses: a live
+   * assignment of the role, a membership of the team, the person themselves.
+   *
+   * One point lookup, for the self-lockout rule (`acl-management.policy.ts`, the gate's L-2), which
+   * asks it only when the answer decides something. A question rather than `subjectUserIds(...)`
+   * searched in memory: a role the whole organization holds would otherwise be every id in memory
+   * on the path of a grant.
+   */
+  subjectReaches(subject: AclSubjectRef, userId: string): Promise<boolean>;
 
   /** One statement for the whole set, however large; a no-op for an empty one. */
   bumpPermissionsVersionOf(userIds: readonly string[]): Promise<void>;

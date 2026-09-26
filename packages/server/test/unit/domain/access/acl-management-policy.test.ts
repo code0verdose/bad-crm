@@ -3,9 +3,15 @@ import { describe, expect, it } from 'vitest';
 import { SharedPermissions } from '@bad-crm/shared';
 
 import { type AclGrantDraft } from '@/domain/access/acl-chain.types.js';
-import { canGrantAcl, canReadAcl, canRevokeAcl } from '@/domain/access/acl-management.policy.js';
+import {
+  canGrantAcl,
+  canReadAcl,
+  canRevokeAcl,
+  canRevokeAclEntry,
+} from '@/domain/access/acl-management.policy.js';
 import { type Actor } from '@/domain/access/actor.types.js';
 import { type AclScope } from '@/domain/access/authorize.util.js';
+import { type Decision } from '@/domain/access/decision.types.js';
 
 /**
  * Who may hand out, take away and look at grants on one object — STORY-011-06, acceptance 1, 11
@@ -43,59 +49,69 @@ const resolved = (level: SharedPermissions.AccessLevel, organizationId = ORG): A
   family: 'standard',
 });
 
+/** The grant decision with the membership fact answered up front — `false` unless a case says. */
+const grantOf = (
+  actor: Actor,
+  scope: AclScope,
+  grant: AclGrantDraft,
+  reachesActor = false,
+): Promise<Decision> => canGrantAcl(actor, scope, grant, () => Promise.resolve(reachesActor));
+
 const draft = (
   level: SharedPermissions.AccessLevel,
   subject: AclGrantDraft['subject'] = { type: 'USER', id: PETR },
 ): AclGrantDraft => ({ subject, level });
 
 describe('canGrantAcl — the conjunction', () => {
-  it('allows a MANAGER on the object who holds acl:grant', () => {
-    expect(canGrantAcl(actorWith(['acl:grant']), resolved('MANAGER'), draft('EDITOR'))).toEqual({
+  it('allows a MANAGER on the object who holds acl:grant', async () => {
+    expect(await grantOf(actorWith(['acl:grant']), resolved('MANAGER'), draft('EDITOR'))).toEqual({
       allowed: true,
       reason: null,
     });
   });
 
-  it('refuses without the capability, before looking at the object', () => {
-    expect(canGrantAcl(actorWith(), resolved('MANAGER'), draft('EDITOR'))).toMatchObject({
+  it('refuses without the capability, before looking at the object', async () => {
+    expect(await grantOf(actorWith(), resolved('MANAGER'), draft('EDITOR'))).toMatchObject({
       allowed: false,
       reason: 'permission_not_granted',
       permissionKey: 'acl:grant',
     });
   });
 
-  it('refuses an EDITOR on the object: acl:grant requires MANAGER (acceptance 11)', () => {
+  it('refuses an EDITOR on the object: acl:grant requires MANAGER (acceptance 11)', async () => {
     expect(
-      canGrantAcl(actorWith(['acl:grant']), resolved('EDITOR'), draft('VIEWER')),
+      await grantOf(actorWith(['acl:grant']), resolved('EDITOR'), draft('VIEWER')),
     ).toMatchObject({
       allowed: false,
       reason: 'insufficient_acl_level',
     });
   });
 
-  it('answers a missing object with resource_not_found — a 404, never a 403', () => {
+  it('answers a missing object with resource_not_found — a 404, never a 403', async () => {
     expect(
-      canGrantAcl(actorWith(['acl:grant']), { status: 'missing' }, draft('VIEWER')),
+      await grantOf(actorWith(['acl:grant']), { status: 'missing' }, draft('VIEWER')),
     ).toMatchObject({
       allowed: false,
       reason: 'resource_not_found',
     });
   });
 
-  it('answers a reader that failed with acl_resolution_failed — fail-closed, a 503', () => {
+  it('answers a reader that failed with acl_resolution_failed — fail-closed, a 503', async () => {
     expect(
-      canGrantAcl(actorWith(['acl:grant']), { status: 'unavailable' }, draft('VIEWER')),
+      await grantOf(actorWith(['acl:grant']), { status: 'unavailable' }, draft('VIEWER')),
     ).toMatchObject({ allowed: false, reason: 'acl_resolution_failed' });
   });
 
-  it('answers an object of another organization as not found', () => {
+  it('answers an object of another organization as not found', async () => {
     expect(
-      canGrantAcl(actorWith(['acl:grant']), resolved('MANAGER', 'other-org'), draft('VIEWER')),
+      await grantOf(actorWith(['acl:grant']), resolved('MANAGER', 'other-org'), draft('VIEWER')),
     ).toMatchObject({ allowed: false, reason: 'tenant_mismatch' });
   });
 
-  it('refuses an explicit NONE on the object even to somebody holding the capability', () => {
-    expect(canGrantAcl(actorWith(['acl:grant']), resolved('NONE'), draft('VIEWER'))).toMatchObject({
+  it('refuses an explicit NONE on the object even to somebody holding the capability', async () => {
+    expect(
+      await grantOf(actorWith(['acl:grant']), resolved('NONE'), draft('VIEWER')),
+    ).toMatchObject({
       allowed: false,
       reason: 'acl_explicit_none',
     });
@@ -117,65 +133,187 @@ describe('canGrantAcl — no wider than one’s own level', () => {
     expect(requiredLevel).toBe(top);
   });
 
-  it('holds for every level the granter could have', () => {
+  it('holds for every level the granter could have', async () => {
     const levels: SharedPermissions.AccessLevel[] = ['VIEWER', 'COMMENTER', 'EDITOR', 'MANAGER'];
 
     for (const own of levels) {
       for (const wanted of levels) {
-        const decision = canGrantAcl(actorWith(['acl:grant']), resolved(own), draft(wanted));
+        const decision = await grantOf(actorWith(['acl:grant']), resolved(own), draft(wanted));
 
         expect(decision.allowed, `${own} grants ${wanted}`).toBe(own === 'MANAGER');
       }
     }
   });
 
-  it('lets the owner grant any level, whatever the object says about them', () => {
+  it('lets the owner grant any level, whatever the object says about them', async () => {
     // Even an explicit NONE on the owner: the bypass is the model's, not this file's.
-    expect(canGrantAcl(owner(), resolved('NONE'), draft('MANAGER'))).toEqual({
+    expect(await grantOf(owner(), resolved('NONE'), draft('MANAGER'))).toEqual({
       allowed: true,
       reason: null,
     });
   });
 });
 
-describe('canGrantAcl — no locking oneself out', () => {
-  it('refuses a NONE on oneself', () => {
-    expect(
-      canGrantAcl(
+describe('canGrantAcl — no locking oneself out (permission-model.md, «Краевые случаи», 11)', () => {
+  /**
+   * Case 11 refuses an operation that takes from the actor the right by which rights are governed.
+   * On an object that right is `MANAGER` — what `acl:grant` and `acl:revoke` require — and a grant
+   * below it that reaches the actor becomes the closest explicit entry for them on this node
+   * (resolution rule 1): they hold that level, not `MANAGER`, and can no longer undo it. `NONE` is
+   * the extreme of the same thing (rule 2), not a different case.
+   *
+   * The policy cannot see what else on the node matches the actor, so the refusal is fail-closed:
+   * a narrowing that another entry on the same node would have made harmless is refused too, and
+   * another manager — or the owner, whom nothing locks out — makes it instead.
+   */
+  const below = ['NONE', 'VIEWER', 'COMMENTER', 'EDITOR'] as const;
+
+  it.each(below)('refuses %s on the actor’s own USER entry', async (level) => {
+    await expect(
+      grantOf(
         actorWith(['acl:grant']),
         resolved('MANAGER'),
-        draft('NONE', { type: 'USER', id: IVAN }),
+        draft(level, { type: 'USER', id: IVAN }),
       ),
-    ).toMatchObject({ allowed: false, reason: 'self_lockout' });
+    ).resolves.toMatchObject({ allowed: false, reason: 'self_lockout' });
   });
 
-  it('allows a NONE on somebody else', () => {
-    expect(canGrantAcl(actorWith(['acl:grant']), resolved('MANAGER'), draft('NONE'))).toEqual({
-      allowed: true,
-      reason: null,
+  it.each(['ROLE', 'TEAM'] as const)(
+    'refuses every level below MANAGER on a %s the actor is part of',
+    async (type) => {
+      for (const level of below) {
+        await expect(
+          grantOf(
+            actorWith(['acl:grant']),
+            resolved('MANAGER'),
+            draft(level, { type, id: PETR }),
+            true,
+          ),
+          `${type} ${level}`,
+        ).resolves.toMatchObject({ allowed: false, reason: 'self_lockout' });
+      }
+    },
+  );
+
+  it.each(['ROLE', 'TEAM'] as const)(
+    'allows the same on a %s the actor is not part of',
+    async (type) => {
+      await expect(
+        grantOf(actorWith(['acl:grant']), resolved('MANAGER'), draft('NONE', { type, id: PETR })),
+      ).resolves.toEqual({ allowed: true, reason: null });
+    },
+  );
+
+  it('allows MANAGER on anything that reaches the actor — the level they need is kept', async () => {
+    for (const subject of [
+      { type: 'USER', id: IVAN },
+      { type: 'ROLE', id: PETR },
+      { type: 'TEAM', id: PETR },
+    ] as const) {
+      await expect(
+        grantOf(actorWith(['acl:grant']), resolved('MANAGER'), draft('MANAGER', subject), true),
+      ).resolves.toEqual({ allowed: true, reason: null });
+    }
+  });
+
+  it('allows narrowing somebody else, NONE included', async () => {
+    await expect(
+      grantOf(actorWith(['acl:grant']), resolved('MANAGER'), draft('NONE')),
+    ).resolves.toEqual({ allowed: true, reason: null });
+  });
+
+  it('asks whether a role or a team reaches the actor only when the answer decides something', async () => {
+    const asked: string[] = [];
+    const reaches = (): Promise<boolean> => {
+      asked.push('reaches');
+
+      return Promise.resolve(false);
+    };
+    const team = { type: 'TEAM', id: PETR } as const;
+
+    // A person is compared by id; MANAGER keeps the level; a refused conjunction and the owner are
+    // decided first — none of the four needs the membership read.
+    await canGrantAcl(actorWith(['acl:grant']), resolved('MANAGER'), draft('NONE'), reaches);
+    await canGrantAcl(
+      actorWith(['acl:grant']),
+      resolved('MANAGER'),
+      draft('MANAGER', team),
+      reaches,
+    );
+    await canGrantAcl(actorWith(), resolved('MANAGER'), draft('NONE', team), reaches);
+    await canGrantAcl(owner(), resolved('MANAGER'), draft('NONE', team), reaches);
+    expect(asked).toEqual([]);
+
+    await canGrantAcl(
+      actorWith(['acl:grant']),
+      resolved('MANAGER'),
+      draft('EDITOR', team),
+      reaches,
+    );
+    expect(asked).toEqual(['reaches']);
+  });
+
+  it('lets the owner narrow themselves — nothing can lock the owner out', async () => {
+    await expect(
+      grantOf(owner(), resolved('MANAGER'), draft('NONE', { type: 'USER', id: IVAN }), true),
+    ).resolves.toEqual({ allowed: true, reason: null });
+  });
+});
+
+describe('canRevokeAclEntry — no locking oneself out by taking a grant away', () => {
+  /**
+   * The revocation half of case 11. Removing an entry that reaches the actor can lower their level
+   * on the node only when it is a `MANAGER` entry — the node's level is the maximum of what matches
+   * (rule 2), so an entry below `MANAGER` was never what held it there. With a `MANAGER` entry gone
+   * the level falls to whatever else matches, to the ancestors, or to the implicit level; the policy
+   * cannot see which, so it refuses (fail-closed), as for a grant.
+   */
+  const entry = (
+    level: SharedPermissions.AccessLevel,
+    subject: AclGrantDraft['subject'] = { type: 'USER', id: IVAN },
+  ): AclGrantDraft => ({ subject, level });
+
+  const revokeOf = (actor: Actor, grant: AclGrantDraft, reachesActor = false): Promise<Decision> =>
+    canRevokeAclEntry(actor, grant, () => Promise.resolve(reachesActor));
+
+  it('refuses taking away the actor’s own MANAGER entry', async () => {
+    await expect(revokeOf(actorWith(['acl:revoke']), entry('MANAGER'))).resolves.toMatchObject({
+      allowed: false,
+      reason: 'self_lockout',
     });
   });
 
-  it('allows narrowing oneself to a level that is not NONE — self-restraint is not lockout', () => {
-    expect(
-      canGrantAcl(
-        actorWith(['acl:grant']),
-        resolved('MANAGER'),
-        draft('VIEWER', { type: 'USER', id: IVAN }),
-      ),
-    ).toEqual({ allowed: true, reason: null });
+  it.each(['ROLE', 'TEAM'] as const)(
+    'refuses taking away a MANAGER entry of a %s the actor is part of',
+    async (type) => {
+      await expect(
+        revokeOf(actorWith(['acl:revoke']), entry('MANAGER', { type, id: PETR }), true),
+      ).resolves.toMatchObject({ allowed: false, reason: 'self_lockout' });
+    },
+  );
+
+  it('allows taking away an entry below MANAGER, even the actor’s own', async () => {
+    for (const level of ['NONE', 'VIEWER', 'COMMENTER', 'EDITOR'] as const) {
+      await expect(revokeOf(actorWith(['acl:revoke']), entry(level), true), level).resolves.toEqual(
+        {
+          allowed: true,
+          reason: null,
+        },
+      );
+    }
   });
 
-  /**
-   * A NONE on a team the actor belongs to is *also* a way to lock oneself out, and it is not refused
-   * here: the policy does not know the actor's teams, and reading them for this one rule would put a
-   * membership query on the path of every grant. The owner is never locked out by construction;
-   * everybody else keeps the recourse the model already gives — a closer node, or another manager.
-   */
-  it('lets the owner put NONE on themselves — nothing can lock the owner out', () => {
-    expect(
-      canGrantAcl(owner(), resolved('MANAGER'), draft('NONE', { type: 'USER', id: IVAN })),
-    ).toEqual({
+  it('allows taking away somebody else’s MANAGER entry', async () => {
+    await expect(
+      revokeOf(actorWith(['acl:revoke']), entry('MANAGER', { type: 'USER', id: PETR })),
+    ).resolves.toEqual({ allowed: true, reason: null });
+    await expect(
+      revokeOf(actorWith(['acl:revoke']), entry('MANAGER', { type: 'TEAM', id: PETR })),
+    ).resolves.toEqual({ allowed: true, reason: null });
+  });
+
+  it('lets the owner take away their own MANAGER entry', async () => {
+    await expect(revokeOf(owner(), entry('MANAGER'), true)).resolves.toEqual({
       allowed: true,
       reason: null,
     });

@@ -32,6 +32,9 @@ interface RemovedRow {
   readonly access_level: string;
   readonly expires_at: Date | null;
   readonly granted_by_id: string | null;
+  /** Present when the delete was addressed by id and has to report the subject as well. */
+  readonly subject_type?: string;
+  readonly subject_id?: string;
 }
 
 interface Recorder {
@@ -67,11 +70,12 @@ const recordingClient = (
       grantedById: string | null;
       grantedAt: Date;
     }[];
-    deleted?: number;
-    counts?: { user?: number; role?: number; team?: number };
+    counts?: { user?: number; userRole?: number; teamMember?: number };
     userRoles?: { userId: string }[];
     teamMembers?: { userId: string }[];
     removedRows?: RemovedRow[];
+    /** What a `SELECT … FOR [KEY] SHARE` of the subject row finds. */
+    locked?: { id?: string; deleted_at?: Date | null }[];
   } = {},
 ): Recorder => {
   const calls: Call[] = [];
@@ -94,10 +98,15 @@ const recordingClient = (
 
       return Promise.resolve(values.length);
     },
-    $queryRaw: (strings: TemplateStringsArray, ...values: unknown[]): Promise<RemovedRow[]> => {
-      raw.push({ sql: strings.join('?'), values });
+    $queryRaw: (strings: TemplateStringsArray, ...values: unknown[]): Promise<unknown[]> => {
+      const sql = strings.join('?');
 
-      return Promise.resolve(answers.removedRows ?? []);
+      raw.push({ sql, values });
+
+      // A locking read answers the subject row; anything else here is the cascade's `DELETE`.
+      return Promise.resolve(
+        /\bFOR (KEY )?SHARE\b/.test(sql) ? (answers.locked ?? []) : (answers.removedRows ?? []),
+      );
     },
     resourceAcl: {
       findFirst: record(
@@ -106,13 +115,16 @@ const recordingClient = (
       ),
       findMany: record('resourceAcl.findMany', answers.many ?? []),
       upsert: record('resourceAcl.upsert', { id: ROW }),
-      deleteMany: record('resourceAcl.deleteMany', { count: answers.deleted ?? 0 }),
     },
     user: { count: record('user.count', answers.counts?.user ?? 0) },
-    role: { count: record('role.count', answers.counts?.role ?? 0) },
-    team: { count: record('team.count', answers.counts?.team ?? 0) },
-    userRole: { findMany: record('userRole.findMany', answers.userRoles ?? []) },
-    teamMember: { findMany: record('teamMember.findMany', answers.teamMembers ?? []) },
+    userRole: {
+      findMany: record('userRole.findMany', answers.userRoles ?? []),
+      count: record('userRole.count', answers.counts?.userRole ?? 0),
+    },
+    teamMember: {
+      findMany: record('teamMember.findMany', answers.teamMembers ?? []),
+      count: record('teamMember.count', answers.counts?.teamMember ?? 0),
+    },
   };
 
   return {
@@ -306,13 +318,43 @@ describe('PrismaResourceAclRepository', () => {
     });
   });
 
-  it('removes by the quadruple inside the tenant and reports whether a row went', async () => {
-    const gone = recordingClient({ deleted: 1 });
-    const nothing = recordingClient({ deleted: 0 });
+  /**
+   * The gate's L-1: the revocation deletes **by id** and reports what went, in one statement — not
+   * by the (object, subject) pair, which a grant given again after a concurrent revocation would
+   * share. `null` for nothing removed is what keeps the second of two revocations from filing.
+   */
+  it('removes one grant by id inside the tenant and answers it as it went, or null', async () => {
+    const gone = recordingClient({
+      removedRows: [
+        {
+          id: ROW,
+          resource_type: 'PROJECT',
+          resource_id: PROJECT,
+          subject_type: 'TEAM',
+          subject_id: TEAM,
+          access_level: 'VIEWER',
+          expires_at: null,
+          granted_by_id: PETR,
+        },
+      ],
+    });
+    const nothing = recordingClient({ removedRows: [] });
 
-    await expect(inTenant(gone, (repo) => repo.remove(resource, team))).resolves.toBe(true);
-    await expect(inTenant(nothing, (repo) => repo.remove(resource, team))).resolves.toBe(false);
-    expect(gone.calls[0]?.args['where']).toMatchObject({ organizationId: ORG, subjectId: TEAM });
+    await expect(inTenant(gone, (repo) => repo.removeById(ROW))).resolves.toEqual({
+      id: ROW,
+      resource,
+      subject: team,
+      level: 'VIEWER',
+      expiresAt: null,
+      grantedById: PETR,
+    });
+    await expect(inTenant(nothing, (repo) => repo.removeById(ROW))).resolves.toBeNull();
+    expect(gone.raw).toHaveLength(1);
+    expect(gone.raw[0]?.sql).toMatch(
+      /^\s*DELETE FROM resource_acl\s+WHERE organization_id = \?::uuid\s+AND id = \?::uuid\s+RETURNING /,
+    );
+    expect(gone.raw[0]?.values).toEqual([ORG, ROW]);
+    expect(gone.calls).toEqual([]);
   });
 
   /**
@@ -364,8 +406,8 @@ describe('PrismaResourceAclRepository', () => {
     });
   });
 
-  describe('subjectExists — a live thing of this organization', () => {
-    it('asks for a user that is not soft-deleted', async () => {
+  describe('subjectExists — a live thing of this organization, under a lock', () => {
+    it('asks for a user that is not soft-deleted, with a plain count', async () => {
       const recorder = recordingClient({ counts: { user: 1 } });
 
       await expect(
@@ -375,28 +417,110 @@ describe('PrismaResourceAclRepository', () => {
         name: 'user.count',
         args: { where: { organizationId: ORG, id: PETR, deletedAt: null } },
       });
+      expect(recorder.raw).toEqual([]);
     });
 
-    it('asks for a role of this organization', async () => {
-      const recorder = recordingClient({ counts: { role: 0 } });
+    /**
+     * The gate's M-1: the role row is read `FOR KEY SHARE` — the lock `DeleteCustomRoleUseCase`'s
+     * `FOR UPDATE` conflicts with — inside the tenant. The race itself is measured on PostgreSQL
+     * (`acl-subject-cascade.test.ts`); what a recorder can hold is the statement's shape.
+     */
+    it('reads a role of this organization FOR KEY SHARE, and answers whether a row came back', async () => {
+      const found = recordingClient({ locked: [{ id: TEAM }] });
+      const gone = recordingClient({ locked: [] });
 
       await expect(
-        inTenant(recorder, (repo) => repo.subjectExists({ type: 'ROLE', id: TEAM })),
+        inTenant(found, (repo) => repo.subjectExists({ type: 'ROLE', id: TEAM })),
+      ).resolves.toBe(true);
+      await expect(
+        inTenant(gone, (repo) => repo.subjectExists({ type: 'ROLE', id: TEAM })),
       ).resolves.toBe(false);
-      expect(recorder.calls[0]).toEqual({
-        name: 'role.count',
-        args: { where: { organizationId: ORG, id: TEAM } },
-      });
+      expect(found.raw[0]?.sql).toMatch(
+        /SELECT id FROM roles\s+WHERE organization_id = \?::uuid\s+AND id = \?::uuid\s+FOR KEY SHARE\s*$/,
+      );
+      expect(found.raw[0]?.values).toEqual([ORG, TEAM]);
+      expect(found.calls).toEqual([]);
     });
 
-    it('asks for a team that is not disbanded', async () => {
-      const recorder = recordingClient({ counts: { team: 1 } });
-
-      await expect(inTenant(recorder, (repo) => repo.subjectExists(team))).resolves.toBe(true);
-      expect(recorder.calls[0]).toEqual({
-        name: 'team.count',
-        args: { where: { organizationId: ORG, id: TEAM, deletedAt: null } },
+    /**
+     * `FOR SHARE`, not `FOR KEY SHARE`: disbanding rewrites `deleted_at`, a non-key column, and only
+     * the stronger mode conflicts with that `UPDATE`. `deleted_at` is read from the locked row — the
+     * value a waiting reader gets once the disbanding committed.
+     */
+    it('reads a team FOR SHARE and counts a disbanded one as absent', async () => {
+      const live = recordingClient({ locked: [{ deleted_at: null }] });
+      const disbanded = recordingClient({
+        locked: [{ deleted_at: new Date('2026-09-26T00:00:00Z') }],
       });
+      const none = recordingClient({ locked: [] });
+
+      await expect(inTenant(live, (repo) => repo.subjectExists(team))).resolves.toBe(true);
+      await expect(inTenant(disbanded, (repo) => repo.subjectExists(team))).resolves.toBe(false);
+      await expect(inTenant(none, (repo) => repo.subjectExists(team))).resolves.toBe(false);
+      expect(live.raw[0]?.sql).toMatch(
+        /SELECT deleted_at FROM teams\s+WHERE organization_id = \?::uuid\s+AND id = \?::uuid\s+FOR SHARE\s*$/,
+      );
+      expect(live.raw[0]?.values).toEqual([ORG, TEAM]);
+      expect(live.calls).toEqual([]);
+    });
+  });
+
+  /**
+   * The self-lockout rule's one fact (the gate's L-2): does a grant to this subject reach this
+   * person — by the reader's match. A person is compared by id without a statement; a role counts
+   * only a live assignment; a team, a membership. Each inside the tenant.
+   */
+  describe('subjectReaches — does a grant to this subject reach this person', () => {
+    it('compares a person by id, sending nothing', async () => {
+      const recorder = recordingClient();
+
+      await expect(
+        inTenant(recorder, (repo) => repo.subjectReaches({ type: 'USER', id: PETR }, PETR)),
+      ).resolves.toBe(true);
+      await expect(
+        inTenant(recorder, (repo) => repo.subjectReaches({ type: 'USER', id: PETR }, IVAN)),
+      ).resolves.toBe(false);
+      expect(recorder.calls).toEqual([]);
+    });
+
+    it('counts a live assignment of the role to the person', async () => {
+      const held = recordingClient({ counts: { userRole: 1 } });
+      const notHeld = recordingClient({ counts: { userRole: 0 } });
+      const role = { type: 'ROLE' as const, id: TEAM };
+
+      await expect(inTenant(held, (repo) => repo.subjectReaches(role, IVAN))).resolves.toBe(true);
+      await expect(inTenant(notHeld, (repo) => repo.subjectReaches(role, IVAN))).resolves.toBe(
+        false,
+      );
+      expect(held.calls).toEqual([
+        {
+          name: 'userRole.count',
+          args: {
+            where: {
+              organizationId: ORG,
+              roleId: TEAM,
+              userId: IVAN,
+              OR: [{ expiresAt: null }, { expiresAt: { gt: expect.any(Date) } }],
+            },
+          },
+        },
+      ]);
+    });
+
+    it('counts a membership of the team', async () => {
+      const member = recordingClient({ counts: { teamMember: 1 } });
+      const outsider = recordingClient({ counts: { teamMember: 0 } });
+
+      await expect(inTenant(member, (repo) => repo.subjectReaches(team, IVAN))).resolves.toBe(true);
+      await expect(inTenant(outsider, (repo) => repo.subjectReaches(team, IVAN))).resolves.toBe(
+        false,
+      );
+      expect(member.calls).toEqual([
+        {
+          name: 'teamMember.count',
+          args: { where: { organizationId: ORG, teamId: TEAM, userId: IVAN } },
+        },
+      ]);
     });
   });
 

@@ -655,6 +655,11 @@ describe('POST /api/v1/teams/{teamId}/members', () => {
       target: { type: 'TEAM', id: TEAM_ID },
       after: { userId: IVAN, teamRole: 'MEMBER' },
     });
+
+    // Since 2026-09-26 a team is the subject of `POST /acl`, so a membership change moves access
+    // wherever the team holds a grant: `WARNING`, with the caller's address (STORY-012-07's trigger).
+    expect(SharedAudit.severityOf('team.member_added')).toBe('WARNING');
+    expect(test.audit.events.at(-1)?.actor.ipAddress).toEqual(expect.any(String));
   });
 
   /**
@@ -709,6 +714,11 @@ describe('POST /api/v1/teams/{teamId}/members', () => {
       before: { userId: IVAN, teamRole: 'MEMBER' },
       after: { userId: IVAN, teamRole: 'LEAD' },
     });
+
+    // Since 2026-09-26 a team is the subject of `POST /acl`, so a membership change moves access
+    // wherever the team holds a grant: `WARNING`, with the caller's address (STORY-012-07's trigger).
+    expect(SharedAudit.severityOf('team.member_role_changed')).toBe('WARNING');
+    expect(test.audit.events.at(-1)?.actor.ipAddress).toEqual(expect.any(String));
     // Not a second `team.member_added`: the membership already existed, only the role moved.
     expect(test.audit.events.filter((event) => event.action === 'team.member_added')).toEqual([]);
   });
@@ -890,6 +900,11 @@ describe('DELETE /api/v1/teams/{teamId}/members/{userId}', () => {
       target: { type: 'TEAM', id: TEAM_ID },
       before: { userId: IVAN },
     });
+
+    // Since 2026-09-26 a team is the subject of `POST /acl`, so a membership change moves access
+    // wherever the team holds a grant: `WARNING`, with the caller's address (STORY-012-07's trigger).
+    expect(SharedAudit.severityOf('team.member_removed')).toBe('WARNING');
+    expect(test.audit.events.at(-1)?.actor.ipAddress).toEqual(expect.any(String));
   });
 
   /**

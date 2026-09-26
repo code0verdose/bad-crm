@@ -90,6 +90,48 @@ describe('RevokeAclUseCase', () => {
     expect(unitOfWork.scopes).toEqual([{ organizationId: ORG, userId: IVAN }]);
   });
 
+  /**
+   * The gate's L-1. The row is read, the decision is made on it, and only then deleted — and a
+   * concurrent revocation of the same id can land in between. The delete is addressed by the id and
+   * reports what it removed, so the second caller removes nothing, bumps nobody and files nothing:
+   * one grant, one `acl.revoked`. It is the same 404 an unknown id gets — from where the caller
+   * stands, the grant is not there.
+   */
+  it('answers 404 acl_not_found when the grant is removed between the read and the delete, filing nothing', async () => {
+    const { acl, audit, useCase } = setup();
+    const id = acl.seed(existing());
+    acl.subjects.set(`TEAM:${TEAM}`, [IVAN, PETR]);
+    acl.afterFindById = (found) => {
+      acl.rows.splice(acl.rows.indexOf(found), 1);
+    };
+
+    await expect(useCase.execute(revoke(id))).rejects.toMatchObject({
+      code: 'acl_not_found',
+      reason: 'resource_not_found',
+    });
+    expect(acl.bumped).toEqual([]);
+    expect(audit.events).toEqual([]);
+  });
+
+  /**
+   * The other half of L-1: the row is re-granted (the upsert keeps its id) between the read and the
+   * delete. What goes into the trail is what the statement removed, not what was read before it —
+   * otherwise the entry would name a level that was no longer there when the grant ended.
+   */
+  it('files what the delete actually removed, not the row it read before', async () => {
+    const { acl, audit, useCase } = setup();
+    const id = acl.seed(existing());
+    acl.afterFindById = (found) => {
+      acl.rows[acl.rows.indexOf(found)] = { ...found, level: 'VIEWER' };
+    };
+
+    await useCase.execute(revoke(id));
+
+    expect(acl.rows).toEqual([]);
+    expect(audit.events).toHaveLength(1);
+    expect(audit.events[0]?.before).toMatchObject({ accessLevel: 'VIEWER' });
+  });
+
   it('answers an id that names no grant as 404 acl_not_found, asks the resolver nothing and writes nothing', async () => {
     const { acl, audit, resolver, useCase } = setup();
     acl.seed(existing());
@@ -155,6 +197,46 @@ describe('RevokeAclUseCase', () => {
     expect(acl.idLookups).toEqual([]);
     expect(resolver.asked).toEqual([]);
     expect(acl.rows).toHaveLength(1);
+  });
+
+  /**
+   * The gate's L-2, revocation half: taking away a `MANAGER` entry that reaches the caller can take
+   * the level `acl:revoke` needs from them — refused as `self_lockout` (409), after the conjunction
+   * and before anything is removed. Below `MANAGER`, and for somebody else's entry, it goes through.
+   */
+  it('refuses taking away the caller’s own MANAGER entry as 409 self_lockout, removing nothing', async () => {
+    const { acl, audit, useCase } = setup();
+    const id = acl.seed({ ...existing(), subject: { type: 'USER', id: IVAN }, level: 'MANAGER' });
+
+    await expect(useCase.execute(revoke(id))).rejects.toMatchObject({
+      code: 'self_lockout',
+      reason: 'self_lockout',
+    });
+    expect(acl.rows).toHaveLength(1);
+    expect(acl.bumped).toEqual([]);
+    expect(audit.events).toEqual([]);
+    // A person is compared by id: no membership read for a USER entry.
+    expect(acl.reachChecks).toEqual([]);
+  });
+
+  it('refuses taking away a MANAGER grant of a team the caller is on, asking the port about the caller', async () => {
+    const { acl, useCase } = setup();
+    const id = acl.seed({ ...existing(), level: 'MANAGER' });
+    acl.subjects.set(`TEAM:${TEAM}`, [IVAN]);
+
+    await expect(useCase.execute(revoke(id))).rejects.toMatchObject({ reason: 'self_lockout' });
+    expect(acl.reachChecks).toEqual([{ subject: { type: 'TEAM', id: TEAM }, userId: IVAN }]);
+    expect(acl.rows).toHaveLength(1);
+  });
+
+  it('CONTROL: takes away a MANAGER grant of a team the caller is not on', async () => {
+    const { acl, useCase } = setup();
+    const id = acl.seed({ ...existing(), level: 'MANAGER' });
+    acl.subjects.set(`TEAM:${TEAM}`, [PETR]);
+
+    await useCase.execute(revoke(id));
+
+    expect(acl.rows).toEqual([]);
   });
 
   it('answers a reader that failed with 503 and removes nothing', async () => {

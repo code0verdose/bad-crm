@@ -66,6 +66,8 @@ export class FakeAclRepository implements AclRepositoryPort {
   readonly listed: { resource: AclResourceRef; now: Date }[] = [];
   readonly missingSubjects = new Set<string>();
   readonly subjects = new Map<string, readonly string[]>();
+  /** Every «does this role or team reach this person» the commands asked, in order. */
+  readonly reachChecks: { subject: AclSubjectRef; userId: string }[] = [];
 
   seed(row: Omit<AclEntryRow, 'id'>): string {
     const id = randomUUID();
@@ -85,10 +87,20 @@ export class FakeAclRepository implements AclRepositoryPort {
     );
   }
 
+  /**
+   * Runs once a `findById` found its row, before the caller acts on it — the window a concurrent
+   * revocation or re-grant of the same id lands in (the gate's L-1).
+   */
+  afterFindById: ((found: AclEntryRow) => void) | undefined;
+
   findById(id: string): Promise<AclEntryRow | null> {
     this.idLookups.push(id);
 
-    return Promise.resolve(this.rows.find((row) => row.id === id) ?? null);
+    const found = this.rows.find((row) => row.id === id) ?? null;
+
+    if (found !== null) this.afterFindById?.(found);
+
+    return Promise.resolve(found);
   }
 
   /** In seeding order, live at `now` — the adapter's `ORDER BY` and `expires_at` predicate, in memory. */
@@ -121,16 +133,15 @@ export class FakeAclRepository implements AclRepositoryPort {
     return Promise.resolve(id);
   }
 
-  remove(resource: AclResourceRef, subject: AclSubjectRef): Promise<boolean> {
-    const index = this.rows.findIndex(
-      (row) => keyOf(row.resource) === keyOf(resource) && keyOf(row.subject) === keyOf(subject),
-    );
+  /** The row as it stood when it went, or `null` — the adapter's `DELETE … RETURNING`, in memory. */
+  removeById(id: string): Promise<AclEntryRow | null> {
+    const index = this.rows.findIndex((row) => row.id === id);
 
-    if (index === -1) return Promise.resolve(false);
+    if (index === -1) return Promise.resolve(null);
 
-    this.rows.splice(index, 1);
+    const [removed] = this.rows.splice(index, 1);
 
-    return Promise.resolve(true);
+    return Promise.resolve(removed ?? null);
   }
 
   removeAllOfSubject(subject: AclSubjectRef): Promise<readonly AclEntryRow[]> {
@@ -145,6 +156,13 @@ export class FakeAclRepository implements AclRepositoryPort {
     this.existenceChecks.push(subject);
 
     return Promise.resolve(!this.missingSubjects.has(keyOf(subject)));
+  }
+
+  /** A role or a team reaches the person when `subjects` lists them — the reader's match, in memory. */
+  subjectReaches(subject: AclSubjectRef, userId: string): Promise<boolean> {
+    this.reachChecks.push({ subject, userId });
+
+    return Promise.resolve((this.subjects.get(keyOf(subject)) ?? []).includes(userId));
   }
 
   subjectUserIds(subject: AclSubjectRef): Promise<readonly string[]> {

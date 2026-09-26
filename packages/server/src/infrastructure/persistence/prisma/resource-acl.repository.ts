@@ -21,6 +21,12 @@ interface RemovedGrantRow {
   readonly granted_by_id: string | null;
 }
 
+/** The same, with the subject — for a delete addressed by id, which knows neither half in advance. */
+interface RemovedRow extends RemovedGrantRow {
+  readonly subject_type: SharedPermissions.AclSubjectType;
+  readonly subject_id: string;
+}
+
 /**
  * The grants of the current tenant, through Prisma, inside the scope the caller opened.
  *
@@ -171,19 +177,28 @@ export class PrismaResourceAclRepository
     });
   }
 
-  remove(resource: AclResourceRef, subject: AclSubjectRef): Promise<boolean> {
-    return this.run('remove', async (tx) => {
-      const { count } = await tx.resourceAcl.deleteMany({
-        where: {
-          organizationId: this.organizationId('remove'),
-          resourceType: resource.type,
-          resourceId: resource.id,
-          subjectType: subject.type,
-          subjectId: subject.id,
-        },
-      });
+  removeById(id: string): Promise<AclEntryRow | null> {
+    return this.run('removeById', async (tx) => {
+      // `DELETE … RETURNING`, one statement: a concurrent revocation of the same id waits on the row
+      // lock and then deletes nothing, and the row reported is the one that went — the gate's L-1.
+      const rows = await tx.$queryRaw<RemovedRow[]>`
+        DELETE FROM resource_acl
+         WHERE organization_id = ${this.organizationId('removeById')}::uuid
+           AND id = ${id}::uuid
+        RETURNING id, resource_type, resource_id, subject_type, subject_id, access_level,
+                  expires_at, granted_by_id`;
+      const row = rows[0];
 
-      return count > 0;
+      return row === undefined
+        ? null
+        : {
+            id: row.id,
+            resource: { type: row.resource_type, id: row.resource_id },
+            subject: { type: row.subject_type, id: row.subject_id },
+            level: row.access_level,
+            expiresAt: row.expires_at,
+            grantedById: row.granted_by_id,
+          };
     });
   }
 
@@ -212,9 +227,52 @@ export class PrismaResourceAclRepository
     });
   }
 
+  /**
+   * Answers under a row lock held to the end of the caller's transaction — the gate's M-1, measured
+   * in `test/integration/db/acl-subject-cascade.test.ts`. `resource_acl.subject_id` has no foreign
+   * key, so without the lock a grant and the deletion of its subject can both proceed from the same
+   * stale fact and leave a grant to nobody:
+   *
+   * - `TEAM` — `FOR SHARE`, and `deleted_at` read **after** the lock is granted. Disbanding is an
+   *   `UPDATE` of a non-key column, which `FOR KEY SHARE` does not conflict with; a share lock makes
+   *   `disband()` wait for this grant (and its `DELETE … RETURNING` then sees the new row), or makes
+   *   this read wait for the disbanding and return the committed `deleted_at` — the same lock
+   *   `PrismaTeamRepository.scope` takes.
+   * - `ROLE` — `FOR KEY SHARE`, the lock a foreign key check would take; it conflicts with the
+   *   `SELECT … FOR UPDATE` `DeleteCustomRoleUseCase` takes on the role before removing its grants
+   *   (`CustomRoleRepositoryPort.lockForRemoval`). Waiting on a role that is then deleted returns no
+   *   row. This lock alone is not enough — the deletion removes the grants before the role, so a
+   *   grant committed between the two would outlive the role — and that is what the other half is for.
+   * - `USER` — a plain count, as before. The race is between a grant and a deletion that removes
+   *   the subject's grants, and only the two above do that; nothing removes a person's grants today.
+   */
   subjectExists(subject: AclSubjectRef): Promise<boolean> {
     return this.run('subjectExists', async (tx) => {
-      return (await this.countSubject(tx, subject)) > 0;
+      const organizationId = this.organizationId('subjectExists');
+
+      switch (subject.type) {
+        case 'USER':
+          return this.userExists(tx, subject.id);
+        case 'ROLE': {
+          const rows = await tx.$queryRaw<{ id: string }[]>`
+            SELECT id FROM roles
+             WHERE organization_id = ${organizationId}::uuid
+               AND id = ${subject.id}::uuid
+             FOR KEY SHARE`;
+
+          return rows.length > 0;
+        }
+        case 'TEAM': {
+          const rows = await tx.$queryRaw<{ deleted_at: Date | null }[]>`
+            SELECT deleted_at FROM teams
+             WHERE organization_id = ${organizationId}::uuid
+               AND id = ${subject.id}::uuid
+             FOR SHARE`;
+          const team = rows[0];
+
+          return team !== undefined && team.deleted_at === null;
+        }
+      }
     });
   }
 
@@ -224,7 +282,7 @@ export class PrismaResourceAclRepository
 
       switch (subject.type) {
         case 'USER':
-          return (await this.countSubject(tx, subject)) > 0 ? [subject.id] : [];
+          return (await this.userExists(tx, subject.id)) ? [subject.id] : [];
         case 'ROLE': {
           const rows = await tx.userRole.findMany({
             where: { organizationId, roleId: subject.id },
@@ -245,23 +303,50 @@ export class PrismaResourceAclRepository
     });
   }
 
+  /**
+   * The reader's match (`acl-reader.adapter.ts`), for one subject and one person: an assignment of
+   * the role that has not expired, a row in `team_members`. The expiry is compared with the
+   * application's clock where the reader uses the database's — the same trade `holdsRole` makes,
+   * and the one `permission-model.md` («Краевые случаи», 1) accepts for a single-host deployment.
+   */
+  subjectReaches(subject: AclSubjectRef, userId: string): Promise<boolean> {
+    return this.run('subjectReaches', async (tx) => {
+      const organizationId = this.organizationId('subjectReaches');
+
+      switch (subject.type) {
+        case 'USER':
+          return subject.id === userId;
+        case 'ROLE':
+          return (
+            (await tx.userRole.count({
+              where: {
+                organizationId,
+                roleId: subject.id,
+                userId,
+                OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
+              },
+            })) > 0
+          );
+        case 'TEAM':
+          return (
+            (await tx.teamMember.count({
+              where: { organizationId, teamId: subject.id, userId },
+            })) > 0
+          );
+      }
+    });
+  }
+
   bumpPermissionsVersionOf(userIds: readonly string[]): Promise<void> {
     return this.run('bumpPermissionsVersionOf', (tx) =>
       bumpPermissionsVersionOf(tx, this.organizationId('bumpPermissionsVersionOf'), userIds),
     );
   }
 
-  /** How many rows the subject is — one or none — as a live thing of this organization. */
-  private countSubject(tx: TxClient, subject: AclSubjectRef): Promise<number> {
-    const organizationId = this.organizationId('countSubject');
+  /** Whether the person is a live account of this organization — not soft-deleted. */
+  private async userExists(tx: TxClient, userId: string): Promise<boolean> {
+    const organizationId = this.organizationId('userExists');
 
-    switch (subject.type) {
-      case 'USER':
-        return tx.user.count({ where: { organizationId, id: subject.id, deletedAt: null } });
-      case 'ROLE':
-        return tx.role.count({ where: { organizationId, id: subject.id } });
-      case 'TEAM':
-        return tx.team.count({ where: { organizationId, id: subject.id, deletedAt: null } });
-    }
+    return (await tx.user.count({ where: { organizationId, id: userId, deletedAt: null } })) > 0;
   }
 }

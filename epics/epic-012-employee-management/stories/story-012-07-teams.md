@@ -287,17 +287,16 @@ denyAccess(...)` стоит **до** `audit.record`: промах (`404 user_not
 > Критерий 5 **закрыт 2026-09-26**: `delete-team.use-case.ts` после `disband()` зовёт
 > `AclRepositoryPort.removeAllOfSubject` и пишет `acl.revoked` на каждую снятую запись
 > (`after.cause = 'team.deleted'`) после `team.deleted`; версии бывшим членам бампает тот же
-> `bumpPermissionsVersionOf`, что и раньше. Severity `team.member_*` пересматривать пока рано: членство
-> даёт доступ только при наличии гранта, а грант — своё действие `WARNING`.
+> `bumpPermissionsVersionOf`, что и раньше. **Severity `team.member_*`: триггер пересмотра наступил
+> 2026-09-26** (`POST /acl` принимает `TEAM`), решение — `WARNING` + IP вызывающего во всех трёх
+> записях (`audit-severity.enums.ts`, `manage-team-members.use-case.ts`); гейт
+> `audit-privileged-ip-address.test.ts` теперь судит цель `TEAM` и `RESOURCE_ACL` на `WARNING`.
 
-**Что остаётся и почему это не пробел.** `AddTeamMemberUseCase` и `RemoveTeamMemberUseCase`
-(`manage-team-members.use-case.ts:78,148`) адрес по-прежнему не пишут, и гейт на них **намеренно**
-не срабатывает: `team.member_added`/`team.member_role_changed` — действия уровня `INFO`, членство
-само по себе сегодня не даёт доступа (`ResourceAcl` нет — критерии 3, 4, 6 этой истории). Это
-записано в докстринге самого теста как случай, на котором наивная версия гейта («каждый
-`audit.record` несёт `ipAddress`») была бы неправа. Пересмотреть — тогда же, когда команда станет
-субъектом ACL: с этого дня членство начнёт что-то давать, и severity действия меняется вместе со
-смыслом. Владеющая история — [STORY-011-06](../../epic-011-rbac-permissions/stories/story-011-06-resource-acl.md).
+**Что оставалось и почему это не было пробелом — закрыто 2026-09-26** (см. врезку выше: `WARNING`
++ IP). До этой даты `AddTeamMemberUseCase` и `RemoveTeamMemberUseCase` адрес не писали, и гейт на
+них **намеренно** не срабатывал: `team.member_added`/`team.member_role_changed` были действиями
+уровня `INFO`, членство само по себе доступа не давало. Пересмотр был назначен на день, когда
+команда станет субъектом ACL, — он наступил вместе с `POST /acl`. Владеющая история — [STORY-011-06](../../epic-011-rbac-permissions/stories/story-011-06-resource-acl.md).
 [NFR-6](../../../docs/product/prd.md#nfr-6-безопасность) при этом выполняется: он требует IP в
 записи о привилегированном действии, а не в каждой строке журнала.
 

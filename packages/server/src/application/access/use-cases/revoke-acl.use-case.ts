@@ -6,7 +6,8 @@ import { type AclScopeResolver } from '@/application/access/use-cases/resolve-ac
 import { type AuditLoggerPort } from '@/application/platform/ports/audit-logger.port.js';
 import { type UnitOfWorkPort } from '@/application/platform/ports/unit-of-work.port.js';
 import { closeContourOf } from '@/domain/access/acl-contour.policy.js';
-import { canRevokeAcl } from '@/domain/access/acl-management.policy.js';
+import { canRevokeAcl, canRevokeAclEntry } from '@/domain/access/acl-management.policy.js';
+import { accessErrorFor } from '@/domain/access/access.errors.js';
 import { type Actor } from '@/domain/access/actor.types.js';
 import { type AclScope } from '@/domain/access/authorize.util.js';
 import { assertAllowed } from '@/domain/access/decision.util.js';
@@ -77,8 +78,23 @@ export class RevokeAclUseCase {
         // because there is no state in which it could be taken.
         const existing = found.row as AclEntryRow;
 
-        await this.acl.remove(existing.resource, existing.subject);
-        await this.acl.bumpPermissionsVersionOf(await this.acl.subjectUserIds(existing.subject));
+        // No taking away the entry that holds the caller at `MANAGER` here (the gate's L-2) —
+        // decided on the row as read; the membership is asked only for a `MANAGER` role or team.
+        assertAllowed(
+          await canRevokeAclEntry(input.actor, existing, () =>
+            this.acl.subjectReaches(existing.subject, input.actor.userId),
+          ),
+          'acl',
+        );
+
+        // By id, and only what the statement removed counts (the gate's L-1): a concurrent
+        // revocation of the same grant leaves this one nothing to remove — the same 404 an unknown
+        // id gets, and no second bump or trail entry for one grant.
+        const removed = await this.acl.removeById(existing.id);
+
+        if (removed === null) throw accessErrorFor('resource_not_found', 'acl');
+
+        await this.acl.bumpPermissionsVersionOf(await this.acl.subjectUserIds(removed.subject));
         await this.audit.record({
           action: 'acl.revoked',
           actor: {
@@ -86,14 +102,14 @@ export class RevokeAclUseCase {
             organizationId: input.actor.organizationId,
             ipAddress: input.ipAddress,
           },
-          target: { type: 'RESOURCE_ACL', id: existing.id },
+          target: { type: 'RESOURCE_ACL', id: removed.id },
           before: {
-            resourceType: existing.resource.type,
-            resourceId: existing.resource.id,
-            subjectType: existing.subject.type,
-            subjectId: existing.subject.id,
-            accessLevel: existing.level,
-            expiresAt: existing.expiresAt?.toISOString() ?? null,
+            resourceType: removed.resource.type,
+            resourceId: removed.resource.id,
+            subjectType: removed.subject.type,
+            subjectId: removed.subject.id,
+            accessLevel: removed.level,
+            expiresAt: removed.expiresAt?.toISOString() ?? null,
           },
           requestId: undefined,
         });

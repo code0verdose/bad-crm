@@ -541,16 +541,16 @@ export class FakeProjectStore
     return Promise.resolve(id);
   }
 
-  remove(resource: AclResourceRef, subject: AclSubjectRef): Promise<boolean> {
-    this.trace.push('acl.remove');
+  removeById(id: string): Promise<AclEntryRow | null> {
+    this.trace.push('acl.removeById');
 
-    const existing = this.grantOf(resource, subject);
+    const existing = this.tenantGrants().find((candidate) => candidate.id === id);
 
-    if (existing === undefined) return Promise.resolve(false);
+    if (existing === undefined) return Promise.resolve(null);
 
     this.grants.splice(this.grants.indexOf(existing), 1);
 
-    return Promise.resolve(true);
+    return Promise.resolve(this.row(existing));
   }
 
   removeAllOfSubject(subject: AclSubjectRef): Promise<readonly AclEntryRow[]> {
@@ -573,6 +573,13 @@ export class FakeProjectStore
         ? this.subjects.has(subject.id)
         : this.aclSubjects.has(refKey(subject)),
     );
+  }
+
+  /** A role or a team reaches the person when `aclSubjects` lists them on it. */
+  subjectReaches(subject: AclSubjectRef, userId: string): Promise<boolean> {
+    this.trace.push('acl.subjectReaches');
+
+    return Promise.resolve((this.aclSubjects.get(refKey(subject)) ?? []).includes(userId));
   }
 
   subjectUserIds(subject: AclSubjectRef): Promise<readonly string[]> {

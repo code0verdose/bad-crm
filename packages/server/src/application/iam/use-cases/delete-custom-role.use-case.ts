@@ -36,9 +36,14 @@ export interface DeleteCustomRoleInput {
  * The subject of a grant is polymorphic and has no foreign key, so the cascade that takes the
  * assignments does not reach them: a row left behind is a grant to a role nobody can see or revoke
  * from the interface. Whom those grants reached is the holders — the reader matches a `ROLE` entry
- * through `user_roles` — and they are already bumped above, by the statement that runs before the
- * assignments are gone; a second bump over `subjectUserIds` would find nobody by then. Each removed
- * grant files its own `acl.revoked` with `after.cause = 'role.deleted'`, after `role.deleted`.
+ * through `user_roles` — and `bumpHoldersOf` has already bumped every one of them, so a second bump
+ * over `subjectUserIds` would bump the same people twice for one loss. Each removed grant files its
+ * own `acl.revoked` with `after.cause = 'role.deleted'`, after `role.deleted`.
+ *
+ * **The role row is locked `FOR UPDATE` before the grants are collected** (the gate's M-1, measured
+ * in `test/integration/db/acl-subject-cascade.test.ts`): a concurrent grant to this role reads it
+ * `FOR KEY SHARE`, and without the lock it could commit between `removeAllOfSubject` and the
+ * `DELETE` of the role and outlive it.
  */
 export class DeleteCustomRoleUseCase {
   constructor(
@@ -76,6 +81,14 @@ export class DeleteCustomRoleUseCase {
           ),
           'role',
         );
+
+        // The role row, locked before its grants are collected (the gate's M-1): a grant reads it
+        // `FOR KEY SHARE`, so one in flight commits first and is collected below, and one arriving
+        // later waits and finds no role. Deleted by somebody else since `composition` read it — the
+        // same «not there» as a role of another organization.
+        if (!(await this.roles.lockForRemoval(input.roleId))) {
+          throw denyAccess('role', 'other_organization');
+        }
 
         // Before the removal, not after: the cascade takes the assignments with the role, and a
         // statement looking for holders afterwards would find none and invalidate nobody.
