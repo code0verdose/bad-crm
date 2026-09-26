@@ -175,6 +175,41 @@ describe('the projects group', () => {
     expect(QueryKeys.Projects.detail('p-1')).not.toEqual(QueryKeys.Projects.detail('p-2'));
   });
 
+  it('reaches every page of the list from the same root as the card', async () => {
+    const client = new QueryClient();
+    const params = {
+      q: null,
+      status: [],
+      lead: null,
+      member: null,
+      sort: 'name',
+      page: 2,
+      perPage: 25,
+    };
+
+    client.setQueryData(QueryKeys.Projects.list(params), 'stale');
+    await client.invalidateQueries({ queryKey: QueryKeys.Projects.all });
+
+    expect(client.getQueryState(QueryKeys.Projects.list(params))?.isInvalidated).toBe(true);
+  });
+
+  it('keeps two filters of the list apart: the parameters are part of the address', () => {
+    const base = {
+      q: null,
+      status: [],
+      lead: null,
+      member: null,
+      sort: 'name',
+      page: 1,
+      perPage: 25,
+    };
+
+    expect(QueryKeys.Projects.list(base)).not.toEqual(
+      QueryKeys.Projects.list({ ...base, member: 'me' }),
+    );
+    expect(QueryKeys.Projects.list(base)).not.toEqual(QueryKeys.Projects.detail('list'));
+  });
+
   it('leaves a neighbouring group alone', async () => {
     const client = new QueryClient();
 

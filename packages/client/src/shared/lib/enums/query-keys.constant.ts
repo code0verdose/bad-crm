@@ -142,11 +142,24 @@ export interface TeamQueryKeys {
  *
  * `members` is a second address because it is a second read (`GET /projects/{projectId}/members`),
  * and it sits under the same `all` so that a write to the project — renaming it, putting somebody
- * on it — reaches the card and the roster with one invalidation. No `list` yet: the list screen
- * (STORY-014-04) adds it together with the operation behind it.
+ * on it — reaches the card and the roster with one invalidation. `list` is the list screen
+ * (STORY-014-04, `GET /projects`), under the same root for the same reason: creating, renaming or
+ * archiving a project has to reach every page of the list as well as the card.
  */
+export interface ProjectListParams {
+  readonly q: string | null;
+  readonly status: readonly string[];
+  /** `null`, not `undefined`: a key is hashed as JSON, and `undefined` vanishes from it. */
+  readonly lead: string | null;
+  readonly member: 'me' | null;
+  readonly sort: string;
+  readonly page: number;
+  readonly perPage: number;
+}
+
 export interface ProjectQueryKeys {
   readonly all: readonly [string];
+  readonly list: (params: ProjectListParams) => readonly [string, 'list', ProjectListParams];
   readonly detail: (id: string) => readonly [string, 'detail', string];
   readonly members: (id: string) => readonly [string, 'members', string];
 }
@@ -241,6 +254,7 @@ export const QueryKeys = {
   } satisfies TeamQueryKeys,
   Projects: {
     all: ['projects'],
+    list: (params: ProjectListParams) => ['projects', 'list', params],
     detail: (id: string) => ['projects', 'detail', id],
     members: (id: string) => ['projects', 'members', id],
   } satisfies ProjectQueryKeys,
