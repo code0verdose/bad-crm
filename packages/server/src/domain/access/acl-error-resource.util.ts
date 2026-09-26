@@ -7,10 +7,12 @@ import { type ErrorResource } from '@bad-crm/shared/errors';
  * The two catalogues do not have the same shape, on purpose: `ERROR_RESOURCES` is what the client
  * has a sentence for, `ACL_RESOURCE_TYPES` is every kind of object a grant can be about. Where a
  * kind has no sentence of its own, the nearest one is named — a space is phrased as its notes, a
- * folder as its files, a vault as its items — rather than a new `acl_*` code: that code would need
- * an entry in the OpenAPI enumeration and both locale files, and it would tell the caller less
- * than the object's own sentence does. Total by construction (`Record`), so a type added to the
- * shared list without an answer here does not compile.
+ * folder as its files, a vault as its items — rather than a new code per kind, which would need an
+ * entry in the OpenAPI enumeration and both locale files. The `acl_*` codes do exist, but for the
+ * one operation addressed by the grant's id (`DELETE /acl/{aclId}`, and the `acl:*` capability
+ * guard on all three routes): here, where the object is named, its own sentence tells the caller
+ * more than `acl_*` would. Total by construction (`Record`), so a type added to the shared list
+ * without an answer here does not compile.
  *
  * Only `ORGANIZATION` and `PROJECT` can be reached today; the rest are decided now so that the
  * domain that makes them reachable inherits a sentence instead of choosing one under pressure.

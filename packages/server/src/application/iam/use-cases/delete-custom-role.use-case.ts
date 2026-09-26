@@ -36,8 +36,8 @@ export interface DeleteCustomRoleInput {
  * The subject of a grant is polymorphic and has no foreign key, so the cascade that takes the
  * assignments does not reach them: a row left behind is a grant to a role nobody can see or revoke
  * from the interface. Whom those grants reached is the holders — the reader matches a `ROLE` entry
- * through `user_roles` — and `bumpHoldersOf` has already bumped every one of them, so a second bump
- * over `subjectUserIds` would bump the same people twice for one loss. Each removed grant files its
+ * through `user_roles` — and `bumpHoldersOf` bumps every one of them right after, in the same
+ * transaction, so a second bump over `subjectUserIds` would bump the same people twice for one loss. Each removed grant files its
  * own `acl.revoked` with `after.cause = 'role.deleted'`, after `role.deleted`.
  *
  * **The role row is locked `FOR UPDATE` first, before the policy reads anything** (the gate's M-1
