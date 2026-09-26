@@ -1,6 +1,7 @@
 import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 
+import { SharedValidation } from '@bad-crm/shared';
 import { describe, expect, it } from 'vitest';
 
 import { SharedLib } from '@shared';
@@ -39,6 +40,18 @@ describe('the shared list fields', () => {
       page: 1,
       perPage: 25,
     });
+  });
+
+  /**
+   * The server refuses a page past `MAX_PAGE` (`page × perPage` must fit 32 bits), so a link that
+   * carries one would render the error state instead of the list. The bound is the shared one, not
+   * each list's to remember.
+   */
+  it('keeps the last page the server serves, and falls back past it', () => {
+    const last = SharedValidation.MAX_PAGE;
+
+    expect(SharedLib.listSearchSchema.parse({ page: String(last) }).page).toBe(last);
+    expect(SharedLib.listSearchSchema.parse({ page: String(last + 1) }).page).toBe(1);
   });
 
   it('drops an empty query rather than filtering by an empty string', () => {

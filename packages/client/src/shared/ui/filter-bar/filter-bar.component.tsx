@@ -1,5 +1,8 @@
 import { Button, Group, Pill, Text } from '@mantine/core';
+import { type RefObject } from 'react';
 import { useTranslation } from 'react-i18next';
+
+import { useFocusHandoff } from '@shared/hooks';
 
 import classes from './filter-bar.module.css';
 
@@ -14,6 +17,12 @@ export interface FilterBarProps {
   readonly active: readonly ActiveFilter[];
   readonly onRemove: (id: string) => void;
   readonly onReset: () => void;
+  /**
+   * Where focus goes when a control of the bar takes itself away — the reset (the bar is gone once
+   * nothing is active) or a chip's cross. Something the screen always draws; on a list, its search
+   * box. Required, because the default is `<body>`.
+   */
+  readonly returnFocusTo: RefObject<HTMLElement | null>;
 }
 
 /**
@@ -24,15 +33,19 @@ export interface FilterBarProps {
  * the state visible and undoable in the same place.
  *
  * **Nothing active renders nothing**, reset included. A bar that is always present spends a row of
- * the screen saying «no filters are on», which is what the unfiltered list already says.
+ * the screen saying «no filters are on», which is what the unfiltered list already says. The price
+ * is that every control here removes itself when pressed — the reset always, a cross always its own
+ * chip — so each hands focus to `returnFocusTo` on the way out (`useFocusHandoff`) rather than
+ * dropping it on `<body>`.
  *
  * **Presentational.** It does not read the URL and has no opinion about what a filter means — the URL
  * is the source of truth for a list and belongs to the unit that owns it
  * (`rules/lists-and-filters.mdc`). This draws what it is handed and reports what was clicked, by id
  * and never by label: a label is a translated string, and matching on it would break in Russian.
  */
-export function FilterBar({ active, onRemove, onReset }: FilterBarProps) {
+export function FilterBar({ active, onRemove, onReset, returnFocusTo }: FilterBarProps) {
   const { t } = useTranslation();
+  const handOffFocus = useFocusHandoff(returnFocusTo);
 
   if (active.length === 0) return null;
 
@@ -62,6 +75,7 @@ export function FilterBar({ active, onRemove, onReset }: FilterBarProps) {
             // reading the source, so the parity gate cannot tell whether it is translated — the one
             // check that stands between the product and a half-Russian interface.
             'aria-label': t('filter.remove', { name: t(filter.labelKey) }),
+            ref: handOffFocus,
             tabIndex: 0,
           }}
           withRemoveButton
@@ -69,7 +83,7 @@ export function FilterBar({ active, onRemove, onReset }: FilterBarProps) {
           {t(filter.labelKey)}
         </Pill>
       ))}
-      <Button onClick={onReset} size="compact-sm" variant="subtle">
+      <Button onClick={onReset} ref={handOffFocus} size="compact-sm" variant="subtle">
         {t('filter.reset')}
       </Button>
     </Group>

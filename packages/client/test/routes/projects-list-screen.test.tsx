@@ -452,6 +452,46 @@ describe('/projects', () => {
     expect(announced).toEqual(['projects.list.found']);
   });
 
+  /**
+   * One change, one announcement. The pager's range is a live region of its own on other lists;
+   * here the count sentence already says it, and two polite regions changing on one filter make a
+   * screen reader read the same number twice (`rules/a11y.mdc` §15). In English rather than
+   * `cimode`, because a key does not change when the number in it does.
+   */
+  it('announces a new result count from exactly one live region', async () => {
+    const user = userEvent.setup();
+
+    await startAt({
+      i18n: SharedI18n.createI18n('en'),
+      language: 'en',
+      list: (search) => json(pageOf([project(1)], search.get('sort') === '-name' ? 5 : 37)),
+    });
+
+    await screen.findByRole('link', { name: 'Project 1' });
+
+    const live = (): Element[] => [
+      ...document.querySelectorAll(
+        '[role="status"], [aria-live="polite"], [aria-live="assertive"]',
+      ),
+    ];
+    const mentions = (count: number): Element[] =>
+      live().filter((region) =>
+        new RegExp(`(^|\\D)${String(count)}(\\D|$)`).test(region.textContent ?? ''),
+      );
+
+    await waitFor(() => {
+      expect(mentions(37)).not.toHaveLength(0);
+    });
+
+    await user.selectOptions(screen.getByLabelText('Order'), 'Name, Z to A');
+
+    await waitFor(() => {
+      expect(mentions(5)).not.toHaveLength(0);
+    });
+    expect(mentions(5).map((region) => region.textContent)).toEqual(['5 projects found']);
+    expect(mentions(37)).toEqual([]);
+  });
+
   it('shows a chip per active filter and takes one off without the others', async () => {
     const user = userEvent.setup();
     const app = await startAt({
@@ -487,6 +527,57 @@ describe('/projects', () => {
       expect(app.router.state.location.search.q).toBeUndefined();
     });
     expect(screen.getByLabelText('projects.list.filters.search')).toHaveValue('');
+  });
+
+  /**
+   * Every control that takes the filters off also takes itself off the page — the reset in the
+   * empty state, the reset in the bar, the last chip's cross. Focus on a removed node falls to
+   * `<body>`, and a keyboard or screen reader user is thrown to the top of the document with no word
+   * about where the list went (`rules/a11y.mdc` §5, §9). The search box is always on the screen.
+   */
+  it("keeps the focus on the search box when the empty state's reset takes itself away", async () => {
+    const user = userEvent.setup();
+
+    await startAt({ path: `/projects?q=%22zzz%22`, list: () => json(pageOf([], 0)) });
+
+    await user.click(await screen.findByRole('button', { name: 'projects.list.empty.reset' }));
+
+    await waitFor(() => {
+      expect(screen.queryByRole('button', { name: 'projects.list.empty.reset' })).toBeNull();
+    });
+    expect(document.activeElement).toBe(screen.getByLabelText('projects.list.filters.search'));
+  });
+
+  it("keeps the focus on the search box when the bar's reset takes itself away", async () => {
+    const user = userEvent.setup();
+
+    await startAt({ path: `/projects?member=%22me%22` });
+
+    await screen.findByRole('link', { name: 'Project 1' });
+    await user.click(screen.getByRole('button', { name: 'filter.reset' }));
+
+    await waitFor(() => {
+      expect(screen.queryByRole('button', { name: 'filter.reset' })).toBeNull();
+    });
+    expect(document.activeElement).toBe(screen.getByLabelText('projects.list.filters.search'));
+  });
+
+  it('keeps the focus on the search box when the last chip is taken off from the keyboard', async () => {
+    const user = userEvent.setup();
+
+    await startAt({ path: `/projects?member=%22me%22` });
+
+    await screen.findByRole('link', { name: 'Project 1' });
+    // From the keyboard: the cross swallows `mousedown`, so a click would never have focused it.
+    act(() => {
+      screen.getByRole('button', { name: 'filter.remove' }).focus();
+    });
+    await user.keyboard('{Enter}');
+
+    await waitFor(() => {
+      expect(screen.queryByRole('button', { name: 'filter.remove' })).toBeNull();
+    });
+    expect(document.activeElement).toBe(screen.getByLabelText('projects.list.filters.search'));
   });
 
   it('tells somebody who may create a project where their projects will appear', async () => {

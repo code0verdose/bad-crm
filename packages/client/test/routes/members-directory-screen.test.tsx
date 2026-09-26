@@ -422,6 +422,25 @@ describe('/admin/members', () => {
     });
   });
 
+  /**
+   * The reset is drawn only while something is filtered, so pressing it removes it — and focus on
+   * a removed node falls to `<body>`. The search box is always on the screen and is where a reader
+   * who just cleared the filters starts again (`rules/a11y.mdc` §5, §9).
+   */
+  it('keeps the focus on the search box when the reset takes itself away', async () => {
+    const user = userEvent.setup();
+
+    await startAt({ granted: ['user:read', 'employee:read'], path: `/admin/members?q=%22ив%22` });
+
+    await screen.findByText('person-1@example.test');
+    await user.click(screen.getByRole('button', { name: /members\.filters\.reset/ }));
+
+    await waitFor(() => {
+      expect(screen.queryByRole('button', { name: /members\.filters\.reset/ })).toBeNull();
+    });
+    expect(document.activeElement).toBe(screen.getByLabelText('members.filters.search'));
+  });
+
   it('offers a way back when the directory cannot be loaded', async () => {
     // `DataState` owns the four states; what this asserts is that the retry re-asks rather than
     // being a button that does nothing.

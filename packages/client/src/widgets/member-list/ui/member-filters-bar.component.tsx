@@ -1,4 +1,5 @@
 import { Chip, Group, NativeSelect, Stack, TextInput } from '@mantine/core';
+import { type Ref } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { EmployeeModel, type EmployeeApi, type EmployeeService } from '@units/employee';
@@ -8,6 +9,8 @@ import classes from './member-list-ui.module.css';
 export interface MemberFiltersBarProps {
   readonly filters: EmployeeService.EmployeeHooks.EmployeeFilters;
   readonly facets: EmployeeApi.EmployeeDirectoryPage['facets'] | undefined;
+  /** The search box — always drawn, so it is where focus goes when the reset takes itself away. */
+  readonly searchRef: Ref<HTMLInputElement>;
 }
 
 /**
@@ -43,7 +46,7 @@ const SORT_KEYS = {
  * The role and team options come from the **answer**, not from `/roles` and `/teams`: a developer
  * holds neither `role:read` nor `team:read`, and this screen is open to them.
  */
-export function MemberFiltersBar({ filters, facets }: MemberFiltersBarProps) {
+export function MemberFiltersBar({ filters, facets, searchRef }: MemberFiltersBarProps) {
   const { t } = useTranslation();
 
   return (
@@ -57,6 +60,7 @@ export function MemberFiltersBar({ filters, facets }: MemberFiltersBarProps) {
             filters.setQuery(event.currentTarget.value);
           }}
           placeholder={t('members.filters.searchPlaceholder')}
+          ref={searchRef}
           type="search"
           value={filters.typed}
         />

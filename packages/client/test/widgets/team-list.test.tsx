@@ -278,6 +278,20 @@ describe('the team list', () => {
       await screen.findByRole('button', { name: /teams\.filters\.reset/ }),
     ).toBeInTheDocument();
   });
+
+  /** Pressing the reset removes it; focus must land on the search box, not fall to `<body>`. */
+  it('keeps the focus on the search box when the reset takes itself away', async () => {
+    const user = userEvent.setup();
+
+    await startAt({ path: '/admin/teams?q=des' });
+
+    await user.click(await screen.findByRole('button', { name: /teams\.filters\.reset/ }));
+
+    await waitFor(() => {
+      expect(screen.queryByRole('button', { name: /teams\.filters\.reset/ })).toBeNull();
+    });
+    expect(document.activeElement).toBe(screen.getByLabelText('teams.filters.search'));
+  });
 });
 
 describe('creating a team', () => {

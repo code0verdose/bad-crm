@@ -21,6 +21,12 @@ import { axeViolationsIn } from '../support/axe-scan.util.js';
  */
 const wrap = (ui: ReactNode) => render(<MantineProvider env="test">{ui}</MantineProvider>);
 
+/**
+ * No anchor: where focus goes when a control of the bar leaves is proven on the screens that own
+ * one (`projects-list-screen.test.tsx`) and on the hook itself (`focus-handoff.test.tsx`).
+ */
+const NO_ANCHOR = { current: null };
+
 const FILTERS = [
   { id: 'status', labelKey: 'filter.status.active' },
   { id: 'team', labelKey: 'filter.team.platform' },
@@ -28,7 +34,14 @@ const FILTERS = [
 
 describe('FilterBar', () => {
   it('shows one chip per active filter', () => {
-    wrap(<SharedUi.FilterBar active={FILTERS} onRemove={vi.fn()} onReset={vi.fn()} />);
+    wrap(
+      <SharedUi.FilterBar
+        active={FILTERS}
+        onRemove={vi.fn()}
+        onReset={vi.fn()}
+        returnFocusTo={NO_ANCHOR}
+      />,
+    );
 
     expect(screen.getByText('filter.status.active')).toBeInTheDocument();
     expect(screen.getByText('filter.team.platform')).toBeInTheDocument();
@@ -37,7 +50,14 @@ describe('FilterBar', () => {
   it('names which filter was taken off, not merely that one was', async () => {
     const user = userEvent.setup();
     const onRemove = vi.fn();
-    wrap(<SharedUi.FilterBar active={FILTERS} onRemove={onRemove} onReset={vi.fn()} />);
+    wrap(
+      <SharedUi.FilterBar
+        active={FILTERS}
+        onRemove={onRemove}
+        onReset={vi.fn()}
+        returnFocusTo={NO_ANCHOR}
+      />,
+    );
 
     // One static key with the filter's name interpolated in — ADR-0019 forbids composing a key at
     // runtime, so every chip's remove button shares this name and the chips are told apart by order.
@@ -49,7 +69,14 @@ describe('FilterBar', () => {
   it('offers a reset while anything is on', async () => {
     const user = userEvent.setup();
     const onReset = vi.fn();
-    wrap(<SharedUi.FilterBar active={FILTERS} onRemove={vi.fn()} onReset={onReset} />);
+    wrap(
+      <SharedUi.FilterBar
+        active={FILTERS}
+        onRemove={vi.fn()}
+        onReset={onReset}
+        returnFocusTo={NO_ANCHOR}
+      />,
+    );
 
     await user.click(screen.getByRole('button', { name: 'filter.reset' }));
 
@@ -61,7 +88,14 @@ describe('FilterBar', () => {
    * row of the screen to say «no filters», which is what the unfiltered list already says.
    */
   it('renders nothing at all when no filter is on', () => {
-    wrap(<SharedUi.FilterBar active={[]} onRemove={vi.fn()} onReset={vi.fn()} />);
+    wrap(
+      <SharedUi.FilterBar
+        active={[]}
+        onRemove={vi.fn()}
+        onReset={vi.fn()}
+        returnFocusTo={NO_ANCHOR}
+      />,
+    );
 
     expect(screen.queryByRole('button', { name: 'filter.reset' })).not.toBeInTheDocument();
     expect(screen.queryByRole('status')).not.toBeInTheDocument();
@@ -77,7 +111,14 @@ describe('FilterBar', () => {
   it('lets a filter be taken off with the keyboard', async () => {
     const user = userEvent.setup();
     const onRemove = vi.fn();
-    wrap(<SharedUi.FilterBar active={FILTERS} onRemove={onRemove} onReset={vi.fn()} />);
+    wrap(
+      <SharedUi.FilterBar
+        active={FILTERS}
+        onRemove={onRemove}
+        onReset={vi.fn()}
+        returnFocusTo={NO_ANCHOR}
+      />,
+    );
 
     (screen.getAllByRole('button', { name: 'filter.remove' })[0] as HTMLElement).focus();
     await user.keyboard('{Enter}');
@@ -90,14 +131,26 @@ describe('FilterBar', () => {
    * rather than inferred from how many chips happen to fit.
    */
   it('announces how many filters are on', () => {
-    wrap(<SharedUi.FilterBar active={FILTERS} onRemove={vi.fn()} onReset={vi.fn()} />);
+    wrap(
+      <SharedUi.FilterBar
+        active={FILTERS}
+        onRemove={vi.fn()}
+        onReset={vi.fn()}
+        returnFocusTo={NO_ANCHOR}
+      />,
+    );
 
     expect(screen.getByRole('status')).toHaveTextContent('2');
   });
 
   it('has no accessibility violation', async () => {
     const { container } = wrap(
-      <SharedUi.FilterBar active={FILTERS} onRemove={vi.fn()} onReset={vi.fn()} />,
+      <SharedUi.FilterBar
+        active={FILTERS}
+        onRemove={vi.fn()}
+        onReset={vi.fn()}
+        returnFocusTo={NO_ANCHOR}
+      />,
     );
 
     // The bar is made of buttons — one per chip, plus the reset — so `button-name` is the rule it

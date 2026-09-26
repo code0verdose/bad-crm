@@ -1,4 +1,5 @@
 import { Group, NativeSelect, TextInput } from '@mantine/core';
+import { type Ref } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { TeamModel, type TeamService } from '@units/team';
@@ -7,6 +8,8 @@ import classes from './team-list-ui.module.css';
 
 export interface TeamFiltersBarProps {
   readonly filters: TeamService.TeamHooks.TeamFilters;
+  /** The search box — always drawn, so it is where focus goes when the reset takes itself away. */
+  readonly searchRef: Ref<HTMLInputElement>;
 }
 
 /**
@@ -32,7 +35,7 @@ const SORT_KEYS = {
  * `Combobox` with a popover and a floating engine into a chunk that needs none of it
  * (`ux-architecture.md` → «Бюджет бандла»).
  */
-export function TeamFiltersBar({ filters }: TeamFiltersBarProps) {
+export function TeamFiltersBar({ filters, searchRef }: TeamFiltersBarProps) {
   const { t } = useTranslation();
 
   return (
@@ -45,6 +48,7 @@ export function TeamFiltersBar({ filters }: TeamFiltersBarProps) {
           filters.setQuery(event.currentTarget.value);
         }}
         placeholder={t('teams.filters.searchPlaceholder')}
+        ref={searchRef}
         type="search"
         value={filters.typed}
       />
