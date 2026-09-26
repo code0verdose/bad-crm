@@ -12,6 +12,7 @@ export * from './data-state/index.js';
 export * from './filter-bar/index.js';
 export * from './forbidden-state/index.js';
 export * from './language-control/index.js';
+export * from './not-found-state/index.js';
 export * from './page-header/index.js';
 export * from './pagination-bar/index.js';
 export * from './relative-time/index.js';

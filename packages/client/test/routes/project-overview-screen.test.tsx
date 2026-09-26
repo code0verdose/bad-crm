@@ -330,6 +330,38 @@ describe('/projects/$projectId', () => {
     },
   );
 
+  /**
+   * The route announcer moves focus to `PAGE_TITLE_ID` after a navigation (`rules/a11y.mdc` §21).
+   * The not-found screen replaces the whole card, so its heading is the only one on the page — and
+   * until it carried that id, a keyboard user arrived at «not found» with focus left on the body and
+   * a screen reader said nothing. A navigation, not a first render: the announcer deliberately
+   * leaves focus alone on the page the tab opened on.
+   */
+  it.each([
+    { status: 404, code: 'project_not_found' },
+    { status: 403, code: 'user_forbidden' },
+  ])(
+    'puts focus on the not-found heading after navigating to a $status',
+    async ({ status, code }) => {
+      const { router } = await startAt({ detail: () => problem(status, code) });
+
+      await screen.findByText('errors.not_found.title');
+      await router.navigate({ to: '/dashboard' });
+      await screen.findByRole('heading', { level: 1, name: /dashboard/ });
+
+      await router.navigate({ to: '/projects/$projectId', params: { projectId: PROJECT } });
+
+      const heading = await screen.findByRole('heading', {
+        level: 1,
+        name: 'errors.not_found.title',
+      });
+
+      await waitFor(() => {
+        expect(document.activeElement).toBe(heading);
+      });
+    },
+  );
+
   it('does not ask for a project at all without project:read — the same not-found screen', async () => {
     await startAt({ granted: [] });
 
