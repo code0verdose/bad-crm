@@ -85,6 +85,9 @@ allow = tenantMatches(RLS)                      # ADR-0004
 > отгруженные endpoint'ы, `requiredLevel = null` — они организационного скоупа, и конъюнкция для
 > них вырождается в capability. Ключ с `requiredLevel != null`, вызванный без уровня, получает
 > `DENY(resource_required)` — то есть модель fail-closed и в этом состоянии тоже.
+> *(Снято 2026-09-06: второй конъюнкт вычисляется — сперва в `GetProjectDetailQuery`, затем по
+> HTTP на маршрутах `project:*` и `acl:*`, у которых `requiredLevel != null`; см. абзацы выше и
+> ниже. Оговорка про fail-closed остаётся верной.)*
 >
 > **Уточнено 2026-09-06, после `f156ee9`.** Два места абзацев выше разошлись с кодом. Первое:
 > «ресурсную половину слоя 5 не вызывает ни один маршрут» верно буквально, но уже не означает
@@ -102,6 +105,11 @@ allow = tenantMatches(RLS)                      # ADR-0004
 > уровнем, стоящего на маршруте, нет ридера ресурса** — у организации его нет, гвард зовёт только
 > `authorizeCapability`, и `requiredLevel` на этих трёх маршрутах не читает никто. `DENY(resource_required)`
 > они не получают именно поэтому. Первый маршрут `project:*` это изменит.
+> *(Снято 2026-09-06: `GET /projects/{projectId}` сделал матрицу двумерной — фикстура ресурса в
+> ключе ячейки, `packages/server/test/permissions/permission-matrix.test.ts`; с 2026-09-26 то же
+> на маршрутах `acl:*`. Три маршрута `organization:manage_security_policy` по-прежнему решаются
+> одной capability: middleware зовёт `authorizeCapability`, ридера организации у этих use-case'ов
+> нет.)*
 
 **Слой 1 — каталог permissions.** Файл `packages/shared/src/permissions/permissions.catalog.ts` —
 единственный источник истины. Сервер и клиент импортируют один и тот же тип, поэтому
