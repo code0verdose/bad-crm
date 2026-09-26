@@ -16,11 +16,14 @@ export interface Retry {
  * after.
  *
  * **Focus stays on the control until the outcome.** While the error state stays on screen through
- * the reload — a route's error boundary under `router.invalidate()`, a query that already had data —
- * a failure leaves the alert exactly as it was, the same element with the same sentence, and a live
- * region that does not change says nothing. Moving focus away at the press left a reader who heard
- * nothing and no longer stood on the control that could tell them. The control is where both
- * outcomes are observable: it goes busy, and it either comes back ready or leaves.
+ * the reload — a query that already had data, a route's error boundary under `router.invalidate()`
+ * until the answer arrives — the control is the one thing that is certain to be there. A query that
+ * fails again leaves the alert exactly as it was, the same element with the same sentence, and a
+ * live region that does not change says nothing. Moving focus away at the press left a reader who
+ * heard nothing and no longer stood on the control that could tell them. The control is where both
+ * outcomes are observable: it goes busy, and it either comes back ready or leaves. (A route's
+ * boundary is remounted by the router on the answer, success or failure — the control leaves
+ * either way, and where focus goes then is the route announcer's call.)
  *
  * **Focus moves only when the control leaves the page.** A success unmounts the error state and the
  * button with it; so does a reload of a query that never had data, which goes back to `pending` and

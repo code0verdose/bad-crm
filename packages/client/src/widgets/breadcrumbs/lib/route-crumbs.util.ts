@@ -32,11 +32,14 @@ export interface RouteCrumb {
 /**
  * The screen that replaced this match, if one did — named by that screen's own heading key.
  *
- * Two do, and both render the page's `h1`: the not-found screen (`notFound()` from a guard, the
- * closed contour's refusal included) and the 403 screen (`PermissionDeniedError`, routed there by
- * `app/ui/route-error.component.tsx` through the same predicate). A match that merely failed is
- * **not** replaced: the error state sits inside the page, «Retry» brings the same page back, and
- * the page keeps its own name.
+ * Three do, and all three render the page's `h1`: the not-found screen (`notFound()` from a guard,
+ * the closed contour's refusal included), the 403 screen (`PermissionDeniedError`, routed there by
+ * `app/ui/route-error.component.tsx` through the same predicate) and the error screen of any other
+ * failure. The last one used to keep the route's name, on the reasoning that «Retry» brings the
+ * same page back — but the error screen replaces the page's heading as surely as the other two, and
+ * a page is named by the `h1` the reader lands on, not by the one a retry might bring. The trail
+ * *above* the replaced match is kept in all three cases, so the way back is still on screen; the
+ * retry is a button and needs no crumb.
  *
  * Without this the document title and the route announcement kept the route's static crumb —
  * «Project» — while focus sat on a heading saying «Nothing here»: three voices of one page, and the
@@ -44,8 +47,10 @@ export interface RouteCrumb {
  */
 const standInKey = (match: RouteCrumbSource): string | undefined => {
   if (match.status === 'notFound') return SharedUi.NOT_FOUND_TITLE_KEY;
-  if (match.status === 'error' && IamLib.isPermissionDenied(match.error)) {
-    return SharedUi.FORBIDDEN_TITLE_KEY;
+  if (match.status === 'error') {
+    return IamLib.isPermissionDenied(match.error)
+      ? SharedUi.FORBIDDEN_TITLE_KEY
+      : SharedUi.PAGE_ERROR_TITLE_KEY;
   }
 
   return undefined;
