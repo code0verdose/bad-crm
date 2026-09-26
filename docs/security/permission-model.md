@@ -2094,7 +2094,7 @@ scan. Именно поэтому TTL не выполняет роль инва�
 | `UserPermissionOverride` истёк | этому пользователю | — (та же причина) |
 | `ResourceAcl` создан / изменён / удалён | субъекту (`USER`), всем носителям роли (`ROLE`), всем членам команды (`TEAM`) | ✅ `grant-acl.use-case.ts`, `revoke-acl.use-case.ts` — `AclRepositoryPort.subjectUserIds` + один `UPDATE`; маршруты `POST /acl`, `DELETE /acl/{aclId}`; снятие каскадом при удалении роли или команды покрыто бампом самой операции (строка `Role` удалена, роспуск команды) |
 | `TeamMember` добавлен / удалён | этому пользователю | ✅ |
-| `ProjectMember` добавлен / удалён / `leftAt` | этому пользователю | — (проектов нет, EPIC-014) |
+| `ProjectMember` добавлен / удалён / `leftAt` / смена роли | этому пользователю | ✅ `manage-project-members.use-case.ts` (`AddProjectMemberUseCase`, `RemoveProjectMemberUseCase` — `leftAt`, смена роли в `fileRoleChange`); первые два `LEAD` — `create-project.use-case.ts` |
 | `User.status → SUSPENDED`, `deletedAt` | этому пользователю (плюс отзыв сессий) | ✅ |
 | Передача владения | **обоим** участникам, одним `updateMany` | ✅ |
 
@@ -2288,7 +2288,7 @@ node -e "const m=require('./packages/server/test/permissions/__snapshots__/permi
 (ключ ячейки обрезается до маршрута: у маршрута с ресурсом ячеек столько, сколько фикстур, а
 маршрут один).
 
-Таблица ниже сверена с `route-registry.factory.ts` 2026-08-27; расхождение её длины с этой командой
+Таблица ниже сверена с `route-registry.factory.ts` 2026-09-27; расхождение её длины с этой командой
 означает, что сверку не повторили. Колонка `aclCheckedIn` — имя use-case, который принимает
 авторитетное решение; для маршрута с `:id`-параметром оно обязательно (§9в).
 
@@ -2315,6 +2315,9 @@ node -e "const m=require('./packages/server/test/permissions/__snapshots__/permi
 | `DELETE /api/v1/invitations/:invitationId` | `invitation:revoke` | `RevokeInvitationUseCase` |
 | `GET /api/v1/employees` | `employee:read` | `ListEmployeesQuery` |
 | `GET /api/v1/employees/org-chart` | `employee:view_org_chart` | `GetOrgChartQuery` |
+| `GET /api/v1/organization/security-policy` | `organization:manage_security_policy` | `ReadSecurityPolicyQuery` |
+| `PATCH /api/v1/organization/security-policy` | `organization:manage_security_policy` | `UpdateSecurityPolicyUseCase` |
+| `GET /api/v1/organization/mfa-coverage` | `organization:manage_security_policy` | `MfaCoverageReportQuery` |
 | `POST /api/v1/organization/transfer-ownership` | `organization:transfer_ownership` | `TransferOwnershipUseCase` |
 | `POST /api/v1/users/:userId/deactivate` | `user:suspend` | `DeactivateUserUseCase` |
 | `POST /api/v1/users/:userId/reactivate` | `user:reactivate` | `ReactivateUserUseCase` |
@@ -2322,6 +2325,7 @@ node -e "const m=require('./packages/server/test/permissions/__snapshots__/permi
 | `GET /api/v1/users/:userId/permissions` | `permission:override_read` | `GetUserPermissionsQuery` |
 | `PUT /api/v1/users/:userId/permission-overrides/:permission` | `permission:override` | `WritePermissionOverrideUseCase` |
 | `DELETE /api/v1/users/:userId/permission-overrides/:permission` | `permission:override` | `RemovePermissionOverrideUseCase` |
+| `GET /api/v1/projects` | `project:read` | `ListProjectsQuery` (видимость — план в SQL, `visible-projects.policy.ts`) |
 | `GET /api/v1/projects/:projectId` | `project:read` | `GetProjectDetailQuery` |
 | `POST /api/v1/projects` | `project:create` | `CreateProjectUseCase` |
 | `PATCH /api/v1/projects/:projectId` | `project:update` (+ `project:manage_members` при смене `leadId`) | `UpdateProjectUseCase` |
@@ -2332,11 +2336,14 @@ node -e "const m=require('./packages/server/test/permissions/__snapshots__/permi
 | `POST /api/v1/projects/:projectId/members` | `project:manage_members` | `AddProjectMemberUseCase` |
 | `PATCH /api/v1/projects/:projectId/members/:userId` | `project:manage_members` | `UpdateProjectMemberUseCase` |
 | `DELETE /api/v1/projects/:projectId/members/:userId` | `project:manage_members` | `RemoveProjectMemberUseCase` |
+| `GET /api/v1/acl` | `acl:read` | `ListResourceAclQuery` |
+| `POST /api/v1/acl` | `acl:grant` | `GrantAclUseCase` |
+| `DELETE /api/v1/acl/:aclId` | `acl:revoke` | `RevokeAclUseCase` |
 
 До 2026-09-06 каждая ячейка снапшота отражала **только** capability — не потому, что у всех прав на
 маршрутах `requiredLevel` был `null` (`organization:manage_security_policy` несёт `MANAGER` на трёх
-маршрутах), а потому, что ни у одного такого маршрута не стояло ридера ресурса. Последняя строка
-таблицы это изменила: `project:read` (`VIEWER`) — первый ключ, за которым use-case резолвит цепочку
+маршрутах), а потому, что ни у одного такого маршрута не стояло ридера ресурса. Строка
+`GET /api/v1/projects/:projectId` это изменила: `project:read` (`VIEWER`) — первый ключ, за которым use-case резолвит цепочку
 ACL (`PROJECT → ORGANIZATION`) **до** чтения строки. У матрицы появилось второе измерение — фикстура
 ресурса в ключе ячейки (см. «Формат снапшота» выше), — и форма файла осталась прежней, как и было
 задумано. Снятый по этому маршруту снимок показывает модель целиком: на `PUBLIC_ORG`-проекте все
