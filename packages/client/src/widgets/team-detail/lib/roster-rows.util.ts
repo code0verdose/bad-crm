@@ -1,4 +1,6 @@
-import { EmployeeLib, type EmployeeApi } from '@units/employee';
+import { SharedLib } from '@shared';
+
+import { type EmployeeApi } from '@units/employee';
 import { type TeamApi } from '@units/team';
 
 export interface RosterRow {
@@ -28,7 +30,7 @@ export const rosterRows = (
   people: readonly EmployeeApi.EmployeeListItem[],
 ): readonly RosterRow[] => {
   const named = new Map(
-    people.map((person) => [person.userId, EmployeeLib.personLabel(person, person.email)]),
+    people.map((person) => [person.userId, SharedLib.personLabel(person, person.email)]),
   );
 
   return members.map((member) => ({

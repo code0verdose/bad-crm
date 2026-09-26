@@ -1,6 +1,7 @@
+import { SharedLib } from '@shared';
+
 import { type ProjectRole } from '@units/project/model';
 import { type PersonName } from '@units/project/types';
-import { EmployeeLib } from '@units/employee';
 
 /** The fields of a membership the roster reads — structural, see `types/project.types.ts`. */
 export interface RosterMembership {
@@ -24,7 +25,7 @@ export const projectRoster = (
   people: readonly PersonName[],
 ): readonly ProjectRosterRow[] => {
   const named = new Map(
-    people.map((person) => [person.userId, EmployeeLib.personLabel(person, person.email)]),
+    people.map((person) => [person.userId, SharedLib.personLabel(person, person.email)]),
   );
 
   return memberships

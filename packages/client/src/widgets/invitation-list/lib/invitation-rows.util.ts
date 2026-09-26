@@ -1,4 +1,6 @@
-import { EmployeeLib, type EmployeeApi } from '@units/employee';
+import { SharedLib } from '@shared';
+
+import { type EmployeeApi } from '@units/employee';
 import { type IamApi, type IamService } from '@units/iam';
 
 export interface InvitationRow {
@@ -33,7 +35,7 @@ export const invitationRows = (
 ): readonly InvitationRow[] => {
   const roleNames = new Map(roles.map((role) => [role.id, role.name]));
   const personNames = new Map(
-    people.map((person) => [person.userId, EmployeeLib.personLabel(person, person.email)]),
+    people.map((person) => [person.userId, SharedLib.personLabel(person, person.email)]),
   );
 
   return items.map(({ invitation, isExpired }) => ({

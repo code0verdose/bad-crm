@@ -1,7 +1,9 @@
 import { Text } from '@mantine/core';
 import { Link } from '@tanstack/react-router';
 
-import { EmployeeLib, type EmployeeApi, type EmployeeTypes } from '@units/employee';
+import { SharedLib } from '@shared';
+
+import { type EmployeeApi, type EmployeeTypes } from '@units/employee';
 
 import classes from './member-list-ui.module.css';
 
@@ -26,7 +28,7 @@ export function MemberOrgBranch({ branch }: MemberOrgBranchProps) {
         params={{ userId: node.userId }}
         to="/admin/members/$userId"
       >
-        {EmployeeLib.personLabel(node, node.userId)}
+        {SharedLib.personLabel(node, node.userId)}
       </Link>
       {node.jobTitle !== null && (
         <Text c="var(--bc-text-muted)" size="sm">

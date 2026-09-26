@@ -17,7 +17,7 @@ const people = [
   { userId: 'u-other', firstName: 'Oleg', lastName: 'Petrov', email: 'oleg@example.test' },
 ];
 
-// The label rule itself — name, or the fallback — is `EmployeeLib.personLabel`'s and is tested
+// The label rule itself — name, or the fallback — is `SharedLib.personLabel`'s and is tested
 // there. What is pinned here is which fallback the project passes: the address, not the id.
 const unnamed = { userId: 'u-unnamed', firstName: '', lastName: ' ', email: 'x@example.test' };
 

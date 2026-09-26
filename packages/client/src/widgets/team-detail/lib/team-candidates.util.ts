@@ -1,4 +1,6 @@
-import { EmployeeLib, type EmployeeApi } from '@units/employee';
+import { SharedLib } from '@shared';
+
+import { type EmployeeApi } from '@units/employee';
 import { type TeamApi } from '@units/team';
 
 export interface TeamCandidate {
@@ -29,6 +31,6 @@ export const teamCandidates = (
     .filter((person) => !onTheTeam.has(person.userId))
     .map((person) => ({
       value: person.userId,
-      label: EmployeeLib.personLabel(person, person.email),
+      label: SharedLib.personLabel(person, person.email),
     }));
 };

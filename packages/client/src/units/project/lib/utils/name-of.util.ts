@@ -1,5 +1,6 @@
+import { SharedLib } from '@shared';
+
 import { type PersonName } from '@units/project/types';
-import { EmployeeLib } from '@units/employee';
 
 /**
  * The name of one account among the people the reader may see, or its id when they may see none.
@@ -10,5 +11,5 @@ import { EmployeeLib } from '@units/employee';
 export const nameOf = (userId: string, people: readonly PersonName[]): string => {
   const person = people.find((candidate) => candidate.userId === userId);
 
-  return person === undefined ? userId : EmployeeLib.personLabel(person, person.email);
+  return person === undefined ? userId : SharedLib.personLabel(person, person.email);
 };
