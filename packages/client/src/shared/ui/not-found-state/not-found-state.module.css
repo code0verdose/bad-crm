@@ -1,0 +1,10 @@
+/* The look the screen had as an `EmptyState` — a dashed frame around «nothing here» — kept, so the
+   change is to the heading and not to what a sighted reader sees. Tokens only
+   (`rules/design-system.mdc` §3). */
+.root {
+  border: 1px dashed var(--bc-border);
+  border-radius: var(--mantine-radius-md);
+  /* No fixed height: the Russian text runs longer and has to grow at 200 % zoom
+     (`rules/a11y.mdc` §4, `rules/i18n.mdc` §15). */
+  padding: var(--mantine-spacing-xl) var(--mantine-spacing-lg);
+}

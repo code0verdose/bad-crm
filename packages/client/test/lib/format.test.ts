@@ -154,6 +154,33 @@ describe('numbers', () => {
   });
 });
 
+/**
+ * A whole percent, the unit the contract speaks (`allocationPct`, progress by dates) — not the
+ * fraction `Intl` takes, which is the conversion a call site would otherwise get wrong by a factor
+ * of a hundred.
+ *
+ * The Russian sign is separated by a no-break space (U+00A0) and the English one is not: that is
+ * the whole reason the `%` left the catalogue — a literal sign in the sentence is right in exactly
+ * one of the two languages. Pinned by code point, since a plain space would read the same in the
+ * report and be a different string.
+ */
+describe('percentages', () => {
+  it.each([
+    ['en', 0, '0%'],
+    ['en', 40, '40%'],
+    ['en', 100, '100%'],
+    ['ru', 0, '0 %'],
+    ['ru', 40, '40 %'],
+    ['ru', 100, '100 %'],
+  ])('writes %s %d as %j', (locale, percent, expected) => {
+    expect(SharedLib.formatPercent(percent, locale)).toBe(expected);
+  });
+
+  it('rounds to a whole percent — the screen shows no fractions of one', () => {
+    expect(SharedLib.formatPercent(45.5, 'en')).toBe('46%');
+  });
+});
+
 describe('lists', () => {
   it.each([
     ['en', 'Ada, Boris, and Vera'],

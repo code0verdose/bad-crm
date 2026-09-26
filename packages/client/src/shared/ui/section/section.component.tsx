@@ -26,6 +26,11 @@ export interface SectionProps {
  * carries the tag and none of its meaning, which is the kind of markup that passes review and helps
  * nobody. The id is generated per instance because a page has several.
  *
+ * **The heading takes focus by script and not by Tab** (`tabIndex={-1}`): it is where focus goes
+ * when the control the reader pressed inside the section disappears — the «Retry» of a failed load,
+ * gone the moment the load succeeds (`focusSectionHeading`, called by `ErrorState`). Without it
+ * focus falls to `<body>` and the reader starts over from the top of the page.
+ *
  * Anything richer — collapsing, a toolbar in the heading row, actions — belongs to the screen that
  * needs it and is passed as `children`. This component fixes the heading tree and nothing else
  * (`rules/design-system.mdc` §9).
@@ -36,7 +41,7 @@ export function Section({ titleKey, descriptionKey, children }: SectionProps) {
 
   return (
     <Stack aria-labelledby={headingId} className={classes['root']} component="section" gap="sm">
-      <Title id={headingId} order={2} size="h3">
+      <Title id={headingId} order={2} size="h3" tabIndex={-1}>
         {t(titleKey)}
       </Title>
       {descriptionKey !== undefined && (

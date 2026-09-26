@@ -1,6 +1,8 @@
 import { Badge, Table, Text } from '@mantine/core';
 import { useTranslation } from 'react-i18next';
 
+import { SharedLib } from '@shared';
+
 import { ProjectModel, type ProjectLib } from '@units/project';
 
 export interface ProjectTeamCardProps {
@@ -13,7 +15,7 @@ export interface ProjectTeamCardProps {
  * section (STORY-014-02 client half), and a control that cannot work is not drawn.
  */
 export function ProjectTeamCard({ rows }: ProjectTeamCardProps) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
 
   return (
     <Table>
@@ -36,7 +38,11 @@ export function ProjectTeamCard({ rows }: ProjectTeamCardProps) {
               </Badge>
             </Table.Td>
             <Table.Td>
-              <Text size="sm">{t('projects.team.allocation', { percent: row.allocationPct })}</Text>
+              <Text size="sm">
+                {t('projects.team.allocation', {
+                  percent: SharedLib.formatPercent(row.allocationPct, i18n.language),
+                })}
+              </Text>
             </Table.Td>
           </Table.Tr>
         ))}

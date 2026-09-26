@@ -1,7 +1,7 @@
+import { SharedLib } from '@shared';
+
 import { type EmployeeApi } from '@units/employee';
 import { type TeamApi } from '@units/team';
-
-import { personLabel } from './person-label.util.js';
 
 export interface TeamCandidate {
   readonly value: string;
@@ -29,5 +29,8 @@ export const teamCandidates = (
 
   return people
     .filter((person) => !onTheTeam.has(person.userId))
-    .map((person) => ({ value: person.userId, label: personLabel(person) }));
+    .map((person) => ({
+      value: person.userId,
+      label: SharedLib.personLabel(person, person.email),
+    }));
 };

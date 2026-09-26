@@ -21,6 +21,10 @@ import { RouteForbidden } from './route-forbidden.component.js';
  * `test/routes/project-overview-screen.test.tsx` is where it is proved end to end. `invalidate`
  * reloads the matches and moves the router's `loadedAt`, which is the key the boundary resets on.
  *
+ * A successful retry unmounts the button that was pressed. Focus is not handled here: the route
+ * announcer sees the route go from failed to settled and moves focus to the page heading then —
+ * the heading does not exist while this boundary is on screen.
+ *
  * The text is a key, and a generic one: the error object here is whatever the loader threw, and
  * turning it into a sentence for the user is the job of the layer that knew what it was asking for
  * (`rules/errors-and-toasts.mdc` §10). The details go to the log through the query client.
