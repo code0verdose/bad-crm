@@ -1562,8 +1562,11 @@ export interface paths {
          *     deliberately ordered: a caller without the key is refused before a statement about the
          *     project is sent, so the refusal carries nothing of the row.
          *
-         *     No `permissions` block yet: `{ canEdit, canManageMembers, canArchive }` arrives with the first
-         *     write route of the project (STORY-014-05, acceptance 5; STORY-011-08, acceptance 12).
+         *     `permissions` says which of the project's commands this caller would be let through, decided
+         *     by the same policy each command asserts over the same scope and chain the read was decided
+         *     on — no extra statement, and no second place where rights are computed (STORY-014-05,
+         *     acceptance 5; STORY-011-08, acceptance 12). It is a hint for the card and not a grant: the
+         *     command decides again on its own request.
          */
         get: operations["getProject"];
         put?: never;
@@ -2800,6 +2803,26 @@ export interface components {
             taskCounter: number;
             /** Format: date-time */
             createdAt: string;
+            permissions: components["schemas"]["ProjectPermissions"];
+        };
+        /**
+         * @description What the caller may do to this project, computed by the server — the client never derives
+         *     it from a role or resolves the ACL chain itself. Each flag is the decision of one command,
+         *     by the same policy that command asserts: `canEdit` — `PATCH /projects/{projectId}` without a
+         *     change of lead (`project:update`, `EDITOR`); `canManageMembers` — the roster commands under
+         *     `/projects/{projectId}/members` and a change of `leadId` (`project:manage_members`,
+         *     `MANAGER`); `canArchive` — `POST /projects/{projectId}/archive` (`project:archive`,
+         *     `MANAGER`); `canDelete` — `DELETE /projects/{projectId}` (`project:delete`, `MANAGER`).
+         *
+         *     A hint for which controls to draw, not a grant: every command decides again on its own
+         *     request, and a flag that went stale between the read and the click is answered by that
+         *     command's `403` or `404`.
+         */
+        ProjectPermissions: {
+            canEdit: boolean;
+            canManageMembers: boolean;
+            canArchive: boolean;
+            canDelete: boolean;
         };
         /**
          * @description What a project is created from. `visibility` left out means `PUBLIC_ORG`; `status` is not

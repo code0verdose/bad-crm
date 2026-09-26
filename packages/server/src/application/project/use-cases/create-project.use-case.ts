@@ -1,8 +1,7 @@
+import { type AclScopeResolver } from '@/application/access/use-cases/resolve-acl.query.js';
 import { type ProjectMemberRepositoryPort } from '@/application/project/ports/project-member-repository.port.js';
-import {
-  type ProjectDetail,
-  type ProjectRepositoryPort,
-} from '@/application/project/ports/project-repository.port.js';
+import { type ProjectRepositoryPort } from '@/application/project/ports/project-repository.port.js';
+import { type ProjectCard, projectReadFacts } from '@/application/project/project-card.util.js';
 import { type AuditLoggerPort } from '@/application/platform/ports/audit-logger.port.js';
 import { type UnitOfWorkPort } from '@/application/platform/ports/unit-of-work.port.js';
 import { type Actor } from '@/domain/access/actor.types.js';
@@ -13,6 +12,7 @@ import {
   type ProjectAccessFacts,
 } from '@/domain/project/access/project-access.policy.js';
 import { assertProjectSubjectJoinable } from '@/domain/project/access/project-membership.policy.js';
+import { decideProjectPermissions } from '@/domain/project/access/project-permissions.policy.js';
 import { type ProjectVisibility } from '@/domain/project/project.enums.js';
 
 export interface CreateProjectInput {
@@ -71,10 +71,11 @@ export class CreateProjectUseCase {
     private readonly unitOfWork: UnitOfWorkPort,
     private readonly projects: ProjectRepositoryPort,
     private readonly members: ProjectMemberRepositoryPort,
+    private readonly acl: AclScopeResolver,
     private readonly audit: AuditLoggerPort,
   ) {}
 
-  execute(input: CreateProjectInput): Promise<ProjectDetail> {
+  execute(input: CreateProjectInput): Promise<ProjectCard> {
     return this.unitOfWork.withTenant(
       { organizationId: input.actor.organizationId, userId: input.actor.userId },
       async () => {
@@ -123,7 +124,14 @@ export class CreateProjectUseCase {
         // same 404 rather than a `null` the compiler would let through.
         assertProjectAddressable(detail);
 
-        return detail;
+        // The response is the card's `ProjectDetail`, so it carries the card's block, decided the
+        // card's way — over the row and the chain as this transaction now sees them, seats included.
+        const permissions = await decideProjectPermissions(
+          input.actor,
+          projectReadFacts(this.projects, this.acl, input.actor, projectId),
+        );
+
+        return { ...detail, permissions };
       },
     );
   }

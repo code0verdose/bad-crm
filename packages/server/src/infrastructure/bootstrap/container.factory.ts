@@ -656,7 +656,7 @@ const buildProject = (input: {
       input.logger,
     ),
     getProjectDetail: new GetProjectDetailQuery(unitOfWork, projects, resolveAcl),
-    createProject: new CreateProjectUseCase(unitOfWork, projects, members, input.audit),
+    createProject: new CreateProjectUseCase(unitOfWork, projects, members, resolveAcl, input.audit),
     updateProject: new UpdateProjectUseCase(unitOfWork, projects, members, resolveAcl, input.audit),
     changeProjectVisibility: new ChangeProjectVisibilityUseCase(
       unitOfWork,
