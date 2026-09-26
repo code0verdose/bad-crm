@@ -3747,13 +3747,20 @@ export interface components {
          *     as anything that budget could drain is refused **immediately**, without waiting at all,
          *     because parking it would buy it nothing and cost the server a held socket for the whole
          *     budget. So an integrator should expect this status to arrive both slowly and instantly, and
-         *     should not read a fast 503 as a different fault. This is the one cause that can state a
-         *     delay: both refusals carry `Retry-After` derived from the wait budget, so a client can back
+         *     should not read a fast 503 as a different fault. Unlike the first two causes, this one can
+         *     state a delay: both refusals carry `Retry-After` derived from the wait budget, so a client can back
          *     off instead of retrying into the same saturated queue. The operations concerned are sign-in
          *     and second-factor verification, registration, invitation acceptance, the password change and
          *     the password reset, and the 2FA operations that re-check a password.
          *
-         *     A caller can distinguish nothing from this code beyond "not now": all three causes are
+         *     A fourth cause is reachable on **every operation that reads or writes the database**, whether
+         *     or not it lists this response: the request lost a race with another transaction — it was
+         *     chosen as the victim of a deadlock, gave up waiting for a row lock, failed serialization, or
+         *     its transaction expired or never obtained a connection from the pool. A retry succeeds once
+         *     the other transaction has finished, so this answer carries `Retry-After: 1`. A statement
+         *     that was cancelled for running too long is not in this group and stays `500`.
+         *
+         *     A caller can distinguish nothing from this code beyond "not now": all four causes are
          *     stated here for the operator reading the contract, and none is reported in the body.
          */
         ServiceUnavailable: {

@@ -7,6 +7,7 @@ import {
   requireTenant,
   type TxClient,
 } from '@/infrastructure/persistence/prisma/tenant.context.js';
+import { sqlStateOf } from '@/infrastructure/persistence/prisma/transient-database-failure.util.js';
 
 /**
  * The base every Prisma repository extends.
@@ -66,8 +67,10 @@ export abstract class TenantScopedRepository {
   /**
    * The two Prisma failures that are *expected outcomes of a valid request* rather than defects.
    *
-   * Everything else — a row-level-security refusal above all — travels up untouched and is answered
-   * `500 internal_error`. `new row violates row-level security policy` means this code tried to
+   * Everything else travels up untouched. A failure a retry would get past — deadlock, lock or
+   * serialization conflict, expired transaction — is answered `503` one boundary out, in
+   * `PrismaUnitOfWork`, because `P2028` never passes through here; the rest — a row-level-security
+   * refusal above all — is answered `500 internal_error`. `new row violates row-level security policy` means this code tried to
    * write into another organization: a tidy 409 in its place would hand a client something to act
    * on and hide the defect from the log that matters.
    */
@@ -89,8 +92,9 @@ export abstract class TenantScopedRepository {
     //
     // `23505` is `unique_violation`. Nothing else is translated here on purpose: a foreign key or a
     // check violation from a raw statement is a defect in this code, and a 500 with the SQLSTATE in
-    // the log is the right answer to it.
-    if (error.code === 'P2010' && this.sqlStateOf(error) === '23505') {
+    // the log is the right answer to it. (A deadlock or a lock timeout is not a defect, and it is not
+    // answered here either: it passes through to `PrismaUnitOfWork`, which answers it `503`.)
+    if (error.code === 'P2010' && sqlStateOf(error) === '23505') {
       return new ConflictError(`${this.resource}_already_exists`, { cause: 'P2010/23505' });
     }
 
@@ -102,22 +106,5 @@ export abstract class TenantScopedRepository {
     if (error.code === 'P2025') return denyAccess(this.resource, 'other_organization');
 
     return error;
-  }
-
-  /**
-   * The PostgreSQL SQLSTATE behind a `P2010`, or `undefined` when the shape is not the one we know.
-   *
-   * `meta` is typed as `unknown` by the client, so it is narrowed rather than cast: a Prisma upgrade
-   * that changes the shape must make this return `undefined` — leaving the error untranslated and
-   * loud — instead of throwing inside the error handler, where the original failure would be lost.
-   */
-  private sqlStateOf(error: Prisma.PrismaClientKnownRequestError): string | undefined {
-    const meta: unknown = error.meta;
-
-    if (typeof meta !== 'object' || meta === null) return undefined;
-
-    const code: unknown = (meta as { code?: unknown }).code;
-
-    return typeof code === 'string' ? code : undefined;
   }
 }
