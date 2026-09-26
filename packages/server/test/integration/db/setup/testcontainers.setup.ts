@@ -37,7 +37,7 @@ const INITDB_DIR = fileURLToPath(new URL('../../../../prisma/sql/initdb', import
 const PRISMA_BIN = fileURLToPath(new URL('../../../../node_modules/.bin/prisma', import.meta.url));
 
 /** Same image tag as `docker-compose.yml`; the two are meant to drift together or not at all. */
-const IMAGE = 'pgvector/pgvector:0.8.5-pg16';
+const IMAGE = 'pgvector/pgvector:0.8.6-pg16';
 
 const DATABASE = 'bad_crm';
 const SUPERUSER = 'bad_crm';
@@ -158,9 +158,7 @@ export const applyGrants = async (started: StartedPostgreSqlContainer): Promise<
  *
  * Written through psql for the same reason the grants are: one statement, no second artefact.
  */
-export const seedPermissionCatalog = async (
-  started: StartedPostgreSqlContainer,
-): Promise<void> => {
+export const seedPermissionCatalog = async (started: StartedPostgreSqlContainer): Promise<void> => {
   const values = SharedPermissions.PERMISSIONS.map((key) => {
     const meta = SharedPermissions.PERMISSION_META[key];
 
