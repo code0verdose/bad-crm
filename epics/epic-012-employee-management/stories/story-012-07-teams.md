@@ -100,8 +100,9 @@ estimate: M
 - [x] Тесты: `test/unit/domain/access/team-access-policy.test.ts` (37),
       `test/integration/http/team-endpoints.test.ts` (43),
       `test/integration/db/team-repository.test.ts` (24, живой Postgres).
-      `team-acl-propagation` и `delete-team-cascades-acl` не написаны: проверять нечего до
-      STORY-011-06. Isolation-тесты `teams` и `team_members` уже существуют — обе таблицы в
+      `team-acl-propagation` не написан (ждёт маршрута `POST /acl`); каскад критерия 5 —
+      `test/unit/iam/delete-team.use-case.test.ts` и `test/integration/db/acl-subject-cascade.test.ts`
+      (2026-09-26). Isolation-тесты `teams` и `team_members` уже существуют — обе таблицы в
       `TENANT_TABLES`, генерируемый `rls-isolation.test.ts` покрывает их с положительным контролем.
 
 ## Ссылки
@@ -281,8 +282,10 @@ denyAccess(...)` стоит **до** `audit.record`: промах (`404 user_not
 > сопоставляет `TEAM`-записи через `team_members` в том же запросе, и это доказано на живом
 > Postgres (`test/integration/db/resource-acl-reader.test.ts`: член команды получает запись,
 > посторонний — нет). Критерии 3, 4 и 6 упираются теперь только в маршрут `POST /acl` и закроются
-> его шагом; критерий 5 (каскад снятия грантов при удалении команды) — правка
-> `delete-team.use-case.ts`, там же. Severity `team.member_*` пересматривать пока рано: членство
+> его шагом. Критерий 5 **закрыт 2026-09-26**: `delete-team.use-case.ts` после `disband()` зовёт
+> `AclRepositoryPort.removeAllOfSubject` и пишет `acl.revoked` на каждую снятую запись
+> (`after.cause = 'team.deleted'`) после `team.deleted`; версии бывшим членам бампает тот же
+> `bumpPermissionsVersionOf`, что и раньше. Severity `team.member_*` пересматривать пока рано: членство
 > даёт доступ только при наличии гранта, а грант — своё действие `WARNING`.
 
 **Что остаётся и почему это не пробел.** `AddTeamMemberUseCase` и `RemoveTeamMemberUseCase`

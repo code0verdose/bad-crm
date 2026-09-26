@@ -1507,6 +1507,11 @@ RFC 9457 (спецификация их прямо разрешает), а не 
 Удаление роли — use-case, который в одной транзакции удаляет `RolePermission`, `UserRole` и
 инкрементит `permissionsVersion` **всем** её носителям (`UPDATE users SET permissions_version =
 permissions_version + 1 WHERE id IN (…)`). Удалить системную роль нельзя (`system_role_immutable`).
+Записи `ResourceAcl` с `subjectType = ROLE` на эту роль снимаются в той же транзакции
+(`delete-custom-role.use-case.ts`, 2026-09-26): внешнего ключа у полиморфного субъекта нет, и
+осиротевший грант было бы некому ни увидеть, ни отозвать. Роспуск команды снимает её `TEAM`-записи
+так же (`delete-team.use-case.ts`). Кому инкрементить — носителям роли и бывшим членам команды; их
+уже бампает сама операция удаления, второго `UPDATE` каскад не добавляет.
 
 **6. `NONE` на потомке при `EDITOR` на предке.** Проект `EDITOR` для команды, конкретное
 KB-пространство — `NONE` для `USER=ivan`. Обход останавливается на пространстве: `NONE` → `DENY`,
@@ -2057,7 +2062,7 @@ scan. Именно поэтому TTL не выполняет роль инва�
 | `Role` удалена | всем бывшим носителям | ✅ |
 | `UserPermissionOverride` создан / изменён / удалён | этому пользователю | ✅ |
 | `UserPermissionOverride` истёк | этому пользователю | — (та же причина) |
-| `ResourceAcl` создан / изменён / удалён | субъекту (`USER`), всем носителям роли (`ROLE`), всем членам команды (`TEAM`) | ✅ `grant-acl.use-case.ts`, `revoke-acl.use-case.ts` — `AclRepositoryPort.subjectUserIds` + один `UPDATE` (маршрута ещё нет) |
+| `ResourceAcl` создан / изменён / удалён | субъекту (`USER`), всем носителям роли (`ROLE`), всем членам команды (`TEAM`) | ✅ `grant-acl.use-case.ts`, `revoke-acl.use-case.ts` — `AclRepositoryPort.subjectUserIds` + один `UPDATE` (маршрута ещё нет); снятие каскадом при удалении роли или команды покрыто бампом самой операции (строка `Role` удалена, роспуск команды) |
 | `TeamMember` добавлен / удалён | этому пользователю | ✅ |
 | `ProjectMember` добавлен / удалён / `leftAt` | этому пользователю | — (проектов нет, EPIC-014) |
 | `User.status → SUSPENDED`, `deletedAt` | этому пользователю (плюс отзыв сессий) | ✅ |
@@ -2409,7 +2414,7 @@ type RouteDeclaration = GuardedRoute | PublicRoute | SelfServiceRoute;
 | `role.assigned`, `role.revoked` | `USER_ROLE` | `{ userId, roleKey, expiresAt }` | `warning` | ✅ |
 | `permission.override.created`, `.updated`, `.deleted` | `USER_PERMISSION_OVERRIDE` | `{ userId, permissionKey, effect, reason, expiresAt }` | `warning` | ✅ |
 | `permission.override.expired` | `USER_PERMISSION_OVERRIDE` | `after: null`, `actorType = SYSTEM` | `info` | — (нужен джоб истечения, которого нет — §3, слой 3) |
-| `acl.granted`, `acl.revoked` | `RESOURCE_ACL` | `{ resourceType, resourceId, subjectType, subjectId, accessLevel, expiresAt }`; замена гранта — тот же `acl.granted` с `before` | `warning` | ✅ (`acl.updated` не заводилось: замена уровня это тот же грант с записанным `before`, как у `permission.override.updated` наоборот — одно действие, а не два) |
+| `acl.granted`, `acl.revoked` | `RESOURCE_ACL` | `{ resourceType, resourceId, subjectType, subjectId, accessLevel, expiresAt }`; замена гранта — тот же `acl.granted` с `before`; `acl.revoked`, снятый каскадом удаления роли или команды, — по записи на грант после `role.deleted`/`team.deleted`, с `after: { cause: 'role.deleted' \| 'team.deleted' }` | `warning` | ✅ (`acl.updated` не заводилось: замена уровня это тот же грант с записанным `before`, как у `permission.override.updated` наоборот — одно действие, а не два) |
 | `organization.ownership_transferred` | `ORGANIZATION` | `before: { ownerId }` / `after: { ownerId, previousOwnerRoleKey }` | `critical` | ✅ |
 | `rls.bypassed` | `ORGANIZATION` | намеренный обход изоляции арендатора | `critical` | ✅ |
 | `user.impersonation_started`, `.ended` | `USER` | `{ targetUserId, requestId }` | `critical` | — (`user:impersonate` не реализован) |
