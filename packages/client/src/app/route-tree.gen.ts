@@ -21,6 +21,7 @@ import { Route as InviteTokenRouteImport } from './routes/invite.$token';
 import { Route as ResetPasswordTokenRouteImport } from './routes/reset-password.$token';
 import { Route as AuthenticatedAdminOrganizationRouteImport } from './routes/_authenticated/admin/organization';
 import { Route as AuthenticatedAdminRolesRouteImport } from './routes/_authenticated/admin/roles';
+import { Route as AuthenticatedProjectsProjectIdRouteRouteImport } from './routes/_authenticated/projects/$projectId/route';
 import { Route as AuthenticatedSettingsSecurityRouteImport } from './routes/_authenticated/settings/security';
 import { Route as AuthenticatedAdminMembersIndexRouteImport } from './routes/_authenticated/admin/members/index';
 import { Route as AuthenticatedAdminMembersUserIdRouteImport } from './routes/_authenticated/admin/members/$userId';
@@ -28,6 +29,7 @@ import { Route as AuthenticatedAdminMembersInvitationsRouteImport } from './rout
 import { Route as AuthenticatedAdminMembersInviteRouteImport } from './routes/_authenticated/admin/members/invite';
 import { Route as AuthenticatedAdminTeamsIndexRouteImport } from './routes/_authenticated/admin/teams/index';
 import { Route as AuthenticatedAdminTeamsTeamIdRouteImport } from './routes/_authenticated/admin/teams/$teamId';
+import { Route as AuthenticatedProjectsProjectIdIndexRouteImport } from './routes/_authenticated/projects/$projectId/index';
 
 const AuthenticatedRoute = AuthenticatedRouteImport.update({
   id: '/_authenticated',
@@ -89,6 +91,12 @@ const AuthenticatedAdminRolesRoute = AuthenticatedAdminRolesRouteImport.update({
   path: '/admin/roles',
   getParentRoute: () => AuthenticatedRoute,
 } as any);
+const AuthenticatedProjectsProjectIdRouteRoute =
+  AuthenticatedProjectsProjectIdRouteRouteImport.update({
+    id: '/projects/$projectId',
+    path: '/projects/$projectId',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any);
 const AuthenticatedSettingsSecurityRoute =
   AuthenticatedSettingsSecurityRouteImport.update({
     id: '/settings/security',
@@ -131,6 +139,12 @@ const AuthenticatedAdminTeamsTeamIdRoute =
     path: '/admin/teams/$teamId',
     getParentRoute: () => AuthenticatedRoute,
   } as any);
+const AuthenticatedProjectsProjectIdIndexRoute =
+  AuthenticatedProjectsProjectIdIndexRouteImport.update({
+    id: '/',
+    path: '/',
+    getParentRoute: () => AuthenticatedProjectsProjectIdRouteRoute,
+  } as any);
 
 export interface FileRoutesByFullPath {
   '/': typeof AuthenticatedIndexRoute;
@@ -142,6 +156,7 @@ export interface FileRoutesByFullPath {
   '/dashboard': typeof AuthenticatedDashboardRoute;
   '/invite/$token': typeof InviteTokenRoute;
   '/reset-password/$token': typeof ResetPasswordTokenRoute;
+  '/projects/$projectId': typeof AuthenticatedProjectsProjectIdRouteRouteWithChildren;
   '/admin/organization': typeof AuthenticatedAdminOrganizationRoute;
   '/admin/roles': typeof AuthenticatedAdminRolesRoute;
   '/settings/security': typeof AuthenticatedSettingsSecurityRoute;
@@ -151,6 +166,7 @@ export interface FileRoutesByFullPath {
   '/admin/teams/$teamId': typeof AuthenticatedAdminTeamsTeamIdRoute;
   '/admin/members/': typeof AuthenticatedAdminMembersIndexRoute;
   '/admin/teams/': typeof AuthenticatedAdminTeamsIndexRoute;
+  '/projects/$projectId/': typeof AuthenticatedProjectsProjectIdIndexRoute;
 }
 export interface FileRoutesByTo {
   '/forgot-password': typeof ForgotPasswordRoute;
@@ -171,6 +187,7 @@ export interface FileRoutesByTo {
   '/admin/teams/$teamId': typeof AuthenticatedAdminTeamsTeamIdRoute;
   '/admin/members': typeof AuthenticatedAdminMembersIndexRoute;
   '/admin/teams': typeof AuthenticatedAdminTeamsIndexRoute;
+  '/projects/$projectId': typeof AuthenticatedProjectsProjectIdIndexRoute;
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport;
@@ -184,6 +201,7 @@ export interface FileRoutesById {
   '/invite/$token': typeof InviteTokenRoute;
   '/reset-password/$token': typeof ResetPasswordTokenRoute;
   '/_authenticated/': typeof AuthenticatedIndexRoute;
+  '/_authenticated/projects/$projectId': typeof AuthenticatedProjectsProjectIdRouteRouteWithChildren;
   '/_authenticated/admin/organization': typeof AuthenticatedAdminOrganizationRoute;
   '/_authenticated/admin/roles': typeof AuthenticatedAdminRolesRoute;
   '/_authenticated/settings/security': typeof AuthenticatedSettingsSecurityRoute;
@@ -193,6 +211,7 @@ export interface FileRoutesById {
   '/_authenticated/admin/teams/$teamId': typeof AuthenticatedAdminTeamsTeamIdRoute;
   '/_authenticated/admin/members/': typeof AuthenticatedAdminMembersIndexRoute;
   '/_authenticated/admin/teams/': typeof AuthenticatedAdminTeamsIndexRoute;
+  '/_authenticated/projects/$projectId/': typeof AuthenticatedProjectsProjectIdIndexRoute;
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath;
@@ -206,6 +225,7 @@ export interface FileRouteTypes {
     | '/dashboard'
     | '/invite/$token'
     | '/reset-password/$token'
+    | '/projects/$projectId'
     | '/admin/organization'
     | '/admin/roles'
     | '/settings/security'
@@ -214,7 +234,8 @@ export interface FileRouteTypes {
     | '/admin/members/invite'
     | '/admin/teams/$teamId'
     | '/admin/members/'
-    | '/admin/teams/';
+    | '/admin/teams/'
+    | '/projects/$projectId/';
   fileRoutesByTo: FileRoutesByTo;
   to:
     | '/forgot-password'
@@ -234,7 +255,8 @@ export interface FileRouteTypes {
     | '/admin/members/invite'
     | '/admin/teams/$teamId'
     | '/admin/members'
-    | '/admin/teams';
+    | '/admin/teams'
+    | '/projects/$projectId';
   id:
     | '__root__'
     | '/_authenticated'
@@ -247,6 +269,7 @@ export interface FileRouteTypes {
     | '/invite/$token'
     | '/reset-password/$token'
     | '/_authenticated/'
+    | '/_authenticated/projects/$projectId'
     | '/_authenticated/admin/organization'
     | '/_authenticated/admin/roles'
     | '/_authenticated/settings/security'
@@ -255,7 +278,8 @@ export interface FileRouteTypes {
     | '/_authenticated/admin/members/invite'
     | '/_authenticated/admin/teams/$teamId'
     | '/_authenticated/admin/members/'
-    | '/_authenticated/admin/teams/';
+    | '/_authenticated/admin/teams/'
+    | '/_authenticated/projects/$projectId/';
   fileRoutesById: FileRoutesById;
 }
 export interface RootRouteChildren {
@@ -354,6 +378,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAdminRolesRouteImport;
       parentRoute: typeof AuthenticatedRoute;
     };
+    '/_authenticated/projects/$projectId': {
+      id: '/_authenticated/projects/$projectId';
+      path: '/projects/$projectId';
+      fullPath: '/projects/$projectId';
+      preLoaderRoute: typeof AuthenticatedProjectsProjectIdRouteRouteImport;
+      parentRoute: typeof AuthenticatedRoute;
+    };
     '/_authenticated/settings/security': {
       id: '/_authenticated/settings/security';
       path: '/settings/security';
@@ -403,13 +434,36 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAdminTeamsTeamIdRouteImport;
       parentRoute: typeof AuthenticatedRoute;
     };
+    '/_authenticated/projects/$projectId/': {
+      id: '/_authenticated/projects/$projectId/';
+      path: '/';
+      fullPath: '/projects/$projectId/';
+      preLoaderRoute: typeof AuthenticatedProjectsProjectIdIndexRouteImport;
+      parentRoute: typeof AuthenticatedProjectsProjectIdRouteRoute;
+    };
   }
 }
+
+interface AuthenticatedProjectsProjectIdRouteRouteChildren {
+  AuthenticatedProjectsProjectIdIndexRoute: typeof AuthenticatedProjectsProjectIdIndexRoute;
+}
+
+const AuthenticatedProjectsProjectIdRouteRouteChildren: AuthenticatedProjectsProjectIdRouteRouteChildren =
+  {
+    AuthenticatedProjectsProjectIdIndexRoute:
+      AuthenticatedProjectsProjectIdIndexRoute,
+  };
+
+const AuthenticatedProjectsProjectIdRouteRouteWithChildren =
+  AuthenticatedProjectsProjectIdRouteRoute._addFileChildren(
+    AuthenticatedProjectsProjectIdRouteRouteChildren,
+  );
 
 interface AuthenticatedRouteChildren {
   AuthenticatedSplatRoute: typeof AuthenticatedSplatRoute;
   AuthenticatedDashboardRoute: typeof AuthenticatedDashboardRoute;
   AuthenticatedIndexRoute: typeof AuthenticatedIndexRoute;
+  AuthenticatedProjectsProjectIdRouteRoute: typeof AuthenticatedProjectsProjectIdRouteRouteWithChildren;
   AuthenticatedAdminOrganizationRoute: typeof AuthenticatedAdminOrganizationRoute;
   AuthenticatedAdminRolesRoute: typeof AuthenticatedAdminRolesRoute;
   AuthenticatedSettingsSecurityRoute: typeof AuthenticatedSettingsSecurityRoute;
@@ -425,6 +479,8 @@ const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedSplatRoute: AuthenticatedSplatRoute,
   AuthenticatedDashboardRoute: AuthenticatedDashboardRoute,
   AuthenticatedIndexRoute: AuthenticatedIndexRoute,
+  AuthenticatedProjectsProjectIdRouteRoute:
+    AuthenticatedProjectsProjectIdRouteRouteWithChildren,
   AuthenticatedAdminOrganizationRoute: AuthenticatedAdminOrganizationRoute,
   AuthenticatedAdminRolesRoute: AuthenticatedAdminRolesRoute,
   AuthenticatedSettingsSecurityRoute: AuthenticatedSettingsSecurityRoute,

@@ -82,6 +82,9 @@ estimate: M
 > `FOR SHARE`: две транзакции, обе взявшие share-lock на одну строку и обе поднимающие его до
 > exclusive, — это deadlock. Для этого чтения неактуально, для CRUD (STORY-014-01) — обязательно.
 >
+> **Клиентская карточка — сделана 2026-09-26** (раздел «Состояние критериев» ниже); абзац ниже —
+> про серверную дельту 2026-09-06.
+>
 > **Чего в этой дельте нет.** Клиентской карточки (критерии 1–8, 10 целиком), блока `permissions`
 > в DTO (критерий 5 — приходит с первым маршрутом записи, когда `canUpdateProject` и соседи
 > получат потребителя), финансовых полей и их сокрытия (критерий 9 — полей ещё нет ни в схеме
@@ -154,27 +157,53 @@ estimate: M
 
 ## Задачи
 
-- [ ] `packages/client/src/app/routes/_authenticated/projects/$projectId/route.tsx` — layout,
-      `beforeLoad: requireProjectMember`, `loader`, `pendingComponent`, `errorComponent`,
-      `notFoundComponent`.
-- [ ] `packages/client/src/app/routes/_authenticated/projects/$projectId/index.tsx` — обзор,
-      `validateSearch: zodValidator(projectOverviewSchema)` (`range`).
-- [ ] `packages/client/src/pages/project-overview/page.tsx` + `ui/` — композиция без логики.
-- [ ] `packages/client/src/widgets/project-header/project-header.widget.tsx`,
-      `widgets/project-overview/project-overview.widget.tsx` +
-      `ui/project-team-card.component.tsx`, `ui/project-dates-card.component.tsx`,
-      `ui/project-activity-card.component.tsx`, `ui/archived-banner.component.tsx`.
-- [ ] `packages/client/src/units/project/service/queries/project-detail.query.ts`,
-      `service/hooks/use-project-detail.hook.ts`.
-- [ ] `packages/client/src/units/auth/lib/guards/require-project-member.guard.ts`.
+Клиентские строки — по факту кода 2026-09-26 (пути от `packages/client/src/`); где путь разошёлся
+с планом, причина в строке.
+
+- [x] `app/routes/_authenticated/projects/$projectId/route.tsx` — layout; `beforeLoad` = право
+      `project:read` (`whenDenied: 'not-found'`), затем `ProjectGuards.requireProjectAccess`;
+      `loader` (`ensureQueryData`); `pendingComponent`/`errorComponent`/`notFoundComponent`.
+- [x] `app/routes/_authenticated/projects/$projectId/index.tsx` — обзор. **Без `validateSearch`
+      (`range`)**: его читал бы только блок «последние изменения», а чтения журнала ещё нет
+      (STORY-016-03); параметр, который никто не читает, не заводится.
+- [x] `pages/project/{layout.tsx,overview-page.tsx}` — многостраничный раздел по
+      `rules/naming-and-structure.mdc` п. 3, вместо отдельной страницы обзора из плана.
+- [x] `widgets/project-header/project-header.widget.tsx` (баннер архива внутри),
+      `widgets/project-overview/project-overview.widget.tsx` + `ui/project-team-card`,
+      `ui/project-dates-card`. Баннер, вкладки, «скоро»-блоки, цвет и статус — в `units/project/ui`
+      (общие для всех разделов). Отдельной `project-activity-card` нет: активность — «скоро»-блок.
+- [x] `units/project/service/queries/{project-detail,project-members}.query.ts`,
+      `service/hooks/{use-project,use-project-members}.hook.ts`.
+- [x] Гард — `units/project/service/guards/require-project-access.guard.ts`: гарду нужно чтение,
+      значит `service/guards` (`rules/frontend-fsd.mdc` п. 9); имя «доступ», а не «участник» —
+      `PUBLIC_ORG`-проект читает любой член организации. В `ux-architecture.md` (таблица «Проекты»)
+      осталось имя `requireProjectMember`.
 - [x] `packages/server/src/application/project/use-cases/get-project-detail.query.ts` — проект
       (шаг 3, `f156ee9`); маршрут, контракт, контроллер, сериализатор, валидатор и сборка в
       контейнере — 2026-09-06. **Без** `permissions` (`canEdit`, `canManageMembers`, `canArchive`)
       и без состава участников: и то и другое — вместе с первым маршрутом записи.
-- [ ] i18n: `packages/client/src/app/i18n/{en,ru}/project.json`.
-- [ ] Тесты: `use-project-detail.hook.spec.ts`, компонентные на п. 5, 7, 8,
-      `get-project-detail.query.spec.ts` (счётчик SQL, п. 9), e2e `project-overview.spec.ts`
-      (п. 2, 3) + axe.
+- [ ] Серверная половина критерия 5: блок `permissions` (`canEdit`, `canManageMembers`,
+      `canArchive`) в `ProjectDetail` — в контракте его нет.
+- [x] i18n: `shared/i18n/locales/{en,ru}/projects.json` (namespace `projects`).
+- [x] Тесты клиента: `units/project/**/*.test.ts(x)` (утилиты, гард, хуки),
+      `test/routes/project-overview-screen.test.tsx` (всё приложение: п. 1–4, 7, 8, 10 + axe),
+      группа `Projects` в `test/api/query-keys.test.ts`.
+- [ ] E2E `packages/e2e/tests/**/project-overview.spec.ts` (п. 2, 3) — не написан.
+
+## Состояние критериев (клиент, 2026-09-26)
+
+- **Закрыты:** 1 (будущие разделы — отключённые вкладки с «скоро», ссылок нет), 2 (403/404 →
+  экран «не найдено» до layout, состав не запрашивается; без `project:read` запроса нет вовсе),
+  3 (один запрос на карточку — доказано счётчиком), 4 (описание, прогресс по датам, команда с
+  ролями и загрузкой, «появится в следующем релизе» для активности, задач, времени, CI), 7 (баннер
+  архива), 8 (skeleton; inline-ошибка с повтором у карточки и у состава, без тоста; 404-экран),
+  10 (tablist, иерархия заголовков, цвет декоративен, EN+RU, axe без нарушений).
+- **Открыты:** 5 и 6 — ждут `permissions` в DTO; изменяющих действий на экране пока нет, оборачивать
+  в `<Can>` и сопровождать тостом/метрикой нечего. 8 — кнопка «к списку проектов»: списка
+  (STORY-014-04) нет, 404-экран ведёт на дашборд. 9 — на клиенте нечего скрывать (финансовых полей
+  в контракте нет); снапшот сериализатора — серверная часть.
+- **Попутно исправлено:** `app/ui/route-error.component.tsx` — «Повторить» вызывал `reset`
+  границы, и при упавшем loader'е кнопка ничего не делала; теперь `router.invalidate()`.
 
 ## Ссылки
 

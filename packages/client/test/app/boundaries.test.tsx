@@ -1,6 +1,6 @@
 import { MantineProvider } from '@mantine/core';
 import { QueryClientProvider } from '@tanstack/react-query';
-import { RouterProvider, createMemoryHistory } from '@tanstack/react-router';
+import { RouterContextProvider, RouterProvider, createMemoryHistory } from '@tanstack/react-router';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { type ReactNode } from 'react';
@@ -56,24 +56,41 @@ describe('the pending boundary', () => {
 });
 
 describe('the error boundary', () => {
+  /**
+   * «Run the loader again» means **invalidate the router**, not call the boundary's `reset`.
+   *
+   * This case used to assert `reset` was called, with a stub for it — and it was, while in the
+   * product the button did nothing: `reset` clears the boundary, the match underneath is still in
+   * `error`, and it throws straight back into the same screen. The stub is kept so that the case
+   * fails if the component ever goes back to calling it instead; the end-to-end proof that the
+   * route actually reloads is `test/routes/project-overview-screen.test.tsx`.
+   */
   it('explains the failure and offers to run the loader again', async () => {
     const user = userEvent.setup();
     const reset = vi.fn();
+    const router = createAppRouter(
+      { queryClient: harnessQueryClient, auth: { status: 'anonymous' } },
+      createMemoryHistory({ initialEntries: ['/login'] }),
+    );
+    const invalidate = vi.spyOn(router, 'invalidate').mockResolvedValue();
 
     render(
       <Themed>
-        <RouteError
-          error={new Error('loader exploded')}
-          info={{ componentStack: '' }}
-          reset={reset}
-        />
+        <RouterContextProvider router={router}>
+          <RouteError
+            error={new Error('loader exploded')}
+            info={{ componentStack: '' }}
+            reset={reset}
+          />
+        </RouterContextProvider>
       </Themed>,
     );
 
     expect(screen.getByRole('alert')).toHaveTextContent('errors.route.failed');
 
     await user.click(screen.getByRole('button', { name: 'common.retry' }));
-    expect(reset).toHaveBeenCalledOnce();
+    expect(invalidate).toHaveBeenCalledOnce();
+    expect(reset).not.toHaveBeenCalled();
   });
 
   /**
@@ -82,13 +99,20 @@ describe('the error boundary', () => {
    * (`rules/errors-and-toasts.mdc` §10).
    */
   it('never puts the thrown message on screen', () => {
+    const router = createAppRouter(
+      { queryClient: harnessQueryClient, auth: { status: 'anonymous' } },
+      createMemoryHistory({ initialEntries: ['/login'] }),
+    );
+
     render(
       <Themed>
-        <RouteError
-          error={new Error('PrismaClientKnownRequestError P2002')}
-          info={{ componentStack: '' }}
-          reset={vi.fn()}
-        />
+        <RouterContextProvider router={router}>
+          <RouteError
+            error={new Error('PrismaClientKnownRequestError P2002')}
+            info={{ componentStack: '' }}
+            reset={vi.fn()}
+          />
+        </RouterContextProvider>
       </Themed>,
     );
 

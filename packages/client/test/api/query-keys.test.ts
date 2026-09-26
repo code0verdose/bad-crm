@@ -150,3 +150,37 @@ describe('the invitations group', () => {
     expect(client.getQueryState(QueryKeys.Permissions.mine())?.isInvalidated).toBe(false);
   });
 });
+
+/**
+ * The projects group — the card and its roster under one root.
+ *
+ * Every write of the project screens (STORY-014-01/02 client halves) will invalidate by the root;
+ * both reads are reachable from it only because both start with it. Two projects are two entries:
+ * the id is part of the address.
+ */
+describe('the projects group', () => {
+  it('reaches the card and the roster from its root', async () => {
+    const client = new QueryClient();
+
+    client.setQueryData(QueryKeys.Projects.detail('p-1'), 'stale');
+    client.setQueryData(QueryKeys.Projects.members('p-1'), ['stale']);
+    await client.invalidateQueries({ queryKey: QueryKeys.Projects.all });
+
+    expect(client.getQueryState(QueryKeys.Projects.detail('p-1'))?.isInvalidated).toBe(true);
+    expect(client.getQueryState(QueryKeys.Projects.members('p-1'))?.isInvalidated).toBe(true);
+  });
+
+  it('keeps the card and the roster of one project apart, and one project from another', () => {
+    expect(QueryKeys.Projects.detail('p-1')).not.toEqual(QueryKeys.Projects.members('p-1'));
+    expect(QueryKeys.Projects.detail('p-1')).not.toEqual(QueryKeys.Projects.detail('p-2'));
+  });
+
+  it('leaves a neighbouring group alone', async () => {
+    const client = new QueryClient();
+
+    client.setQueryData(QueryKeys.Teams.detail('p-1'), 'kept');
+    await client.invalidateQueries({ queryKey: QueryKeys.Projects.all });
+
+    expect(client.getQueryState(QueryKeys.Teams.detail('p-1'))?.isInvalidated).toBe(false);
+  });
+});
