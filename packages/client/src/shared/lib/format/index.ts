@@ -11,5 +11,6 @@ export * from './duration.util.js';
 export * from './list.util.js';
 export * from './money.util.js';
 export * from './number.util.js';
+export * from './percent.util.js';
 export * from './relative-time.util.js';
 export * from './time-zone.util.js';

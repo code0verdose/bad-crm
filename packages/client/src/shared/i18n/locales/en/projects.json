@@ -49,12 +49,12 @@
   "dates": {
     "noSpan": "Set a start and a deadline to see how far along the calendar the project is.",
     "progressLabel": "Time elapsed between the start and the deadline",
-    "elapsed": "{{percent}}% of the time between the start and the deadline has passed",
+    "elapsed": "{{percent}} of the time between the start and the deadline has passed",
     "overdue": "The deadline has passed"
   },
   "team": {
     "failed": "The team could not be loaded.",
-    "allocation": "{{percent}}%",
+    "allocation": "{{percent}}",
     "column": {
       "person": "Person",
       "role": "Role",

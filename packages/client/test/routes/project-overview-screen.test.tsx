@@ -1,6 +1,10 @@
 import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, assert, beforeEach, describe, expect, it, vi } from 'vitest';
+
+import i18next, { type i18n as I18n } from 'i18next';
+
+import { SharedI18n, SharedLib } from '@shared';
 
 import { axeViolationsIn } from '../support/axe-scan.util.js';
 
@@ -130,14 +134,25 @@ const stubServer = ({
   });
 };
 
-const startAt = async (options: ServerOptions = {}) => {
+interface MountOptions extends ServerOptions {
+  /** A real catalogue for the cases about what the screen *says*; `cimode` otherwise. */
+  readonly i18n?: I18n;
+  readonly language?: string;
+}
+
+const startAt = async ({ i18n, language, ...options }: MountOptions = {}) => {
   vi.resetModules();
   PROJECT = nextProjectId();
   stubServer(options);
 
   const { renderApp } = await import('../support/render-app.util.js');
 
-  return renderApp({ path: `/projects/${PROJECT}`, status: 'authenticated' });
+  return renderApp({
+    path: `/projects/${PROJECT}`,
+    status: 'authenticated',
+    ...(i18n === undefined ? {} : { i18n }),
+    ...(language === undefined ? {} : { language }),
+  });
 };
 
 const detailCalls = () => sent.filter((call) => call.url.endsWith(`/projects/${PROJECT}`));
@@ -379,5 +394,96 @@ describe('/projects/$projectId', () => {
     });
 
     expect(await axeViolationsIn(container, { control: 'aria-allowed-attr' })).toEqual([]);
+  });
+});
+
+/** `text` as a whole-string pattern, every character literal. */
+const exactly = (text: string): RegExp =>
+  new RegExp(`^${text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`);
+
+/**
+ * What the screen actually says, in both languages the product ships.
+ *
+ * Every case above runs in `cimode`, where `t(key)` answers the key — so an accessible name built
+ * from a forgotten `t()`, from a key missing in one catalogue, or from a key with a typo renders
+ * exactly like a correct one, and `{ name: 'projects.section.label' }` is proved either way. Here
+ * the catalogue is real and the expectation is read from it **without fallback** (`getResource`),
+ * so a Russian name that silently fell back to English fails rather than passes.
+ */
+describe.each(['en', 'ru'] as const)('/projects/$projectId in %s', (language) => {
+  let i18n: I18n;
+
+  /** The catalogue's own sentence for `key` — never the key itself, never the fallback language. */
+  const phrase = (key: string): string => {
+    const value: unknown = i18n.getResource(language, 'projects', key);
+
+    assert(typeof value === 'string' && value.trim() !== '', `projects.${key} is empty`);
+    // «Translated» and not «present»: an English sentence pasted into the Russian catalogue passes
+    // every parity gate and still leaves a Russian reader with English.
+    if (language === 'ru') expect(value).toMatch(/\p{Script=Cyrillic}/u);
+
+    return value;
+  };
+
+  beforeEach(() => {
+    i18n = SharedI18n.createI18n(language);
+  });
+
+  afterEach(async () => {
+    if (i18next.language !== 'cimode') await i18next.changeLanguage('cimode');
+  });
+
+  it('names the tab list, the progress bar and a disabled section in words', async () => {
+    await startAt({ i18n, language });
+
+    expect(await screen.findByRole('tablist')).toHaveAccessibleName(phrase('section.label'));
+    expect(screen.getByRole('progressbar')).toHaveAccessibleName(phrase('dates.progressLabel'));
+
+    // A disabled tab explains itself: its name is the section *and* «soon», both translated.
+    const members = screen.getAllByRole('tab')[1];
+
+    assert(members !== undefined, 'the members tab is missing');
+    expect(members).toBeDisabled();
+    expect(members).toHaveAccessibleName(
+      new RegExp(`^${phrase('section.members')}\\s*${phrase('section.soon')}$`),
+    );
+  });
+
+  it('writes a percentage the way the language does, with the sign from the formatter', async () => {
+    // A span that has not started yet: progress is exactly 0 whenever the suite runs.
+    await startAt({
+      i18n,
+      language,
+      detail: () =>
+        json(card({ startedAt: '2098-01-01T00:00:00.000Z', dueAt: '2099-01-01T00:00:00.000Z' })),
+    });
+
+    const zero = SharedLib.formatPercent(0, language);
+
+    // Trimmed, not collapsed: the default normaliser turns the Russian no-break space into a plain
+    // one, and then the sign's separator is exactly the thing this case could not see.
+    expect(
+      await screen.findByText(exactly(phrase('dates.elapsed').replace('{{percent}}', zero)), {
+        normalizer: (text) => text.trim(),
+      }),
+    ).toBeInTheDocument();
+
+    const rows = within(await screen.findByRole('table'))
+      .getAllByRole('row')
+      .slice(1);
+
+    expect(rows.map((row) => within(row).getAllByRole('cell')[2]?.textContent)).toEqual([
+      SharedLib.formatPercent(40, language),
+      SharedLib.formatPercent(60, language),
+    ]);
+    // One sign per value: a `%` left in the catalogue doubles it.
+    expect(screen.queryByText(/%\s*%/)).toBeNull();
+  });
+
+  it('says in words that the project is archived', async () => {
+    await startAt({ i18n, language, detail: () => json(card({ status: 'ARCHIVED' })) });
+
+    expect(await screen.findByText(phrase('archived.title'))).toBeInTheDocument();
+    expect(screen.getByText(phrase('archived.description'))).toBeInTheDocument();
   });
 });
