@@ -70,11 +70,15 @@ allow = tenantMatches(RLS)                      # ADR-0004
 > `application/access/use-cases/resolve-acl.query.ts`, `implicitLevel` —
 > `domain/access/implicit-level.policy.ts`, цепочка предков (`PROJECT → ORGANIZATION`) строится в
 > резолвере из фактов `ProjectAccessReaderPort.aclFacts`. STORY-011-06 — `in-progress`,
-> `blocked: false`. Слой 4 отгружен без маршрутов `acl:*`;
+> `blocked: false`. Слой 4 отгружен без маршрутов `acl:*` *(снято 2026-09-26)*;
 > ресурсная половина слоя 5 (`authorizeResource`) написана, но её пока не вызывает ни один
-> маршрут. Три критерия STORY-012-07 (3, 4, 6) ждут только маршрут `POST /acl`.
-> **2026-09-26:** маршруты `acl:*` отгружены (`GET`/`POST /acl`, `DELETE /acl/{aclId}`); первый
-> маршрут, вызывающий ресурсную половину слоя 5 через грант, — `POST /acl`.
+> маршрут *(снято: см. ниже)*. Три критерия STORY-012-07 (3, 4, 6) ждут только маршрут
+> `POST /acl` *(снято 2026-09-26: маршрут есть, критерии ничем не заблокированы, открыта только
+> сквозная проверка)*.
+> **2026-09-26:** ресурсную половину слоя 5 вызывают по HTTP маршруты `project:*` — с 2026-09-06
+> (`GET /projects/{projectId}`, затем восемь маршрутов записи и список участников) — и маршруты
+> `acl:*` — с 2026-09-26 (`GET`/`POST /acl`, `DELETE /acl/{aclId}`). Удаление роли и роспуск
+> команды снимают гранты своего субъекта в той же транзакции.
 >
 > Поэтому в формуле выше **второй конъюнкт `resourceAclAllows(...)` сегодня не вычисляется
 > ничем**. Практического пробела в доступе это не создаёт: у ключей, которыми пользуются
@@ -88,7 +92,8 @@ allow = tenantMatches(RLS)                      # ADR-0004
 > (`application/project/use-cases/get-project-detail.query.ts`) решает доступ к проекту через
 > `domain/project/access/project-access.policy.ts` — capability, потом scope и цепочка, сущность
 > читается последней; доказано на живом Postgres в `test/integration/db/project-read-access.test.ts`.
-> Маршрута `project:*` нет — до него второй конъюнкт исполняется в use-case, но не по HTTP. Второе:
+> Маршрута `project:*` нет — до него второй конъюнкт исполняется в use-case, но не по HTTP
+> *(снято: `GET /projects/{projectId}` отгружен 2026-09-06)*. Второе:
 > «у ключей отгруженных endpoint'ов `requiredLevel = null`» было верно на 2026-08-30 и устарело
 > `abe2135` (2026-09-06): `organization:manage_security_policy` несёт `requiredLevel: 'MANAGER'`
 > (`permissions.catalog.ts`) и стоит на трёх маршрутах `route-registry.factory.ts`

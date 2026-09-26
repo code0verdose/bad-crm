@@ -66,11 +66,10 @@ export const ACL_RESOURCE_FAMILY: Readonly<Record<AclResourceType, 'standard' | 
 /**
  * Who a grant is for.
  *
- * `ROLE` is kept although nothing puts it on a route yet: the resolver's single query already
- * matches it through `user_roles`, and STORY-011-06 acceptance 13 — deleting a custom role removes
- * its grants in the same transaction — is written against it. Dropping it from a PostgreSQL enum
- * later would mean recreating the type; leaving it out now would mean the query has to grow a
- * third branch on the day it is needed.
+ * All three are accepted by `POST /acl` (since 2026-09-26). The resolver's single query matches a
+ * `ROLE` entry through `user_roles` and a `TEAM` entry through `team_members`, and deleting a
+ * custom role or disbanding a team removes that subject's grants in the same transaction
+ * (STORY-011-06 acceptance 13, STORY-012-07 acceptance 5).
  */
 export const ACL_SUBJECT_TYPES = ['USER', 'ROLE', 'TEAM'] as const;
 

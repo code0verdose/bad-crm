@@ -8,16 +8,17 @@ import { createAuthApp, type AuthApp, type AuthAppOptions } from '../../support/
 /**
  * Teams over the wire — STORY-012-07, acceptance 1, 2, 5, 7, 8, 9 and 10.
  *
- * A `Team` is an **org-structure** entity and not a group of access (acceptance 10): nothing is
- * granted by belonging to one, which is why no assertion here is about a permission somebody gained.
- * What is asserted instead is the mechanism that will carry such a grant when `ResourceAcl` exists —
- * the permission version of the people concerned is bumped in the same transaction, so a folded view
- * minted before the change stops being trusted.
+ * A `Team` is an **org-structure** entity (acceptance 10): belonging to one grants nothing by
+ * itself — a team reaches an object only through a `ResourceAcl` grant whose subject is the team —
+ * which is why no assertion here is about a permission somebody gained. What is asserted instead is
+ * the mechanism that carries such a grant — the permission version of the people concerned is bumped
+ * in the same transaction, so a folded view minted before the change stops being trusted.
  *
  * Acceptance 3, 4 and 6 are not covered here: they describe a team as the subject of a
- * `ResourceAcl`, and that half lives in `test/integration/db/resource-acl-reader.test.ts` since
- * 2026-09-06 (the reader matches a TEAM grant for a member and not for an outsider). The HTTP half
- * — a grant through `POST /acl` — waits for the route (STORY-011-06, next step). See the story file,
+ * `ResourceAcl`. The reader half lives in `test/integration/db/resource-acl-reader.test.ts` (the
+ * reader matches a TEAM grant for a member and not for an outsider), and a TEAM grant through
+ * `POST /acl` in `acl-endpoints.test.ts` (route shipped 2026-09-26). The end-to-end check «grant to
+ * the team → roster change → level change» is still open — not blocked. See the story file,
  * «Расхождение с этой спекой».
  */
 

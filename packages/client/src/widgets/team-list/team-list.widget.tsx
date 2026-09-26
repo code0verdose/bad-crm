@@ -31,8 +31,8 @@ const SKELETON_ROWS = 6;
  *     its own authority; what the check prevents is offering an action that always answers 403
  *     (`ux-architecture.md`, принцип 6). Unlike the destructive controls on the detail screen it
  *     needs no loaded document to work, so the permission is the whole condition;
- *   * **the notice that a team grants nothing** is not conditional at all. It is true for every
- *     reader, and it corrects a belief that forms from looking at the screen.
+ *   * **the notice that membership alone grants nothing** is not conditional at all. It is true for
+ *     every reader, and it corrects a belief that forms from looking at the screen.
  *
  * The two empty states are different sentences on purpose (`rules/lists-and-filters.mdc` §12): a
  * filter that matched nothing is offered a wider filter, an organization with no teams is offered a

@@ -100,7 +100,8 @@ estimate: M
 - [x] Тесты: `test/unit/domain/access/team-access-policy.test.ts` (37),
       `test/integration/http/team-endpoints.test.ts` (43),
       `test/integration/db/team-repository.test.ts` (24, живой Postgres).
-      `team-acl-propagation` не написан (ждёт маршрута `POST /acl`); каскад критерия 5 —
+      `team-acl-propagation` не написан — открыт, не заблокирован: маршрут `POST /acl` отгружен
+      2026-09-26, сквозной проверки «грант команде → смена состава → смена уровня» нет; каскад критерия 5 —
       `test/unit/iam/delete-team.use-case.test.ts` и `test/integration/db/acl-subject-cascade.test.ts`
       (2026-09-26). Isolation-тесты `teams` и `team_members` уже существуют — обе таблицы в
       `TENANT_TABLES`, генерируемый `rls-isolation.test.ts` покрывает их с положительным контролем.

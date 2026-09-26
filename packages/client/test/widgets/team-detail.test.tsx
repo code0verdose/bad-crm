@@ -195,7 +195,7 @@ describe('the team', () => {
   });
 
   /** Criterion 10, on the screen where somebody is about to add five people to a team. */
-  it('says that membership grants nothing', async () => {
+  it('says that membership alone grants nothing', async () => {
     await startAt();
 
     expect(await screen.findByText(/teams\.notAccessGroup\.description/)).toBeInTheDocument();
