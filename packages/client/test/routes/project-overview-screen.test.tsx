@@ -388,6 +388,15 @@ describe('/projects/$projectId', () => {
     await user.click(retry);
 
     expect(await screen.findByRole('heading', { level: 2, name: 'Bad CRM' })).toBeInTheDocument();
+
+    // The button the reader pressed is gone with the error, and the URL did not change, so the
+    // route announcer's usual trigger never fired. Focus goes to the page heading — not to <body>,
+    // where a keyboard user starts over from the top and a screen reader says nothing.
+    await waitFor(() => {
+      expect(document.activeElement).toBe(
+        screen.getByRole('heading', { level: 1, name: 'projects.detail.title' }),
+      );
+    });
   });
 
   it('keeps the card on screen when only the roster fails, with an inline retry and no toast', async () => {
@@ -415,6 +424,12 @@ describe('/projects/$projectId', () => {
     await user.click(within(section!).getByRole('button'));
 
     expect(await screen.findByText('Anna Ivanova', { selector: 'td p' })).toBeInTheDocument();
+
+    // The retry button left with the error. Focus goes to the heading of the section that
+    // reloaded — the nearest thing that still describes where the reader is — not to <body>.
+    expect(document.activeElement).toBe(
+      screen.getByRole('heading', { level: 2, name: 'projects.overview.team' }),
+    );
   });
 
   it('has no axe violations on the rendered card', async () => {

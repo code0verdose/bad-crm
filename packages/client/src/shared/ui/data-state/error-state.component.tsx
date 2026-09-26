@@ -1,6 +1,8 @@
 import { Alert, Button, Stack } from '@mantine/core';
 import { useTranslation } from 'react-i18next';
 
+import { focusSectionHeading } from '@shared/ui';
+
 import classes from './error-state.module.css';
 
 export interface ErrorStateProps {
@@ -29,6 +31,16 @@ export interface ErrorStateProps {
  * `data-state.test.tsx` asserting `{ name: 'common.retry' }` passed either way. Only the pseudo
  * locale can tell them apart, and it was pointed at two happy-path routes where no error state
  * appears — `test/i18n/pseudo-locale.test.tsx` now covers this component directly.
+ *
+ * **Where focus goes after «Retry».** A successful retry unmounts this whole alert, the pressed
+ * button with it, and focus would fall to `<body>`. Inside a `Section` the press moves focus to the
+ * section's heading first — the one element that survives both outcomes and says where the reader
+ * is. It happens in the handler, at the reader's action (`rules/frontend-fsd.mdc` rule 11), rather
+ * than in an effect waiting for success: a query in `error` keeps that status while it refetches,
+ * so there is no «loading» render to wait through, and the heading is already on screen. If the
+ * retry fails again the alert stays, and the button is the next Tab stop. Outside a section — the
+ * route's error boundary — nothing moves here; the route announcer returns focus to the page
+ * heading once the route settles.
  */
 export function ErrorState({
   messageKey,
@@ -48,7 +60,15 @@ export function ErrorState({
     >
       <Stack align="flex-start" gap="sm">
         {onRetry !== undefined && (
-          <Button color="danger" onClick={onRetry} size="xs" variant="outline">
+          <Button
+            color="danger"
+            onClick={(event) => {
+              focusSectionHeading(event.currentTarget);
+              onRetry();
+            }}
+            size="xs"
+            variant="outline"
+          >
             {t(retryLabelKey)}
           </Button>
         )}

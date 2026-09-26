@@ -6,6 +6,7 @@ import { useTranslation } from 'react-i18next';
 import { SharedUi } from '@shared';
 
 import { BreadcrumbsLib } from '@widgets/breadcrumbs';
+import { announcementStep, routePhase } from '@widgets/route-announcer/lib';
 
 import classes from './route-announcer.module.css';
 
@@ -24,15 +25,23 @@ const PRODUCT_NAME = 'Bad CRM';
  * on screen. Two things fix it, and both are needed: the document title changes, and focus moves to
  * the new `h1`, which makes the screen reader read the page it just arrived at.
  *
+ * **The same move after a successful retry of a failed route.** The route's error state and its
+ * content share one crumb, so «the page changed» never fires when «Retry» works — and the button
+ * that was pressed goes away with the error, leaving focus on `<body>`. When exactly focus moves is
+ * `announcementStep`'s decision (`lib/announcement.util.ts`), pure and tested on its own; this
+ * component only performs it.
+ *
  * The effect is the legitimate kind (`rules/frontend-fsd.mdc` rule 11): moving focus is an
- * imperative DOM action with no declarative equivalent. It is keyed on the crumb rather than on the
- * pathname so that a search-parameter change — a filter, a page number — does not yank focus out of
- * the control the user is operating.
+ * imperative DOM action with no declarative equivalent. It stays one effect for both occasions,
+ * because a successful retry is not an event this component handles — the button lives in the
+ * route's error boundary, and the moment the heading exists is the router's, not the click's.
  */
 export function RouteAnnouncer() {
   const { t } = useTranslation();
+  const matches = useMatches();
 
-  const titleKey = BreadcrumbsLib.currentCrumbKey(useMatches());
+  const titleKey = BreadcrumbsLib.currentCrumbKey(matches);
+  const phase = routePhase(matches);
 
   useDocumentTitle(titleKey === undefined ? PRODUCT_NAME : `${t(titleKey)} · ${PRODUCT_NAME}`);
 
@@ -47,17 +56,17 @@ export function RouteAnnouncer() {
    * `StrictMode`, which is how the application actually mounts; the browser had been doing this all
    * along.
    */
-  const announcedTitleKey = useRef(titleKey);
+  const announced = useRef({ titleKey, failed: phase === 'failed' });
 
   // A real side effect with the outside world: moving focus is an imperative DOM call with no
   // declarative equivalent, and it is the only thing that tells a screen reader the page changed.
   // No cleanup: it neither subscribes nor allocates.
   useEffect(() => {
-    if (announcedTitleKey.current === titleKey) return;
+    const step = announcementStep(announced.current, titleKey, phase);
 
-    announcedTitleKey.current = titleKey;
-    document.getElementById(SharedUi.PAGE_TITLE_ID)?.focus();
-  }, [titleKey]);
+    announced.current = step.announced;
+    if (step.focus) document.getElementById(SharedUi.PAGE_TITLE_ID)?.focus();
+  }, [titleKey, phase]);
 
   return (
     <div aria-live="polite" className={classes['announcer']} role="status">

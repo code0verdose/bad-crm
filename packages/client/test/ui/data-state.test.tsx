@@ -79,6 +79,51 @@ describe('DataState', () => {
     expect(screen.getByRole('alert')).toHaveTextContent('errors.conflict');
   });
 
+  /**
+   * The retry button is about to disappear — a successful reload unmounts the whole alert — so the
+   * press hands focus to the heading of the section it sits in, which survives either outcome.
+   * Without it focus falls to `<body>` the moment the data arrives.
+   */
+  it('moves focus to the heading of its section on retry — not the neighbouring one', async () => {
+    const user = userEvent.setup();
+    render(
+      <Themed scheme="light">
+        {/* CONTROL: a section before it, so «the first section heading» is not the answer. */}
+        <SharedUi.Section titleKey="projects.overview.about">
+          <p>about</p>
+        </SharedUi.Section>
+        <SharedUi.Section titleKey="projects.overview.team">
+          <SharedUi.DataState onRetry={() => undefined} skeleton={SKELETON} status="error">
+            <p>rows</p>
+          </SharedUi.DataState>
+        </SharedUi.Section>
+      </Themed>,
+    );
+
+    await user.click(screen.getByRole('button', { name: 'common.retry' }));
+
+    expect(screen.getByRole('heading', { name: 'projects.overview.team' })).toHaveFocus();
+  });
+
+  it('leaves focus on the button outside a section — the route announcer owns that case', async () => {
+    const user = userEvent.setup();
+    const onRetry = vi.fn();
+    render(
+      <Themed scheme="light">
+        <SharedUi.DataState onRetry={onRetry} skeleton={SKELETON} status="error">
+          <p>rows</p>
+        </SharedUi.DataState>
+      </Themed>,
+    );
+
+    const retry = screen.getByRole('button', { name: 'common.retry' });
+
+    await user.click(retry);
+
+    expect(onRetry).toHaveBeenCalledOnce();
+    expect(retry).toHaveFocus();
+  });
+
   it('falls back to a generic message when the caller names none', () => {
     render(
       <Themed scheme="light">
