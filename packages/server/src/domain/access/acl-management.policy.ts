@@ -5,6 +5,21 @@ import { type Decision } from '@/domain/access/decision.types.js';
 import { allow, deny } from '@/domain/access/decision.util.js';
 
 /**
+ * `self_lockout` when the entry reaches the actor — their own `USER` entry by id, a role or a team
+ * by the membership fact, asked only here — and an allow otherwise. Both halves of case 11 end here
+ * once they know the change would leave the entry below `MANAGER`.
+ */
+const lockoutIfReaches = async (
+  actor: Actor,
+  subject: AclGrantDraft['subject'],
+  reachesActor: () => Promise<boolean>,
+): Promise<Decision> => {
+  const reaches = subject.type === 'USER' ? subject.id === actor.userId : await reachesActor();
+
+  return reaches ? deny('self_lockout') : allow();
+};
+
+/**
  * Who may hand out a grant on an object, to whom, and how wide.
  *
  * The first question is the ordinary one and is not restated: `authorize` is the conjunction of the
@@ -20,31 +35,60 @@ import { allow, deny } from '@/domain/access/decision.util.js';
  * `requiredLevel` is lowered, that test fails and the comparison has to be written here — the same
  * shape as the subset rule in `permission-override.policy.ts`, which *is* reachable.
  *
- * One rule is specific to granting and sits on top — **no locking oneself out**: a `NONE` on one's
- * own `USER` entry is refused as `self_lockout`, the way denying oneself `permission:override` is.
- * A `NONE` on a team the actor belongs to is the same outcome and is *not* refused here — the
- * policy does not know the actor's teams, and a membership read on the path of every grant is the
- * wrong price for one rule; the recourse the model gives everybody else (a closer node, another
- * manager) stays.
+ * One rule is specific to granting and sits on top — **no locking oneself out**
+ * (`permission-model.md`, «Краевые случаи», 11: an operation that takes from the actor the right by
+ * which rights are governed is refused as `self_lockout`). On an object that right is `MANAGER`,
+ * which is what `acl:grant` and `acl:revoke` require. A grant below it that reaches the actor — their
+ * own `USER` entry, a role they hold, a team they are on — becomes the closest explicit entry for
+ * them on this node (resolution rule 1; an explicit entry also replaces the implicit level, so a
+ * project lead granting their own team `EDITOR` is the everyday form of this), and they are left
+ * with that level and no way to undo it. `NONE` is the extreme of the same case, not a separate one.
+ *
+ * **Fail-closed, and deliberately so.** The node's level is the maximum over everything matching the
+ * actor there (rule 2), and the policy does not see the other entries: a narrowing that another
+ * `MANAGER` entry on the same node would have made harmless is refused as well. The recourse is the
+ * one the model gives everywhere — another manager, or the owner, makes the change.
+ *
+ * Whether a role or a team reaches the actor is a fact about their memberships, so it comes as a
+ * thunk and is asked **only** when it decides the answer: the capability and the level hold, the
+ * actor is not the owner, the level is below `MANAGER` and the subject is not a person (a person is
+ * compared by id). Every other grant costs no membership read — until 2026-09-26 this file declined
+ * the team case on exactly that price, and the thunk is what removes it.
  *
  * The owner passes: ownership replaces the layers rather than enumerating them, and nothing can
  * lock the owner out by construction (`authorizeResource`).
  */
-export const canGrantAcl = (actor: Actor, scope: AclScope, draft: AclGrantDraft): Decision => {
+export const canGrantAcl = async (
+  actor: Actor,
+  scope: AclScope,
+  draft: AclGrantDraft,
+  reachesActor: () => Promise<boolean>,
+): Promise<Decision> => {
   const conjunction = authorize(actor, 'acl:grant', scope);
 
-  if (!conjunction.allowed) return conjunction;
-  if (actor.isOwner) return allow();
+  if (!conjunction.allowed || actor.isOwner || draft.level === 'MANAGER') return conjunction;
 
-  if (
-    draft.subject.type === 'USER' &&
-    draft.subject.id === actor.userId &&
-    draft.level === 'NONE'
-  ) {
-    return deny('self_lockout');
-  }
+  return lockoutIfReaches(actor, draft.subject, reachesActor);
+};
 
-  return allow();
+/**
+ * The same rule for taking a grant away — the revocation half of case 11. It runs after
+ * `canRevokeAcl`, on the row that decision was made about.
+ *
+ * Removing an entry can lower the actor's level on the node only when the entry is `MANAGER`: the
+ * node's level is the maximum of what matches (rule 2), so an entry below it was never what held the
+ * actor there. With a `MANAGER` entry that reaches them gone, their level falls to whatever else
+ * matches, to the ancestors or to the implicit level — which of these the policy cannot see, so it
+ * refuses, as for a grant. The owner passes, as everywhere.
+ */
+export const canRevokeAclEntry = async (
+  actor: Actor,
+  entry: AclGrantDraft,
+  reachesActor: () => Promise<boolean>,
+): Promise<Decision> => {
+  if (actor.isOwner || entry.level !== 'MANAGER') return allow();
+
+  return lockoutIfReaches(actor, entry.subject, reachesActor);
 };
 
 /**

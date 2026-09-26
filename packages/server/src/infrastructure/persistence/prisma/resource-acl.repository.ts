@@ -303,6 +303,40 @@ export class PrismaResourceAclRepository
     });
   }
 
+  /**
+   * The reader's match (`acl-reader.adapter.ts`), for one subject and one person: an assignment of
+   * the role that has not expired, a row in `team_members`. The expiry is compared with the
+   * application's clock where the reader uses the database's — the same trade `holdsRole` makes,
+   * and the one `permission-model.md` («Краевые случаи», 1) accepts for a single-host deployment.
+   */
+  subjectReaches(subject: AclSubjectRef, userId: string): Promise<boolean> {
+    return this.run('subjectReaches', async (tx) => {
+      const organizationId = this.organizationId('subjectReaches');
+
+      switch (subject.type) {
+        case 'USER':
+          return subject.id === userId;
+        case 'ROLE':
+          return (
+            (await tx.userRole.count({
+              where: {
+                organizationId,
+                roleId: subject.id,
+                userId,
+                OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
+              },
+            })) > 0
+          );
+        case 'TEAM':
+          return (
+            (await tx.teamMember.count({
+              where: { organizationId, teamId: subject.id, userId },
+            })) > 0
+          );
+      }
+    });
+  }
+
   bumpPermissionsVersionOf(userIds: readonly string[]): Promise<void> {
     return this.run('bumpPermissionsVersionOf', (tx) =>
       bumpPermissionsVersionOf(tx, this.organizationId('bumpPermissionsVersionOf'), userIds),

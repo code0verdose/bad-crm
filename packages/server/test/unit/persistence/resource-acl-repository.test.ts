@@ -70,7 +70,7 @@ const recordingClient = (
       grantedById: string | null;
       grantedAt: Date;
     }[];
-    counts?: { user?: number };
+    counts?: { user?: number; userRole?: number; teamMember?: number };
     userRoles?: { userId: string }[];
     teamMembers?: { userId: string }[];
     removedRows?: RemovedRow[];
@@ -117,8 +117,14 @@ const recordingClient = (
       upsert: record('resourceAcl.upsert', { id: ROW }),
     },
     user: { count: record('user.count', answers.counts?.user ?? 0) },
-    userRole: { findMany: record('userRole.findMany', answers.userRoles ?? []) },
-    teamMember: { findMany: record('teamMember.findMany', answers.teamMembers ?? []) },
+    userRole: {
+      findMany: record('userRole.findMany', answers.userRoles ?? []),
+      count: record('userRole.count', answers.counts?.userRole ?? 0),
+    },
+    teamMember: {
+      findMany: record('teamMember.findMany', answers.teamMembers ?? []),
+      count: record('teamMember.count', answers.counts?.teamMember ?? 0),
+    },
   };
 
   return {
@@ -456,6 +462,65 @@ describe('PrismaResourceAclRepository', () => {
       );
       expect(live.raw[0]?.values).toEqual([ORG, TEAM]);
       expect(live.calls).toEqual([]);
+    });
+  });
+
+  /**
+   * The self-lockout rule's one fact (the gate's L-2): does a grant to this subject reach this
+   * person — by the reader's match. A person is compared by id without a statement; a role counts
+   * only a live assignment; a team, a membership. Each inside the tenant.
+   */
+  describe('subjectReaches — does a grant to this subject reach this person', () => {
+    it('compares a person by id, sending nothing', async () => {
+      const recorder = recordingClient();
+
+      await expect(
+        inTenant(recorder, (repo) => repo.subjectReaches({ type: 'USER', id: PETR }, PETR)),
+      ).resolves.toBe(true);
+      await expect(
+        inTenant(recorder, (repo) => repo.subjectReaches({ type: 'USER', id: PETR }, IVAN)),
+      ).resolves.toBe(false);
+      expect(recorder.calls).toEqual([]);
+    });
+
+    it('counts a live assignment of the role to the person', async () => {
+      const held = recordingClient({ counts: { userRole: 1 } });
+      const notHeld = recordingClient({ counts: { userRole: 0 } });
+      const role = { type: 'ROLE' as const, id: TEAM };
+
+      await expect(inTenant(held, (repo) => repo.subjectReaches(role, IVAN))).resolves.toBe(true);
+      await expect(inTenant(notHeld, (repo) => repo.subjectReaches(role, IVAN))).resolves.toBe(
+        false,
+      );
+      expect(held.calls).toEqual([
+        {
+          name: 'userRole.count',
+          args: {
+            where: {
+              organizationId: ORG,
+              roleId: TEAM,
+              userId: IVAN,
+              OR: [{ expiresAt: null }, { expiresAt: { gt: expect.any(Date) } }],
+            },
+          },
+        },
+      ]);
+    });
+
+    it('counts a membership of the team', async () => {
+      const member = recordingClient({ counts: { teamMember: 1 } });
+      const outsider = recordingClient({ counts: { teamMember: 0 } });
+
+      await expect(inTenant(member, (repo) => repo.subjectReaches(team, IVAN))).resolves.toBe(true);
+      await expect(inTenant(outsider, (repo) => repo.subjectReaches(team, IVAN))).resolves.toBe(
+        false,
+      );
+      expect(member.calls).toEqual([
+        {
+          name: 'teamMember.count',
+          args: { where: { organizationId: ORG, teamId: TEAM, userId: IVAN } },
+        },
+      ]);
     });
   });
 

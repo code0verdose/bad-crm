@@ -199,6 +199,46 @@ describe('RevokeAclUseCase', () => {
     expect(acl.rows).toHaveLength(1);
   });
 
+  /**
+   * The gate's L-2, revocation half: taking away a `MANAGER` entry that reaches the caller can take
+   * the level `acl:revoke` needs from them — refused as `self_lockout` (409), after the conjunction
+   * and before anything is removed. Below `MANAGER`, and for somebody else's entry, it goes through.
+   */
+  it('refuses taking away the caller’s own MANAGER entry as 409 self_lockout, removing nothing', async () => {
+    const { acl, audit, useCase } = setup();
+    const id = acl.seed({ ...existing(), subject: { type: 'USER', id: IVAN }, level: 'MANAGER' });
+
+    await expect(useCase.execute(revoke(id))).rejects.toMatchObject({
+      code: 'self_lockout',
+      reason: 'self_lockout',
+    });
+    expect(acl.rows).toHaveLength(1);
+    expect(acl.bumped).toEqual([]);
+    expect(audit.events).toEqual([]);
+    // A person is compared by id: no membership read for a USER entry.
+    expect(acl.reachChecks).toEqual([]);
+  });
+
+  it('refuses taking away a MANAGER grant of a team the caller is on, asking the port about the caller', async () => {
+    const { acl, useCase } = setup();
+    const id = acl.seed({ ...existing(), level: 'MANAGER' });
+    acl.subjects.set(`TEAM:${TEAM}`, [IVAN]);
+
+    await expect(useCase.execute(revoke(id))).rejects.toMatchObject({ reason: 'self_lockout' });
+    expect(acl.reachChecks).toEqual([{ subject: { type: 'TEAM', id: TEAM }, userId: IVAN }]);
+    expect(acl.rows).toHaveLength(1);
+  });
+
+  it('CONTROL: takes away a MANAGER grant of a team the caller is not on', async () => {
+    const { acl, useCase } = setup();
+    const id = acl.seed({ ...existing(), level: 'MANAGER' });
+    acl.subjects.set(`TEAM:${TEAM}`, [PETR]);
+
+    await useCase.execute(revoke(id));
+
+    expect(acl.rows).toEqual([]);
+  });
+
   it('answers a reader that failed with 503 and removes nothing', async () => {
     const { acl, useCase } = setup({ status: 'unavailable' });
     const id = acl.seed(existing());

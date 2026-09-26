@@ -6,7 +6,7 @@ import { type AclScopeResolver } from '@/application/access/use-cases/resolve-ac
 import { type AuditLoggerPort } from '@/application/platform/ports/audit-logger.port.js';
 import { type UnitOfWorkPort } from '@/application/platform/ports/unit-of-work.port.js';
 import { closeContourOf } from '@/domain/access/acl-contour.policy.js';
-import { canRevokeAcl } from '@/domain/access/acl-management.policy.js';
+import { canRevokeAcl, canRevokeAclEntry } from '@/domain/access/acl-management.policy.js';
 import { accessErrorFor } from '@/domain/access/access.errors.js';
 import { type Actor } from '@/domain/access/actor.types.js';
 import { type AclScope } from '@/domain/access/authorize.util.js';
@@ -77,6 +77,15 @@ export class RevokeAclUseCase {
         // resolves a scope — the one way to be allowed — after it found the row. No branch here,
         // because there is no state in which it could be taken.
         const existing = found.row as AclEntryRow;
+
+        // No taking away the entry that holds the caller at `MANAGER` here (the gate's L-2) —
+        // decided on the row as read; the membership is asked only for a `MANAGER` role or team.
+        assertAllowed(
+          await canRevokeAclEntry(input.actor, existing, () =>
+            this.acl.subjectReaches(existing.subject, input.actor.userId),
+          ),
+          'acl',
+        );
 
         // By id, and only what the statement removed counts (the gate's L-1): a concurrent
         // revocation of the same grant leaves this one nothing to remove — the same 404 an unknown

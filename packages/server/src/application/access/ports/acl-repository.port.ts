@@ -105,6 +105,17 @@ export interface AclRepositoryPort {
    */
   subjectUserIds(subject: AclSubjectRef): Promise<readonly string[]>;
 
+  /**
+   * Whether a grant to this subject reaches this person — by the same match the reader uses: a live
+   * assignment of the role, a membership of the team, the person themselves.
+   *
+   * One point lookup, for the self-lockout rule (`acl-management.policy.ts`, the gate's L-2), which
+   * asks it only when the answer decides something. A question rather than `subjectUserIds(...)`
+   * searched in memory: a role the whole organization holds would otherwise be every id in memory
+   * on the path of a grant.
+   */
+  subjectReaches(subject: AclSubjectRef, userId: string): Promise<boolean>;
+
   /** One statement for the whole set, however large; a no-op for an empty one. */
   bumpPermissionsVersionOf(userIds: readonly string[]): Promise<void>;
 }

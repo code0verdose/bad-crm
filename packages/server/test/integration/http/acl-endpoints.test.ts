@@ -32,6 +32,7 @@ const IVAN = '018f4a3b-2c1d-7a41-9f00-2b7c1d0e5b11';
 const PETR = '018f4a3b-2c1d-7a41-9f00-2b7c1d0e5b12';
 const TEAM = '018f4a3b-2c1d-7a41-9f00-2b7c1d0e5b21';
 const FOREIGN_TEAM = '018f4a3b-2c1d-7a41-9f00-2b7c1d0e5b22';
+const ROLE = '018f4a3b-2c1d-7a41-9f00-2b7c1d0e5b31';
 
 const holder = (granted: readonly SharedPermissions.PermissionKey[]) => ({
   isOwner: false,
@@ -321,6 +322,42 @@ describe('POST /api/v1/acl', () => {
     expect(projects.grants).toEqual([]);
   });
 
+  /**
+   * The gate's L-2 over the wire (`permission-model.md`, «Краевые случаи», 11): not only `NONE` —
+   * any level below `MANAGER` that reaches the caller leaves them without the level `acl:grant`
+   * needs on this project, whether the entry is their own or a role they hold.
+   */
+  it('refuses narrowing the caller’s own entry, and a role the caller holds, as 409 self_lockout', async () => {
+    const projects = seeded();
+    projects.aclSubjects.set(`ROLE:${ROLE}`, [USER_ID]);
+    const { test, token } = await signedIn({ capabilities: MANAGER, projects });
+
+    for (const body of [
+      { ...teamEditor, subjectType: 'USER', subjectId: USER_ID, accessLevel: 'VIEWER' },
+      { ...teamEditor, subjectType: 'ROLE', subjectId: ROLE, accessLevel: 'EDITOR' },
+    ]) {
+      const response = await grant(test, token, body).expect(409);
+
+      expect(response.body).toMatchObject({ code: 'self_lockout', reason: 'self_lockout' });
+    }
+    expect(projects.grants).toEqual([]);
+  });
+
+  it('CONTROL: the same role grant goes through when the caller does not hold the role', async () => {
+    const projects = seeded();
+    projects.aclSubjects.set(`ROLE:${ROLE}`, [IVAN]);
+    const { test, token } = await signedIn({ capabilities: MANAGER, projects });
+
+    await grant(test, token, {
+      ...teamEditor,
+      subjectType: 'ROLE',
+      subjectId: ROLE,
+      accessLevel: 'EDITOR',
+    }).expect(200);
+
+    expect(projects.grants).toHaveLength(1);
+  });
+
   it('refuses NONE on the caller’s own entry as 409 self_lockout', async () => {
     const projects = seeded();
     const { test, token } = await signedIn({ capabilities: MANAGER, projects });
@@ -449,6 +486,25 @@ describe('DELETE /api/v1/acl/{aclId}', () => {
     expect(bodies[0]).toMatchObject({ status: 404, code: 'acl_not_found' });
     for (const body of bodies) expect(body).toEqual(bodies[0]);
     expect(projects.grants).toHaveLength(3);
+    expect(test.audit.events.filter((event) => event.action === 'acl.revoked')).toEqual([]);
+  });
+
+  it('refuses taking away the caller’s own MANAGER entry as 409 self_lockout (gate L-2)', async () => {
+    const projects = seeded();
+    const own = projects.seedGrant({
+      organizationId: ORGANIZATION_ID,
+      resource: project,
+      subject: { type: 'USER', id: USER_ID },
+      level: 'MANAGER',
+      expiresAt: null,
+      grantedById: PETR,
+    });
+    const { test, token } = await signedIn({ capabilities: MANAGER, projects });
+
+    const response = await revoke(test, token, own).expect(409);
+
+    expect(response.body).toMatchObject({ code: 'self_lockout', reason: 'self_lockout' });
+    expect(projects.grants.map((row) => row.id)).toEqual([own]);
     expect(test.audit.events.filter((event) => event.action === 'acl.revoked')).toEqual([]);
   });
 

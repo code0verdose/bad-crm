@@ -38,7 +38,10 @@ export interface GrantAclResult {
  *
  * **The order is the security property.** The object is resolved and the policy runs first, so a
  * caller who may not grant on this project is refused before the subject is looked at — the grant
- * form must not be a way to learn whether a team id exists. The subject is checked next, before
+ * form must not be a way to learn whether a team id exists. The one read the policy itself may ask
+ * for — whether a role or a team reaches the caller, for the self-lockout rule (the gate's L-2) —
+ * comes after the conjunction holds and answers only about the caller's own memberships, so a
+ * foreign id is «not reached» there and a 404 one step later. The subject is checked next, before
  * anything is written, and a subject of another organization is a 404 in the subject's own words
  * (`team_not_found`), never a 403. Only then the write, the version bump of everyone the grant
  * reaches, and the trail entry — all inside one scope, so a trail that cannot be written rolls the
@@ -62,11 +65,17 @@ export class GrantAclUseCase {
       async () => {
         const scope = await this.resolver.resolve(input.actor, input.resource);
 
+        // The membership read is the policy's to ask for (the gate's L-2): only a grant below
+        // `MANAGER` to a role or a team, from somebody who may grant, reaches the port at all.
+        const decision = await canGrantAcl(
+          input.actor,
+          scope,
+          { subject: input.subject, level: input.level },
+          () => this.acl.subjectReaches(input.subject, input.actor.userId),
+        );
+
         assertAllowed(
-          closeContourOf(
-            input.resource.type,
-            canGrantAcl(input.actor, scope, { subject: input.subject, level: input.level }),
-          ),
+          closeContourOf(input.resource.type, decision),
           errorResourceOfAclResource(input.resource.type),
         );
 

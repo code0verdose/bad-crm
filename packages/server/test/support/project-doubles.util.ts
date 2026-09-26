@@ -558,6 +558,13 @@ export class FakeProjectStore
     );
   }
 
+  /** A role or a team reaches the person when `aclSubjects` lists them on it. */
+  subjectReaches(subject: AclSubjectRef, userId: string): Promise<boolean> {
+    this.trace.push('acl.subjectReaches');
+
+    return Promise.resolve((this.aclSubjects.get(refKey(subject)) ?? []).includes(userId));
+  }
+
   subjectUserIds(subject: AclSubjectRef): Promise<readonly string[]> {
     if (subject.type === 'USER') {
       return Promise.resolve(this.subjects.has(subject.id) ? [subject.id] : []);

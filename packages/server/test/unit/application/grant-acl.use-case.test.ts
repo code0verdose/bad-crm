@@ -22,6 +22,7 @@ import { FakeAclRepository, FakeAclResolver, actorWith, ids } from './acl-double
  */
 
 const { ORG, IVAN, PETR, PROJECT, TEAM } = ids;
+const SVETA = '018f4a3b-0000-7000-8000-0000000000c3';
 
 const manager = (level: SharedPermissions.AccessLevel = 'MANAGER'): AclScope => ({
   status: 'resolved',
@@ -55,7 +56,9 @@ const grant = (
 describe('GrantAclUseCase — the happy path', () => {
   it('writes the grant, bumps every member of the team, and files acl.granted at WARNING', async () => {
     const { acl, audit, useCase, unitOfWork } = setup();
-    acl.subjects.set(`TEAM:${TEAM}`, [IVAN, PETR]);
+    // The granter (Ivan) is not on the team: a grant below MANAGER to a team they were on would be
+    // the self-lockout case further down.
+    acl.subjects.set(`TEAM:${TEAM}`, [PETR, SVETA]);
 
     const result = await useCase.execute(grant());
 
@@ -69,7 +72,7 @@ describe('GrantAclUseCase — the happy path', () => {
         grantedById: IVAN,
       }),
     ]);
-    expect(acl.bumped).toEqual([[IVAN, PETR]]);
+    expect(acl.bumped).toEqual([[PETR, SVETA]]);
     expect(audit.events).toEqual([
       {
         action: 'acl.granted',
@@ -214,6 +217,35 @@ describe('GrantAclUseCase — refusals, in the order they are made', () => {
     await expect(
       useCase.execute(grant({ subject: { type: 'USER', id: IVAN }, level: 'NONE' })),
     ).rejects.toMatchObject({ reason: 'self_lockout' });
+  });
+
+  /**
+   * The gate's L-2 (`permission-model.md`, «Краевые случаи», 11): a level below `MANAGER` on a team
+   * the caller is on leaves them without the level `acl:grant` needs — the everyday case is a lead
+   * granting their own team `EDITOR` on their project. The membership is asked of the port with the
+   * caller's id, and nothing is written.
+   */
+  it('refuses a level below MANAGER on a team the caller is on as self_lockout, writing nothing', async () => {
+    const { acl, audit, useCase } = setup();
+    acl.subjects.set(`TEAM:${TEAM}`, [IVAN, PETR]);
+
+    await expect(useCase.execute(grant({ level: 'EDITOR' }))).rejects.toMatchObject({
+      code: 'self_lockout',
+      reason: 'self_lockout',
+    });
+    expect(acl.reachChecks).toEqual([{ subject: { type: 'TEAM', id: TEAM }, userId: IVAN }]);
+    expect(acl.rows).toEqual([]);
+    expect(acl.bumped).toEqual([]);
+    expect(audit.events).toEqual([]);
+  });
+
+  it('refuses narrowing one’s own entry to VIEWER — not only NONE locks the caller out', async () => {
+    const { acl, useCase } = setup();
+
+    await expect(
+      useCase.execute(grant({ subject: { type: 'USER', id: IVAN }, level: 'VIEWER' })),
+    ).rejects.toMatchObject({ reason: 'self_lockout' });
+    expect(acl.rows).toEqual([]);
   });
 
   it('rolls the write back when the trail cannot be written — fail-closed for a privileged action', async () => {

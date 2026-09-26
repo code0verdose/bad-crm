@@ -66,6 +66,8 @@ export class FakeAclRepository implements AclRepositoryPort {
   readonly listed: { resource: AclResourceRef; now: Date }[] = [];
   readonly missingSubjects = new Set<string>();
   readonly subjects = new Map<string, readonly string[]>();
+  /** Every «does this role or team reach this person» the commands asked, in order. */
+  readonly reachChecks: { subject: AclSubjectRef; userId: string }[] = [];
 
   seed(row: Omit<AclEntryRow, 'id'>): string {
     const id = randomUUID();
@@ -154,6 +156,13 @@ export class FakeAclRepository implements AclRepositoryPort {
     this.existenceChecks.push(subject);
 
     return Promise.resolve(!this.missingSubjects.has(keyOf(subject)));
+  }
+
+  /** A role or a team reaches the person when `subjects` lists them — the reader's match, in memory. */
+  subjectReaches(subject: AclSubjectRef, userId: string): Promise<boolean> {
+    this.reachChecks.push({ subject, userId });
+
+    return Promise.resolve((this.subjects.get(keyOf(subject)) ?? []).includes(userId));
   }
 
   subjectUserIds(subject: AclSubjectRef): Promise<readonly string[]> {
