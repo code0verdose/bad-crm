@@ -206,7 +206,13 @@ describe('GET /api/v1/acl', () => {
       `?resourceType=PROJECT&resourceId=${PROJECT_ID}`,
     ).expect(403);
 
-    expect(response.body).toMatchObject({ reason: 'permission_not_granted' });
+    // The code, not only the reason: the route guard codes a refusal on the key's own resource
+    // (`refusalResourceOf`), and `acl` is in the error dictionary — `organization_forbidden` here
+    // would be the client translating a different sentence.
+    expect(response.body).toMatchObject({
+      code: 'acl_forbidden',
+      reason: 'permission_not_granted',
+    });
     expect(projects.trace).toEqual([]);
   });
 
@@ -336,7 +342,13 @@ describe('POST /api/v1/acl', () => {
 
     const response = await grant(test, token, teamEditor).expect(403);
 
-    expect(response.body).toMatchObject({ reason: 'permission_not_granted' });
+    // The code, not only the reason: the route guard codes a refusal on the key's own resource
+    // (`refusalResourceOf`), and `acl` is in the error dictionary — `organization_forbidden` here
+    // would be the client translating a different sentence.
+    expect(response.body).toMatchObject({
+      code: 'acl_forbidden',
+      reason: 'permission_not_granted',
+    });
     expect(projects.trace).toEqual([]);
   });
 
@@ -462,7 +474,13 @@ describe('DELETE /api/v1/acl/{aclId}', () => {
 
     const response = await revoke(test, token, team).expect(403);
 
-    expect(response.body).toMatchObject({ reason: 'permission_not_granted' });
+    // The code, not only the reason: the route guard codes a refusal on the key's own resource
+    // (`refusalResourceOf`), and `acl` is in the error dictionary — `organization_forbidden` here
+    // would be the client translating a different sentence.
+    expect(response.body).toMatchObject({
+      code: 'acl_forbidden',
+      reason: 'permission_not_granted',
+    });
     expect(projects.trace).toEqual([]);
   });
 
