@@ -1771,7 +1771,15 @@ export interface paths {
          *     project_not_found`, decided **before** the subject is looked at, so the form cannot be used
          *     to learn which team ids exist. A subject that is not in this organization (or has left, or
          *     was disbanded) is the subject's own `404` — `user_not_found`, `role_not_found`,
-         *     `team_not_found`. `NONE` on one's own `USER` entry is `409 self_lockout`.
+         *     `team_not_found`.
+         *
+         *     **`409 self_lockout`** — a grant that would take from the caller the level by which grants
+         *     are managed: anything below a permanent `MANAGER` — `NONE` included, and `MANAGER` with an
+         *     `expiresAt` too, since it holds the level only until that date — to a subject that reaches
+         *     the caller: their own `USER` entry, a role they hold, a team they are on. Such an entry
+         *     becomes the caller's closest one on the object and leaves them no way to undo it. The
+         *     refusal is fail-closed: another `MANAGER` entry that would have kept the caller in place is
+         *     not looked at. The owner is never refused.
          *
          *     `NONE` is a level like the others: the explicit refusal on this node and below. An
          *     `expiresAt` in the past is accepted and decides nothing from the moment it is written.
@@ -1806,6 +1814,12 @@ export interface paths {
          *     see read alike, because telling them apart would test grant ids for existence. A caller who
          *     sees the object with a lower level is `403 acl_forbidden` — they can list the grant with
          *     `GET /acl`, so its existence is no secret to them.
+         *
+         *     **`409 self_lockout`** — the grant is a `MANAGER` entry that reaches the caller (their own
+         *     `USER` entry, a role they hold, a team they are on): without it their level on the object
+         *     falls to whatever else matches, which is not looked at, so the removal is refused. Entries
+         *     below `MANAGER` never held the caller there and are removed freely. The owner is never
+         *     refused.
          */
         delete: operations["revokeResourceAcl"];
         options?: never;
@@ -6714,6 +6728,7 @@ export interface operations {
             401: components["responses"]["Unauthenticated"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
             422: components["responses"]["ValidationFailed"];
             429: components["responses"]["RateLimited"];
             500: components["responses"]["InternalError"];

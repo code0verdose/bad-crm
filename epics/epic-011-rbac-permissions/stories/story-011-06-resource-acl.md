@@ -230,6 +230,9 @@ estimate: L
    (`project_forbidden`/`project_not_found`), отсутствие субъекта — ресурсом субъекта
    (`team_not_found`): новый код в `ERROR_RESOURCES` потребовал бы правки `openapi.yaml` и обоих
    файлов локалей — это шаг маршрута. Полная карта — `domain/access/acl-error-resource.util.ts`.
+   *(Снято 2026-09-26: ресурс `acl` заведён — `acl_not_found`/`acl_forbidden` на `DELETE /acl/{aclId}`
+   и у middleware по ключу `acl:*`, см. «Сделано (2026-09-26)», п. 1 и 4. На `GET`/`POST` отказ
+   use-case'а по-прежнему кодируется ресурсом объекта.)*
 7. **`guest` читается из `actor.roleKeys`** — единственное санкционированное чтение ролей
    policy (§5, последняя строка; `IMPLICIT_LEVEL_NONE_ROLES`). Докстринг `actor.types.ts` уточнён.
 8. **`ProjectAccessReaderPort` лежит в `application/access/ports/`**, а не в `project/`: контекст
@@ -275,9 +278,9 @@ estimate: L
    каналом членства (добавление в команду, назначение роли) не проверяется — принятый риск,
    `permission-model.md`, «Краевые случаи», 11.
 
-Следующему шагу: критерий 12 при первом списке, решение по коду ответа для критерия 3,
-перенос `ProjectRole`/`ProjectVisibility` из `implicit-level.policy.ts` на `domain/project/project.enums.ts`
-(файл того же дня, ещё не в истории на момент этого коммита).
+Следующему шагу: решение по коду ответа для критерия 3, перенос `ProjectRole`/`ProjectVisibility` из `implicit-level.policy.ts` на `domain/project/project.enums.ts`
+(файл того же дня, ещё не в истории на момент этого коммита). *(Критерий 12, стоявший здесь
+первым, закрыт 2026-09-26 на списке проектов — см. таблицу критериев.)*
 
 ## Ссылки
 

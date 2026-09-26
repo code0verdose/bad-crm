@@ -864,7 +864,8 @@ export const createRouteRegistry = (
       handlers: [requireIdempotencyKey(), grantAclValidator.handler, acl.grant],
       // `MANAGER` on the object, `dangerous`. Three decisions the guard cannot make: the object may
       // be nobody's (404), the subject may be another organization's (the subject's own 404), and a
-      // `NONE` on one's own entry is `self_lockout` — all of them need rows or the actor.
+      // grant below a permanent `MANAGER` to a subject that reaches the actor — their own entry, a
+      // role they hold, a team they are on — is `self_lockout`; all of them need rows or the actor.
       permission: 'acl:grant',
       aclCheckedIn: 'GrantAclUseCase',
     },

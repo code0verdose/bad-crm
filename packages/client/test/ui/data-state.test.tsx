@@ -84,8 +84,9 @@ describe('DataState', () => {
    *
    * Focus stays on «Retry» until the reload answers: if it fails again, the alert is the same DOM
    * with the same sentence and a live region says nothing — the button the reader is on is the only
-   * thing that can tell them. Only a success unmounts the button, and only then does focus move, to
-   * the heading of the section it sat in; without that it would fall to `<body>`.
+   * thing that can tell them. The button leaves the page on a success, and also when a query that
+   * never had data goes back to `pending` for the reload (the skeleton replaces it); only then does
+   * focus move, to the heading of the section it sat in — without that it would fall to `<body>`.
    */
   describe('around a retry', () => {
     const TEAM = 'projects.overview.team';

@@ -206,9 +206,10 @@ created: 2026-07-26
 > **Уточнено 2026-09-06.** Два утверждения выше устарели в тот же день. STORY-011-06 —
 > `in-progress`, `blocked: false` (frontmatter истории): kickoff EPIC-014 принёс таблицу
 > `resource_acl`, правило разрешения (`domain/access/acl-resolution.policy.ts`), резолвер
-> (`application/access/use-cases/resolve-acl.query.ts`) и use-case'ы выдачи/отзыва; открыты
-> маршруты `acl:*` отгружены 2026-09-26, каскад при удалении роли (критерий 13) закрыт 2026-09-26;
-> открыты списки (критерий 12). «Проверять не на
+> (`application/access/use-cases/resolve-acl.query.ts`) и use-case'ы выдачи/отзыва;
+> маршруты `acl:*` отгружены 2026-09-26, каскад при удалении роли (критерий 13) закрыт 2026-09-26,
+> списки (критерий 12) закрыты 2026-09-26 на списке проектов (`GET /projects`,
+> `test/integration/db/project-list.test.ts`); открыто решение по коду ответа критерия 3. «Проверять не на
 > чем» тоже неверно: access-reader ресурса есть у проекта
 > (`application/access/ports/project-access-reader.port.ts` и его адаптер), и открытые половины
 > STORY-011-07 закрываются первым маршрутом, который их вызовет.

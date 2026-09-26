@@ -86,7 +86,9 @@ estimate: M
       (`CreateTeamUseCase` + `UpdateTeamUseCase`), `delete-team.use-case.ts`,
       `manage-team-members.use-case.ts` (`AddTeamMemberUseCase` + `RemoveTeamMemberUseCase`).
 - [x] `packages/server/src/application/iam/use-cases/list-teams.query.ts`,
-      `get-team-detail.query.ts` — состав команды. Числа записей ACL нет: таблицы нет.
+      `get-team-detail.query.ts` — состав команды. Числа записей ACL нет: на момент истории не было
+      таблицы. *(Уточнено 2026-09-27: `resource_acl` существует с 2026-09-06, гранты команды
+      читаются через `GET /acl` по объекту; счётчика грантов в ответах команды по-прежнему нет.)*
 - [x] `packages/server/src/domain/iam/access/team-access.policy.ts` + порт
       `application/iam/ports/team-repository.port.ts` и `infrastructure/persistence/prisma/team.repository.ts`.
 - [x] Инкремент `permissionsVersion` — `bumpPermissionsVersionOf(userIds)`,
@@ -172,7 +174,9 @@ LEVEL SECURITY`, каноническая политика с обоими пр�
 Офбординг удаляет членства именно затем, чтобы деактивированный не числился нигде; путь добавления,
 принимающий `SUSPENDED`, отменял бы это по строке за раз.
 
-**`permissionsVersion` инкрементится, хотя сегодня членство ничего не даёт.** Это не декорация:
+**`permissionsVersion` инкрементится, хотя на момент истории членство ничего не давало.**
+*(Уточнено 2026-09-27: с 2026-09-26 `POST /acl` принимает `TEAM`, и членство переносит каждый
+грант команды — бамп стал необходимым, а `team.member_*` пишутся на `WARNING`.)* Это не декорация:
 версия — механизм, по которому свёрнутое представление перестаёт быть доверенным, и версия, которая
 начала бы двигаться только в релизе с ACL, оставила бы все токены, выпущенные до него, доверяющими уже
 отозванному членству.
