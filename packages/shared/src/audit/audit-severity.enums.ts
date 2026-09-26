@@ -143,15 +143,19 @@ export const AUDIT_ACTION_SEVERITY: Readonly<Record<AuditAction, AuditSeverity>>
    */
   'team.deleted': 'WARNING',
   /**
-   * `INFO`, for the same reason as the creation: membership grants nothing today. It is recorded
-   * because it bumps the permission version of the person concerned — an effect a reviewer looking
-   * at «why did this account have to re-authenticate» needs to be able to find.
+   * `WARNING` since 2026-09-26 — the trigger STORY-012-07 recorded («когда команда станет субъектом
+   * ACL») came with `POST /acl`, which accepts a `TEAM`. A membership now moves access: whoever
+   * joins gets, and whoever leaves loses, every grant the team holds, and the reader matches `TEAM`
+   * entries through `team_members` on the next request. That is a right given or taken away, the
+   * rows an escalation review reads beside `acl.granted`; filed at `INFO` it would also degrade — a
+   * failed row would let the change commit with no trace (`isDegradableAuditAction`). The entry
+   * carries the caller's address for the same reason (`audit-privileged-ip-address.test.ts`).
    */
-  'team.member_added': 'INFO',
-  'team.member_removed': 'INFO',
-  // Same level, same reason: a role held inside a team grants nothing today either, and this entry
-  // exists because it — like the two above — bumps the permission version of the person concerned.
-  'team.member_role_changed': 'INFO',
+  'team.member_added': 'WARNING',
+  'team.member_removed': 'WARNING',
+  // Same level, same reason: the role inside a team is a membership row too, and the one entry that
+  // records a person's standing on a team that may hold grants.
+  'team.member_role_changed': 'WARNING',
   // An exception on one person: the layer that can take a right away, and the one whose rows an
   // escalation review reads first.
   'permission.override.created': 'WARNING',
@@ -212,11 +216,11 @@ export const AUDIT_ACTION_SEVERITY: Readonly<Record<AuditAction, AuditSeverity>>
    */
   'project.deleted': 'WARNING',
   /**
-   * `WARNING` for all three, unlike the `INFO` of their team counterparts — and the difference is
-   * the model, not a mood. A team membership grants nothing; a project membership **is** the implicit
-   * access level of `permission-model.md` §5, so putting somebody on a project, taking them off or
-   * moving them between `LEAD` and `OBSERVER` is a change of rights, and §10 files every change of
-   * rights at this level beside `role.assigned` and `acl.granted`.
+   * `WARNING` for all three, as their team counterparts since 2026-09-26 — though for a more direct
+   * reason. A team membership moves access only where the team holds a grant; a project membership
+   * **is** the implicit access level of `permission-model.md` §5, so putting somebody on a project,
+   * taking them off or moving them between `LEAD` and `OBSERVER` is a change of rights, and §10
+   * files every change of rights at this level beside `role.assigned` and `acl.granted`.
    */
   'project.member_added': 'WARNING',
   'project.member_removed': 'WARNING',

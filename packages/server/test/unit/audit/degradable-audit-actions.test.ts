@@ -119,11 +119,18 @@ describe('which audit actions may degrade when their row cannot be written', () 
 
     expect(degradable.length).toBeGreaterThan(0);
     expect(degradable.length).toBeLessThan(SharedAudit.AUDIT_ACTIONS.length);
-    // A quiet action behind an ordinary key is the shape that does degrade; the three membership
-    // entries are it (`team:manage_members` carries no flag, even though a team can be an ACL
-    // subject since 2026-09-06 — the grant is the dangerous action, and it is filed at `WARNING`).
-    expect(degradable).toContain('team.member_added');
+    // A quiet action behind an ordinary key is the shape that does degrade.
     expect(degradable).toContain('session.signed_in');
+    // The three membership entries did too, until a team became a subject of `POST /acl`
+    // (2026-09-26): a membership change now moves access wherever the team holds a grant, so they
+    // are `WARNING` and roll the change back with a failed row, like the grant itself.
+    for (const action of [
+      'team.member_added',
+      'team.member_removed',
+      'team.member_role_changed',
+    ] as const) {
+      expect(degradable).not.toContain(action);
+    }
   });
 
   /**

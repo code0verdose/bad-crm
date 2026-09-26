@@ -27,10 +27,11 @@ import {
  * not a list anybody maintains by hand either), whether that site is privileged enough that a
  * human-triggered instance of it must carry an address.
  *
- * **The naive version of this gate — «every `audit.record` call passes `ipAddress`» — is wrong**, and
- * demonstrably so today: `application/iam/use-cases/manage-team-members.use-case.ts` files
- * `team.member_added`/`team.member_role_changed` with no address at all (an `INFO` action, membership
- * grants nothing yet), and the moment a background job or migration path starts writing
+ * **The naive version of this gate — «every `audit.record` call passes `ipAddress`» — is wrong.**
+ * Until 2026-09-26 the tree demonstrated it: `manage-team-members.use-case.ts` filed its membership
+ * entries at `INFO` with no address, because membership granted nothing; since `POST /acl` accepts a
+ * team they are `WARNING` and carry one. The reason stands without that example: the moment a
+ * background job or migration path starts writing
  * `rls.bypassed` or a similar system-origin entry, it will have no request to read an address from —
  * `AuditActor.userId`'s own docstring says so: `undefined` "for an action taken before any account
  * exists" is exactly what marks an entry as system-origin rather than human. The naive check cannot
@@ -113,8 +114,9 @@ describe('audit call sites carry an address when the action is privileged and hu
 
   /**
    * A call site written with `actor,`/`target,` shorthand has no object literal to read a target
-   * type or an address out of, so this gate cannot judge it. That is tolerable for the two `INFO`
-   * membership entries the tree has today and for nothing else: the shorthand is otherwise a way to
+   * type or an address out of, so this gate cannot judge it. That is tolerable for an `INFO` entry
+   * and for nothing else — the membership entries were the case until 2026-09-26, and raising them to
+   * `WARNING` is what turned this assertion red on their shorthand: the shorthand is otherwise a way to
    * write a privileged entry that no assertion here can see. The revocation shape is excluded too —
    * it is the one thing that makes an `INFO` action required (`invitation.revoked`), and on an
    * unresolved site the target type that would confirm it is exactly what is missing.
@@ -176,8 +178,17 @@ describe('requiresAddressWhenHuman: the rule that keeps the gate from being the 
     expect(requiresAddressWhenHuman(humanCritical, 'CRITICAL')).toBe(true);
   });
 
-  it('a ROLE/USER_ROLE/USER_PERMISSION_OVERRIDE/ORGANIZATION target is always required, even at WARNING', () => {
-    for (const targetType of ['ROLE', 'USER_ROLE', 'USER_PERMISSION_OVERRIDE', 'ORGANIZATION']) {
+  it('a ROLE/USER_ROLE/USER_PERMISSION_OVERRIDE/ORGANIZATION/TEAM/RESOURCE_ACL target is always required, even at WARNING', () => {
+    for (const targetType of [
+      'ROLE',
+      'USER_ROLE',
+      'USER_PERMISSION_OVERRIDE',
+      'ORGANIZATION',
+      // Since 2026-09-26: a grant on an object, and a team that can hold one — a membership change
+      // that only adds (`team.member_added`) has no revocation shape to be caught by otherwise.
+      'TEAM',
+      'RESOURCE_ACL',
+    ]) {
       expect(requiresAddressWhenHuman({ ...humanCritical, targetType }, 'WARNING')).toBe(true);
     }
   });

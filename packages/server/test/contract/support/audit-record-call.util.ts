@@ -207,12 +207,23 @@ export const findAuditRecordCalls = (
   return sites;
 };
 
-/** The three target types that exist for no reason other than mutating role/permission authority. */
+/**
+ * The target types whose change moves somebody's authority.
+ *
+ * `TEAM` and `RESOURCE_ACL` joined on 2026-09-26, when `POST /acl` began to accept a team: a grant
+ * on an object is authority by definition, and a team membership now carries every grant the team
+ * holds. Without `TEAM` here the only membership entry the gate would judge is the revocation-shaped
+ * `team.member_removed`; `team.member_added` — the one that *gives* access — would go unchecked.
+ * A team's own `INFO` entries (`team.created`, `team.updated`) are untouched: this set is read only
+ * at `WARNING`.
+ */
 const AUTHORITY_TARGET_TYPES: ReadonlySet<string> = new Set([
   'ROLE',
   'USER_ROLE',
   'USER_PERMISSION_OVERRIDE',
   'ORGANIZATION',
+  'TEAM',
+  'RESOURCE_ACL',
 ]);
 
 /**

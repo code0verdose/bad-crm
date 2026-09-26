@@ -122,7 +122,7 @@ export const createTeamController = (
     response.status(204).send();
   },
 
-  addMember: async (_request, response) => {
+  addMember: async (request, response) => {
     const { params, body } = dependencies.addMemberValidator.read(response);
 
     await dependencies.addMember.execute({
@@ -130,18 +130,20 @@ export const createTeamController = (
       teamId: params.teamId,
       userId: body.userId,
       teamRole: body.teamRole,
+      ipAddress: clientOf(request).ipAddress,
     });
 
     response.status(204).send();
   },
 
-  removeMember: async (_request, response) => {
+  removeMember: async (request, response) => {
     const { params } = dependencies.memberValidator.read(response);
 
     await dependencies.removeMember.execute({
       actor: readActor(response),
       teamId: params.teamId,
       userId: params.userId,
+      ipAddress: clientOf(request).ipAddress,
     });
 
     response.status(204).send();
