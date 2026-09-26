@@ -157,7 +157,8 @@ estimate: L
   `ResourceAcl` (`grantedById`, `accessLevel`, `expiresAt`), а сущности `ResourceAcl` в продукте нет:
   STORY-011-06 заблокирована до EPIC-014. *(Уточнено 2026-09-06: `ResourceAcl` и резолвер
   отгружены, STORY-011-06 — `in-progress`; экран «Почему есть доступ» по-прежнему ждёт маршрута
-  `GET /permissions/explain`, который резолвер вызовет, — маршрутов `acl:*` ещё нет.)* В каталоге
+  `GET /permissions/explain`, который резолвер вызовет; маршруты `acl:*` отгружены 2026-09-26,
+  `explain` среди них нет.)* В каталоге
   `requiredLevel` не `null` у 162 ключей (весь
   `project:*`/`board:*`/`task:*`, например `organization:update` → `MANAGER`, `task:read` →
   `VIEWER`) — но ни один из 22 permission, объявленных сегодня в `ROUTE_REGISTRY`, непустого
