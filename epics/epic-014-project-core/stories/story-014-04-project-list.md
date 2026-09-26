@@ -48,7 +48,47 @@ estimate: M
 > `domain/project/access/visible-projects.policy.ts` (каталога `policies/` в домене нет, а пороги
 > покрытия 100/100 стоят на `src/domain/**/access/*.policy.ts`, `packages/server/vitest.config.ts:59`).
 
-## Сделано (2026-09-26) — серверная половина; клиентская открыта
+## Сделано (2026-09-27) — клиентская половина
+
+Экран `/projects`: маршрут `app/routes/_authenticated/projects/index.tsx` (гард `project:read`,
+`forbidden`), страница `pages/projects/page.tsx`, виджет `widgets/project-list/` (фильтры, карточки,
+таблица, пустое состояние), юнит `units/project` — схема URL
+`model/validation/project-list-search.schema.ts`, хуки `use-project-filters.hook.ts` и
+`use-project-list.hook.ts`, запрос `project-list.query.ts`, `fetchProjectList`, ключ
+`QueryKeys.Projects.list`; пункт «Проекты» в новой секции навигации «Работа команды»; значок статуса
+получил иконку; `shared/ui` — доменно-нейтральный `CardGridSkeleton`; i18n `projects.list.*` и
+`nav.*` на EN и RU.
+
+| # | Критерий | Чем доказан |
+|---|---|---|
+| 1 | состояние в URL, мусор отбрасывается схемой | `project-list-search.schema.test.ts` (whitelist, `z.coerce`, `MAX_PAGE`, нет `client`); `projects-list-screen.test.tsx` — фильтры из адреса уходят в запрос, мусор в адресе даёт дефолты, а не error boundary |
+| 2 | debounce 300 мс, отмена по `signal`, `AbortError` не ошибка | `use-project-filters.hook.test.ts` (одна запись после паузы; `reset` гасит недопечатанное); экранный тест — один запрос на слово, `signal` устаревшего запроса `aborted`, состояния ошибки нет |
+| 3 | смена фильтра сбрасывает страницу, запись через `replace` | хук-тест по каждому фильтру; экранный тест — `page: 1` в адресе после чипа статуса |
+| 4 | `keepPreviousData`, skeleton-карточки на первой загрузке | экранный тест — прежняя карточка на экране, пока висит следующий запрос, скелетона нет; на первой загрузке — `card-grid-skeleton` |
+| 7 | пустое состояние по праву `project:create` | экранные тесты с правом и без; отфильтрованная пустота — отдельный текст и «Сбросить фильтры» |
+| 11 | переключение вида с клавиатуры, статус не только цветом, axe, EN/RU | стрелка на `radiogroup` меняет вид и держит страницу; значок — слово + иконка; axe на карточках и таблице; реальные словари EN/RU — имена, плюрал счётчика, текст пустого состояния |
+
+**Решения, отличающиеся от текста истории (не молча):**
+
+- Массив в адресной строке — сериализатор роутера (`status=["ACTIVE","ON_HOLD"]` в JSON), не
+  `status[]=`; к серверу уходит повтор ключа. Так же сделан справочник сотрудников.
+- `validateSearch: schema` без `zodValidator` и `useDebouncedCallback` вместо `useDebouncedValue` —
+  так требует `rules/lists-and-filters.mdc` §2 и §6 с 2026-08-30.
+- Лоадера `ensureQueryData` нет: данные зависят от search, первую загрузку ведёт `DataState` со
+  скелетоном — как у справочника.
+- Скелетон — `shared/ui/skeletons/card-grid-skeleton.component.tsx`, а не `project-card.skeleton.tsx`:
+  доменный компонент в `shared/ui` запрещён (`rules/design-system.mdc` §9).
+- Локали — `shared/i18n/locales/{en,ru}/projects.json` (namespace `projects`), а не `app/i18n/*/project.json`.
+
+**Открыто:**
+
+- Кнопка «Создать проект» в пустом состоянии и в шапке — ждёт маршрута формы (клиентская половина
+  STORY-014-01); кнопка-заглушка на несуществующий экран не ставится.
+- e2e `packages/e2e/tests/**/project-list.spec.ts` (п. 1, 3 + axe) — вне зоны этой волны.
+- Лиды в фасете без права `user:read` показываются идентификатором — тот же компромисс, что на
+  карточке проекта (`ProjectLib.nameOf`).
+
+## Сделано (2026-09-26) — серверная половина
 
 `GET /api/v1/projects` (`project:read`, `aclCheckedIn: 'ListProjectsQuery'`): спека
 (`listProjects`, `ProjectListPage`, `ProjectListItem`) и типы клиента, `ListProjectsQuery`,
@@ -58,7 +98,7 @@ estimate: M
 
 | # | Критерий | Состояние |
 |---|---|---|
-| 1–4, 7, 11 | URL, debounce, сброс страницы, `keepPreviousData`, пустое состояние, a11y/i18n | **открыты** — клиент |
+| 1–4, 7, 11 | URL, debounce, сброс страницы, `keepPreviousData`, пустое состояние, a11y/i18n | **закрыты клиентом 2026-09-27** — см. раздел «Сделано — клиентская половина» ниже; открыто: e2e `project-list.spec.ts` и кнопка «Создать проект» |
 | 5 | приватное не видно ни в выдаче, ни в `total`, ни в фасетах | **закрыт на сервере**: одна видимая выборка (`WITH subjects … grants … visible`) под страницей, счётом и фасетами; список ≡ деталь по каждому проекту для пяти субъектов на живом Postgres (`test/integration/db/project-list.test.ts`), фасеты без статуса и лида скрытого проекта — с контролем у владельца |
 | 6 | финансы не в списке | **закрыт на сервере**: полей бюджета в схеме нет вовсе, сериализатор — whitelist, HTTP-тест держит тело `toEqual` |
 | 8 | `member=me` — активное участие, резолв на сервере | **закрыт**: параметр — слово `me`, не id; `left_at IS NULL`; покинутый проект не в счёт |
@@ -184,26 +224,30 @@ caller’s grants are found by subject» (40 000 шумовых строк: за
       `infrastructure/persistence/prisma/project-list-query.adapter.ts` (2026-09-26).
 - [x] `presentation/http/serializers/project-list-item.serializer.ts`.
 - [x] `presentation/http/route-registry.factory.ts` — `project:read`, `aclCheckedIn: 'ListProjectsQuery'`.
-- [ ] `packages/client/src/app/routes/_authenticated/projects/index.tsx` —
+- [x] `packages/client/src/app/routes/_authenticated/projects/index.tsx` — (2026-09-27; без
+      `zodValidator` и лоадера — см. «Решения» выше)
       `validateSearch: zodValidator(projectListSearchSchema)`, `beforeLoad: requireSession`,
       `loader: ensureQueryData(projectListQueryOptions)`.
-- [ ] `packages/client/src/units/project/model/validation/project-list-search.schema.ts`.
-- [ ] `packages/client/src/units/project/service/hooks/use-project-filters.hook.ts` (URL, debounce,
+- [x] `packages/client/src/units/project/model/validation/project-list-search.schema.ts`.
+- [x] `packages/client/src/units/project/service/hooks/use-project-filters.hook.ts` (URL, debounce,
       whitelist, сброс страницы) и `use-project-list.hook.ts` (query + `signal` + keepPreviousData).
-- [ ] `packages/client/src/units/project/service/queries/project-list.query.ts`;
+- [x] `packages/client/src/units/project/service/queries/project-list.query.ts`;
       `shared/lib/enums/query-keys.constant.ts` — `QueryKeys.Projects.list(params)`.
-- [ ] `packages/client/src/widgets/project-list/project-list.widget.tsx` +
+- [x] `packages/client/src/widgets/project-list/project-list.widget.tsx` +
       `ui/project-filters-bar.component.tsx`, `ui/project-card.component.tsx`,
-      `ui/project-table.component.tsx`, `ui/project-empty-state.component.tsx`,
-      `shared/ui/skeletons/project-card.skeleton.tsx`.
-- [ ] i18n: `packages/client/src/app/i18n/{en,ru}/project.json`.
+      `ui/project-grid.component.tsx`, `ui/project-table.component.tsx`,
+      `ui/project-list-empty.component.tsx` (пустое состояние; в плане стояло
+      «project-empty-state»); скелетон — `shared/ui/skeletons/card-grid-skeleton.component.tsx`
+      (доменно-нейтральный вместо планового «project-card.skeleton»).
+- [x] i18n: `packages/client/src/shared/i18n/locales/{en,ru}/projects.json` (`projects.list.*`).
 - [x] Серверные тесты: `test/unit/domain/project/visible-projects-policy.test.ts`,
       `test/unit/application/list-projects.query.test.ts`,
       `test/unit/persistence/project-list-query.test.ts`,
       `test/integration/http/project-list-endpoints.test.ts`,
       `test/integration/db/project-list.test.ts` (п. 5, 8, 9, 10).
-- [ ] Клиентские тесты: `use-project-filters.hook.test.ts` (парсинг, whitelist, сброс страницы),
-      компонентные на п. 7, e2e `project-list.spec.ts` (п. 1, 3) + axe.
+- [x] Клиентские тесты: `use-project-filters.hook.test.ts`, `project-list-search.schema.test.ts`,
+      `project-list-rows.util.test.ts`, `test/routes/projects-list-screen.test.tsx` (п. 1–4, 7, 11).
+- [ ] e2e `project-list.spec.ts` (п. 1, 3) + axe.
 
 ## Ссылки
 
