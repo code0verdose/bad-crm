@@ -18,6 +18,7 @@ import { createSecurityPolicyController } from '@/presentation/http/controllers/
 import { createUserLifecycleController } from '@/presentation/http/controllers/user-lifecycle.controller.js';
 import { createUserSecurityController } from '@/presentation/http/controllers/user-security.controller.js';
 import { createProjectController } from '@/presentation/http/controllers/project.controller.js';
+import { createAclController } from '@/presentation/http/controllers/acl.controller.js';
 import { createTeamController } from '@/presentation/http/controllers/team.controller.js';
 import { createUserRoleController } from '@/presentation/http/controllers/user-role.controller.js';
 import { allowedOrigins } from '@/presentation/http/cors-origin.util.js';
@@ -94,6 +95,11 @@ import {
   updateProjectBodySchema,
   updateProjectMemberBodySchema,
 } from '@/presentation/http/validators/project.validator.js';
+import {
+  aclIdParamsSchema,
+  aclListQuerySchema,
+  grantAclBodySchema,
+} from '@/presentation/http/validators/acl.validator.js';
 import {
   deactivateUserBodySchema,
   userLifecycleParamsSchema,
@@ -299,6 +305,19 @@ export const createRouteRegistry = (
     addMemberValidator: addProjectMemberValidator,
     updateMemberValidator: updateProjectMemberValidator,
     memberValidator: projectMemberValidator,
+  });
+
+  const aclListValidator = validate({ query: aclListQuerySchema });
+  const grantAclValidator = validate({ body: grantAclBodySchema });
+  const aclIdValidator = validate({ params: aclIdParamsSchema });
+
+  const acl = createAclController({
+    listAcl: dependencies.access.listAcl,
+    grantAcl: dependencies.access.grantAcl,
+    revokeAcl: dependencies.access.revokeAcl,
+    listValidator: aclListValidator,
+    grantValidator: grantAclValidator,
+    aclIdValidator,
   });
 
   const teams = createTeamController({
@@ -813,6 +832,35 @@ export const createRouteRegistry = (
       handlers: [projectMemberValidator.handler, projects.removeMember],
       permission: 'project:manage_members',
       aclCheckedIn: 'RemoveProjectMemberUseCase',
+    },
+    {
+      method: 'get',
+      path: `${API_PREFIX}/acl`,
+      handlers: [aclListValidator.handler, acl.list],
+      // `VIEWER` on the object the query names. The guard answers «may this caller read grants at
+      // all»; whether the object is one they may see — a `PRIVATE` project they are not on, another
+      // organization's id — is the chain, resolved in the query and answered as the object's 404.
+      permission: 'acl:read',
+      aclCheckedIn: 'ListResourceAclQuery',
+    },
+    {
+      method: 'post',
+      path: `${API_PREFIX}/acl`,
+      handlers: [requireIdempotencyKey(), grantAclValidator.handler, acl.grant],
+      // `MANAGER` on the object, `dangerous`. Three decisions the guard cannot make: the object may
+      // be nobody's (404), the subject may be another organization's (the subject's own 404), and a
+      // `NONE` on one's own entry is `self_lockout` — all of them need rows or the actor.
+      permission: 'acl:grant',
+      aclCheckedIn: 'GrantAclUseCase',
+    },
+    {
+      method: 'delete',
+      path: `${API_PREFIX}/acl/:aclId`,
+      handlers: [aclIdValidator.handler, acl.revoke],
+      // `MANAGER` on the object the grant names, `dangerous`. The id names no object, so the row is
+      // read first — after the capability — and every outsider is one `404 acl_not_found`.
+      permission: 'acl:revoke',
+      aclCheckedIn: 'RevokeAclUseCase',
     },
     {
       method: 'post',

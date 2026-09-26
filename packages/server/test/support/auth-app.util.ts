@@ -32,13 +32,17 @@ import { ProvisionSystemRolesUseCase } from '@/application/iam/use-cases/provisi
 import { DeleteCustomRoleUseCase } from '@/application/iam/use-cases/delete-custom-role.use-case.js';
 import {
   type IamDependencies,
+  type AccessDependencies,
   type ProjectDependencies,
 } from '@/presentation/http/http-server.types.js';
 import {
   bestEffortDeniedAccessAudit,
   RecordDeniedAccessUseCase,
 } from '@/application/access/use-cases/record-denied-access.use-case.js';
+import { GrantAclUseCase } from '@/application/access/use-cases/grant-acl.use-case.js';
+import { ListResourceAclQuery } from '@/application/access/use-cases/list-resource-acl.query.js';
 import { ResolveAclQuery } from '@/application/access/use-cases/resolve-acl.query.js';
+import { RevokeAclUseCase } from '@/application/access/use-cases/revoke-acl.use-case.js';
 import { ArchiveProjectUseCase } from '@/application/project/use-cases/archive-project.use-case.js';
 import { ChangeProjectVisibilityUseCase } from '@/application/project/use-cases/change-project-visibility.use-case.js';
 import { CreateProjectUseCase } from '@/application/project/use-cases/create-project.use-case.js';
@@ -190,6 +194,8 @@ export interface AuthApp {
   readonly iam: IamDependencies;
   /** The project surface, assembled over the same unit of work and the same store as `projects`. */
   readonly project: ProjectDependencies;
+  /** The grant surface (`/acl`), over the same resolver and the same store as `project`. */
+  readonly access: AccessDependencies;
   /** Every privileged action the application filed, in order — the trail as a test can read it. */
   readonly audit: FakeAuditLogger;
   /**
@@ -779,6 +785,17 @@ export const createAuthApp = (options: AuthAppOptions = {}): AuthApp => {
   };
 
   /**
+   * The grant surface over the same store and the same resolver: the rows `/acl` writes are the
+   * store's `grants`, and the level the caller holds on the object is what `projectAcl` resolves —
+   * the one walk production takes for a read and a grant alike.
+   */
+  const access: AccessDependencies = {
+    listAcl: new ListResourceAclQuery(unitOfWork, projectAcl, projects, clock),
+    grantAcl: new GrantAclUseCase(unitOfWork, projectAcl, projects, audit),
+    revokeAcl: new RevokeAclUseCase(unitOfWork, projectAcl, projects, audit),
+  };
+
+  /**
    * The refusal trail, over this harness's own sink rather than the cached platform's.
    *
    * `platform.http.deniedAccessAudit` writes through the shared container, whose audit logger has
@@ -798,6 +815,7 @@ export const createAuthApp = (options: AuthAppOptions = {}): AuthApp => {
     iam,
     organization,
     project,
+    access,
   });
 
   let listening: Server | undefined;
@@ -830,6 +848,7 @@ export const createAuthApp = (options: AuthAppOptions = {}): AuthApp => {
     server,
     iam,
     project,
+    access,
     userLifecycle,
     ownership,
     clock,

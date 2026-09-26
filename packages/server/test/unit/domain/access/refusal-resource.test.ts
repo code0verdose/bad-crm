@@ -28,18 +28,20 @@ describe('the resource a capability refusal is coded as', () => {
   it('uses the permission’s own resource when the client can translate it', () => {
     expect(refusalResourceOf('role:assign')).toBe('role');
     expect(refusalResourceOf('task:update')).toBe('task');
+    // `acl` joined the error vocabulary with `DELETE /acl/{aclId}` (STORY-011-06): a capability
+    // refusal on a grant key is now phrased as one about grants, not about the organization.
+    expect(refusalResourceOf('acl:grant')).toBe('acl');
   });
 
   /**
    * The other branch, and it is not a fallback in disguise: a capability check asks whether the
    * caller may do this *anywhere in this organization*, with no object involved — so a refusal at
-   * that layer is a refusal by the organization. `mail` and `acl` are nouns with permissions and no
-   * error vocabulary, which is what makes them the honest examples here.
+   * that layer is a refusal by the organization. `mail` is a noun with permissions and no
+   * error vocabulary, which is what makes it the honest example here.
    */
   it('answers «organization» for a noun the error catalogue does not carry', () => {
     expect(KNOWN.has('mail')).toBe(false);
     expect(refusalResourceOf('mail:create_account')).toBe('organization');
-    expect(refusalResourceOf('acl:grant')).toBe('organization');
   });
 
   it('CONTROL: the catalogue it walks is not empty', () => {

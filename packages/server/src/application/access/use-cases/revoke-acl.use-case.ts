@@ -1,28 +1,39 @@
-import { type AclRepositoryPort } from '@/application/access/ports/acl-repository.port.js';
+import {
+  type AclEntryRow,
+  type AclRepositoryPort,
+} from '@/application/access/ports/acl-repository.port.js';
 import { type AclScopeResolver } from '@/application/access/use-cases/resolve-acl.query.js';
 import { type AuditLoggerPort } from '@/application/platform/ports/audit-logger.port.js';
 import { type UnitOfWorkPort } from '@/application/platform/ports/unit-of-work.port.js';
-import { type AclResourceRef, type AclSubjectRef } from '@/domain/access/acl-chain.types.js';
-import { errorResourceOfAclResource } from '@/domain/access/acl-error-resource.util.js';
+import { closeContourOf } from '@/domain/access/acl-contour.policy.js';
 import { canRevokeAcl } from '@/domain/access/acl-management.policy.js';
 import { type Actor } from '@/domain/access/actor.types.js';
+import { type AclScope } from '@/domain/access/authorize.util.js';
 import { assertAllowed } from '@/domain/access/decision.util.js';
-import { denyAccess } from '@/domain/shared/errors/access-denial.util.js';
 
 export interface RevokeAclInput {
   readonly actor: Actor;
-  readonly resource: AclResourceRef;
-  readonly subject: AclSubjectRef;
+  /** The grant's own id — `DELETE /api/v1/acl/{aclId}`; the object and the subject are read from the row. */
+  readonly aclId: string;
   readonly ipAddress: string | undefined;
 }
 
 /**
- * Takes one grant away — the mirror of `GrantAclUseCase`, in the same order and for the same
- * reasons: the object and the policy first, then the row.
+ * Takes one grant away, addressed by the grant's id.
  *
- * A grant that is not there is answered as the **object's** 404 rather than a 409 or a 204: to a
- * caller who may not know either, «no such grant on this project» and «no such project» have to
- * read alike, and the object's sentence is the one both refusals share.
+ * **The order is capability → row → object → level**, and the first step is the one that matters:
+ * `canRevokeAcl` decides the key before its thunk runs, so a caller without `acl:revoke` is refused
+ * before the row is read and gets the same answer for a real id and a made-up one. Only then is the
+ * row looked up, and only then is the object it names resolved — the level is decided on what the
+ * row says, never on anything the request could claim.
+ *
+ * **Every refusal is coded `acl_*`**, not on the object. The id names no object, so «there is no
+ * such grant» (unknown, or another organization's — the tenant scope reads nothing of theirs) and
+ * «there is such a grant on a project you cannot see» both arrive as a `missing` scope and leave as
+ * one `404 acl_not_found`. Coding the second on the project would split them into two codes and
+ * turn this route into a test of which grant ids exist. Inside the contour — the object is visible,
+ * the level is short of `MANAGER` — the answer is `403 acl_forbidden`: the same caller can list the
+ * grant with `GET /acl`, so its existence is no secret.
  *
  * The trail entry carries what was removed as `before`, because the row is gone: `resource_acl`
  * has no `deleted_at`, and this entry is the only record that the grant existed — the same choice
@@ -40,17 +51,34 @@ export class RevokeAclUseCase {
     return this.unitOfWork.withTenant(
       { organizationId: input.actor.organizationId, userId: input.actor.userId },
       async () => {
-        const scope = await this.resolver.resolve(input.actor, input.resource);
-        const resource = errorResourceOfAclResource(input.resource.type);
+        const found: { row?: AclEntryRow } = {};
 
-        assertAllowed(canRevokeAcl(input.actor, scope), resource);
+        const scopeOfGrant = async (): Promise<AclScope> => {
+          const row = await this.acl.findById(input.aclId);
 
-        const existing = await this.acl.find(input.resource, input.subject);
+          if (row === null) return { status: 'missing' };
 
-        if (existing === null) throw denyAccess(resource, 'other_organization');
+          found.row = row;
 
-        await this.acl.remove(input.resource, input.subject);
-        await this.acl.bumpPermissionsVersionOf(await this.acl.subjectUserIds(input.subject));
+          return this.resolver.resolve(input.actor, row.resource);
+        };
+
+        const decision = await canRevokeAcl(input.actor, scopeOfGrant);
+
+        // The project's closed contour applies to the object the row names — known only once the
+        // row was read. Without a row the decision is already «not there» or a missing key.
+        assertAllowed(
+          found.row === undefined ? decision : closeContourOf(found.row.resource.type, decision),
+          'acl',
+        );
+
+        // Set by `scopeOfGrant`: an allowed decision is one that asked the thunk, and the thunk only
+        // resolves a scope — the one way to be allowed — after it found the row. No branch here,
+        // because there is no state in which it could be taken.
+        const existing = found.row as AclEntryRow;
+
+        await this.acl.remove(existing.resource, existing.subject);
+        await this.acl.bumpPermissionsVersionOf(await this.acl.subjectUserIds(existing.subject));
         await this.audit.record({
           action: 'acl.revoked',
           actor: {
@@ -60,10 +88,10 @@ export class RevokeAclUseCase {
           },
           target: { type: 'RESOURCE_ACL', id: existing.id },
           before: {
-            resourceType: input.resource.type,
-            resourceId: input.resource.id,
-            subjectType: input.subject.type,
-            subjectId: input.subject.id,
+            resourceType: existing.resource.type,
+            resourceId: existing.resource.id,
+            subjectType: existing.subject.type,
+            subjectId: existing.subject.id,
             accessLevel: existing.level,
             expiresAt: existing.expiresAt?.toISOString() ?? null,
           },

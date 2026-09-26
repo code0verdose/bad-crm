@@ -4,6 +4,12 @@ import {
 } from '@/application/access/ports/project-access-reader.port.js';
 import { type AclReaderPort } from '@/application/access/ports/acl-reader.port.js';
 import {
+  type AclEntryDraft,
+  type AclEntryRow,
+  type AclListEntry,
+  type AclRepositoryPort,
+} from '@/application/access/ports/acl-repository.port.js';
+import {
   type ProjectMemberEntry,
   type ProjectMemberPatch,
   type ProjectMemberRepositoryPort,
@@ -16,7 +22,12 @@ import {
   type ProjectRepositoryPort,
 } from '@/application/project/ports/project-repository.port.js';
 import { type TenantScope } from '@/application/platform/ports/unit-of-work.port.js';
-import { type AclChainNode, type AclEntryOnChain } from '@/domain/access/acl-chain.types.js';
+import {
+  type AclChainNode,
+  type AclEntryOnChain,
+  type AclResourceRef,
+  type AclSubjectRef,
+} from '@/domain/access/acl-chain.types.js';
 import { type ProjectRole, type ProjectVisibility } from '@/domain/access/implicit-level.policy.js';
 import {
   type ProjectMembership,
@@ -31,6 +42,16 @@ import { ConflictError } from '@/domain/shared/errors/app.errors.js';
 export interface StoredProject extends ProjectDetail {
   readonly organizationId: string;
 }
+
+/** One `resource_acl` row as the store keeps it: the grant, its tenant, and when it was given. */
+interface StoredGrant extends AclListEntry {
+  readonly organizationId: string;
+}
+
+/** When every grant the store writes was given — the double keeps no clock of its own. */
+export const GRANTED_AT = new Date('2026-09-06T12:00:00.000Z');
+
+const refKey = (ref: AclResourceRef | AclSubjectRef): string => `${ref.type}:${ref.id}`;
 
 /** One membership row as the store keeps it — live while `leftAt` is `null`. */
 interface StoredMembership {
@@ -67,7 +88,8 @@ export class FakeProjectStore
     ProjectRepositoryPort,
     ProjectMemberRepositoryPort,
     ProjectAccessReaderPort,
-    AclReaderPort
+    AclReaderPort,
+    AclRepositoryPort
 {
   readonly rows: StoredProject[] = [];
   /** Every membership the store ever wrote, live and ended alike. */
@@ -78,6 +100,17 @@ export class FakeProjectStore
   readonly versionBumps: string[] = [];
   /** What `entriesAlong` answers for everybody — a chain-shaped grant, seeded by a suite that wants one. */
   readonly entries: AclEntryOnChain[] = [];
+  /**
+   * The rows of `resource_acl` the `/acl` commands write and list — kept apart from `entries`,
+   * which is what the *resolver* answers, so a suite decides the caller's own level on an object
+   * independently of the grants it manages there.
+   */
+  readonly grants: StoredGrant[] = [];
+  /**
+   * The subjects a grant may name besides the accounts in `subjects`: `ROLE:<id>` and `TEAM:<id>`,
+   * each with the accounts it stands for — the rows `user_roles` and `team_members` would hold.
+   */
+  readonly aclSubjects = new Map<string, readonly string[]>();
   /** Every chain the resolver asked about, in order. */
   readonly chains: (readonly AclChainNode[])[] = [];
   /** Every call that reached a port, in order — the trace `get-project-detail.query.test.ts` also holds. */
@@ -394,6 +427,131 @@ export class FakeProjectStore
     this.versionBumps.push(...userIds);
 
     return Promise.resolve();
+  }
+
+  /** Seeds a grant directly under a tenant, the way a suite sets up a row it is not testing the writing of. */
+  seedGrant(grant: Omit<StoredGrant, 'id' | 'grantedAt'> & { readonly id?: string }): string {
+    const id = grant.id ?? this.nextGrantId();
+
+    this.grants.push({ ...grant, id, grantedAt: GRANTED_AT });
+
+    return id;
+  }
+
+  private nextGrantId(): string {
+    return `018f4a3b-2c1d-7a41-9f00-2b7c1d0e5d${String(this.next++).padStart(2, '0')}`;
+  }
+
+  private tenantGrants(): StoredGrant[] {
+    const tenant = this.tenant;
+
+    if (tenant === undefined) throw new Error('a grant was read outside a tenant scope');
+
+    return this.grants.filter((grant) => grant.organizationId === tenant);
+  }
+
+  private row(grant: StoredGrant): AclEntryRow {
+    return {
+      id: grant.id,
+      resource: grant.resource,
+      subject: grant.subject,
+      level: grant.level,
+      expiresAt: grant.expiresAt,
+      grantedById: grant.grantedById,
+    };
+  }
+
+  private grantOf(resource: AclResourceRef, subject: AclSubjectRef): StoredGrant | undefined {
+    return this.tenantGrants().find(
+      (grant) =>
+        refKey(grant.resource) === refKey(resource) && refKey(grant.subject) === refKey(subject),
+    );
+  }
+
+  find(resource: AclResourceRef, subject: AclSubjectRef): Promise<AclEntryRow | null> {
+    this.trace.push('acl.find');
+
+    const grant = this.grantOf(resource, subject);
+
+    return Promise.resolve(grant === undefined ? null : this.row(grant));
+  }
+
+  findById(id: string): Promise<AclEntryRow | null> {
+    this.trace.push('acl.findById');
+
+    const grant = this.tenantGrants().find((candidate) => candidate.id === id);
+
+    return Promise.resolve(grant === undefined ? null : this.row(grant));
+  }
+
+  listOn(resource: AclResourceRef, now: Date): Promise<readonly AclListEntry[]> {
+    this.trace.push('acl.listOn');
+
+    return Promise.resolve(
+      this.tenantGrants()
+        .filter(
+          (grant) =>
+            refKey(grant.resource) === refKey(resource) &&
+            (grant.expiresAt === null || grant.expiresAt.getTime() > now.getTime()),
+        )
+        .map((grant) => ({ ...this.row(grant), grantedAt: grant.grantedAt })),
+    );
+  }
+
+  upsert(draft: AclEntryDraft): Promise<string> {
+    this.trace.push('acl.upsert');
+
+    const tenant = this.tenant;
+
+    if (tenant === undefined) throw new Error('a grant was written outside a tenant scope');
+
+    const existing = this.grantOf(draft.resource, draft.subject);
+    const id = existing?.id ?? this.nextGrantId();
+    const grant: StoredGrant = {
+      id,
+      organizationId: tenant,
+      resource: draft.resource,
+      subject: draft.subject,
+      level: draft.level,
+      expiresAt: draft.expiresAt,
+      grantedById: draft.grantedById,
+      grantedAt: GRANTED_AT,
+    };
+
+    if (existing === undefined) this.grants.push(grant);
+    else this.grants[this.grants.indexOf(existing)] = grant;
+
+    return Promise.resolve(id);
+  }
+
+  remove(resource: AclResourceRef, subject: AclSubjectRef): Promise<boolean> {
+    this.trace.push('acl.remove');
+
+    const existing = this.grantOf(resource, subject);
+
+    if (existing === undefined) return Promise.resolve(false);
+
+    this.grants.splice(this.grants.indexOf(existing), 1);
+
+    return Promise.resolve(true);
+  }
+
+  subjectExists(subject: AclSubjectRef): Promise<boolean> {
+    this.trace.push('acl.subjectExists');
+
+    return Promise.resolve(
+      subject.type === 'USER'
+        ? this.subjects.has(subject.id)
+        : this.aclSubjects.has(refKey(subject)),
+    );
+  }
+
+  subjectUserIds(subject: AclSubjectRef): Promise<readonly string[]> {
+    if (subject.type === 'USER') {
+      return Promise.resolve(this.subjects.has(subject.id) ? [subject.id] : []);
+    }
+
+    return Promise.resolve(this.aclSubjects.get(refKey(subject)) ?? []);
   }
 
   /** The access reader: the same tenant rule, a deleted row is no row, membership from the roster. */

@@ -2,6 +2,7 @@ import { SharedPermissions } from '@bad-crm/shared';
 
 import { type AclReaderPort } from '@/application/access/ports/acl-reader.port.js';
 import { type ProjectAccessReaderPort } from '@/application/access/ports/project-access-reader.port.js';
+import { type ResolvableAclResourceType } from '@/application/access/resolvable-acl-resource-types.constant.js';
 import { type ClockPort } from '@/application/platform/ports/clock.port.js';
 import { type LoggerPort } from '@/application/platform/ports/logger.port.js';
 import { type AclChainNode, type AclResourceRef } from '@/domain/access/acl-chain.types.js';
@@ -74,10 +75,14 @@ export class ResolveAclQuery implements AclScopeResolver {
   private readonly chains: Partial<Record<SharedPermissions.AclResourceType, ChainBuilder>>;
 
   constructor(private readonly dependencies: ResolveAclDependencies) {
-    this.chains = {
+    // Total over the resolvable list, so the list and the registry cannot drift: the validator of
+    // `/acl` whitelists `resourceType` from the same constant.
+    const registry: Record<ResolvableAclResourceType, ChainBuilder> = {
       ORGANIZATION: (actor, id) => this.organizationChain(actor, id),
       PROJECT: (actor, id) => this.projectChain(actor, id),
     };
+
+    this.chains = registry;
   }
 
   async resolve(actor: Actor, ref: AclResourceRef): Promise<AclScope> {

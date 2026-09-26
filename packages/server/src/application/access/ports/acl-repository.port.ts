@@ -12,6 +12,11 @@ export interface AclEntryRow {
   readonly grantedById: string | null;
 }
 
+/** One grant as the list of an object shows it — the stored row and the moment it was given. */
+export interface AclListEntry extends AclEntryRow {
+  readonly grantedAt: Date;
+}
+
 export interface AclEntryDraft {
   readonly resource: AclResourceRef;
   readonly subject: AclSubjectRef;
@@ -31,6 +36,24 @@ export interface AclEntryDraft {
 export interface AclRepositoryPort {
   /** The current opinion about this subject on this object, or `null`. Read before writing, so the trail can say what changed. */
   find(resource: AclResourceRef, subject: AclSubjectRef): Promise<AclEntryRow | null>;
+
+  /**
+   * One grant by its own id, or `null` — for `DELETE /acl/{aclId}`, where the id is all the caller
+   * names. Another organization's id is `null` like an unknown one: the tenant scope reads nothing
+   * of theirs, and the caller answers both with the same 404.
+   */
+  findById(id: string): Promise<AclEntryRow | null>;
+
+  /**
+   * The grants on one object that are live at `now`, in the order they were given (`grantedAt`,
+   * then `id` as the tie-breaker) — the list `GET /acl` answers.
+   *
+   * The expiry predicate is in the statement rather than in the caller, and the instant is a
+   * parameter rather than the database's `now()`: the list and the resolver then agree on one clock
+   * (`ClockPort`), and a row that expired decides nothing and is shown as nothing. Only this object's
+   * rows — the grants above it on the chain are the ancestors' lists, not this one.
+   */
+  listOn(resource: AclResourceRef, now: Date): Promise<readonly AclListEntry[]>;
 
   /**
    * Writes or replaces — never a second row for the same pair (`uq_resource_acl`). Answers the id

@@ -38,6 +38,25 @@ const recordingClient = (
       expiresAt: Date | null;
       grantedById: string | null;
     } | null;
+    byId?: {
+      id: string;
+      resourceType: string;
+      resourceId: string;
+      subjectType: string;
+      subjectId: string;
+      accessLevel: string;
+      expiresAt: Date | null;
+      grantedById: string | null;
+    } | null;
+    many?: {
+      id: string;
+      subjectType: string;
+      subjectId: string;
+      accessLevel: string;
+      expiresAt: Date | null;
+      grantedById: string | null;
+      grantedAt: Date;
+    }[];
     deleted?: number;
     counts?: { user?: number; role?: number; team?: number };
     userRoles?: { userId: string }[];
@@ -65,7 +84,11 @@ const recordingClient = (
       return Promise.resolve(values.length);
     },
     resourceAcl: {
-      findFirst: record('resourceAcl.findFirst', answers.found ?? null),
+      findFirst: record(
+        'resourceAcl.findFirst',
+        answers.byId === undefined ? (answers.found ?? null) : answers.byId,
+      ),
+      findMany: record('resourceAcl.findMany', answers.many ?? []),
       upsert: record('resourceAcl.upsert', { id: ROW }),
       deleteMany: record('resourceAcl.deleteMany', { count: answers.deleted ?? 0 }),
     },
@@ -123,6 +146,109 @@ describe('PrismaResourceAclRepository', () => {
     await expect(
       inTenant(recordingClient(), (repo) => repo.find(resource, team)),
     ).resolves.toBeNull();
+  });
+
+  it('finds one grant by its id inside the tenant, with the object and the subject it names', async () => {
+    const recorder = recordingClient({
+      byId: {
+        id: ROW,
+        resourceType: 'PROJECT',
+        resourceId: PROJECT,
+        subjectType: 'TEAM',
+        subjectId: TEAM,
+        accessLevel: 'MANAGER',
+        expiresAt: null,
+        grantedById: PETR,
+      },
+    });
+
+    await expect(inTenant(recorder, (repo) => repo.findById(ROW))).resolves.toEqual({
+      id: ROW,
+      resource,
+      subject: team,
+      level: 'MANAGER',
+      expiresAt: null,
+      grantedById: PETR,
+    });
+    // The tenant is pinned in the statement, not only by the policy under it: RLS alone would
+    // answer the same `null` for another organization's id and hide a missing predicate.
+    expect(recorder.calls).toEqual([
+      {
+        name: 'resourceAcl.findFirst',
+        args: {
+          where: { organizationId: ORG, id: ROW },
+          select: {
+            id: true,
+            resourceType: true,
+            resourceId: true,
+            subjectType: true,
+            subjectId: true,
+            accessLevel: true,
+            expiresAt: true,
+            grantedById: true,
+          },
+        },
+      },
+    ]);
+  });
+
+  it('answers null for an id that names no grant here', async () => {
+    await expect(
+      inTenant(recordingClient({ byId: null }), (repo) => repo.findById(ROW)),
+    ).resolves.toBeNull();
+  });
+
+  it('lists the grants live at the given instant on this object only, oldest first with the id as tie-breaker', async () => {
+    const now = new Date('2026-09-20T10:00:00.000Z');
+    const grantedAt = new Date('2026-09-06T12:00:00.000Z');
+    const recorder = recordingClient({
+      many: [
+        {
+          id: ROW,
+          subjectType: 'USER',
+          subjectId: PETR,
+          accessLevel: 'VIEWER',
+          expiresAt: null,
+          grantedById: IVAN,
+          grantedAt,
+        },
+      ],
+    });
+
+    await expect(inTenant(recorder, (repo) => repo.listOn(resource, now))).resolves.toEqual([
+      {
+        id: ROW,
+        resource,
+        subject: { type: 'USER', id: PETR },
+        level: 'VIEWER',
+        expiresAt: null,
+        grantedById: IVAN,
+        grantedAt,
+      },
+    ]);
+    expect(recorder.calls).toEqual([
+      {
+        name: 'resourceAcl.findMany',
+        args: {
+          where: {
+            organizationId: ORG,
+            resourceType: 'PROJECT',
+            resourceId: PROJECT,
+            OR: [{ expiresAt: null }, { expiresAt: { gt: now } }],
+          },
+          orderBy: [{ grantedAt: 'asc' }, { id: 'asc' }],
+          select: {
+            id: true,
+            subjectType: true,
+            subjectId: true,
+            accessLevel: true,
+            expiresAt: true,
+            grantedById: true,
+            grantedAt: true,
+          },
+        },
+      },
+    ]);
   });
 
   it('upserts on the unique quadruple, writes the tenant, and rewrites the grantor on replace', async () => {

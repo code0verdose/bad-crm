@@ -586,6 +586,92 @@ describe('PrismaResourceAclRepository — subjects and versions on real rows', (
     });
   });
 
+  /** `DELETE /acl/{aclId}`: the id is all the caller names, and another tenant's id is no row. */
+  it('finds a grant of this organization by id, and not the other organization’s', async () => {
+    const ours = await inTenant((repo) =>
+      repo.upsert({
+        resource: { type: 'PROJECT', id: PROJECT },
+        subject: { type: 'TEAM', id: seeded.teamId },
+        level: 'EDITOR',
+        expiresAt: null,
+        grantedById: seeded.ownerId,
+      }),
+    );
+
+    await grant({
+      organizationId: OTHER_ORG,
+      subjectType: 'USER',
+      subjectId: randomUUID(),
+      level: 'MANAGER',
+    });
+
+    const theirs = await asMaintenance(pools.owner, async (client) => {
+      const { rows } = await client.query<{ id: string }>(
+        `SELECT id FROM resource_acl WHERE organization_id = $1::uuid`,
+        [OTHER_ORG],
+      );
+
+      return rows[0]?.id ?? '';
+    });
+
+    // CONTROL: our row comes back whole, the object and the subject read from the row.
+    await expect(inTenant((repo) => repo.findById(ours))).resolves.toEqual({
+      id: ours,
+      resource: { type: 'PROJECT', id: PROJECT },
+      subject: { type: 'TEAM', id: seeded.teamId },
+      level: 'EDITOR',
+      expiresAt: null,
+      grantedById: seeded.ownerId,
+    });
+    expect(theirs).not.toBe('');
+    await expect(inTenant((repo) => repo.findById(theirs))).resolves.toBeNull();
+    await expect(inTenant((repo) => repo.findById(randomUUID()))).resolves.toBeNull();
+  });
+
+  /** `GET /acl`: live at the given instant, this object only, this tenant only, in grant order. */
+  it('lists the live grants of one object in the order they were given', async () => {
+    const now = new Date();
+    const hourAgo = new Date(now.getTime() - 3_600_000).toISOString();
+    const inAnHour = new Date(now.getTime() + 3_600_000).toISOString();
+
+    await grant({ subjectType: 'TEAM', subjectId: seeded.teamId, level: 'EDITOR' });
+    await grant({
+      subjectType: 'USER',
+      subjectId: seeded.ivanId,
+      level: 'VIEWER',
+      expiresAt: inAnHour,
+    });
+    // Three rows the list must not show: expired here, live on another object, live on this very
+    // id in the other organization.
+    await grant({
+      subjectType: 'USER',
+      subjectId: seeded.petrId,
+      level: 'MANAGER',
+      expiresAt: hourAgo,
+    });
+    await grant({
+      resourceId: randomUUID(),
+      subjectType: 'ROLE',
+      subjectId: seeded.roleId,
+      level: 'VIEWER',
+    });
+    await grant({
+      organizationId: OTHER_ORG,
+      subjectType: 'USER',
+      subjectId: randomUUID(),
+      level: 'MANAGER',
+    });
+
+    const listed = await inTenant((repo) => repo.listOn({ type: 'PROJECT', id: PROJECT }, now));
+
+    expect(listed.map((entry) => [entry.subject.type, entry.level])).toEqual([
+      ['TEAM', 'EDITOR'],
+      ['USER', 'VIEWER'],
+    ]);
+    expect(listed[1]?.expiresAt?.toISOString()).toBe(inAnHour);
+    expect(listed.every((entry) => entry.grantedAt instanceof Date)).toBe(true);
+  });
+
   it('bumps the version of everyone in the set with one statement', async () => {
     const before = await Promise.all([versionOf(seeded.ivanId), versionOf(seeded.petrId)]);
 

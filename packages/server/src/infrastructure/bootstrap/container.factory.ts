@@ -68,7 +68,10 @@ import { ListInvitationsQuery } from '@/application/iam/use-cases/list-invitatio
 import { ListRolesQuery } from '@/application/iam/use-cases/list-roles.query.js';
 import { ListTeamsQuery } from '@/application/iam/use-cases/list-teams.query.js';
 import { GetTeamDetailQuery } from '@/application/iam/use-cases/get-team-detail.query.js';
+import { GrantAclUseCase } from '@/application/access/use-cases/grant-acl.use-case.js';
+import { ListResourceAclQuery } from '@/application/access/use-cases/list-resource-acl.query.js';
 import { ResolveAclQuery } from '@/application/access/use-cases/resolve-acl.query.js';
+import { RevokeAclUseCase } from '@/application/access/use-cases/revoke-acl.use-case.js';
 import { ArchiveProjectUseCase } from '@/application/project/use-cases/archive-project.use-case.js';
 import { ChangeProjectVisibilityUseCase } from '@/application/project/use-cases/change-project-visibility.use-case.js';
 import { CreateProjectUseCase } from '@/application/project/use-cases/create-project.use-case.js';
@@ -152,6 +155,7 @@ import { PrismaEmployeeDirectoryRepository } from '@/infrastructure/persistence/
 import { PrismaOwnershipRepository } from '@/infrastructure/persistence/prisma/ownership.repository.js';
 import { PrismaTeamRepository } from '@/infrastructure/persistence/prisma/team.repository.js';
 import { PrismaAclReader } from '@/infrastructure/persistence/prisma/acl-reader.adapter.js';
+import { PrismaResourceAclRepository } from '@/infrastructure/persistence/prisma/resource-acl.repository.js';
 import { PrismaProjectAccessReader } from '@/infrastructure/persistence/prisma/project-access-reader.adapter.js';
 import { PrismaProjectMemberRepository } from '@/infrastructure/persistence/prisma/project-member.repository.js';
 import { PrismaProjectRepository } from '@/infrastructure/persistence/prisma/project.repository.js';
@@ -189,6 +193,7 @@ import { API_VERSION } from '@/presentation/http/api-version.constant.js';
 import {
   type IamDependencies,
   type OrganizationDependencies,
+  type AccessDependencies,
   type ProjectDependencies,
   type IdentityDependencies,
 } from '@/presentation/http/http-server.types.js';
@@ -454,6 +459,16 @@ export const buildContainer = (input: ContainerInput): AppContainer => {
     shutdownSteps.push({ name: 'redis', close: (): Promise<void> => redis.close() });
   }
 
+  // `ResolveAclQuery` is assembled here and only here — it is the seam every resource read and every
+  // grant goes through, and a second instance would be a second registry of chains to keep in step
+  // (`resolve-acl.query.ts`, «A registry of chains»). Handed to the project slice and to `/acl`.
+  const resolveAcl = new ResolveAclQuery({
+    acl: new PrismaAclReader(),
+    projects: new PrismaProjectAccessReader(),
+    clock,
+    logger,
+  });
+
   return {
     env: input.env,
     logger,
@@ -508,7 +523,10 @@ export const buildContainer = (input: ContainerInput): AppContainer => {
       // The first context with a resource layer under its routes: the resolver walks the ACL chain
       // of one project before the row is read. Built here so that the three readers it needs —
       // projects, memberships, grants — are the Prisma adapters and nothing a test would substitute.
-      project: buildProject({ database: input.database, audit, clock, logger }),
+      project: buildProject({ database: input.database, audit, resolveAcl }),
+      // The grants themselves — `/acl`. Over the same resolver instance as the project slice: one
+      // registry of chains, so a grant is decided on exactly the walk a read of the object takes.
+      access: buildAccess({ database: input.database, audit, clock, resolveAcl }),
       iam: buildIam({
         database: input.database,
         audit,
@@ -606,27 +624,19 @@ const buildOrganization = (input: {
  * The project surface — the reads and the writes of STORY-014-01/02, over the resolver the domain's
  * policy decides with.
  *
- * `ResolveAclQuery` is assembled here and only here — it is the seam every resource read of every
- * later domain goes through, and a second instance built elsewhere would be a second registry of
- * chains to keep in step (`resolve-acl.query.ts`, «A registry of chains»). The two reads take no
- * audit port: a read files nothing, and a refusal is the error handler's to record
+ * The resolver arrives built — one instance for the whole container (see where it is assembled
+ * above). The two reads take no audit port: a read files nothing, and a refusal is the error handler's to record
  * (`deniedAccessAudit` above). Every command takes the same writer the rest of the container
  * writes through.
  */
 const buildProject = (input: {
   readonly database: DatabaseConnection | undefined;
   readonly audit: AuditLoggerPort;
-  readonly clock: SystemClockAdapter;
-  readonly logger: LoggerPort;
+  readonly resolveAcl: ResolveAclQuery;
 }): ProjectDependencies => {
   const unitOfWork =
     input.database === undefined ? detachedUnitOfWork() : new PrismaUnitOfWork(input.database.base);
-  const resolveAcl = new ResolveAclQuery({
-    acl: new PrismaAclReader(),
-    projects: new PrismaProjectAccessReader(),
-    clock: input.clock,
-    logger: input.logger,
-  });
+  const resolveAcl = input.resolveAcl;
   const projects = new PrismaProjectRepository();
   const members = new PrismaProjectMemberRepository();
 
@@ -664,6 +674,30 @@ const buildProject = (input: {
       resolveAcl,
       input.audit,
     ),
+  };
+};
+
+/**
+ * The grant surface — `GET`/`POST /acl`, `DELETE /acl/{aclId}` (STORY-011-06).
+ *
+ * Over the container's one resolver, so a grant is decided on the same walk a read of the object
+ * takes. The list reads the clock for «live at this instant», the same clock the resolver folds
+ * expiry with; both commands write through the container's audit writer, in their own transaction.
+ */
+const buildAccess = (input: {
+  readonly database: DatabaseConnection | undefined;
+  readonly audit: AuditLoggerPort;
+  readonly clock: SystemClockAdapter;
+  readonly resolveAcl: ResolveAclQuery;
+}): AccessDependencies => {
+  const unitOfWork =
+    input.database === undefined ? detachedUnitOfWork() : new PrismaUnitOfWork(input.database.base);
+  const grants = new PrismaResourceAclRepository();
+
+  return {
+    listAcl: new ListResourceAclQuery(unitOfWork, input.resolveAcl, grants, input.clock),
+    grantAcl: new GrantAclUseCase(unitOfWork, input.resolveAcl, grants, input.audit),
+    revokeAcl: new RevokeAclUseCase(unitOfWork, input.resolveAcl, grants, input.audit),
   };
 };
 

@@ -58,6 +58,7 @@ const ROLE_ID = '018f4a3b-2c1d-7a41-9f00-2b7c1d0e5a52';
 const INVITATION_ID = '018f4a3b-2c1d-7a41-9f00-2b7c1d0e5a53';
 const TEAM_ID = '018f4a3b-2c1d-7a41-9f00-2b7c1d0e5a54';
 const PROJECT_ID = '018f4a3b-2c1d-7a41-9f00-2b7c1d0e5a55';
+const ACL_ID = '018f4a3b-2c1d-7a41-9f00-2b7c1d0e5a56';
 const PASSWORD = 'correct-horse-battery';
 const IDEMPOTENCY_KEY = 'd'.repeat(32);
 const REASON = 'matrix fixture reason, long enough';
@@ -201,6 +202,24 @@ const CALLS: Readonly<Record<string, Call>> = {
     request(app)
       .delete(`/api/v1/projects/${PROJECT_ID}/members/${IVAN}`)
       .set('Authorization', `Bearer ${token}`),
+  'GET /api/v1/acl': (target, token) =>
+    request(target)
+      .get(`/api/v1/acl?resourceType=PROJECT&resourceId=${PROJECT_ID}`)
+      .set('Authorization', `Bearer ${token}`),
+  'POST /api/v1/acl': (app, token) =>
+    request(app)
+      .post('/api/v1/acl')
+      .set('Authorization', `Bearer ${token}`)
+      .set('Idempotency-Key', IDEMPOTENCY_KEY)
+      .send({
+        resourceType: 'PROJECT',
+        resourceId: PROJECT_ID,
+        subjectType: 'USER',
+        subjectId: IVAN,
+        accessLevel: 'VIEWER',
+      }),
+  'DELETE /api/v1/acl/:aclId': (app, token) =>
+    request(app).delete(`/api/v1/acl/${ACL_ID}`).set('Authorization', `Bearer ${token}`),
   'GET /api/v1/employees': (target, token) =>
     request(target).get('/api/v1/employees').set('Authorization', `Bearer ${token}`),
   'GET /api/v1/employees/org-chart': (target, token) =>
@@ -275,6 +294,17 @@ const projectFixture = (visibility: 'PUBLIC_ORG' | 'PRIVATE'): ResourceFixture =
     // and «the last lead» is not what the cell measures; the caller is still not on it.
     projects.addMember(PROJECT_ID, IVAN, 'MEMBER');
     projects.subjects.set(IVAN, { userId: IVAN, status: 'ACTIVE' });
+    // One grant on the project, so the revocation cell measures the decision about it rather than
+    // «no such grant»; the subject is Ivan, not the caller, for the same reason the roster is his.
+    projects.seedGrant({
+      id: ACL_ID,
+      organizationId: ORGANIZATION_ID,
+      resource: { type: 'PROJECT', id: PROJECT_ID },
+      subject: { type: 'USER', id: IVAN },
+      level: 'VIEWER',
+      expiresAt: null,
+      grantedById: null,
+    });
 
     return { projects };
   },
@@ -299,6 +329,11 @@ const RESOURCE_ROUTES = [
   'POST /api/v1/projects/:projectId/members',
   'PATCH /api/v1/projects/:projectId/members/:userId',
   'DELETE /api/v1/projects/:projectId/members/:userId',
+  // The grant routes read the project's chain too: `VIEWER` for the list, `MANAGER` for a grant or
+  // a revocation — and the project's closed contour, so `NONE` on `PRIVATE` is not-there here too.
+  'GET /api/v1/acl',
+  'POST /api/v1/acl',
+  'DELETE /api/v1/acl/:aclId',
 ] as const;
 
 /**

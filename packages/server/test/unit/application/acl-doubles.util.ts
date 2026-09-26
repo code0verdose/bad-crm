@@ -5,6 +5,7 @@ import { type SharedPermissions } from '@bad-crm/shared';
 import {
   type AclEntryDraft,
   type AclEntryRow,
+  type AclListEntry,
   type AclRepositoryPort,
 } from '@/application/access/ports/acl-repository.port.js';
 import { type AclScopeResolver } from '@/application/access/use-cases/resolve-acl.query.js';
@@ -29,6 +30,9 @@ export const actorWith = (granted: readonly SharedPermissions.PermissionKey[] = 
   denied: new Set<SharedPermissions.PermissionKey>(),
   roleKeys: [],
 });
+
+/** When every seeded grant was given — the fake keeps no clock of its own. */
+export const GRANTED_AT = new Date('2026-09-06T12:00:00.000Z');
 
 const keyOf = (ref: AclResourceRef | AclSubjectRef): string => `${ref.type}:${ref.id}`;
 
@@ -56,6 +60,10 @@ export class FakeAclRepository implements AclRepositoryPort {
   readonly bumped: (readonly string[])[] = [];
   readonly existenceChecks: AclSubjectRef[] = [];
   readonly finds: { resource: AclResourceRef; subject: AclSubjectRef }[] = [];
+  /** Every grant id a command looked up — empty when the capability refused first. */
+  readonly idLookups: string[] = [];
+  /** Every list the query asked for, with the instant it asked at. */
+  readonly listed: { resource: AclResourceRef; now: Date }[] = [];
   readonly missingSubjects = new Set<string>();
   readonly subjects = new Map<string, readonly string[]>();
 
@@ -74,6 +82,27 @@ export class FakeAclRepository implements AclRepositoryPort {
       this.rows.find(
         (row) => keyOf(row.resource) === keyOf(resource) && keyOf(row.subject) === keyOf(subject),
       ) ?? null,
+    );
+  }
+
+  findById(id: string): Promise<AclEntryRow | null> {
+    this.idLookups.push(id);
+
+    return Promise.resolve(this.rows.find((row) => row.id === id) ?? null);
+  }
+
+  /** In seeding order, live at `now` — the adapter's `ORDER BY` and `expires_at` predicate, in memory. */
+  listOn(resource: AclResourceRef, now: Date): Promise<readonly AclListEntry[]> {
+    this.listed.push({ resource, now });
+
+    return Promise.resolve(
+      this.rows
+        .filter(
+          (row) =>
+            keyOf(row.resource) === keyOf(resource) &&
+            (row.expiresAt === null || row.expiresAt.getTime() > now.getTime()),
+        )
+        .map((row) => ({ ...row, grantedAt: GRANTED_AT })),
     );
   }
 

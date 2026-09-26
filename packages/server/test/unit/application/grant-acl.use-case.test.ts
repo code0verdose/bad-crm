@@ -155,6 +155,25 @@ describe('GrantAclUseCase — refusals, in the order they are made', () => {
     });
   });
 
+  it('answers NONE on a project — a PRIVATE one the caller is not on — as 404, the project’s closed contour', async () => {
+    const { acl, useCase } = setup(manager('NONE'));
+
+    await expect(useCase.execute(grant())).rejects.toMatchObject({
+      code: 'project_not_found',
+      reason: 'resource_not_found',
+    });
+    expect(acl.existenceChecks).toEqual([]);
+    expect(acl.rows).toEqual([]);
+  });
+
+  it('leaves NONE on the organization a 403 — no domain has closed that contour', async () => {
+    const { useCase } = setup(manager('NONE'));
+
+    await expect(
+      useCase.execute(grant({ resource: { type: 'ORGANIZATION', id: ORG } })),
+    ).rejects.toMatchObject({ code: 'organization_forbidden', reason: 'acl_explicit_none' });
+  });
+
   it('answers a reader that failed with 503, never with a grant', async () => {
     const { acl, useCase } = setup({ status: 'unavailable' });
 

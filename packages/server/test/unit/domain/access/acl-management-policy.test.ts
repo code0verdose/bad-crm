@@ -182,48 +182,74 @@ describe('canGrantAcl — no locking oneself out', () => {
   });
 });
 
+/**
+ * The two decisions addressed by something other than the object — a grant id, a query — take the
+ * scope as a **thunk**, the shape `canReadProject` has: the capability is decided before the object
+ * is read at all, so a caller without the key costs no statement and learns nothing from timing or
+ * from which of «no such grant» and «not your project» comes back.
+ */
+const asking = (scope: AclScope) => {
+  const asked: string[] = [];
+
+  return {
+    asked,
+    resolve: (): Promise<AclScope> => {
+      asked.push('scope');
+
+      return Promise.resolve(scope);
+    },
+  };
+};
+
 describe('canRevokeAcl', () => {
-  it('is the conjunction of acl:revoke and MANAGER on the object', () => {
-    expect(canRevokeAcl(actorWith(['acl:revoke']), resolved('MANAGER'))).toEqual({
-      allowed: true,
-      reason: null,
-    });
-    expect(canRevokeAcl(actorWith(['acl:revoke']), resolved('EDITOR'))).toMatchObject({
-      allowed: false,
-      reason: 'insufficient_acl_level',
-    });
-    expect(canRevokeAcl(actorWith(), resolved('MANAGER'))).toMatchObject({
+  it('is the conjunction of acl:revoke and MANAGER on the object', async () => {
+    await expect(
+      canRevokeAcl(actorWith(['acl:revoke']), asking(resolved('MANAGER')).resolve),
+    ).resolves.toEqual({ allowed: true, reason: null });
+    await expect(
+      canRevokeAcl(actorWith(['acl:revoke']), asking(resolved('EDITOR')).resolve),
+    ).resolves.toMatchObject({ allowed: false, reason: 'insufficient_acl_level' });
+  });
+
+  it('refuses without acl:revoke and never asks for the object', async () => {
+    const scope = asking(resolved('MANAGER'));
+
+    await expect(canRevokeAcl(actorWith(), scope.resolve)).resolves.toMatchObject({
       allowed: false,
       reason: 'permission_not_granted',
     });
+    expect(scope.asked).toEqual([]);
   });
 
-  it('answers a missing object with resource_not_found', () => {
-    expect(canRevokeAcl(actorWith(['acl:revoke']), { status: 'missing' })).toMatchObject({
-      allowed: false,
-      reason: 'resource_not_found',
-    });
+  it('answers a missing object with resource_not_found', async () => {
+    await expect(
+      canRevokeAcl(actorWith(['acl:revoke']), asking({ status: 'missing' }).resolve),
+    ).resolves.toMatchObject({ allowed: false, reason: 'resource_not_found' });
   });
 });
 
 describe('canReadAcl', () => {
-  it('needs acl:read and VIEWER on the object', () => {
-    expect(canReadAcl(actorWith(['acl:read']), resolved('VIEWER'))).toEqual({
-      allowed: true,
-      reason: null,
-    });
-    expect(canReadAcl(actorWith(['acl:read']), resolved('NONE'))).toMatchObject({
-      allowed: false,
-      reason: 'acl_explicit_none',
-    });
-    expect(canReadAcl(actorWith(), resolved('MANAGER'))).toMatchObject({
+  it('needs acl:read and VIEWER on the object', async () => {
+    await expect(
+      canReadAcl(actorWith(['acl:read']), asking(resolved('VIEWER')).resolve),
+    ).resolves.toEqual({ allowed: true, reason: null });
+    await expect(
+      canReadAcl(actorWith(['acl:read']), asking(resolved('NONE')).resolve),
+    ).resolves.toMatchObject({ allowed: false, reason: 'acl_explicit_none' });
+  });
+
+  it('refuses without acl:read and never asks for the object', async () => {
+    const scope = asking(resolved('MANAGER'));
+
+    await expect(canReadAcl(actorWith(), scope.resolve)).resolves.toMatchObject({
       allowed: false,
       reason: 'permission_not_granted',
     });
+    expect(scope.asked).toEqual([]);
   });
 
-  it('refuses an anonymous caller as not_authenticated', () => {
-    expect(canReadAcl(null, resolved('VIEWER'))).toMatchObject({
+  it('refuses an anonymous caller as not_authenticated', async () => {
+    await expect(canReadAcl(null, asking(resolved('VIEWER')).resolve)).resolves.toMatchObject({
       allowed: false,
       reason: 'not_authenticated',
     });

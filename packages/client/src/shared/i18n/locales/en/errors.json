@@ -6,6 +6,9 @@
   },
   "code": {
     "account_suspended": "This account is suspended. Ask an administrator of your organization.",
+    "acl_already_exists": "That access grant already exists.",
+    "acl_forbidden": "You cannot see or change who has access to this object.",
+    "acl_not_found": "Access grant not found — it may have been revoked already.",
     "board_already_exists": "That board already exists.",
     "board_forbidden": "You do not have access to this board.",
     "board_not_found": "Board not found.",
