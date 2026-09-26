@@ -94,10 +94,6 @@ export function RouteAnnouncer() {
     if (phase !== 'failed') return undefined;
 
     const observer = new MutationObserver(() => {
-      const heading = document.getElementById(SharedUi.PAGE_TITLE_ID);
-
-      if (heading === null) return;
-
       const replaced =
         focused.current !== null &&
         !focused.current.isConnected &&
@@ -105,8 +101,10 @@ export function RouteAnnouncer() {
 
       if (!replaced) return;
 
-      focused.current = heading;
-      heading.focus();
+      // The observer runs once the commit's mutations are all in, so the successor is there. Were it
+      // not, `null` simply ends the watch until the next move of ours.
+      focused.current = document.getElementById(SharedUi.PAGE_TITLE_ID);
+      focused.current?.focus();
     });
 
     observer.observe(document.body, { childList: true, subtree: true });
