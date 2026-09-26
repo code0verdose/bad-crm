@@ -29,6 +29,25 @@ describe('PaginationBar', () => {
     expect(screen.getByRole('status')).toHaveTextContent('26–50 / 137');
   });
 
+  /**
+   * A screen that already announces its own count sentence turns this one off, or one filter change
+   * is read out twice. The range is still drawn — it is only not a live region any more.
+   */
+  it('draws the range without announcing it when the screen announces the count itself', () => {
+    wrap(
+      <SharedUi.PaginationBar
+        announce={false}
+        page={2}
+        perPage={25}
+        total={137}
+        onPageChange={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText('26–50 / 137')).toBeInTheDocument();
+    expect(screen.queryByRole('status')).toBeNull();
+  });
+
   it('does not promise more rows than exist on the last page', () => {
     wrap(<SharedUi.PaginationBar page={6} perPage={25} total={137} onPageChange={vi.fn()} />);
 

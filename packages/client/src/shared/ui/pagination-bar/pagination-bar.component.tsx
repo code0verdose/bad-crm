@@ -10,6 +10,12 @@ export interface PaginationBarProps {
   /** How many rows the filter matched in total, not how many were fetched. */
   readonly total: number;
   readonly onPageChange: (page: number) => void;
+  /**
+   * Whether the range is a live region. Off on a screen that already announces its own count —
+   * two polite regions changing on one filter read the same number out twice (`rules/a11y.mdc`
+   * §15). The range is drawn either way.
+   */
+  readonly announce?: boolean;
 }
 
 /**
@@ -41,19 +47,26 @@ const describeRange = (page: number, perPage: number, total: number): string => 
  * is worth it. Putting it here rather than in each screen is what stops half the lists from having it.
  *
  * It is `role="status"` so the number is announced when it changes: after a filter, the visible
- * result is a list that redrew, and a screen reader is otherwise told nothing at all.
+ * result is a list that redrew, and a screen reader is otherwise told nothing at all — unless the
+ * screen says it itself, in which case it passes `announce={false}` and this stays quiet.
  *
  * **Presentational.** No page state, no URL, no fetching — the URL is the source of truth for a list
  * (`rules/lists-and-filters.mdc`) and that belongs to the unit that owns the data. This draws the
  * numbers it is given and reports what was clicked.
  */
-export function PaginationBar({ page, perPage, total, onPageChange }: PaginationBarProps) {
+export function PaginationBar({
+  page,
+  perPage,
+  total,
+  onPageChange,
+  announce = true,
+}: PaginationBarProps) {
   const { t } = useTranslation();
   const pages = Math.ceil(total / perPage);
 
   return (
     <Group className={classes['root']} justify="space-between" wrap="wrap">
-      <Text c="var(--bc-text-muted)" role="status" size="sm">
+      <Text c="var(--bc-text-muted)" role={announce ? 'status' : undefined} size="sm">
         {describeRange(page, perPage, total)}
       </Text>
       {/* Hidden, not disabled: a disabled pager is something to look at and decide about, and with
