@@ -3103,8 +3103,9 @@ paths:
         filed as `acl.granted` at `WARNING`.
 
         `acl:grant` and `MANAGER` on the object (`dangerous`). A caller who sees the object with a
-        lower level is `403 project_forbidden`; one who cannot see it at all is `404
-        project_not_found`, decided **before** the subject is looked at, so the form cannot be used
+        lower level is `403` on the object's own resource (`project_forbidden`,
+        `organization_forbidden`); one who cannot see it at all is `404 project_not_found`,
+        decided **before** the subject is looked at, so the form cannot be used
         to learn which team ids exist. A subject that is not in this organization (or has left, or
         was disbanded) is the subject's own `404` — `user_not_found`, `role_not_found`,
         `team_not_found`.
