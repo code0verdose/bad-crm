@@ -102,11 +102,26 @@ estimate: M
 - [x] Тесты: `test/unit/domain/access/team-access-policy.test.ts` (37),
       `test/integration/http/team-endpoints.test.ts` (43),
       `test/integration/db/team-repository.test.ts` (24, живой Postgres).
-      `team-acl-propagation` не написан — открыт, не заблокирован: маршрут `POST /acl` отгружен
-      2026-09-26, сквозной проверки «грант команде → смена состава → смена уровня» нет; каскад критерия 5 —
-      `test/unit/iam/delete-team.use-case.test.ts` и `test/integration/db/acl-subject-cascade.test.ts`
-      (2026-09-26). Isolation-тесты `teams` и `team_members` уже существуют — обе таблицы в
-      `TENANT_TABLES`, генерируемый `rls-isolation.test.ts` покрывает их с положительным контролем.
+      `team-acl-propagation` написан 2026-09-27 —
+      `test/integration/db/team-acl-propagation.test.ts` (5, живой Postgres): грант команде на
+      `PRIVATE`-проект → вступление даёт `EDITOR` без личной записи ACL (acceptance 3), выход из
+      команды закрывает проект на следующем чтении (acceptance 4), сужение гранта `EDITOR → VIEWER`
+      оставляет чтение и блокирует запись `403 insufficient_acl_level` (acceptance 6), плюс
+      контрольный сценарий «посторонний не видит проект ни разу» и роспуск команды как сквозная
+      проверка каскада критерия 5 поверх реального чтения проекта (каскад по составу — отдельно
+      `test/unit/iam/delete-team.use-case.test.ts` и `test/integration/db/acl-subject-cascade.test.ts`,
+      2026-09-26). Собран поверх реальных use-case и Prisma-адаптеров (`GrantAclUseCase`,
+      `AddTeamMemberUseCase`/`RemoveTeamMemberUseCase`, `DeleteTeamUseCase`, `GetProjectDetailQuery`,
+      `UpdateProjectUseCase`, `ResolveAclQuery` + `PrismaAclReader`/`PrismaProjectAccessReader`), а
+      не поверх HTTP: `acl-endpoints.test.ts` и `team-endpoints.test.ts` уже доказывают вайр (валидаторы,
+      guard, идемпотентность, problem-тела) на `FakeProjectStore`, а то, чего двойник не может
+      показать — что `subject_id = TEAM` резолвится джойном на `team_members` в момент чтения, а не
+      требует инвалидации кеша, — не зависит от транспорта. Доказательство красноты: временно
+      заменена ветка `TEAM` в `acl-reader.adapter.ts` на `false` — 4 из 5 тестов упали с
+      `AccessRefusedError: Access refused: resource_not_found` (`code: 'project_not_found'`), правка
+      возвращена (`git diff` пуст). Isolation-тесты `teams` и `team_members` уже существуют — обе
+      таблицы в `TENANT_TABLES`, генерируемый `rls-isolation.test.ts` покрывает их с положительным
+      контролем.
 
 ## Ссылки
 
@@ -287,8 +302,14 @@ denyAccess(...)` стоит **до** `audit.record`: промах (`404 user_not
 > сопоставляет `TEAM`-записи через `team_members` в том же запросе, и это доказано на живом
 > Postgres (`test/integration/db/resource-acl-reader.test.ts`: член команды получает запись,
 > посторонний — нет). Критерии 3, 4 и 6 упирались только в маршрут `POST /acl`; он отгружен
-> 2026-09-26, сквозной проверки «грант команде → смена состава → смена уровня» ещё нет.
-> Критерий 5 **закрыт 2026-09-26**: `delete-team.use-case.ts` после `disband()` зовёт
+> 2026-09-26.
+>
+> **Критерии 3, 4 и 6 закрыты 2026-09-27** — `test/integration/db/team-acl-propagation.test.ts`,
+> сквозной сценарий «грант команде на проект → вступление даёт доступ → выход закрывает его → сужение
+> уровня оставляет чтение и блокирует запись», на живом Postgres, поверх тех же use-case, которые
+> `container.factory.ts` собирает для процесса (не HTTP-двойников — см. запись у чек-листа тестов
+> выше и докстринг файла для того, чему двойник не может быть доказательством). Критерий 5 **закрыт
+> 2026-09-26**: `delete-team.use-case.ts` после `disband()` зовёт
 > `AclRepositoryPort.removeAllOfSubject` и пишет `acl.revoked` на каждую снятую запись
 > (`after.cause = 'team.deleted'`) после `team.deleted`; версии бывшим членам бампает тот же
 > `bumpPermissionsVersionOf`, что и раньше. **Severity `team.member_*`: триггер пересмотра наступил
@@ -319,9 +340,30 @@ PostgreSQL сам сериализует и оставляет ровно одн
 (`test/integration/db/team-membership-race.test.ts`) — доказывать это отдельным тестом с двумя
 параллельными транзакциями на живом Postgres, а не юнитом с рекордером. Это отдельная по объёму
 правка того же метода, который в этой же волне уже прошёл фиксы L-3 и WHERE-предиката, и делать
-её без гонки-теста означает менять проверенный код вслепую. Владеющий этап — следующее касание
-`addMember`/`team.repository.ts` (нет отдельного эпика; отслеживается здесь до появления такого
-касания или до STORY-011-06, где `addMember` в любом случае меняется под ресурсный ACL).
+её без гонки-теста означает менять проверенный код вслепую.
+
+**Пересмотрено 2026-09-27 — триггер «до STORY-011-06, где `addMember` в любом случае меняется» не
+сработал так, как был сформулирован.** По коду: `git log` на `team.repository.ts` называет два
+коммита — `feat(iam): add teams and team membership` и `feat(iam): add resource acl, implicit
+levels and the resolver` (STORY-011-06) — и второй трогает только
+`bumpPermissionsVersionOf` (перенос на общий `permissions-version.util.ts`), не тело `addMember`:
+`SELECT … FOR UPDATE` → классификация `previousRole` → `INSERT … ON CONFLICT` осталось слово в
+слово тем же, что описано выше. Гонка воспроизводима и сегодня — тот же код, то же отсутствие
+блокировки на ещё не существующей строке. Дешёвого детерминированного теста для неё не завёл: в
+отличие от M-1 (`team-membership-race.test.ts`), где обе исходные транзакции блокируются на
+существующей строке и утверждение — инвариант, верный при любом порядке завершения, здесь при
+двух параллельных вызовах на ещё не существующую пару **обе** ветки почти всегда видят пустой
+`existing` (блокировать нечего) и обе почти всегда докладывают `'created'` — но «почти всегда»
+не «всегда»: планировщик ОС и время внутри `$queryRaw` могут в редком прогоне дать одной
+транзакции зафиксироваться до `SELECT` второй, и тест, утверждающий «оба доклада — created»,
+стал бы флейки-тестом на разных машинах и в CI (`rules/testing.mdc`, «тестом не считается» —
+недетерминированное поведение под видом инварианта). Правильное доказательство — то же самое, что
+и правильный фикс: перенести классификацию в `RETURNING`, тогда утверждение становится инвариантом
+(«ровно один `created` на пару, независимо от порядка») и тест по образцу M-1 доказывает его без
+гадания на тайминге. Правка и тест остаются одной парой, не разъединяются. Владеющий этап —
+следующее касание `addMember`/`team.repository.ts` (нет отдельного эпика; STORY-011-06 закрыта и
+триггер, которым эта строка раньше держалась, не наступил — отслеживается здесь до фактического
+следующего касания `addMember`).
 
 **Информационно.** `write-team.use-case.ts`: `UpdateTeamUseCase` читал `teams.detail()` (весь ростер)
 ради `name`/`slug` в `before` на каждое переименование. Добавлен `TeamRepositoryPort.summary()` —
