@@ -35,6 +35,7 @@ const ORGANIZATION = '018f4a3b-2c1d-7a41-9f00-2b7c1d0e5b99';
 export interface Flags {
   readonly canEdit: boolean;
   readonly canManageMembers: boolean;
+  readonly canChangeVisibility: boolean;
   readonly canArchive: boolean;
   readonly canDelete: boolean;
 }
@@ -42,12 +43,14 @@ export interface Flags {
 export const NONE: Flags = {
   canEdit: false,
   canManageMembers: false,
+  canChangeVisibility: false,
   canArchive: false,
   canDelete: false,
 };
 export const ALL: Flags = {
   canEdit: true,
   canManageMembers: true,
+  canChangeVisibility: true,
   canArchive: true,
   canDelete: true,
 };

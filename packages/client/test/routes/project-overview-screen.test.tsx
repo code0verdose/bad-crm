@@ -64,7 +64,13 @@ const card = (overrides: Record<string, unknown> = {}) => ({
   createdAt: '2026-08-30T00:00:00.000Z',
   // A reader of the card: the block the contract makes required since 2026-09-27, with no
   // command open — the overview is what a viewer sees.
-  permissions: { canEdit: false, canManageMembers: false, canArchive: false, canDelete: false },
+  permissions: {
+    canEdit: false,
+    canManageMembers: false,
+    canChangeVisibility: false,
+    canArchive: false,
+    canDelete: false,
+  },
   ...overrides,
 });
 

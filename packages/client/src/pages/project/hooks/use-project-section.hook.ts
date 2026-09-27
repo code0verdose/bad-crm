@@ -1,6 +1,5 @@
 import { useMatchRoute, useNavigate } from '@tanstack/react-router';
 
-import { IamService } from '@units/iam';
 import { ProjectService, type ProjectModel } from '@units/project';
 
 export interface ProjectSectionNavigation {
@@ -19,14 +18,14 @@ export interface ProjectSectionNavigation {
  * The selected tab is **read from the route**, never stored: the address is the state, so a pasted
  * link and the back button select the right tab without anything copying it anywhere.
  *
- * Settings is hidden when the card's `permissions` block opens none of its commands and the reader
- * lacks the visibility capability (STORY-014-05, acceptance 5 — «Настройки» is absent for a viewer).
+ * Settings is hidden when the card's `permissions` block opens none of its commands — the block and
+ * nothing else, never the reader's capability set (STORY-014-05, acceptance 5 — «Настройки» is
+ * absent for a viewer).
  * Only the shipped sections navigate; the others are disabled tabs and never call `select`.
  */
 export const useProjectSection = (projectId: string): ProjectSectionNavigation => {
   const matchRoute = useMatchRoute();
   const navigate = useNavigate();
-  const { holds } = IamService.IamHooks.useCan();
   const controls = ProjectService.ProjectHooks.useProjectControls(projectId);
 
   const active: ProjectModel.ProjectSection =
@@ -36,8 +35,7 @@ export const useProjectSection = (projectId: string): ProjectSectionNavigation =
         ? 'settings'
         : 'overview';
 
-  const hidden: readonly ProjectModel.ProjectSection[] =
-    controls.hasSettings || holds('project:manage_visibility') ? [] : ['settings'];
+  const hidden: readonly ProjectModel.ProjectSection[] = controls.hasSettings ? [] : ['settings'];
 
   const select = (section: ProjectModel.ProjectSection): void => {
     if (section === 'members') {

@@ -341,13 +341,54 @@ describe('changing the visibility', () => {
     });
   });
 
-  it('is offered by the capability, for want of a flag in the contract', async () => {
-    await startAt({ flags: ALL, granted: ['project:read', 'user:read'] });
+  /**
+   * `canChangeVisibility` is the server's decision for `POST /visibility` — capability **and** the
+   * `MANAGER` level on the chain (`permission-model.md` §7(е)). The key alone is the half a client
+   * can know; drawing from it offered the button to a holder the command would refuse.
+   */
+  it('is not offered to a holder of the capability the block refuses', async () => {
+    await startAt({
+      flags: { ...ALL, canChangeVisibility: false },
+      granted: ['project:read', 'project:manage_visibility', 'user:read'],
+    });
 
     await screen.findByRole('button', { name: 'projects.archive.action' });
     expect(
       screen.queryByRole('button', { name: /projects\.settings\.visibility\.change/ }),
     ).toBeNull();
+  });
+
+  it('is offered by the block alone, without the capability in the reader’s set', async () => {
+    await startAt({
+      flags: { ...NONE, canChangeVisibility: true },
+      granted: ['project:read', 'user:read'],
+    });
+
+    expect(
+      await screen.findByRole('button', { name: /projects\.settings\.visibility\.change/ }),
+    ).toBeEnabled();
+    expect(screen.queryByText('projects.settings.nothing')).toBeNull();
+    expect(
+      within(screen.getByRole('tablist'))
+        .getAllByRole('tab')
+        .map((tab) => tab.textContent),
+    ).toContain('projects.section.settings');
+  });
+
+  it('hides the settings tab from a holder of the capability when the block opens nothing', async () => {
+    await startAt({
+      flags: NONE,
+      granted: ['project:read', 'project:manage_visibility', 'user:read'],
+    });
+
+    expect(await screen.findByText('projects.settings.nothing')).toBeInTheDocument();
+    expect(
+      within(screen.getByRole('tablist'))
+        .getAllByRole('tab')
+        .map((tab) => tab.textContent),
+    ).not.toContain('projects.section.settings');
+    // Positive control: the tab list is drawn, and the overview tab in it.
+    expect(screen.getByRole('tab', { name: 'projects.section.overview' })).toBeInTheDocument();
   });
 });
 

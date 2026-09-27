@@ -28,14 +28,16 @@ export interface ProjectControls extends ProjectPermissions {
  */
 export const useProjectControls = (projectId: string): ProjectControls => {
   const { data: project } = useProjectDetailQuery(projectId);
-  const { canEdit, canManageMembers, canArchive, canDelete } = project.permissions;
+  const { canEdit, canManageMembers, canChangeVisibility, canArchive, canDelete } =
+    project.permissions;
 
   return {
     canEdit,
     canManageMembers,
+    canChangeVisibility,
     canArchive,
     canDelete,
     isArchived: project.status === 'ARCHIVED',
-    hasSettings: canEdit || canArchive || canDelete,
+    hasSettings: canEdit || canChangeVisibility || canArchive || canDelete,
   };
 };

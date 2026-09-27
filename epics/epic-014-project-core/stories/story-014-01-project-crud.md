@@ -281,13 +281,13 @@ estimate: M
 > - **Критерий 7, сводка «сколько сотрудников потеряет доступ» — не сделана:** сервер её не считает,
 >   а клиентский подсчёт требует справочника (`user:read`) и не видит явных грантов ACL; диалог
 >   называет последствия словами.
-> - **Разрыв контракта: серверная половина закрыта 2026-09-27, клиент ждёт.** `ProjectPermissions`
->   получил обязательный флаг `canChangeVisibility` — решение `canManageProjectVisibility`, той же
->   функции, что ассертит `ChangeProjectVisibilityUseCase` (`project-permissions.policy.ts`, таблица
->   `test/unit/application/project-card-permissions.test.ts`; разбор — STORY-014-05). Клиент пока
->   рисует кнопку по одной capability `project:manage_visibility` (`useCan().holds`), без уровня
->   `MANAGER`: держателю ключа без уровня кнопка видна, а отказ приходит в диалоге. Открыто —
->   переключить кнопку на флаг.
+> - ~~**Разрыв контракта.**~~ **Закрыт целиком 2026-09-27.** `ProjectPermissions` получил
+>   обязательный флаг `canChangeVisibility` — решение `canManageProjectVisibility`, той же функции,
+>   что ассертит `ChangeProjectVisibilityUseCase` (`project-permissions.policy.ts`, таблица
+>   `test/unit/application/project-card-permissions.test.ts`; разбор — STORY-014-05). Клиент рисует
+>   кнопку видимости по флагу (`use-project-controls.hook.ts`), а не по capability
+>   `project:manage_visibility`: держателю ключа без уровня `MANAGER` кнопки больше нет
+>   (`project-settings-screen.test.tsx`, «changing the visibility»).
 > - ~~Удалённый проект уводит на дашборд: маршрута `/projects` (STORY-014-04) в этой ветке нет.~~
 >   Закрыто 2026-09-27: после удаления — на список `/projects` (`pages/project/settings-page.tsx`).
 > - **Клавиатура и скринридер (2026-09-27, a11y-гейт).** Архивный проект больше не выключает форму
