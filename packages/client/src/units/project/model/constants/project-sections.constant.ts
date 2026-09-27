@@ -6,17 +6,19 @@
  * instead of reshaping the screen. A disabled tab has no route behind it and no link, which is what
  * keeps it from leading to a 404.
  *
- * Only the overview is available today. Members and settings are the client halves of
- * STORY-014-02 and STORY-014-01; files are EPIC-015; boards, documents and time are M3+.
+ * Overview, members (STORY-014-02) and settings (STORY-014-01) are shipped; files are EPIC-015;
+ * boards, documents and time are M3+. Settings is shipped but **not always shown**: a reader the
+ * card's `permissions` block gives no settings command does not see the tab at all (STORY-014-05,
+ * acceptance 5) — the tab list takes the hidden sections from its caller.
  */
 export const PROJECT_SECTIONS = [
   { value: 'overview', labelKey: 'projects.section.overview', available: true },
-  { value: 'members', labelKey: 'projects.section.members', available: false },
+  { value: 'members', labelKey: 'projects.section.members', available: true },
   { value: 'files', labelKey: 'projects.section.files', available: false },
   { value: 'boards', labelKey: 'projects.section.boards', available: false },
   { value: 'docs', labelKey: 'projects.section.docs', available: false },
   { value: 'time', labelKey: 'projects.section.time', available: false },
-  { value: 'settings', labelKey: 'projects.section.settings', available: false },
+  { value: 'settings', labelKey: 'projects.section.settings', available: true },
 ] as const;
 
 export type ProjectSection = (typeof PROJECT_SECTIONS)[number]['value'];

@@ -63,6 +63,8 @@ const OWNERS: Readonly<Record<string, string>> = {
   'widgets/invitation-list/ui/invitation-confirm-dialog.component.tsx':
     'widgets/invitation-list.test.tsx',
   'widgets/offboarding/offboarding-dialog.widget.tsx': 'widgets/offboarding.test.tsx',
+  'widgets/project-settings/ui/project-confirm-dialog.component.tsx':
+    'routes/project-settings-screen.test.tsx',
   'widgets/reactivation/ui/reactivation-dialog.component.tsx': 'widgets/reactivation.test.tsx',
   'widgets/reset-mfa/ui/reset-mfa-dialog.component.tsx': 'widgets/reset-mfa.test.tsx',
   'widgets/role-matrix/ui/role-matrix-preview-modal.component.tsx':

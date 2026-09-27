@@ -23,6 +23,11 @@ interface Identified {
   readonly id: string;
 }
 
+/** The field a row is addressed by. `id` by default; a membership is addressed by `userId`. */
+const DEFAULT_ID_KEY = 'id';
+
+const idOf = (item: unknown, idKey: string): unknown => (isRecord(item) ? item[idKey] : undefined);
+
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null;
 
@@ -56,20 +61,21 @@ const mapEntities = (
   return entry;
 };
 
-const patchEntry = <T extends Identified>(
+const patchEntry = <T extends object>(
   entry: unknown,
   itemId: string,
   patch: Partial<T>,
+  idKey: string,
 ): unknown => {
   const mapped = mapEntities(entry, (items) =>
-    items.map((item) => (item.id === itemId ? { ...item, ...patch } : item)),
+    items.map((item) => (idOf(item, idKey) === itemId ? { ...item, ...patch } : item)),
   );
 
   // A collection was recognised and rewritten; the identity check is what tells the two apart.
   if (mapped !== entry) return mapped;
 
   // Otherwise the entry may be the entity itself, held under a detail key.
-  if (isRecord(entry) && entry['id'] === itemId) return { ...entry, ...patch };
+  if (isRecord(entry) && entry[idKey] === itemId) return { ...entry, ...patch };
 
   return entry;
 };
@@ -90,23 +96,30 @@ const snapshotAndApply = (
   return { snapshots };
 };
 
-export interface OptimisticPatchOptions<T extends Identified> {
+export interface OptimisticPatchOptions<T extends object> {
   readonly queryKeys: readonly QueryKey[];
   readonly itemId: string;
   readonly patch: Partial<T>;
+  /**
+   * The field `itemId` is compared with. A membership has no `id` of its own — it is addressed by
+   * the `userId` it belongs to — and a patch aimed at `id` would match nothing and change nothing.
+   */
+  readonly idKey?: string;
 }
 
-export const runOptimisticPatch = <T extends Identified>(
+export const runOptimisticPatch = <T extends object = Record<string, unknown>>(
   client: QueryClient,
   options: OptimisticPatchOptions<T>,
 ): OptimisticContext =>
   snapshotAndApply(client, options.queryKeys, (entry) =>
-    patchEntry<T>(entry, options.itemId, options.patch),
+    patchEntry<T>(entry, options.itemId, options.patch, options.idKey ?? DEFAULT_ID_KEY),
   );
 
 export interface OptimisticRemoveOptions {
   readonly queryKeys: readonly QueryKey[];
   readonly itemId: string;
+  /** As on the patch: the field `itemId` is compared with, `id` unless said otherwise. */
+  readonly idKey?: string;
 }
 
 export const runOptimisticRemove = (
@@ -114,7 +127,9 @@ export const runOptimisticRemove = (
   options: OptimisticRemoveOptions,
 ): OptimisticContext =>
   snapshotAndApply(client, options.queryKeys, (entry) =>
-    mapEntities(entry, (items) => items.filter((item) => item.id !== options.itemId)),
+    mapEntities(entry, (items) =>
+      items.filter((item) => idOf(item, options.idKey ?? DEFAULT_ID_KEY) !== options.itemId),
+    ),
   );
 
 /**

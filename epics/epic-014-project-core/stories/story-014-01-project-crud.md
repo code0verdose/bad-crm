@@ -255,10 +255,37 @@ estimate: M
       `.transform` для `key`, `.superRefine` для дат (2026-09-10).
 - [x] `packages/server/src/presentation/http/route-registry.factory.ts` — `project:create/update/
       delete/manage_visibility/archive` c `aclCheckedIn` (2026-09-10).
-- [ ] `packages/client/src/units/project/{model/validation,service,ui}` —
-      `project.schema.ts`, `create-project.mutation.ts`, `update-project.mutation.ts`,
-      `use-project-form.hook.ts`; `widgets/project-form/project-form.widget.tsx`.
-- [ ] i18n: `packages/client/src/app/i18n/{en,ru}/project.json`.
+- [x] Клиент (2026-09-27; пути от `packages/client/src/`, где разошлось с планом — причина в строке):
+      схема `units/project/model/validation/project-form.schema.ts` (`projectFormSchema` и
+      `projectEditFormSchema` через `.omit`, правило дат на `dueAt`); мутации
+      `units/project/service/mutations/{create-project,update-project,change-project-visibility,archive-project,delete-project}.mutation.ts`
+      — все пессимистичные, с локальным `onError` (ошибка живёт в форме или в `aria-modal`-диалоге);
+      хуки `use-project-{creation,editing,visibility-change,archival,deletion,controls}.hook.ts`;
+      форма `units/project/ui/project-form.component.tsx` (одна на создание и правку — вместо
+      `widgets/project-form`); серверные ошибки полей — `units/project/lib/utils/project-form-failure.util.ts`
+      (`409 project_already_exists` → ключ, `404 user_not_found`/`409 member_not_active`/причина
+      `self_assignment_forbidden` → лид, `422 errors[].path` → своё поле); экран создания
+      `/projects/new` (`app/routes/_authenticated/projects/new.tsx`, `pages/project-new`,
+      `widgets/project-create`, гард `project:create`); раздел настроек
+      `/projects/$projectId/settings` (`widgets/project-settings`: правка, видимость, архив, удаление
+      через один `ProjectConfirmDialog`).
+- [x] i18n: `shared/i18n/locales/{en,ru}/projects.json` (namespace `projects`, не `project`).
+
+> **Клиентская половина — решения и открытое (2026-09-27).**
+> - Даты — календарные дни в UTC (конвенция `units/iam/lib/utils/override-expiry.util.ts`).
+> - Палитра цвета — только измеренные семейства темы (`brand/info/success/warning/danger/neutral`):
+>   сырые оттенки Mantine запрещены `bad-crm/no-raw-mantine-color` (контраст AA). Сохранённый цвет
+>   вне палитры остаётся выбираемым, чтобы `PATCH` не перекрасил проект молча.
+> - Видимость подтверждается диалогом, и единственный запрос уходит сразу с
+>   `X-Confirm-Dangerous: 1` — двухшаговый `428` нужен клиенту, который последствий не показал.
+> - **Критерий 7, сводка «сколько сотрудников потеряет доступ» — не сделана:** сервер её не считает,
+>   а клиентский подсчёт требует справочника (`user:read`) и не видит явных грантов ACL; диалог
+>   называет последствия словами.
+> - **Разрыв контракта:** в `ProjectPermissions` нет флага видимости, поэтому кнопка смены видимости
+>   рисуется по одной capability `project:manage_visibility` (`useCan().holds`), без уровня `MANAGER`.
+>   Держателю ключа без уровня кнопка видна, а отказ приходит в диалоге. Нужен `canChangeVisibility`
+>   в блоке — это правка сервера и спеки, не клиента.
+> - Удалённый проект уводит на дашборд: маршрута `/projects` (STORY-014-04) в этой ветке нет.
 - [x] Тесты: `test/unit/domain/project/project-key-value.test.ts`,
       `project-access-policy.test.ts` (п. 5, 6), use-case'ы в `test/unit/application/`,
       HTTP `test/integration/http/project-write-endpoints.test.ts` (п. 2, 4, 7–9, 11),
