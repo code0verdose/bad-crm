@@ -1,12 +1,12 @@
 import { Badge, Group, Text } from '@mantine/core';
 import { useTranslation } from 'react-i18next';
 
-import { type ProjectOption } from '@units/project/api';
+import { type ProjectSwitchOption } from '@units/project/types';
 
 import { ProjectColorSwatch } from './project-color-swatch.component.js';
 
 export interface ProjectSwitcherOptionProps {
-  readonly option: ProjectOption;
+  readonly option: ProjectSwitchOption;
 }
 
 /**
