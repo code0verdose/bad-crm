@@ -30,7 +30,7 @@ export interface GetProjectDetailInput {
  * `get-project-detail.query.test.ts` and the statements by
  * `test/integration/db/project-read-access.test.ts`).
  *
- * **The `permissions` block costs no statement.** It is four more decisions over the facts the read
+ * **The `permissions` block costs no statement.** It is five more decisions over the facts the read
  * decision already holds (`projectReadFacts` is memoized), each by the policy its command asserts
  * (`decideProjectPermissions`; STORY-014-05, acceptance 5). It is decided after the entity is read
  * only because a caller refused with a 404 has no block to be answered.

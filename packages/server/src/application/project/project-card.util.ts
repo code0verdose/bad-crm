@@ -17,8 +17,8 @@ export interface ProjectCard extends ProjectDetail {
  * however many decisions are made over them.
  *
  * The read counterpart of `projectWriteFacts`: `scope()` rather than `lockForWrite`, because a read
- * takes no write lock (`project-repository.port.ts`). Memoized because the card makes five decisions
- * over one project — may this caller read it, and the four flags of `decideProjectPermissions` — and
+ * takes no write lock (`project-repository.port.ts`). Memoized because the card makes six decisions
+ * over one project — may this caller read it, and the five flags of `decideProjectPermissions` — and
  * each would otherwise send its own pair of statements for an answer already held.
  */
 export const projectReadFacts = (

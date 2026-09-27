@@ -156,8 +156,14 @@ describe('POST /api/v1/projects', () => {
       taskCounter: 0,
       createdAt: expect.any(String),
       // Every project key, and the creator's own `LEAD` seat — `MANAGER` — written in this request:
-      // the block reads that seat back, so all four commands are the caller's.
-      permissions: { canEdit: true, canManageMembers: true, canArchive: true, canDelete: true },
+      // the block reads that seat back, so all five commands are the caller's.
+      permissions: {
+        canEdit: true,
+        canManageMembers: true,
+        canChangeVisibility: true,
+        canArchive: true,
+        canDelete: true,
+      },
     });
     expect(projects.versionBumps).toEqual([USER_ID, IVAN]);
     expect(test.audit.events.at(-1)).toMatchObject({

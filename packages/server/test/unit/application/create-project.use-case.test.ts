@@ -116,6 +116,7 @@ describe('CreateProjectUseCase', () => {
     expect(created.permissions).toEqual({
       canEdit: true,
       canManageMembers: true,
+      canChangeVisibility: false,
       canArchive: false,
       canDelete: false,
     });
@@ -140,6 +141,7 @@ describe('CreateProjectUseCase', () => {
     expect(created.permissions).toEqual({
       canEdit: false,
       canManageMembers: false,
+      canChangeVisibility: false,
       canArchive: false,
       canDelete: false,
     });
