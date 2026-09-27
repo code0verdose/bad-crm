@@ -13,7 +13,13 @@ export interface ProjectLocation {
   readonly section: ProjectSection | null;
 }
 
-const LAYOUT = '/_authenticated/projects/$projectId';
+/**
+ * The router's id of the project layout — the route that holds the project in its path, and so the
+ * one whose crumb a project's name is given to (`widgets/breadcrumbs`, `useRouteCrumbs`).
+ */
+export const PROJECT_LAYOUT_ROUTE_ID = '/_authenticated/projects/$projectId';
+
+const LAYOUT = PROJECT_LAYOUT_ROUTE_ID;
 
 const SECTION_OF_ROUTE: Readonly<Record<string, ProjectSection>> = {
   [`${LAYOUT}/`]: 'overview',

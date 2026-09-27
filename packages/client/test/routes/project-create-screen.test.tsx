@@ -300,9 +300,8 @@ describe('creating a project — to a screen reader and a keyboard', () => {
     await waitFor(() => {
       expect(screen.getByRole('heading', { level: 1 })).toHaveFocus();
     });
-    expect(
-      within(screen.getByRole('heading', { level: 1 })).getByText('projects.detail.title'),
-    ).toBeInTheDocument();
+    // The created project's page, named by its key and name (STORY-014-06, acceptance 8).
+    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('BAD · Bad CRM');
     expect(sent.some((call) => call.method === 'POST')).toBe(true);
   });
 });

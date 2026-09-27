@@ -77,8 +77,11 @@ export function ProjectSwitcher({ switcher }: ProjectSwitcherProps) {
       // layout engine it reads every reference as detached and hides an open list.
       hideDetached={false}
       onOptionSubmit={(projectId) => {
-        // Focus first: the trigger holds it until the new page's announcer, when the page's name
-        // changed, moves it on. Escape and the project already open take the deferred return.
+        // Focus first: the trigger holds it while the other project loads, and the route
+        // announcer moves it on to that page's heading — another project is another page, named
+        // «KEY · Name» (STORY-014-06, acceptance 8; `rules/a11y.mdc` §21). Should the page not
+        // change after all, focus stays here rather than on `<body>`. Escape and the project
+        // already open take the deferred return.
         combobox.targetRef.current?.focus();
         leaving.current = switcher.select(projectId);
         combobox.closeDropdown();

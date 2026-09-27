@@ -1,4 +1,5 @@
 import { MantineProvider } from '@mantine/core';
+import { QueryClientProvider } from '@tanstack/react-query';
 import { RouterContextProvider, createMemoryHistory } from '@tanstack/react-router';
 import { render, screen, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
@@ -17,19 +18,23 @@ import { RouteAnnouncer } from '@widgets/route-announcer';
  */
 describe('RouteAnnouncer on a page with no name', () => {
   it('titles the tab with the product alone and announces nothing', async () => {
+    const queryClient = SharedApi.createAppQueryClient({
+      notify: SharedUi.notify,
+      logError: vi.fn(),
+    });
     const router = createAppRouter(
-      {
-        queryClient: SharedApi.createAppQueryClient({ notify: SharedUi.notify, logError: vi.fn() }),
-        auth: { status: 'authenticated' },
-      },
+      { queryClient, auth: { status: 'authenticated' } },
       createMemoryHistory({ initialEntries: ['/dashboard'] }),
     );
 
+    // The query cache as the application provides it: a project page is named from it.
     render(
       <MantineProvider env="test">
-        <RouterContextProvider router={router}>
-          <RouteAnnouncer />
-        </RouterContextProvider>
+        <QueryClientProvider client={queryClient}>
+          <RouterContextProvider router={router}>
+            <RouteAnnouncer />
+          </RouterContextProvider>
+        </QueryClientProvider>
       </MantineProvider>,
     );
 
