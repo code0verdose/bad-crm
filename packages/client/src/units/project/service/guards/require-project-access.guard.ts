@@ -2,6 +2,10 @@ import { type QueryClient } from '@tanstack/react-query';
 import { notFound } from '@tanstack/react-router';
 
 import { projectDetailQueryOptions } from '@units/project/service/queries/project-detail.query.js';
+import {
+  recentProjects,
+  type RecentProjectsStore,
+} from '@units/project/service/stores/recent-projects.store.js';
 import { isApiError } from '@shared/api';
 
 const HTTP_FORBIDDEN = 403;
@@ -34,14 +38,22 @@ export interface ProjectGuardArgs {
  * `ux-architecture.md`): a `PUBLIC_ORG` project is readable by every member of the organization,
  * whether or not they are on it.
  */
-export const requireProjectAccess = async ({
-  context,
-  params,
-}: ProjectGuardArgs): Promise<void> => {
+export const requireProjectAccess = async (
+  { context, params }: ProjectGuardArgs,
+  /**
+   * The switcher's «recently visited» (STORY-014-06): a project the server let through is
+   * remembered here, the one place every way into a project passes — the switcher, the list, a
+   * pasted link; a project it answered «not found» is forgotten, so it is not pinned again
+   * (acceptance 5). A parameter, so a test holds its own store instead of the tab's.
+   */
+  recent: Pick<RecentProjectsStore, 'remember' | 'forget'> = recentProjects,
+): Promise<void> => {
   try {
     await context.queryClient.ensureQueryData(projectDetailQueryOptions(params.projectId));
+    recent.remember(params.projectId);
   } catch (error) {
     if (isApiError(error) && (error.status === HTTP_NOT_FOUND || error.status === HTTP_FORBIDDEN)) {
+      recent.forget(params.projectId);
       // eslint-disable-next-line @typescript-eslint/only-throw-error -- the router's own signal
       throw notFound();
     }

@@ -25,5 +25,25 @@
   "adminRoles": "Роли и права",
   "settingsSecurity": "Безопасность",
   "adminOrganization": "Организация",
-  "projects": "Проекты"
+  "projects": "Проекты",
+  "projectSwitcher": {
+    "trigger": "Сменить проект",
+    "triggerCurrent": "Проект: {{key}} {{name}}. Сменить проект",
+    "placeholder": "Выберите проект",
+    "search": "Найти проект",
+    "shortcut": "Ctrl+Alt+P или ⌘⌥P",
+    "archived": "Показывать архивные",
+    "archivedMark": "В архиве",
+    "recent": "Недавние",
+    "all": "Проекты",
+    "found_zero": "Проекты не найдены",
+    "found_one": "Найден {{count}} проект",
+    "found_few": "Найдено {{count}} проекта",
+    "found_many": "Найдено {{count}} проектов",
+    "empty": "Нет проектов для показа",
+    "more": "Подходит больше проектов — уточните поиск",
+    "failed": "Не удалось загрузить проекты",
+    "retry": "Повторить",
+    "loading": "Загружаем проекты"
+  }
 }

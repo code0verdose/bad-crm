@@ -4,6 +4,8 @@ import { IconLayoutSidebarLeftCollapse, IconLayoutSidebarLeftExpand } from '@tab
 
 import { SharedUi } from '@shared';
 
+import { ProjectSwitcherBar } from '@widgets/project-switcher';
+
 import { ColorSchemeControl } from './color-scheme-control.component.js';
 import { SignOutControl } from './sign-out-control.component.js';
 import classes from './topbar.module.css';
@@ -36,9 +38,9 @@ export interface TopbarProps {
  * (`widgets/public-screen`): somebody who set the language before signing in should find it in a
  * place that feels like the same control, not a different feature.
  *
- * Global search (`Cmd+K`), the project switcher, the running timer, notifications and the AI drawer
- * belong here too; they arrive with the epics that build them, and an empty button that does
- * nothing would be worse than the gap.
+ * The project switcher (STORY-014-06) sits beside the product mark. Global search (`Cmd+K`), the
+ * running timer, notifications and the AI drawer belong here too; they arrive with the epics that
+ * build them, and an empty button that does nothing would be worse than the gap.
  */
 export function Topbar({
   isDrawerOpen,
@@ -78,6 +80,7 @@ export function Topbar({
         */}
         {/* eslint-disable-next-line i18next/no-literal-string -- a proper noun */}
         <Text fw={600}>Bad CRM</Text>
+        <ProjectSwitcherBar />
       </Group>
 
       <Group gap="sm" wrap="nowrap">

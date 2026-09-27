@@ -10,4 +10,7 @@ export * from './project-draft.util.js';
 export * from './project-form-failure.util.js';
 export * from './project-refusal.util.js';
 export * from './project-roster.util.js';
+export * from './project-location.util.js';
+export * from './project-switch-target.util.js';
+export * from './recent-projects.util.js';
 export * from './translate-field-errors.util.js';

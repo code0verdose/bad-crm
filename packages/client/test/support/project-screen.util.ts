@@ -57,6 +57,8 @@ export const ALL: Flags = {
 
 export interface Call {
   readonly url: string;
+  /** The query string, `?`-prefixed or empty — what a read was asked with. */
+  readonly search: string;
   readonly method: string;
   readonly body: unknown;
   readonly headers: Headers;
@@ -146,6 +148,8 @@ export interface ServerOptions {
   readonly people?: readonly ReturnType<typeof person>[];
   /** Also on the project, beside the lead and the member — as members, full time. */
   readonly alsoOnProject?: readonly string[];
+  /** Answers the header switcher's `GET /projects/options`. Nothing on offer unless said otherwise. */
+  readonly projectOptions?: Handler;
 }
 
 const stubServer = ({
@@ -156,6 +160,7 @@ const stubServer = ({
   holdRosterRefetch = false,
   people = PEOPLE,
   alsoOnProject = [],
+  projectOptions = () => json({ items: [], hasMore: false, recent: [] }),
 }: ServerOptions): void => {
   const log: Call[] = [];
   let wrote = false;
@@ -172,6 +177,7 @@ const stubServer = ({
     const text = input.method === 'GET' ? '' : await input.clone().text();
     const call: Call = {
       url,
+      search: new URL(input.url).search,
       method: input.method,
       body: text === '' ? undefined : (JSON.parse(text) as unknown),
       headers: input.headers,
@@ -219,6 +225,7 @@ const stubServer = ({
 
       return answer;
     }
+    if (url.endsWith('/projects/options')) return projectOptions(call);
     if (url.endsWith(`/projects/${PROJECT}/members`)) {
       // Counted from the write, not from the first read: StrictMode and a slow suite can ask for
       // the roster more than once before anything has been changed.

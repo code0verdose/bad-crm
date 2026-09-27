@@ -8,4 +8,5 @@ export * from './use-project-list.hook.js';
 export * from './use-project.hook.js';
 export * from './use-project-members.hook.js';
 export * from './use-project-roster.hook.js';
+export * from './use-project-switcher.hook.js';
 export * from './use-project-visibility-change.hook.js';

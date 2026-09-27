@@ -157,9 +157,22 @@ export interface ProjectListParams {
   readonly perPage: number;
 }
 
+/**
+ * The header switcher's question (STORY-014-06, `GET /projects/options`) — under the same `all`, so
+ * a created, renamed or archived project reaches the switcher with the list's invalidation.
+ */
+export interface ProjectOptionsKeyParams {
+  readonly q: string;
+  readonly archived: boolean;
+  readonly recent: readonly string[];
+}
+
 export interface ProjectQueryKeys {
   readonly all: readonly [string];
   readonly list: (params: ProjectListParams) => readonly [string, 'list', ProjectListParams];
+  readonly options: (
+    params: ProjectOptionsKeyParams,
+  ) => readonly [string, 'options', ProjectOptionsKeyParams];
   readonly detail: (id: string) => readonly [string, 'detail', string];
   readonly members: (id: string) => readonly [string, 'members', string];
 }
@@ -255,6 +268,7 @@ export const QueryKeys = {
   Projects: {
     all: ['projects'],
     list: (params: ProjectListParams) => ['projects', 'list', params],
+    options: (params: ProjectOptionsKeyParams) => ['projects', 'options', params],
     detail: (id: string) => ['projects', 'detail', id],
     members: (id: string) => ['projects', 'members', id],
   } satisfies ProjectQueryKeys,
