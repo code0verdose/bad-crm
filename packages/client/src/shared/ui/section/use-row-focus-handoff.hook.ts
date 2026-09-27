@@ -50,9 +50,12 @@ export const useRowFocusHandoff = (
   takesFocus: () => boolean,
 ): ((element: HTMLElement | null) => () => void) =>
   useCallback(
-    (element: HTMLElement | null) => {
-      // React 19 never calls a ref back with `null` once it has returned a cleanup.
-      if (element === null) return () => undefined;
+    (node: HTMLElement | null) => {
+      // React 19 never calls a ref back with `null` once it has returned a cleanup — it runs the
+      // cleanup instead — so this is the mounted node; `null` is in the signature only because the
+      // ref type demands it (the reading `useRetry` gives, `use-retry.hook.ts`).
+      const element = node as HTMLElement;
+
       if (takesFocus()) element.focus();
 
       return () => {

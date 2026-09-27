@@ -33,6 +33,31 @@ function RemoveButton({ name, onRemove }: { name: string; onRemove: (name: strin
   );
 }
 
+/** A control without `data-row-action`: no sibling can be matched to it. */
+function Unnamed() {
+  const [shown, setShown] = useState(true);
+  const ref = SharedUi.useRowFocusHandoff(never);
+
+  return shown ? (
+    <ul>
+      <li>
+        <button
+          onClick={() => {
+            setShown(false);
+          }}
+          ref={ref}
+          type="button"
+        >
+          unnamed
+        </button>
+      </li>
+      <li>
+        <button type="button">sibling</button>
+      </li>
+    </ul>
+  ) : null;
+}
+
 function Roster({ initial }: { initial: readonly string[] }) {
   const [rows, setRows] = useState(initial);
   const remove = useCallback((name: string) => {
@@ -127,6 +152,26 @@ describe('useRowFocusHandoff', () => {
     await settle();
 
     expect(screen.getByRole('button', { name: 'remove b' })).toHaveFocus();
+  });
+
+  it('falls back to the section heading for a control that names no row action', async () => {
+    render(
+      <MantineProvider env="test">
+        <SharedUi.Section titleKey="roster.title">
+          <Unnamed />
+        </SharedUi.Section>
+      </MantineProvider>,
+    );
+
+    const leaving = screen.getByRole('button', { name: 'unnamed' });
+
+    leaving.focus();
+    act(() => {
+      leaving.click();
+    });
+    await settle();
+
+    expect(screen.getByRole('heading', { name: 'common.roster.title' })).toHaveFocus();
   });
 
   it('keeps focus on a row that re-renders in place', async () => {

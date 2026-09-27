@@ -58,8 +58,10 @@ export function ProjectMemberTable({
   const remove = useCallback(
     (userId: string) => {
       returning.current = userId;
+      // Cleared without asking whose it was: TanStack Query calls back only the latest `mutate`,
+      // so a removal overtaken by the next one never reports here.
       onRemove?.(userId, () => {
-        if (returning.current === userId) returning.current = null;
+        returning.current = null;
       });
     },
     [onRemove],

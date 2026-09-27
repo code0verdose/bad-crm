@@ -20,7 +20,7 @@ export interface ProjectRoster {
    * Takes somebody off — the row leaves at once, and returns to its place on refusal. `onRemoved`
    * fires only once the server has agreed: until then the row may still come back.
    */
-  readonly remove: (userId: string, onRemoved?: () => void) => void;
+  readonly remove: (userId: string, onRemoved: () => void) => void;
 }
 
 /**
@@ -54,11 +54,8 @@ export const useProjectRoster = (projectId: string): ProjectRoster => {
   );
 
   const remove = useCallback(
-    (userId: string, onRemoved?: () => void) => {
-      removing.mutate(
-        { projectId, userId },
-        onRemoved === undefined ? {} : { onSuccess: onRemoved },
-      );
+    (userId: string, onRemoved: () => void) => {
+      removing.mutate({ projectId, userId }, { onSuccess: onRemoved });
     },
     [removing.mutate, projectId],
   );
