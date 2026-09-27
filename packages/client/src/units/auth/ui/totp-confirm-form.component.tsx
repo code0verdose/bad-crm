@@ -5,7 +5,6 @@ import { useTranslation } from 'react-i18next';
 import { SharedLib } from '@shared';
 
 import { type ErrorMessage } from '@shared/api';
-import { firstInvalidField } from '@units/auth/lib';
 import { totpConfirmFormSchema, type TotpConfirmFormValues } from '@units/auth/model';
 
 import { TotpCodeField } from './totp-code-field.component.js';
@@ -57,7 +56,7 @@ export function TotpConfirmForm({ isPending, failure, onSubmit, onCancel }: Totp
           onSubmit(values);
         },
         (errors) => {
-          form.getInputNode(firstInvalidField(errors))?.focus();
+          form.getInputNode(SharedLib.firstInvalidField(errors))?.focus();
         },
       )}
     >

@@ -5,7 +5,7 @@ import { useTranslation } from 'react-i18next';
 
 import { SharedLib } from '@shared';
 
-import { firstInvalidField, type PasswordChangeFailure } from '@units/auth/lib';
+import { type PasswordChangeFailure } from '@units/auth/lib';
 import { changePasswordFormSchema, type ChangePasswordFormValues } from '@units/auth/model';
 
 import { PasswordStrength } from './password-strength.component.js';
@@ -85,7 +85,7 @@ export function ChangePasswordForm({ isPending, failure, onSubmit }: ChangePassw
           });
         },
         (errors) => {
-          form.getInputNode(firstInvalidField(errors))?.focus();
+          form.getInputNode(SharedLib.firstInvalidField(errors))?.focus();
         },
       )}
     >

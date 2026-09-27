@@ -14,7 +14,7 @@ import { useTranslation } from 'react-i18next';
 
 import { SharedLib } from '@shared';
 
-import { AuthLib, AuthModel, AuthService } from '@units/auth';
+import { AuthModel, AuthService } from '@units/auth';
 
 /**
  * The longest a `code` may be, straight from `DisableTotpRequest` in `docs/api/openapi.yaml`.
@@ -101,7 +101,7 @@ export function DisableTotpDialog({ onCancel, onDisabled }: DisableTotpDialogPro
             disposal.disable({ password: values.password, code: values.code }, onDisabled);
           },
           (errors) => {
-            form.getInputNode(AuthLib.firstInvalidField(errors))?.focus();
+            form.getInputNode(SharedLib.firstInvalidField(errors))?.focus();
           },
         )}
       >
