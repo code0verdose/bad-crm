@@ -18,6 +18,7 @@ import {
   NONE,
   PEOPLE,
   PROJECT,
+  card,
   cardReady,
   json,
   problem,
@@ -235,6 +236,50 @@ describe('editing the project', () => {
       dueAt: '2026-12-01T00:00:00.000Z',
     });
     expect(await screen.findByText('projects.saved')).toBeInTheDocument();
+  });
+
+  /**
+   * STORY-014-06, acceptance 8. A rename is not a new page: the tab follows the new name — it is
+   * not a live region and says what is open — but the route announcer's live region keeps what it
+   * said when the page arrived. A change of its text is spoken, and «BAD · Better CRM» read out
+   * after «saved» would announce a navigation that did not happen.
+   */
+  it('renames the tab after a save without speaking the new name as a new page', async () => {
+    const user = userEvent.setup();
+    let saved = false;
+
+    await startAt({
+      write: () => {
+        saved = true;
+
+        return new Response(null, { status: 204 });
+      },
+      // After the save, the card the invalidation re-reads carries the new name.
+      elsewhere: (call) =>
+        saved && call.url.endsWith(`/projects/${PROJECT}`)
+          ? json(card(ALL, { name: 'Better CRM' }))
+          : undefined,
+    });
+
+    const name = await screen.findByLabelText(/projects\.field\.name/);
+    const announcer = screen.getByTestId('route-announcer');
+
+    await waitFor(() => {
+      expect(announcer).toHaveTextContent(/^BAD · Bad CRM$/);
+    });
+
+    await user.clear(name);
+    await user.type(name, 'Better CRM');
+    await submit(user);
+
+    // CONTROL: the new name reached the cache — the tab and the heading say it.
+    await waitFor(() => {
+      expect(document.title).toBe('BAD · Better CRM · Bad CRM');
+    });
+    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent(/^BAD · Better CRM$/);
+    expect(announcer).toHaveTextContent(/^BAD · Bad CRM$/);
+    // And focus stays in the form: the page did not change.
+    expect(document.activeElement).not.toBe(screen.getByRole('heading', { level: 1 }));
   });
 
   it('puts a server refusal about the lead under the lead, and raises no toast', async () => {

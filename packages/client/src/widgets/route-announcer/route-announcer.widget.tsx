@@ -1,12 +1,19 @@
 import { useDocumentTitle } from '@mantine/hooks';
 import { useMatches } from '@tanstack/react-router';
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { SharedUi } from '@shared';
 
 import { BreadcrumbsLib, useRouteCrumbs } from '@widgets/breadcrumbs';
-import { announcementStep, openingPage, routePhase } from '@widgets/route-announcer/lib';
+import {
+  announcementStep,
+  crumbName,
+  openingPage,
+  routePhase,
+  spokenPage,
+  tabPage,
+} from '@widgets/route-announcer/lib';
 
 import classes from './route-announcer.module.css';
 
@@ -47,12 +54,27 @@ export function RouteAnnouncer() {
    * the trail and the heading say.
    */
   const page = useRouteCrumbs().at(-1);
-  const pageName = page === undefined ? undefined : (page.title ?? t(page.labelKey));
   /** What «the page changed» is keyed on: another project is another page, a renamed one is not. */
   const pageKey = page === undefined ? undefined : BreadcrumbsLib.crumbIdentity(page);
   const phase = routePhase(matches);
 
-  useDocumentTitle(pageName === undefined ? PRODUCT_NAME : `${pageName} · ${PRODUCT_NAME}`);
+  /**
+   * The page the live region names. It changes only when another page has arrived
+   * (`spokenPage`): a live region speaks every change of its text, so a rename, or the unnamed
+   * crumb of a project still loading, would each be announced as a page of their own. Adjusted
+   * while rendering, the way React documents state that follows a prop — not in an effect, which
+   * would paint the wrong text first and speak it.
+   */
+  const [spoken, setSpoken] = useState(() => spokenPage(undefined, page, phase));
+  const nextSpoken = spokenPage(spoken, page, phase);
+
+  if (nextSpoken !== spoken) setSpoken(nextSpoken);
+
+  const spokenName = crumbName(nextSpoken, t);
+  /** The tab is not a live region: it follows a rename at once (`tabPage`). */
+  const tabName = crumbName(tabPage(nextSpoken, page), t);
+
+  useDocumentTitle(tabName === undefined ? PRODUCT_NAME : `${tabName} · ${PRODUCT_NAME}`);
 
   /**
    * The page this component last announced — initialised to the page it is mounting on, which is
@@ -129,7 +151,7 @@ export function RouteAnnouncer() {
       data-testid="route-announcer"
       role="status"
     >
-      {pageName ?? null}
+      {spokenName ?? null}
     </div>
   );
 }
