@@ -3,6 +3,7 @@ import { type AclScopeResolver } from '@/application/access/use-cases/resolve-ac
 import { actorFromFacts } from '@/application/iam/actor-from-facts.util.js';
 import { type EffectivePermissionsReaderPort } from '@/application/iam/ports/effective-permissions-reader.port.js';
 import { type ClockPort } from '@/application/platform/ports/clock.port.js';
+import { groupBy } from '@/application/platform/group-by.util.js';
 import { type UnitOfWorkPort } from '@/application/platform/ports/unit-of-work.port.js';
 import { type ProjectRepositoryPort } from '@/application/project/ports/project-repository.port.js';
 import { projectReadFacts } from '@/application/project/project-card.util.js';
@@ -78,6 +79,8 @@ export class PreviewProjectVisibilityQuery {
         const seats = await this.audience.seatsOf(input.projectId);
         const grants = await this.audience.grantsOn(input.projectId);
         const folded = await this.capabilities.capabilitiesOfMany(seats.map((seat) => seat.userId));
+        // Grouped once: a per-colleague `filter` over every grant is quadratic in the organization.
+        const grantsOf = groupBy(grants, (grant) => grant.userId);
 
         const audience = seats.flatMap((seat): ProjectAudienceSeat[] => {
           const capability = folded.get(seat.userId);
@@ -88,9 +91,11 @@ export class PreviewProjectVisibilityQuery {
                 {
                   actor: actorFromFacts(seat.userId, actor.organizationId, capability),
                   memberRole: seat.memberRole,
-                  entries: grants
-                    .filter((grant) => grant.userId === seat.userId)
-                    .map(({ depth, level, expiresAt }) => ({ depth, level, expiresAt })),
+                  entries: (grantsOf.get(seat.userId) ?? []).map(({ depth, level, expiresAt }) => ({
+                    depth,
+                    level,
+                    expiresAt,
+                  })),
                 },
               ];
         });

@@ -103,8 +103,9 @@ export interface EffectivePermissionsReaderPort {
    * The same fold for several people at once, keyed by id — for a read that has to decide about a
    * whole audience (the summary of a visibility change) rather than about the caller.
    *
-   * The identical predicates and fold as `capabilitiesOf`, in a fixed number of statements however
-   * many ids are asked about; an id that is not a person of this organization is simply absent.
+   * The identical predicates and fold as `capabilitiesOf`. The number of statements is constant —
+   * it does not grow with the number of ids — while the rows read are O(N); an id that is not a
+   * person of this organization is simply absent.
    */
   capabilitiesOfMany(userIds: readonly string[]): Promise<ReadonlyMap<string, CapabilityFacts>>;
   /**

@@ -3,6 +3,8 @@ import { describe, expect, it } from 'vitest';
 import { PrismaEffectivePermissionsReader } from '@/infrastructure/persistence/prisma/effective-permissions-reader.adapter.js';
 import { withTenant } from '@/infrastructure/persistence/prisma/tenant.context.js';
 
+import { countingArray } from '../../support/counting-array.util.js';
+
 /**
  * What one person may do, assembled from rows — with the driver replaced by a recorder.
  *
@@ -460,7 +462,8 @@ describe('assembling what several people may do at once', () => {
       roleKeys: ['developer'],
       permissionsVersion: 5,
     });
-    // Four statements, whatever the number of ids.
+    // Four client calls, whatever the number of ids — a constant number of statements, not four:
+    // Prisma sends the nested role selects on their own.
     expect(recorder.calls.map((call) => call.name).toSorted()).toEqual([
       'organization.findFirst',
       'user.findMany',
@@ -502,5 +505,62 @@ describe('assembling what several people may do at once', () => {
 
     expect((await readMany(recorder.base, [PETR])).size).toBe(0);
     expect(recorder.calls.map((call) => call.name)).toEqual(['user.findMany']);
+  });
+
+  it('walks the role and exception rows once, not once per person', async () => {
+    // A per-person `filter` over the whole result is N² element reads: at 20 000 accounts that
+    // outlived `idle_in_transaction_session_timeout` and the summary answered 500. The rows are
+    // walked a bounded number of times however many people are asked about.
+    const people = Array.from({ length: 400 }, (_, index) => ({
+      id: `018f4a3b-0000-7000-8000-${index.toString().padStart(12, '0')}`,
+      permissionsVersion: 1,
+    }));
+    const assignments = countingArray(
+      people.map((person) => ({
+        userId: person.id,
+        role: {
+          id: 'r1',
+          key: 'developer',
+          name: 'Developer',
+          permissions: [{ permissionKey: 'project:read' }],
+        },
+      })),
+    );
+    const overrides = countingArray(
+      people.map((person) => ({
+        userId: person.id,
+        permissionKey: 'project:update',
+        effect: 'DENY' as const,
+        reason: 'seeded exception row',
+        grantedById: null,
+        grantedAt: new Date('2026-08-01T00:00:00.000Z'),
+        expiresAt: null,
+      })),
+    );
+    const tx = {
+      $executeRaw: (): Promise<number> => Promise.resolve(1),
+      user: { findMany: () => Promise.resolve(people) },
+      organization: { findFirst: () => Promise.resolve({ ownerId: OWNER }) },
+      userRole: { findMany: () => Promise.resolve(assignments.rows) },
+      userPermissionOverride: { findMany: () => Promise.resolve(overrides.rows) },
+    };
+    const base = {
+      $transaction: (fn: (client: typeof tx) => Promise<unknown>) => fn(tx),
+    } as unknown as Parameters<typeof withTenant>[0];
+
+    const facts = await readMany(
+      base,
+      people.map((person) => person.id),
+    );
+
+    expect(facts.size).toBe(people.length);
+    expect(facts.get(people[123]?.id ?? '')).toMatchObject({
+      granted: ['project:read'],
+      denied: ['project:update'],
+      roleKeys: ['developer'],
+    });
+    // Linear: a small constant number of passes over each result, never one pass per person.
+    expect(assignments.reads()).toBeLessThanOrEqual(4 * people.length);
+    expect(overrides.reads()).toBeLessThanOrEqual(4 * people.length);
   });
 });

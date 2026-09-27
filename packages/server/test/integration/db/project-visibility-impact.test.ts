@@ -31,8 +31,10 @@ import {
  * **The count is the set difference of the per-colleague read decision.** One organization holds
  * every way a colleague can reach a project or be kept from it: a bystander, a member, a grant to
  * the person, through a role and through a team, an expired grant, `NONE` on the organization, a
- * guest with and without a grant, a DENY exception on `project:read`, the owner — plus a suspended
- * and an invited account that must not be counted at all. For each active account the actor is
+ * guest with and without a grant, a DENY exception on `project:read`, the owner, a grant through a
+ * role whose assignment has expired, an expired ALLOW exception standing in for a role, and a
+ * former member (`left_at` set) — plus a suspended and an invited account that must not be counted
+ * at all. For each active account the actor is
  * built by `BuildActorQuery` and the project read by `GetProjectDetailQuery` — the path a real
  * request takes — once under `PUBLIC_ORG` and once under `PRIVATE`. The preview has to equal the
  * difference of those two sets in both directions, and the hand-written expectation, so that two
@@ -104,11 +106,12 @@ const assign = (
   organizationId: string,
   userId: string,
   roleId: string,
+  expired = false,
 ): Promise<unknown> =>
   client.query(
-    `INSERT INTO user_roles (organization_id, user_id, role_id, updated_at)
-     VALUES ($1::uuid, $2::uuid, $3::uuid, now())`,
-    [organizationId, userId, roleId],
+    `INSERT INTO user_roles (organization_id, user_id, role_id, expires_at, updated_at)
+     VALUES ($1::uuid, $2::uuid, $3::uuid, $4::timestamptz, now())`,
+    [organizationId, userId, roleId, expired ? new Date(Date.now() - 60_000).toISOString() : null],
   );
 
 const grant = (
@@ -166,6 +169,8 @@ const seed = (): Promise<Seeded> =>
     const reader = await insertRole(client, ORG, 'developer', ['project:read']);
     const guest = await insertRole(client, ORG, 'guest', ['project:read']);
     const writer = await insertRole(client, ORG, 'tech_writer', ['project:read']);
+    // Granted VIEWER on the project; held only by an assignment that has already expired.
+    const contractor = await insertRole(client, ORG, 'contractor', ['project:read']);
 
     const people: Record<string, string> = {};
     const person = async (
@@ -192,6 +197,9 @@ const seed = (): Promise<Seeded> =>
     const guestGranted = await person('guest with a grant', guest);
     const denied = await person('DENY on project:read', reader);
     await person('never held project:read', null);
+    const lapsedRole = await person('role grant, assignment expired', reader);
+    const lapsedAllow = await person('ALLOW on project:read expired', null);
+    const former = await person('left the project', reader);
     await person('suspended', reader, 'SUSPENDED');
     await person('invited', reader, 'INVITED');
 
@@ -202,6 +210,15 @@ const seed = (): Promise<Seeded> =>
        VALUES ($1::uuid, $2::uuid, $3::uuid, 'MEMBER', now())`,
       [ORG, projectId, member],
     );
+    // A former member: the row stays, closed by `left_at`, and seats nobody.
+    await client.query(
+      `INSERT INTO project_members
+         (organization_id, project_id, user_id, project_role, joined_at, left_at, updated_at)
+       VALUES ($1::uuid, $2::uuid, $3::uuid, 'MEMBER', now() - interval '2 hours',
+               now() - interval '1 hour', now())`,
+      [ORG, projectId, former],
+    );
+    await assign(client, ORG, lapsedRole, contractor, true);
 
     const teamId = randomUUID();
 
@@ -221,6 +238,12 @@ const seed = (): Promise<Seeded> =>
     await grant(client, { ...onProject, subjectType: 'USER', subjectId: granted, level: 'VIEWER' });
     await grant(client, { ...onProject, subjectType: 'ROLE', subjectId: writer, level: 'VIEWER' });
     await grant(client, { ...onProject, subjectType: 'TEAM', subjectId: teamId, level: 'VIEWER' });
+    await grant(client, {
+      ...onProject,
+      subjectType: 'ROLE',
+      subjectId: contractor,
+      level: 'VIEWER',
+    });
     await grant(client, {
       ...onProject,
       subjectType: 'USER',
@@ -246,6 +269,13 @@ const seed = (): Promise<Seeded> =>
          (organization_id, user_id, permission_key, effect, reason, updated_at)
        VALUES ($1::uuid, $2::uuid, 'project:read', 'DENY'::"OverrideEffect", 'impact fixture', now())`,
       [ORG, denied],
+    );
+    await client.query(
+      `INSERT INTO user_permission_overrides
+         (organization_id, user_id, permission_key, effect, reason, expires_at, updated_at)
+       VALUES ($1::uuid, $2::uuid, 'project:read', 'ALLOW'::"OverrideEffect", 'impact fixture',
+               now() - interval '1 minute', now())`,
+      [ORG, lapsedAllow],
     );
 
     // The neighbour: a project and two accounts that must never be counted.
@@ -363,8 +393,18 @@ describe('the preview is the set difference of the per-colleague read decision',
   it('CONTROL: the two sets differ, and by the colleagues the fixture says', () => {
     const lost = difference(publicReaders, privateReaders).toSorted();
 
-    // By hand: the bystander and the one whose grant has expired read it only while it is public.
-    expect(lost).toEqual([seeded.people['bystander'], seeded.people['grant expired']].toSorted());
+    // By hand: read it only while it is public — the bystander, the one whose grant has expired,
+    // the one whose grant comes through a role assignment that has expired, and the former member.
+    // The expired ALLOW is not here: it grants nothing, so that person reads under neither.
+    expect(lost).toEqual(
+      [
+        seeded.people['bystander'],
+        seeded.people['grant expired'],
+        seeded.people['role grant, assignment expired'],
+        seeded.people['left the project'],
+      ].toSorted(),
+    );
+    expect(publicReaders.has(seeded.people['ALLOW on project:read expired'] ?? '')).toBe(false);
     expect(difference(privateReaders, publicReaders)).toEqual([]);
     // Positive control: the people who keep it are really readers under both.
     for (const name of [
@@ -384,7 +424,7 @@ describe('the preview is the set difference of the per-colleague read decision',
       losingAccess: difference(publicReaders, privateReaders).length,
       gainingAccess: difference(privateReaders, publicReaders).length,
     });
-    await expect(preview('PRIVATE')).resolves.toEqual({ losingAccess: 2, gainingAccess: 0 });
+    await expect(preview('PRIVATE')).resolves.toEqual({ losingAccess: 4, gainingAccess: 0 });
   });
 
   it('opening it again: gainingAccess is the same difference the other way', async () => {
@@ -402,7 +442,7 @@ describe('the preview is the set difference of the per-colleague read decision',
 
   it('CONTROL: the suspended and invited accounts exist and are outside the audience', () => {
     // They are not in the audience at all: were they, the bystander-like suspended account would
-    // make losingAccess 3, and the neighbour's two readers would make it 5.
+    // make losingAccess 5, and the neighbour's two readers would make it 7.
     expect(seeded.active).not.toContain(seeded.people['suspended']);
     expect(seeded.active).not.toContain(seeded.people['invited']);
     expect(seeded.active).toContain(seeded.people['bystander']);

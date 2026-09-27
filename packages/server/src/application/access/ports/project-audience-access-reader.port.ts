@@ -29,7 +29,8 @@ export interface ProjectGrantFacts {
  *
  * The per-person readers answer the same questions one account at a time
  * (`ProjectAccessReaderPort.aclFacts`, `AclReaderPort.entriesAlong`); asked for every colleague they
- * would cost two statements a head. This one answers for the organization in two, and the
+ * would cost two statements a head. This one answers for the organization in two — a constant,
+ * independent of its size, while the rows read are O(N) in its accounts — and the
  * integration suite (`test/integration/db/project-visibility-impact.test.ts`) holds its answer equal
  * to the per-person read decision, colleague by colleague, on a live database.
  *

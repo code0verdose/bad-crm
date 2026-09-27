@@ -7,6 +7,7 @@ import {
   type HeldRole,
   type OverrideFacts,
 } from '@/application/iam/ports/effective-permissions-reader.port.js';
+import { groupBy } from '@/application/platform/group-by.util.js';
 import { TenantScopedRepository } from '@/infrastructure/persistence/prisma/tenant-scoped.repository.js';
 import { type TxClient } from '@/infrastructure/persistence/prisma/tenant.context.js';
 
@@ -98,7 +99,11 @@ export class PrismaEffectivePermissionsReader
   }
 
   /**
-   * The same fold for a whole audience — four statements however many ids, grouped by person.
+   * The same fold for a whole audience, grouped by person in one pass.
+   *
+   * A constant number of statements, independent of the number of ids; the rows read are O(N).
+   * The four `findMany`/`findFirst` calls are not four statements: without the `relationJoins`
+   * preview Prisma sends the nested `role` and `permissions` selects as statements of their own.
    *
    * The predicates are the ones `rows` sends (`unexpired`, `ROLE_SELECT`, `OVERRIDE_SELECT`, the
    * `deletedAt` filter on the account) and the fold is `toFacts`, so the answer for one person here
@@ -134,14 +139,18 @@ export class PrismaEffectivePermissionsReader
         }),
       ]);
 
+      // Grouped once: a per-person `filter` over the whole result is quadratic in the organization.
+      const assignmentsOf = groupBy(assignments, (row) => row.userId);
+      const overridesOf = groupBy(overrides, (row) => row.userId);
+
       for (const user of users) {
         found.set(
           user.id,
           toFacts({
             permissionsVersion: user.permissionsVersion,
             isOwner: organization?.ownerId === user.id,
-            assignments: assignments.filter((row) => row.userId === user.id),
-            overrides: overrides.filter((row) => row.userId === user.id),
+            assignments: assignmentsOf.get(user.id) ?? [],
+            overrides: overridesOf.get(user.id) ?? [],
           }),
         );
       }
