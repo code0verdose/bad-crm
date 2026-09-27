@@ -426,13 +426,13 @@ describe('/projects/$projectId', () => {
   /**
    * STORY-014-06, acceptance 8: with two projects open in two tabs, the tabs must say which is
    * which. The key and the name are the project's own words — data, not a translation — and they
-   * are the same in all four voices of the page: the tab, the trail, the heading and the
+   * are the same in the three voices of the page on screen: the tab, the heading and the
    * announcement. (The fixture's project is called «Bad CRM», like the product: the tab reads
    * «BAD · Bad CRM · Bad CRM», the last part being the product.) The trail itself is not on this
    * page: the project is its only crumb, and a single crumb is not rendered — the crumb's title is
    * what the heading, the tab and the announcement are built from (`useRouteCrumbs`).
    */
-  it('names the project by its key and name in the tab, the trail, the heading and the announcement', async () => {
+  it('names the project by its key and name in the tab, the heading and the announcement', async () => {
     await startAt();
 
     await screen.findByRole('heading', { level: 2, name: 'Bad CRM' });

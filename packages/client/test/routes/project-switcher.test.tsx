@@ -390,6 +390,40 @@ describe('the project switcher', () => {
     });
   });
 
+  /**
+   * A section tab is not a new page: the page is the project, keyed on its key and address. The
+   * risk is in between — should the layout's match pass through `pending` on the way to another
+   * section, the crumb would lose its title for a moment and the page's identity would fall back to
+   * the bare key, which reads as a change of page: focus yanked from the tab to the heading, and a
+   * spoken announcement of the project the reader never left.
+   */
+  it.each([
+    { tab: 'projects.section.overview', path: '' },
+    { tab: 'projects.section.settings', path: '/settings' },
+  ])('keeps focus on the $tab tab and speaks nothing', async ({ tab, path }) => {
+    const user = userEvent.setup();
+    const { router } = await mounted();
+    const announcer = screen.getByTestId('route-announcer');
+
+    await waitFor(() => {
+      expect(announcer).toHaveTextContent(/^BAD · Bad CRM$/);
+    });
+
+    const target = screen.getByRole('tab', { name: tab });
+
+    await user.click(target);
+
+    await waitFor(() => {
+      expect(router.state.location.pathname).toBe(`/projects/${PROJECT}${path}`);
+    });
+    // Past the pending threshold and the tick on which an owed focus move would be paid.
+    await new Promise((resolve) => setTimeout(resolve, 400));
+
+    expect(screen.getByRole('tab', { name: tab })).toHaveFocus();
+    expect(screen.getByRole('heading', { level: 1 })).not.toHaveFocus();
+    expect(announcer).toHaveTextContent(/^BAD · Bad CRM$/);
+  });
+
   it('closes on Escape and gives the focus back to the trigger', async () => {
     const user = userEvent.setup();
     const { trigger } = await mounted();
