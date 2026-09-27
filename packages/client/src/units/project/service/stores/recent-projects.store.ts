@@ -5,11 +5,17 @@ import {
   withoutRecentProject,
 } from '@units/project/lib/utils/recent-projects.util.js';
 
+/** Versioned by name, so a later shape is a new key. */
+const RECENT_PROJECTS_STORAGE_KEY = 'bc.recent-projects.v1';
+
 /**
- * The key the switcher keeps its remembered ids under in the browser (`useProjectSwitcher`, through
- * Mantine's `useLocalStorage`). Versioned by name, so a later shape is a new key.
+ * The key the switcher keeps one person's remembered ids under in the browser (`useProjectSwitcher`,
+ * through Mantine's `useLocalStorage`). **Per person**, because a browser is shared by whoever signs
+ * in on it: under one key for all, the next person's switcher would send the previous person's
+ * projects as its own «recent». The list is also removed when the session ends.
  */
-export const RECENT_PROJECTS_STORAGE_KEY = 'bc.recent-projects.v1';
+export const recentProjectsStorageKey = (userId: string): string =>
+  `${RECENT_PROJECTS_STORAGE_KEY}:${userId}`;
 
 /**
  * What this tab has learnt since it opened: the projects it entered, most recent first, and the ones
@@ -25,6 +31,8 @@ export interface RecentProjectsStore extends StoreApi<RecentProjectsState> {
   readonly remember: (projectId: string) => void;
   /** A project was answered «not found» — it is not pinned again (STORY-014-06, acceptance 5). */
   readonly forget: (projectId: string) => void;
+  /** The session ended — nothing of this person's visits is left for the next one in the tab. */
+  readonly reset: () => void;
 }
 
 /**
@@ -64,6 +72,9 @@ export const createRecentProjectsStore = (): RecentProjectsStore => {
         visited: withoutRecentProject(visited, projectId),
         forgotten: [...withoutRecentProject(forgotten, projectId), projectId],
       });
+    },
+    reset: () => {
+      store.setState({ visited: [], forgotten: [] });
     },
   };
 };

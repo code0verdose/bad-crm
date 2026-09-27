@@ -161,6 +161,7 @@ const startApplication = async (requests: string[]): Promise<StartedApplication>
     router,
     queryClient: appQueryClient,
     session: AuthService.authSession,
+    recentProjects: (await import('@units/project')).ProjectService.ProjectStores.recentProjects,
   });
 
   // Scoped to the tree this case mounted rather than to `document.body`: each case mounts a whole

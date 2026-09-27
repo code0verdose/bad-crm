@@ -42,15 +42,35 @@ describe('the session-event subscription', () => {
     const invalidate = vi.fn(() => Promise.resolve());
     const clear = vi.fn();
     const end = vi.fn();
+    const reset = vi.fn();
 
     const target: AuthEventTarget = {
       router: { state: { location: { href: '/projects/42/board/7' } }, navigate, invalidate },
       queryClient: { clear },
       session: { end },
+      recentProjects: { reset },
     };
 
-    return { target, navigate, invalidate, clear, end };
+    return { target, navigate, invalidate, clear, end, reset };
   };
+
+  /**
+   * The projects this tab visited are one person's: left in memory, the next person to sign in on
+   * the same tab would send them as their own «recent».
+   */
+  it('forgets the projects the tab visited on a sign-out, and only then', () => {
+    const { target, reset } = targetSpy();
+    const unsubscribe = subscribeAuthEvents(target);
+
+    AuthLib.emitAuthEvent('logged-in');
+    AuthLib.emitAuthEvent('refresh-failed');
+    expect(reset).not.toHaveBeenCalled();
+
+    AuthLib.emitAuthEvent('logged-out');
+    expect(reset).toHaveBeenCalledTimes(1);
+
+    unsubscribe();
+  });
 
   /**
    * `RouterProvider` re-renders when the session changes; it does not re-run `beforeLoad`. Guards

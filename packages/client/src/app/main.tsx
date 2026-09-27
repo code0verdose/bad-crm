@@ -9,6 +9,7 @@ import { router } from '@app/router.js';
 import { installStyleNonce } from '@app/style-nonce.util.js';
 import { installTrustedTypesPolicy } from '@app/trusted-types.util.js';
 import { AuthService } from '@units/auth';
+import { ProjectService } from '@units/project';
 
 // Mantine first, then the tokens that build on its variables, then the reset. Import order is
 // cascade order: tokens declared before the library that defines `--mantine-color-*` would resolve
@@ -43,7 +44,12 @@ import './global.css';
 installTrustedTypesPolicy();
 installStyleNonce();
 installApiMiddleware();
-subscribeAuthEvents({ router, queryClient: appQueryClient, session: AuthService.authSession });
+subscribeAuthEvents({
+  router,
+  queryClient: appQueryClient,
+  session: AuthService.authSession,
+  recentProjects: ProjectService.ProjectStores.recentProjects,
+});
 
 const container = document.getElementById('root');
 

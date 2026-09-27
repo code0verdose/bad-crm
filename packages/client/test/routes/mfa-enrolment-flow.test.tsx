@@ -164,6 +164,7 @@ const startApplication = async (
     router,
     queryClient: appQueryClient,
     session: AuthService.authSession,
+    recentProjects: (await import('@units/project')).ProjectService.ProjectStores.recentProjects,
   });
 
   const app = within(render(<App i18n={i18next} />).container);

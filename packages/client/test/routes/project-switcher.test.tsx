@@ -1,10 +1,12 @@
-import { fireEvent, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, assert, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { axeViolationsIn } from '../support/axe-scan.util.js';
 import {
   ALL,
+  ME,
+  OUTSIDER,
   PROJECT,
   card,
   cardReady,
@@ -145,7 +147,9 @@ describe('the project switcher', () => {
     await screen.findByText('Other project');
 
     // What the browser keeps is ids and nothing else — no name, no key, no colour.
-    const stored: unknown = JSON.parse(localStorage.getItem('bc.recent-projects.v1') ?? 'null');
+    const stored: unknown = JSON.parse(
+      localStorage.getItem(`bc.recent-projects.v1:${ME}`) ?? 'null',
+    );
 
     assert(Array.isArray(stored), 'opening the switcher wrote the remembered list');
     expect(stored[0]).toBe(firstProject);
@@ -164,6 +168,51 @@ describe('the project switcher', () => {
 
     // This visit first, the one before the reload next (anything after them is older cases' leftovers).
     expect(optionReads().at(-1)?.getAll('recent').slice(0, 2)).toEqual([PROJECT, firstProject]);
+  });
+
+  /**
+   * The browser is shared by whoever signs in on it. What one person visited is theirs: kept under
+   * a key of their own, never under a key the next person's switcher reads.
+   */
+  it('keeps the list under the signed-in person’s own key, apart from anyone else’s', async () => {
+    const user = userEvent.setup();
+
+    // Somebody else signed in on this browser earlier — and the shared key of the first version.
+    localStorage.setItem(`bc.recent-projects.v1:${OUTSIDER}`, JSON.stringify([OLD]));
+    localStorage.setItem('bc.recent-projects.v1', JSON.stringify([OLD]));
+
+    const { trigger } = await mounted();
+
+    await user.click(trigger);
+    await screen.findByText('Other project');
+
+    expect(optionReads().at(-1)?.getAll('recent')).not.toContain(OLD);
+    const stored: unknown = JSON.parse(
+      localStorage.getItem(`bc.recent-projects.v1:${ME}`) ?? 'null',
+    );
+
+    assert(Array.isArray(stored), 'the list is kept under the reader’s own key');
+    expect(stored).not.toContain(OLD);
+    expect(stored[0]).toBe(PROJECT);
+    // The other person's list is theirs to keep: not read, not rewritten.
+    expect(localStorage.getItem(`bc.recent-projects.v1:${OUTSIDER}`)).toBe(JSON.stringify([OLD]));
+  });
+
+  it('forgets the remembered list when the session ends', async () => {
+    const user = userEvent.setup();
+    const { trigger } = await mounted();
+    // The bus of the module graph this mount runs on — `startAt` resets the modules.
+    const { AuthLib } = await import('@units/auth');
+
+    await user.click(trigger);
+    await screen.findByText('Other project');
+    expect(localStorage.getItem(`bc.recent-projects.v1:${ME}`)).not.toBeNull();
+
+    act(() => {
+      AuthLib.emitAuthEvent('logged-out');
+    });
+
+    expect(localStorage.getItem(`bc.recent-projects.v1:${ME}`)).toBeNull();
   });
 
   it('keeps the section: members of this project become members of the chosen one', async () => {

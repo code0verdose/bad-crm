@@ -100,6 +100,7 @@ const startApplicationAt = async (
     router,
     queryClient: appQueryClient,
     session: AuthService.authSession,
+    recentProjects: (await import('@units/project')).ProjectService.ProjectStores.recentProjects,
   });
 
   // Scoped to the tree this case mounted: every case mounts a whole application, and a
