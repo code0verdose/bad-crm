@@ -62,6 +62,9 @@ const card = (overrides: Record<string, unknown> = {}) => ({
   dueAt: '2026-12-01T00:00:00.000Z',
   taskCounter: 0,
   createdAt: '2026-08-30T00:00:00.000Z',
+  // A reader of the card: the block the contract makes required since 2026-09-27, with no
+  // command open — the overview is what a viewer sees.
+  permissions: { canEdit: false, canManageMembers: false, canArchive: false, canDelete: false },
   ...overrides,
 });
 
@@ -194,25 +197,27 @@ describe('/projects/$projectId', () => {
     expect(detailCalls()).toHaveLength(1);
   });
 
-  it('lays the sections out as a tab list: the overview selected, the rest declared and disabled', async () => {
+  it('lays the sections out as a tab list: overview selected, members shipped, the rest declared and disabled', async () => {
     await startAt();
 
     const tablist = await screen.findByRole('tablist', { name: 'projects.section.label' });
     const tabs = within(tablist).getAllByRole('tab');
 
+    // A viewer: the card's `permissions` block opens no settings command, so the settings tab is
+    // not drawn at all (STORY-014-05, acceptance 5).
     expect(tabs.map((tab) => tab.textContent)).toEqual([
       'projects.section.overview',
-      'projects.section.membersprojects.section.soon',
+      'projects.section.members',
       'projects.section.filesprojects.section.soon',
       'projects.section.boardsprojects.section.soon',
       'projects.section.docsprojects.section.soon',
       'projects.section.timeprojects.section.soon',
-      'projects.section.settingsprojects.section.soon',
     ]);
     expect(tabs[0]).toHaveAttribute('aria-selected', 'true');
     expect(tabs[0]).toBeEnabled();
-    for (const tab of tabs.slice(1)) expect(tab).toBeDisabled();
-    // No section leads anywhere yet: a disabled tab is not a link to a route that does not exist.
+    expect(tabs[1]).toBeEnabled();
+    for (const tab of tabs.slice(2)) expect(tab).toBeDisabled();
+    // A disabled tab is not a link to a route that does not exist.
     expect(within(tablist).queryAllByRole('link')).toEqual([]);
   });
 
@@ -717,12 +722,12 @@ describe.each(['en', 'ru'] as const)('/projects/$projectId in %s', (language) =>
     expect(screen.getByRole('progressbar')).toHaveAccessibleName(phrase('dates.progressLabel'));
 
     // A disabled tab explains itself: its name is the section *and* «soon», both translated.
-    const members = screen.getAllByRole('tab')[1];
+    const files = screen.getAllByRole('tab')[2];
 
-    assert(members !== undefined, 'the members tab is missing');
-    expect(members).toBeDisabled();
-    expect(members).toHaveAccessibleName(
-      new RegExp(`^${phrase('section.members')}\\s*${phrase('section.soon')}$`),
+    assert(files !== undefined, 'the files tab is missing');
+    expect(files).toBeDisabled();
+    expect(files).toHaveAccessibleName(
+      new RegExp(`^${phrase('section.files')}\\s*${phrase('section.soon')}$`),
     );
   });
 

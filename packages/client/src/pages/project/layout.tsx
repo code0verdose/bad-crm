@@ -7,6 +7,8 @@ import { Breadcrumbs } from '@widgets/breadcrumbs';
 import { ProjectHeader } from '@widgets/project-header';
 import { ProjectUi } from '@units/project';
 
+import { useProjectSection } from './hooks/use-project-section.hook.js';
+
 const route = getRouteApi('/_authenticated/projects/$projectId');
 
 /**
@@ -17,17 +19,22 @@ const route = getRouteApi('/_authenticated/projects/$projectId');
  * gives: `PageHeader` takes an i18n key, and the breadcrumbs and the route announcer read the same
  * key. The name is the `h2` of the head, where it is data among data.
  *
- * The overview is the only section with a route today, so it is the active tab on every path under
- * this layout; a second section passes its own value when its route arrives.
+ * Which tab is selected is the route's to say, and which tabs a reader sees is the card's
+ * `permissions` block's — both through `useProjectSection`.
  */
 export function ProjectLayout() {
   const { projectId } = route.useParams();
+  const section = useProjectSection(projectId);
 
   return (
     <Stack gap="md">
       <SharedUi.PageHeader breadcrumbs={<Breadcrumbs />} titleKey="projects.detail.title" />
       <ProjectHeader projectId={projectId} />
-      <ProjectUi.ProjectTabs active="overview">
+      <ProjectUi.ProjectTabs
+        active={section.active}
+        hidden={section.hidden}
+        onSelect={section.select}
+      >
         <Outlet />
       </ProjectUi.ProjectTabs>
     </Stack>

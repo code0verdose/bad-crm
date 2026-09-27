@@ -10,7 +10,27 @@
   },
   "visibility": {
     "PUBLIC_ORG": "Visible to the organization",
-    "PRIVATE": "Private"
+    "PRIVATE": "Private",
+    "changed": "Visibility changed",
+    "failed": "The visibility was not changed",
+    "close": {
+      "title": "Make the project private?",
+      "description": "«{{name}}» will be visible only to the people on it.",
+      "consequence": {
+        "access": "Everyone in the organization who is not on the project loses access at once.",
+        "members": "Nobody's place on the project changes."
+      },
+      "confirm": "Make private"
+    },
+    "open": {
+      "title": "Open the project to the organization?",
+      "description": "Every member of the organization will be able to read «{{name}}».",
+      "consequence": {
+        "access": "Everyone in the organization gains read access at once.",
+        "members": "Nobody's place on the project changes."
+      },
+      "confirm": "Open to the organization"
+    }
   },
   "role": {
     "LEAD": "Lead",
@@ -69,5 +89,119 @@
     "tasks": "Tasks",
     "time": "Time",
     "ci": "CI runs"
+  },
+  "created": "Project created",
+  "saved": "Project saved",
+  "create": {
+    "title": "New project",
+    "submit": "Create project"
+  },
+  "field": {
+    "key": "Key",
+    "keyHint": "2–10 letters and digits, starting with a letter. It prefixes every task number (BAD-14) and cannot be changed later.",
+    "keyFixed": "The key prefixes every task number and cannot be changed.",
+    "keyInvalid": "Use 2–10 letters and digits, starting with a letter",
+    "keyTaken": "Another project in this organization already uses this key",
+    "name": "Name",
+    "description": "Description",
+    "visibility": "Visibility",
+    "visibilityHint": "Private projects are visible only to the people on them.",
+    "lead": "Lead",
+    "leadChoose": "Choose a lead",
+    "leadHint": "The lead manages the project and its team.",
+    "leadYou": "You",
+    "leadRequired": "Choose who leads the project",
+    "leadUnavailable": "This person is not in the organization any more — choose someone else",
+    "leadInactive": "This person's account is switched off — reactivate it or choose someone else",
+    "leadSelf": "You cannot make yourself the lead — ask someone who manages the team",
+    "color": "Colour",
+    "colorHint": "Only a visual mark — the key and the name identify the project.",
+    "startedAt": "Start date",
+    "dueAt": "Deadline",
+    "datesHint": "Dates are calendar days in UTC.",
+    "dateInvalid": "Enter a date",
+    "dueBeforeStart": "The deadline cannot be before the start date"
+  },
+  "color": {
+    "brand": "Brand",
+    "info": "Blue",
+    "success": "Green",
+    "warning": "Amber",
+    "danger": "Red",
+    "neutral": "Grey",
+    "other": "Current colour ({{name}})"
+  },
+  "refusal": {
+    "permissionNotGranted": "Your role does not allow this action on projects.",
+    "insufficientLevel": "Your place on this project does not allow this action.",
+    "selfAssignment": "You cannot change your own place on a project — ask another manager."
+  },
+  "settings": {
+    "nothing": "There is nothing on this project you can change.",
+    "edit": {
+      "title": "Project details",
+      "description": "Name, lead, colour and dates.",
+      "submit": "Save changes"
+    },
+    "visibility": {
+      "title": "Visibility",
+      "description": "Who in the organization can see this project.",
+      "current": "Currently: {{value}}",
+      "change": "Make it: {{value}}"
+    },
+    "danger": {
+      "title": "Archive or delete",
+      "description": "Actions that cannot be undone from this screen."
+    }
+  },
+  "confirm": {
+    "cancel": "Cancel"
+  },
+  "archive": {
+    "action": "Archive project",
+    "title": "Archive the project?",
+    "description": "«{{name}}» will be moved to the archive.",
+    "consequence": {
+      "readOnly": "Nothing in it can be changed while it stays in the archive.",
+      "noReturn": "Bringing a project back from the archive is not available yet."
+    },
+    "confirm": "Archive",
+    "failed": "The project was not archived",
+    "done": "Project archived"
+  },
+  "delete": {
+    "action": "Delete project",
+    "title": "Delete the project?",
+    "description": "«{{name}}» will be deleted.",
+    "consequence": {
+      "hidden": "It disappears from every list and its address stops working.",
+      "access": "Everyone on it loses access at once.",
+      "key": "Its key becomes free for a new project."
+    },
+    "confirm": "Delete",
+    "failed": "The project was not deleted",
+    "done": "Project deleted"
+  },
+  "members": {
+    "title": "Team",
+    "description": "Who is on the project, in what role, and how much of their time.",
+    "empty": "Nobody is on this project yet.",
+    "added": "Added to the project",
+    "updated": "Role changed",
+    "removed": "Removed from the project",
+    "remove": "Remove",
+    "roleOf": "Role of {{name}}",
+    "removeOf": "Remove {{name}} from the project",
+    "column": {
+      "actions": "Actions"
+    },
+    "add": {
+      "person": "Person",
+      "choose": "Choose a person",
+      "role": "Role",
+      "allocation": "Time on the project, %",
+      "submit": "Add to the project",
+      "none": "Everyone who can be added is already on the project."
+    }
   }
 }
