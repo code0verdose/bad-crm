@@ -588,9 +588,12 @@ describe('/projects', () => {
       expect(screen.getByText('projects.list.empty.canCreate')).toBeInTheDocument();
     });
     expect(screen.queryByText('projects.list.empty.askLead')).toBeNull();
-    // No button to a creation form that has no route yet (STORY-014-01, client half).
-    expect(within(screen.getByTestId('empty-state')).queryByRole('button')).toBeNull();
-    expect(within(screen.getByTestId('empty-state')).queryByRole('link')).toBeNull();
+    // The next step is on the empty state itself, and it goes to the creation form.
+    expect(
+      within(screen.getByTestId('empty-state')).getByRole('link', {
+        name: 'projects.list.create',
+      }),
+    ).toHaveAttribute('href', '/projects/new');
   });
 
   it('tells somebody who may not create one to ask a project lead', async () => {
@@ -598,6 +601,30 @@ describe('/projects', () => {
 
     expect(await screen.findByText('projects.list.empty.askLead')).toBeInTheDocument();
     expect(screen.queryByText('projects.list.empty.canCreate')).toBeNull();
+    expect(screen.queryByRole('link', { name: 'projects.list.create' })).toBeNull();
+  });
+
+  it('offers «New project» in the header to somebody who may create one', async () => {
+    const user = userEvent.setup();
+
+    const { router } = await startAt();
+
+    const create = await screen.findByRole('link', { name: 'projects.list.create' });
+
+    expect(create).toHaveAttribute('href', '/projects/new');
+    await user.click(create);
+    await waitFor(() => {
+      expect(router.state.location.pathname).toBe('/projects/new');
+    });
+  });
+
+  it('draws no «New project» for somebody who may not create one', async () => {
+    await startAt({ granted: ['project:read'] });
+
+    await screen.findByRole('heading', { level: 1, name: 'projects.list.title' });
+    await screen.findByText('Project 1');
+
+    expect(screen.queryByRole('link', { name: 'projects.list.create' })).toBeNull();
   });
 
   it('offers a way back when the list cannot be loaded', async () => {

@@ -1,4 +1,5 @@
 import { Button } from '@mantine/core';
+import { Link } from '@tanstack/react-router';
 import { type RefObject } from 'react';
 import { useTranslation } from 'react-i18next';
 
@@ -26,10 +27,9 @@ export interface ProjectListEmptyProps {
  *   (`<Can permission="project:create">`, a hint — the server decides). Somebody who may not is told
  *   who can change that: a project lead adds people.
  *
- * **No «Create project» button yet, deliberately.** The creation form is the client half of
- * STORY-014-01 and has no route; a button to a screen that does not exist is a dead end
- * (`ux-architecture.md`, principle 6). The action slot of `EmptyState` takes it the day the route
- * lands.
+ * Somebody who may create one gets the step itself in the action slot — «New project», to
+ * `/projects/new`, the same link the page header carries: an empty list is where it is looked for
+ * first.
  */
 export function ProjectListEmpty({ isFiltered, onReset, returnFocusTo }: ProjectListEmptyProps) {
   const { t } = useTranslation();
@@ -60,6 +60,11 @@ export function ProjectListEmpty({ isFiltered, onReset, returnFocusTo }: Project
       permission="project:create"
     >
       <SharedUi.EmptyState
+        action={
+          <Button component={Link} to="/projects/new" variant="light">
+            {t('projects.list.create')}
+          </Button>
+        }
         descriptionKey="projects.list.empty.canCreate"
         titleKey="projects.list.empty.title"
       />

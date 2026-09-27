@@ -4,7 +4,6 @@ import { useForm } from '@mantine/form';
 
 import { SharedLib } from '@shared';
 
-import { firstInvalidField } from '@units/auth/lib';
 import { resetPasswordFormSchema, type ResetPasswordFormValues } from '@units/auth/model';
 
 import classes from './login-form.module.css';
@@ -57,7 +56,7 @@ export function ResetPasswordForm({ isPending, onSubmit }: ResetPasswordFormProp
           onSubmit(values);
         },
         (errors) => {
-          form.getInputNode(firstInvalidField(errors))?.focus();
+          form.getInputNode(SharedLib.firstInvalidField(errors))?.focus();
         },
       )}
     >

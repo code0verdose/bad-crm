@@ -21,7 +21,9 @@ const SKELETON_ROWS = 6;
  * gets a role select and a remove button, and the form appears — once the directory has answered,
  * because a picker cannot offer people the reader may not be told about (`user:read`).
  *
- * An archived project shows the same controls disabled (acceptance 7); the header's banner says why.
+ * An archived project shows the same controls, reachable and unavailable, with a note beside the
+ * table saying why (acceptance 7; `ProjectMemberTable`). The add form is not drawn: there is nothing
+ * in it to read, only a command that cannot run.
  *
  * The names come from the directory, as on the overview; the reader's own id comes from the session,
  * so the picker does not offer them a seat the server refuses to anybody (`self_assignment_forbidden`).

@@ -5,7 +5,6 @@ import { useTranslation } from 'react-i18next';
 import { SharedLib } from '@shared';
 
 import { type ErrorMessage } from '@shared/api';
-import { firstInvalidField } from '@units/auth/lib';
 import {
   regenerateRecoveryCodesFormSchema,
   type RegenerateRecoveryCodesFormValues,
@@ -60,7 +59,7 @@ export function RegenerateRecoveryCodesForm({
           onSubmit(values);
         },
         (errors) => {
-          form.getInputNode(firstInvalidField(errors))?.focus();
+          form.getInputNode(SharedLib.firstInvalidField(errors))?.focus();
         },
       )}
     >

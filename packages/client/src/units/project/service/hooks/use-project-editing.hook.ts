@@ -1,4 +1,4 @@
-import { useCallback } from 'react';
+import { useCallback, useMemo } from 'react';
 
 import {
   projectEditValuesOf,
@@ -31,6 +31,9 @@ export interface ProjectEditing {
 export const useProjectEditing = (projectId: string): ProjectEditing => {
   const { data: project } = useProjectDetailQuery(projectId);
   const { error, isPending, mutate } = useUpdateProject();
+  // Kept per answer, not rebuilt per render: the form moves focus to a refused field when this
+  // changes identity (`useRefusalFocus`), and a fresh object on every render would do it every time.
+  const failure = useMemo(() => projectFormFailure(error), [error]);
 
   const save = useCallback(
     (values: ProjectEditFormValues) => {
@@ -45,7 +48,7 @@ export const useProjectEditing = (projectId: string): ProjectEditing => {
       key: project.key,
       visibility: project.visibility,
     },
-    failure: projectFormFailure(error),
+    failure,
     isPending,
     save,
   };

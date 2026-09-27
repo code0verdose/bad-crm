@@ -5,7 +5,6 @@ import { useForm } from '@mantine/form';
 import { SharedLib } from '@shared';
 
 import { type ErrorMessage } from '@shared/api';
-import { firstInvalidField } from '@units/auth/lib';
 import { loginFormSchema, type LoginFormValues } from '@units/auth/model';
 
 import classes from './login-form.module.css';
@@ -66,7 +65,7 @@ export function LoginForm({ isPending, notice, onSubmit }: LoginFormProps) {
           onSubmit(credentials);
         },
         (errors) => {
-          form.getInputNode(firstInvalidField(errors))?.focus();
+          form.getInputNode(SharedLib.firstInvalidField(errors))?.focus();
         },
       )}
     >

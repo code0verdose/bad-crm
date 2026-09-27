@@ -1,10 +1,13 @@
 import { Alert, Button, Fieldset, NativeSelect, Stack, TextInput, Textarea } from '@mantine/core';
 import { useForm } from '@mantine/form';
+import { useId } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { SharedLib } from '@shared';
+import { SharedHooks, SharedLib } from '@shared';
 
 import {
+  lockedFieldProps,
+  PROJECT_FORM_FIELDS,
   translateFieldErrors,
   type ProjectCandidate,
   type ProjectColorOption,
@@ -21,6 +24,8 @@ import {
   type ProjectFormValues,
 } from '@units/project/model';
 
+import { ArchivedNote } from './archived-note.component.js';
+
 export interface ProjectFormProps {
   /**
    * `create` asks for everything; `edit` shows the key read-only (it is the prefix of every task
@@ -35,8 +40,11 @@ export interface ProjectFormProps {
   /** The server's refusal: under the field it is about, or above the form. */
   readonly failure: ProjectFormFailure;
   readonly isPending: boolean;
-  /** Archived: every field readable, nothing submittable — the banner above says why. */
-  readonly disabled?: boolean;
+  /**
+   * Archived: every field reachable and readable, nothing changeable or submittable, and a note at
+   * the top of the fields saying why.
+   */
+  readonly locked?: boolean;
   /** i18n key of the submit control — «Create project» and «Save» are this form, twice. */
   readonly submitLabelKey: string;
   readonly onSubmit: (values: ProjectFormValues) => void;
@@ -56,6 +64,19 @@ export interface ProjectFormProps {
  * Everything else is one `Alert role="alert"` above the fields. Exactly one of the two is set for a
  * submit, so an action has one signal (`rules/errors-and-toasts.mdc` §2, §4).
  *
+ * **Focus goes to what has to change.** A submit the form refuses puts the caret on the first
+ * refused field in screen order (`onSubmit`'s second handler); a submit the server refuses does the
+ * same once its verdict is drawn (`useRefusalFocus`, on the `<form>` ref) — the field is focused
+ * with its message already wired to it. Both read the screen order from `PROJECT_FORM_FIELDS`.
+ *
+ * **Archived, nothing is hard-`disabled`** (`rules/a11y.mdc` §23): a `<fieldset disabled>` took
+ * every field and the button out of the tab order, with the reason in a banner at the top of the
+ * page. Each field is `aria-disabled` and cannot change (`lockedFieldProps`, through
+ * `enhanceGetInputProps`), the fieldset and the button are described by the note above the fields —
+ * the fieldset rather than each field, because Mantine sets `aria-describedby` on its inputs from
+ * their own description and error and overwrites one passed in — and a submit is dropped here, in
+ * the handler, whatever the attributes say.
+ *
  * Native controls for the three choices: the lists are short, a phone renders its own picker for a
  * native select and a screen reader already knows it, and `type="date"` is the one date field the
  * product has (`units/iam/ui/permission-override-form.component.tsx` gives the same reasons).
@@ -67,17 +88,21 @@ export function ProjectForm({
   colorOptions,
   failure,
   isPending,
-  disabled = false,
+  locked = false,
   submitLabelKey,
   onSubmit,
 }: ProjectFormProps) {
   const { t } = useTranslation();
   const schema = mode === 'create' ? projectFormSchema : projectEditFormSchema;
   const server = translateFieldErrors(failure.fields, t);
+  const noteId = useId();
+  const focusRefused = SharedHooks.useRefusalFocus(failure.fields, PROJECT_FORM_FIELDS);
 
   const form = useForm<ProjectFormValues>({
     mode: 'uncontrolled',
     initialValues,
+    enhanceGetInputProps: ({ field, inputProps }) =>
+      locked ? lockedFieldProps(field, inputProps['defaultValue']) : {},
     // The resolver answers with an i18n key and the bound that refused, not a sentence.
     validate: (values) =>
       SharedLib.translateFormIssues(SharedLib.zodFormResolver(schema)(values), t),
@@ -85,13 +110,30 @@ export function ProjectForm({
 
   return (
     <form
+      ref={focusRefused}
       noValidate
-      onSubmit={form.onSubmit((values) => {
-        onSubmit(values);
-      })}
+      onSubmit={
+        locked
+          ? (event) => {
+              // The attribute describes; this refuses. Enter in a field submits a form too.
+              event.preventDefault();
+            }
+          : form.onSubmit(
+              (values) => {
+                onSubmit(values);
+              },
+              (errors) => {
+                form
+                  .getInputNode(SharedLib.firstInvalidField(errors, PROJECT_FORM_FIELDS))
+                  ?.focus();
+              },
+            )
+      }
     >
-      <Fieldset disabled={disabled} variant="unstyled">
+      <Fieldset {...(locked ? { 'aria-describedby': noteId } : {})} variant="unstyled">
         <Stack gap="md">
+          {locked && <ArchivedNote id={noteId} />}
+
           {failure.notice !== undefined && (
             <Alert
               color="warning"
@@ -188,7 +230,11 @@ export function ProjectForm({
             error={form.errors['dueAt'] ?? server.dueAt}
           />
 
-          <Button loading={isPending} type="submit">
+          <Button
+            {...(locked ? SharedLib.lockedControlProps(noteId) : {})}
+            loading={isPending}
+            type="submit"
+          >
             {t(submitLabelKey)}
           </Button>
         </Stack>

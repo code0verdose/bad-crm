@@ -287,6 +287,15 @@ estimate: M
 >   в блоке — это правка сервера и спеки, не клиента.
 > - ~~Удалённый проект уводит на дашборд: маршрута `/projects` (STORY-014-04) в этой ветке нет.~~
 >   Закрыто 2026-09-27: после удаления — на список `/projects` (`pages/project/settings-page.tsx`).
+> - **Клавиатура и скринридер (2026-09-27, a11y-гейт).** Архивный проект больше не выключает форму
+>   `<Fieldset disabled>`: поля и кнопки остаются в табуляции (`aria-disabled`), поля не меняются
+>   (`readOnly`, у выпадающих списков — удержание значения), отправка отбрасывается в обработчике,
+>   пояснение `projects.archived.description` стоит у каждой секции и связано через
+>   `aria-describedby` (у полей — через `fieldset`). Отказ формы и отказ сервера (`errors[].path`,
+>   `409`, причина лида) ставят фокус на первое отвергнутое поле в порядке экрана — общий механизм
+>   `SharedLib.firstInvalidField` (перенесён из `units/auth/lib`) и `SharedHooks.useRefusalFocus`.
+>   Экранные наборы: `project-settings-screen.test.tsx`, `project-create-screen.test.tsx` (axe,
+>   фокус на `h1` карточки после создания).
 - [x] Тесты: `test/unit/domain/project/project-key-value.test.ts`,
       `project-access-policy.test.ts` (п. 5, 6), use-case'ы в `test/unit/application/`,
       HTTP `test/integration/http/project-write-endpoints.test.ts` (п. 2, 4, 7–9, 11),

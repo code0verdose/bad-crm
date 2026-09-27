@@ -2,7 +2,10 @@ import { type ProjectPermissions } from '@units/project/api';
 import { useProjectDetailQuery } from '@units/project/service/queries/project-detail.query.js';
 
 export interface ProjectControls extends ProjectPermissions {
-  /** `ARCHIVED`: the controls the flags allow are drawn **disabled**, the banner says why. */
+  /**
+   * `ARCHIVED`: the controls the flags allow stay drawn and reachable, marked unavailable
+   * (`aria-disabled`), with a note beside them saying why — and they do nothing.
+   */
   readonly isArchived: boolean;
   /** Any of the settings commands is open to this reader — the settings section has something to show. */
   readonly hasSettings: boolean;

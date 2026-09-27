@@ -1,4 +1,4 @@
-import { useCallback } from 'react';
+import { useCallback, useMemo } from 'react';
 
 import { projectFormFailure, toProjectDraft, type ProjectFormFailure } from '@units/project/lib';
 import { type ProjectFormValues } from '@units/project/model';
@@ -23,6 +23,8 @@ export interface ProjectCreation {
  */
 export const useProjectCreation = (): ProjectCreation => {
   const { error, isPending, mutate } = useCreateProject();
+  // Kept per answer, not rebuilt per render — see `useProjectEditing`.
+  const failure = useMemo(() => projectFormFailure(error), [error]);
 
   const create = useCallback(
     (values: ProjectFormValues, onCreated: (projectId: string) => void) => {
@@ -35,5 +37,5 @@ export const useProjectCreation = (): ProjectCreation => {
     [mutate],
   );
 
-  return { failure: projectFormFailure(error), isPending, create };
+  return { failure, isPending, create };
 };

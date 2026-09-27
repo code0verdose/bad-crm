@@ -1,6 +1,7 @@
 {
   "list": {
     "title": "Projects",
+    "create": "New project",
     "failed": "The projects could not be loaded.",
     "found_one": "{{count}} project found",
     "found_other": "{{count}} projects found",

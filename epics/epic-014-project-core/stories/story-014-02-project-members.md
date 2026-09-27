@@ -246,6 +246,16 @@ estimate: M
 > не сделаны, список показывает живой состав целиком. Критерий 9 — суммарная загрузка сотрудника по
 > проектам как подсказка: не сделана (нужен источник по всем проектам человека). E2E
 > `membership-invalidates-permissions.spec.ts` не написан.
+>
+> **Клавиатура и скринридер (2026-09-27, a11y-гейт).** Архивный проект: выбор роли и «Исключить»
+> остаются в табуляции — `aria-disabled`, а не `disabled`, пояснение `projects.archived.description`
+> над таблицей (`aria-describedby` у кнопки и у таблицы: Mantine перезаписывает атрибут на своих
+> полях), выбор роли держит сохранённое значение, у кнопки нет обработчика. Фокус после
+> оптимистичного удаления — на «Исключить» следующей строки, иначе предыдущей, иначе на заголовок
+> секции; при откате (`409 last_project_lead_required`) — на кнопку вернувшейся строки
+> (`SharedUi.useRowFocusHandoff`). Добавление последнего кандидата переводит фокус на фразу
+> «добавить некого» (`SharedHooks.useFocusIfLost`). Экранный набор —
+> `packages/client/test/routes/project-members-screen.test.tsx` (axe в обычном и архивном виде).
 - [x] Тесты сервера: `test/unit/domain/project/project-membership-policy.test.ts` (п. 6, 7),
       `implicit-level-policy.test.ts` (п. 2, 3, с STORY-011-06),
       `test/unit/application/manage-project-members.use-case.test.ts`,

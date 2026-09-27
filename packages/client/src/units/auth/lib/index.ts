@@ -3,7 +3,6 @@ export * from './auth-event-bus.util.js';
 export * from './auth-middleware.util.js';
 export * from './auth-token-storage.util.js';
 export * from './download-recovery-codes.util.js';
-export * from './first-invalid-field.util.js';
 export * from './login-attempt.util.js';
 export * from './mfa-token-storage.util.js';
 export * from './password-change-failure.util.js';

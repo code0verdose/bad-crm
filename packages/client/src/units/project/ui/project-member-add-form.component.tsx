@@ -2,6 +2,8 @@ import { Button, Group, NativeSelect, NumberInput, Text } from '@mantine/core';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
+import { SharedHooks } from '@shared';
+
 import { type ProjectCandidate } from '@units/project/lib';
 import { PROJECT_ROLE_LABEL, PROJECT_ROLES, type ProjectRole } from '@units/project/model';
 
@@ -28,6 +30,11 @@ const MAX_ALLOCATION = 100;
  * button stays unusable until one is chosen: a form armed on arrival, on a screen where arming it
  * grants somebody access to the project, is the wrong default.
  *
+ * **Adding the last candidate replaces the form with that sentence**, and the button that was
+ * pressed goes with it — focus would fall to `<body>`. The sentence takes it instead
+ * (`useFocusIfLost`), armed only once this form has added somebody: a screen that *opens* with
+ * nobody left to add must not pull focus to it.
+ *
  * The share is held to `0…100` by the input itself (`clampBehavior="strict"`), the bound the
  * contract and the database both hold (STORY-014-02, acceptance 9). The inputs clear once the server
  * agrees, not before — a refusal leaves the choice on screen to be corrected.
@@ -37,9 +44,15 @@ export function ProjectMemberAddForm({ candidates, isPending, onAdd }: ProjectMe
   const [userId, setUserId] = useState('');
   const [projectRole, setProjectRole] = useState<ProjectRole>('MEMBER');
   const [allocationPct, setAllocationPct] = useState<number>(DEFAULT_ALLOCATION);
+  const [hasAdded, setHasAdded] = useState(false);
+  const claimFocus = SharedHooks.useFocusIfLost(hasAdded);
 
   if (candidates.length === 0) {
-    return <Text size="sm">{t('projects.members.add.none')}</Text>;
+    return (
+      <Text ref={claimFocus} size="sm" tabIndex={-1}>
+        {t('projects.members.add.none')}
+      </Text>
+    );
   }
 
   return (
@@ -79,6 +92,7 @@ export function ProjectMemberAddForm({ candidates, isPending, onAdd }: ProjectMe
         onClick={() => {
           onAdd(userId, projectRole, allocationPct, () => {
             setUserId('');
+            setHasAdded(true);
           });
         }}
       >
