@@ -848,21 +848,27 @@ describe('the end-to-end harness is covered outside src and tests', () => {
    * the point: an exemption granted to the setup and withheld from the teardown is an oversight,
    * not a decision.
    */
-  it('exempts both Playwright lifecycle files from the role-suffix dictionary', async () => {
-    const offences = await Promise.all(
-      ['packages/e2e/global-setup.ts', 'packages/e2e/global-teardown.ts'].map(async (path) => ({
-        path,
-        ruleIds: (await lintRepoFile(path)).ruleIds.filter(
-          (id) => id === 'bad-crm/require-role-suffix',
-        ),
-      })),
-    );
+  it(
+    'exempts both Playwright lifecycle files from the role-suffix dictionary',
+    async () => {
+      const offences = await Promise.all(
+        ['packages/e2e/global-setup.ts', 'packages/e2e/global-teardown.ts'].map(async (path) => ({
+          path,
+          ruleIds: (await lintRepoFile(path)).ruleIds.filter(
+            (id) => id === 'bad-crm/require-role-suffix',
+          ),
+        })),
+      );
 
-    expect(offences).toEqual([
-      { path: 'packages/e2e/global-setup.ts', ruleIds: [] },
-      { path: 'packages/e2e/global-teardown.ts', ruleIds: [] },
-    ]);
-  });
+      expect(offences).toEqual([
+        { path: 'packages/e2e/global-setup.ts', ruleIds: [] },
+        { path: 'packages/e2e/global-teardown.ts', ruleIds: [] },
+      ]);
+      // The only case here that lints real repository files with type information, which the fixture
+      // warm-up does not cover; on the default five seconds it timed out under a full turbo run.
+    },
+    CASE_TIMEOUT_MS,
+  );
 });
 
 describe('positive control', () => {
