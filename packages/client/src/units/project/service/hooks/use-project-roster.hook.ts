@@ -16,8 +16,11 @@ export interface ProjectRoster {
   readonly isAdding: boolean;
   /** Changes a member's role in place — the row shows the new role at once, and takes it back on refusal. */
   readonly changeRole: (userId: string, projectRole: ProjectRole) => void;
-  /** Takes somebody off — the row leaves at once, and returns to its place on refusal. */
-  readonly remove: (userId: string) => void;
+  /**
+   * Takes somebody off — the row leaves at once, and returns to its place on refusal. `onRemoved`
+   * fires only once the server has agreed: until then the row may still come back.
+   */
+  readonly remove: (userId: string, onRemoved?: () => void) => void;
 }
 
 /**
@@ -51,8 +54,11 @@ export const useProjectRoster = (projectId: string): ProjectRoster => {
   );
 
   const remove = useCallback(
-    (userId: string) => {
-      removing.mutate({ projectId, userId });
+    (userId: string, onRemoved?: () => void) => {
+      removing.mutate(
+        { projectId, userId },
+        onRemoved === undefined ? {} : { onSuccess: onRemoved },
+      );
     },
     [removing.mutate, projectId],
   );

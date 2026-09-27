@@ -1,8 +1,8 @@
 import { Button, Group, Text } from '@mantine/core';
-import { useState } from 'react';
+import { useId, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { SharedUi } from '@shared';
+import { SharedLib, SharedUi } from '@shared';
 
 import { leadChoices, type ProjectActionKind } from '@widgets/project-settings/lib';
 import { EmployeeService } from '@units/employee';
@@ -31,8 +31,10 @@ export interface ProjectSettingsProps {
  * needs on the chain. A reader with the key and without the level sees the button and gets the
  * command's own refusal, in the dialog. Named in the story as a gap in the contract, not papered over.
  *
- * **An archived project keeps its controls on screen, disabled** — the banner in the header says why
- * (acceptance 7). Deleting stays available: the banner promises that nothing *in* the project
+ * **An archived project keeps its controls on screen and within reach** (acceptance 7): not a hard
+ * `disabled`, which dropped them from the tab order with the reason in a banner far above, but
+ * `aria-disabled` with a note beside each section's controls saying why (`rules/a11y.mdc` §23), and
+ * no handler behind them — the code refuses, not the attribute. Deleting stays available: the banner promises that nothing *in* the project
  * changes, and deletion is about the project as a whole, the one thing an archive is often for.
  *
  * One confirmation dialog for the three actions that are not taken back from here; which one is open
@@ -49,6 +51,8 @@ export function ProjectSettings({ projectId, onDeleted }: ProjectSettingsProps) 
   const deletion = ProjectService.ProjectHooks.useProjectDeletion(projectId);
   const directory = EmployeeService.EmployeeHooks.useDirectory(can('user:read'));
   const [action, setAction] = useState<ProjectActionKind | null>(null);
+  const visibilityNoteId = useId();
+  const dangerNoteId = useId();
 
   const { project } = view;
   const mayChangeVisibility = holds('project:manage_visibility');
@@ -82,11 +86,11 @@ export function ProjectSettings({ projectId, onDeleted }: ProjectSettingsProps) 
             // from the new values, instead of an effect copying them into the old one.
             key={JSON.stringify(editing.initialValues)}
             colorOptions={ProjectLib.projectColorOptions(project.color)}
-            disabled={controls.isArchived}
             failure={editing.failure}
             initialValues={editing.initialValues}
             isPending={editing.isPending}
             leadOptions={leadChoices(directory.people, project.leadId, controls.canManageMembers)}
+            locked={controls.isArchived}
             mode="edit"
             onSubmit={editing.save}
             submitLabelKey="projects.settings.edit.submit"
@@ -102,12 +106,17 @@ export function ProjectSettings({ projectId, onDeleted }: ProjectSettingsProps) 
           <Text>
             {t('projects.settings.visibility.current', { value: t(view.visibilityLabelKey) })}
           </Text>
+          {controls.isArchived && <ProjectUi.ArchivedNote id={visibilityNoteId} />}
           <Group>
             <Button
-              disabled={controls.isArchived}
-              onClick={() => {
-                setAction(visibilityAction);
-              }}
+              {...(controls.isArchived ? SharedLib.lockedControlProps(visibilityNoteId) : {})}
+              onClick={
+                controls.isArchived
+                  ? undefined
+                  : () => {
+                      setAction(visibilityAction);
+                    }
+              }
               variant="light"
             >
               {t('projects.settings.visibility.change', { value: t(visibility.targetLabelKey) })}
@@ -121,13 +130,20 @@ export function ProjectSettings({ projectId, onDeleted }: ProjectSettingsProps) 
           descriptionKey="projects.settings.danger.description"
           titleKey="projects.settings.danger.title"
         >
+          {controls.isArchived && controls.canArchive && (
+            <ProjectUi.ArchivedNote id={dangerNoteId} />
+          )}
           <Group>
             {controls.canArchive && (
               <Button
-                disabled={controls.isArchived}
-                onClick={() => {
-                  setAction('archive');
-                }}
+                {...(controls.isArchived ? SharedLib.lockedControlProps(dangerNoteId) : {})}
+                onClick={
+                  controls.isArchived
+                    ? undefined
+                    : () => {
+                        setAction('archive');
+                      }
+                }
                 variant="light"
               >
                 {t('projects.archive.action')}

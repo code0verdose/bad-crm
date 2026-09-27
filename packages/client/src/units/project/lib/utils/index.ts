@@ -1,4 +1,5 @@
 export * from './date-progress.util.js';
+export * from './locked-field-props.util.js';
 export * from './name-of.util.js';
 export * from './project-active-filters.util.js';
 export * from './project-candidates.util.js';
