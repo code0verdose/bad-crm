@@ -114,6 +114,16 @@ PostgreSQL с RLS на каждой таблице арендатора, зак�
   ненулевой код, `log_statement = 'ddl'`, devops-журнал на каждый `--drop`.
   Автоматический запуск — ждёт носителя периодических задач.
 
+### Changed — карточка проекта: флаг `canChangeVisibility` в блоке `permissions`, 2026-09-27
+
+Новых переменных окружения нет. Миграций нет.
+
+- **Новое поле ответа** `permissions.canChangeVisibility` у `GET /api/v1/projects/{projectId}` и
+  `201` от `POST /api/v1/projects` (схема `ProjectPermissions`, обязательное). Это решение той же
+  policy, что проверяет `POST /projects/{projectId}/visibility` (`project:manage_visibility`,
+  уровень `MANAGER`), — кнопка смены видимости больше не обязана угадывать по одной capability.
+  Подтверждения `X-Confirm-Dangerous` флаг не отменяет. Для читателя ответа изменение совместимое.
+
 ### Changed — `GET /api/v1/employees`: `page` больше `MAX_PAGE` — `422`, 2026-09-27
 
 Новых переменных окружения нет. Миграций нет.

@@ -29,7 +29,13 @@ const detail: ProjectCard = {
   taskCounter: 42,
   createdAt: new Date('2026-08-30T09:15:00.000Z'),
   isDeleted: false,
-  permissions: { canEdit: true, canManageMembers: false, canArchive: true, canDelete: false },
+  permissions: {
+    canEdit: true,
+    canManageMembers: false,
+    canChangeVisibility: false,
+    canArchive: true,
+    canDelete: false,
+  },
 };
 
 describe('serializeProjectDetail', () => {
@@ -48,20 +54,42 @@ describe('serializeProjectDetail', () => {
       dueAt: '2026-12-31T00:00:00.000Z',
       taskCounter: 42,
       createdAt: '2026-08-30T09:15:00.000Z',
-      permissions: { canEdit: true, canManageMembers: false, canArchive: true, canDelete: false },
+      permissions: {
+        canEdit: true,
+        canManageMembers: false,
+        canChangeVisibility: false,
+        canArchive: true,
+        canDelete: false,
+      },
     });
   });
 
-  it('carries each flag as decided, not a copy of its neighbour', () => {
-    // Together with the fixture above, every pair of flags differs in one of the two: a serializer
-    // that wired any flag from a neighbour — `canArchive` from `canEdit`, say — agrees with at most
-    // one of them. (A fixture and its mirror image would not do: a mirror keeps equal pairs equal.)
-    const other = {
-      ...detail,
-      permissions: { canEdit: true, canManageMembers: true, canArchive: false, canDelete: false },
-    };
+  /**
+   * Together with the fixture above, every pair of flags differs in one of the three blocks: a
+   * serializer that wired any flag from a neighbour — `canArchive` from `canEdit`, say — disagrees
+   * with at least one of them. Two blocks give each flag a two-bit signature and only four distinct
+   * ones; five flags need the third. (A block and its mirror image would not do: a mirror keeps
+   * equal pairs equal.)
+   */
+  it.each([
+    {
+      canEdit: true,
+      canManageMembers: true,
+      canChangeVisibility: false,
+      canArchive: false,
+      canDelete: false,
+    },
+    {
+      canEdit: false,
+      canManageMembers: false,
+      canChangeVisibility: true,
+      canArchive: false,
+      canDelete: false,
+    },
+  ])('carries each flag as decided, not a copy of its neighbour: %o', (permissions) => {
+    const other = { ...detail, permissions };
 
-    expect(serializeProjectDetail(other).permissions).toEqual(other.permissions);
+    expect(serializeProjectDetail(other).permissions).toEqual(permissions);
   });
 
   it('keeps absent dates as null rather than as a string of nothing', () => {
@@ -78,7 +106,9 @@ describe('serializeProjectDetail', () => {
       ...detail,
       organizationId: 'leak',
       isDeleted: true,
-      permissions: { ...detail.permissions, canManageVisibility: true },
+      // `project:manage_settings` has no route and so no flag: a decision the contract does not
+      // name stays in the process even when the domain type grows one.
+      permissions: { ...detail.permissions, canManageSettings: true },
     } as ProjectCard;
 
     expect(Object.keys(serializeProjectDetail(widened))).not.toContain('organizationId');
@@ -86,6 +116,7 @@ describe('serializeProjectDetail', () => {
     expect(Object.keys(serializeProjectDetail(widened).permissions)).toEqual([
       'canEdit',
       'canManageMembers',
+      'canChangeVisibility',
       'canArchive',
       'canDelete',
     ]);

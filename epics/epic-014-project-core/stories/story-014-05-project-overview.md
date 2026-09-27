@@ -187,6 +187,8 @@ estimate: M
       `domain/project/access/project-permissions.policy.ts` (`decideProjectPermissions`),
       `application/project/project-card.util.ts` (`ProjectCard`, мемоизированные `projectReadFacts`),
       сериализатор-whitelist, схема `ProjectPermissions` в контракте, типы клиента перегенерированы.
+- [x] Пятый флаг `canChangeVisibility` (2026-09-27) — дополнение в разделе «Блок `permissions`:
+      серверная половина» ниже.
 - [x] i18n: `shared/i18n/locales/{en,ru}/projects.json` (namespace `projects`).
 - [x] Тесты клиента: `units/project/**/*.test.ts(x)` (утилиты, гард, хуки),
       `test/routes/project-overview-screen.test.tsx` (всё приложение: п. 1–4, 7, 8, 10 + axe),
@@ -220,22 +222,23 @@ estimate: M
 ## Блок `permissions`: серверная половина критерия 5 (2026-09-27)
 
 **Форма в контракте** (`docs/api/openapi.yaml`, схема `ProjectPermissions`, обязательное поле
-`permissions` у `ProjectDetail`): `{ canEdit, canManageMembers, canArchive, canDelete }`, все четыре —
-`boolean`, `additionalProperties: false`.
+`permissions` у `ProjectDetail`): `{ canEdit, canManageMembers, canChangeVisibility, canArchive,
+canDelete }`, все пять — `boolean`, все обязательны, `additionalProperties: false`.
 
 **Набор флагов — объединение документов, а не выбор.** Эта история называет `canEdit`,
-`canManageMembers`, `canArchive`; критерий 12 STORY-011-08 и `ux-architecture.md` — ещё `canDelete`.
-Флаг заводится только там, где есть команда, решение которой он обещает: у `project:manage_settings`
-маршрута нет, `project:manage_visibility` флагом не называет ни один документ — их в блоке нет.
+`canManageMembers`, `canArchive`; критерий 12 STORY-011-08 и `ux-architecture.md` — ещё `canDelete`;
+STORY-014-01 — `canChangeVisibility` (добавлен 2026-09-27, см. ниже). Флаг заводится только там, где
+есть команда, решение которой он обещает: у `project:manage_settings` маршрута нет — его в блоке нет.
 
 | Флаг | Функция policy | Команда, которая её же вызывает |
 |---|---|---|
 | `canEdit` | `canUpdateProject` (`project:update`, `EDITOR`) | `UpdateProjectUseCase` (без смены лида) |
 | `canManageMembers` | `canManageProjectMembers` (`project:manage_members`, `MANAGER`) | `Add/Update/RemoveProjectMemberUseCase`, смена `leadId` в `UpdateProjectUseCase` |
+| `canChangeVisibility` | `canManageProjectVisibility` (`project:manage_visibility`, `MANAGER`) | `ChangeProjectVisibilityUseCase` |
 | `canArchive` | `canArchiveProject` (`project:archive`, `MANAGER`) | `ArchiveProjectUseCase` |
 | `canDelete` | `canDeleteProject` (`project:delete`, `MANAGER`) | `DeleteProjectUseCase` |
 
-**Второй точки вычисления нет (R-15).** `decideProjectPermissions` вызывает те же четыре функции
+**Второй точки вычисления нет (R-15).** `decideProjectPermissions` вызывает те же функции
 над теми же фактами (`scope()` + резолвер цепочки), на которых `GetProjectDetailQuery` только что
 решил `project:read`; факты мемоизированы (`projectReadFacts`), поэтому блок не добавляет ни одного
 оператора — след портов тот же `scope → acl → detail`. Архивный проект флаги не гасят: команды на
@@ -270,6 +273,22 @@ admin с DENY на `project:archive`» × «зритель `PUBLIC_ORG`, `OBSERV
   зеркало сохраняет равные пары; заменена).
 
 **Открыто:** критерий 6 — половина с метрикой (см. ниже).
+
+**Дополнение 2026-09-27 — `canChangeVisibility`.** Клиентская половина нарисовала кнопку смены
+видимости по одной capability `project:manage_visibility`, без уровня `MANAGER`, потому что флага не
+было; это расхождение UI и сервера по построению, которое запрещает `permission-model.md` §7 (е).
+Флаг — решение `canManageProjectVisibility`, той же функции, что ассертит
+`ChangeProjectVisibilityUseCase`; подтверждения `X-Confirm-Dangerous` он не отвечает (его команда
+спрашивает **после** решения). Эталон в таблице — сама команда с `confirmedDangerous: true`, чтобы
+`428` не подменил ответ о доступе. Доказательство красного — флаг вычислен не той функцией:
+- `canArchiveProject` → 1 падение, `admin with DENY on project:archive · LEAD` (`-false / +true`);
+- `canUpdateProject` → 5 падений, например `admin · MEMBER` (`-true / +false`);
+- `canManageProjectMembers` → 1 падение, `lead · LEAD`; `canDeleteProject` → 1, `manager · LEAD`.
+
+Сериализатор: две фикстуры дают каждому флагу двухбитную подпись, а различных подписей всего
+четыре, поэтому пять флагов потребовали третьей; копия `canChangeVisibility` из любого соседа и
+`canArchive` из `canChangeVisibility` роняют `carries each flag as decided`. Клиент флаг пока не
+читает — это клиентская половина, открыта (STORY-014-01).
 
 ## Блок `permissions`: клиентская половина критериев 5 и 6 (2026-09-27)
 

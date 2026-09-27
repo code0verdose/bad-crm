@@ -21,6 +21,7 @@ import {
 export interface ProjectPermissionsResponse {
   readonly canEdit: boolean;
   readonly canManageMembers: boolean;
+  readonly canChangeVisibility: boolean;
   readonly canArchive: boolean;
   readonly canDelete: boolean;
 }
@@ -59,6 +60,7 @@ export const serializeProjectDetail = (project: ProjectCard): ProjectDetailRespo
   permissions: {
     canEdit: project.permissions.canEdit,
     canManageMembers: project.permissions.canManageMembers,
+    canChangeVisibility: project.permissions.canChangeVisibility,
     canArchive: project.permissions.canArchive,
     canDelete: project.permissions.canDelete,
   },

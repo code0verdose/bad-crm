@@ -102,7 +102,7 @@ estimate: L
     Then содержит `permissions: { canEdit, canDelete, canManageMembers }`, вычисленные сервером;
     клиент не резолвит цепочку наследования самостоятельно.
     **Закрыт 2026-09-27 на проекте** (единственном ресурсе с объектными правами): блок
-    `{ canEdit, canManageMembers, canArchive, canDelete }` — дополнение ниже.
+    `{ canEdit, canManageMembers, canChangeVisibility, canArchive, canDelete }` — дополнение ниже.
 
 13. **Гард маршрута до рендера.**
     Given маршрут `/admin/roles` с `requirePermission('role:read')` в `beforeLoad`;
@@ -177,7 +177,9 @@ estimate: L
 таблица против самих команд — `test/unit/application/project-card-permissions.test.ts`; разбор и
 доказательства красного — в STORY-014-05, раздел «Блок `permissions`». Других ресурсов с объектными
 правами пока нет, так что «закрыт» — про единственный существующий. Открытыми остаются 8 и половина
-13; статус истории этой правкой не меняется.
+13; статус истории этой правкой не меняется. В тот же день блок получил пятый флаг,
+`canChangeVisibility` (`canManageProjectVisibility`, команда `ChangeProjectVisibilityUseCase`), —
+без него клиент рисовал кнопку видимости по capability без уровня; держит его та же таблица.
 
 ## Кеш прав: замер и отказ (2026-09-06)
 

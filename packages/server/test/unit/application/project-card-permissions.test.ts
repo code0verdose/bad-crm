@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 
 import { GetProjectDetailQuery } from '@/application/project/use-cases/get-project-detail.query.js';
 import { ArchiveProjectUseCase } from '@/application/project/use-cases/archive-project.use-case.js';
+import { ChangeProjectVisibilityUseCase } from '@/application/project/use-cases/change-project-visibility.use-case.js';
 import { DeleteProjectUseCase } from '@/application/project/use-cases/delete-project.use-case.js';
 import { AddProjectMemberUseCase } from '@/application/project/use-cases/manage-project-members.use-case.js';
 import { UpdateProjectUseCase } from '@/application/project/use-cases/update-project.use-case.js';
@@ -115,6 +116,16 @@ const COMMANDS: Readonly<Record<Flag, (harness: ProjectHarness, actor: Actor) =>
       projectRole: 'MEMBER',
       allocationPct: 50,
     }),
+  canChangeVisibility: (h, actor) =>
+    new ChangeProjectVisibilityUseCase(h.unitOfWork, h.store, h.acl, h.audit).execute({
+      actor,
+      ipAddress: ADDRESS,
+      projectId: PROJECT_ID,
+      // Confirmed, so that the `428` a permitted caller would otherwise get cannot stand in for an
+      // answer about access. On a `PRIVATE` seed this is the no-op repeat — after the decision.
+      visibility: 'PRIVATE',
+      confirmedDangerous: true,
+    }),
   canArchive: (h, actor) =>
     new ArchiveProjectUseCase(h.unitOfWork, h.store, h.acl, h.audit).execute({
       actor,
@@ -135,6 +146,7 @@ const FLAGS = Object.keys(COMMANDS) as Flag[];
 const NOTHING: ProjectPermissions = {
   canEdit: false,
   canManageMembers: false,
+  canChangeVisibility: false,
   canArchive: false,
   canDelete: false,
 };
@@ -221,8 +233,8 @@ describe('the permissions block of the project card', () => {
       projectId: PROJECT_ID,
     });
 
-    // One `scope`, one chain, one entity — the same trace as before the block existed. Four more
-    // decisions over a memoized read cost nothing; a fifth read here would be the N+1 of a card.
+    // One `scope`, one chain, one entity — the same trace as before the block existed. Five more
+    // decisions over a memoized read cost nothing; a second read here would be the N+1 of a card.
     expect(harness.store.trace.filter((call) => call === 'scope')).toHaveLength(1);
     expect(harness.store.trace.filter((call) => call === 'detail')).toHaveLength(1);
     expect(harness.store.chains).toHaveLength(1);

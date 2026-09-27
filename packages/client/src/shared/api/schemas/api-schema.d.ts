@@ -2811,8 +2811,11 @@ export interface components {
          *     by the same policy that command asserts: `canEdit` — `PATCH /projects/{projectId}` without a
          *     change of lead (`project:update`, `EDITOR`); `canManageMembers` — the roster commands under
          *     `/projects/{projectId}/members` and a change of `leadId` (`project:manage_members`,
-         *     `MANAGER`); `canArchive` — `POST /projects/{projectId}/archive` (`project:archive`,
-         *     `MANAGER`); `canDelete` — `DELETE /projects/{projectId}` (`project:delete`, `MANAGER`).
+         *     `MANAGER`); `canChangeVisibility` — `POST /projects/{projectId}/visibility`
+         *     (`project:manage_visibility`, `MANAGER`; the command still asks for `X-Confirm-Dangerous`,
+         *     which the flag does not answer); `canArchive` — `POST /projects/{projectId}/archive`
+         *     (`project:archive`, `MANAGER`); `canDelete` — `DELETE /projects/{projectId}`
+         *     (`project:delete`, `MANAGER`).
          *
          *     A hint for which controls to draw, not a grant: every command decides again on its own
          *     request, and a flag that went stale between the read and the click is answered by that
@@ -2821,6 +2824,7 @@ export interface components {
         ProjectPermissions: {
             canEdit: boolean;
             canManageMembers: boolean;
+            canChangeVisibility: boolean;
             canArchive: boolean;
             canDelete: boolean;
         };
