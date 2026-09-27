@@ -205,9 +205,16 @@ estimate: M
   10 (tablist, иерархия заголовков, цвет декоративен, EN+RU, axe без нарушений).
 - **Открыты:** ~~5 и 6 — ждали `permissions` в DTO~~ — снято 2026-09-27: критерий 5 закрыт на
   клиенте, 6 — наполовину, открыта метрика (раздел «Блок `permissions`: клиентская половина» ниже).
-  8 — кнопка «к списку проектов»: причина «списка нет» снята (STORY-014-04 отгрузил `/projects`
-  2026-09-27), пункт открыт — 404-экран по-прежнему ведёт на `/dashboard`
-  (`app/ui/route-not-found.component.tsx:25`). 9 — на клиенте нечего скрывать (финансовых полей
+  ~~8 — кнопка «к списку проектов»~~ — закрыто 2026-09-27: у `/projects/$projectId` свой
+  `notFoundComponent` — `app/ui/project-not-found.component.tsx`, тот же `SharedUi.NotFoundState`
+  (заголовок и текст неотличимы от любого 404, 403 и 404 по-прежнему одинаковы), действие —
+  `projects.notFound.action`, ссылка на `/projects`. Остальные маршруты не тронуты: дефолт роутера
+  и splat `_authenticated/$` ведут на `/dashboard`. Тесты — `test/routes/project-overview-screen.test.tsx`
+  («leads from a refused project (404|403) to the list of projects», с контролем «общей ссылки
+  рядом нет») и прежний `test/routes/navigation.test.tsx` («offers a way back from the not-found
+  screen» → `/dashboard`). Не покрыт адрес **под** читаемым проектом, которого нет
+  (`/projects/<id>/nope`): его ловит splat `_authenticated/$`, а не маршрут проекта, и он ведёт на
+  сводку; своего splat у проекта нет. 9 — на клиенте нечего скрывать (финансовых полей
   в контракте нет); снапшот сериализатора — серверная часть.
 - **Попутно исправлено:** `app/ui/route-error.component.tsx` — «Повторить» вызывал `reset`
   границы, и при упавшем loader'е кнопка ничего не делала; теперь `router.invalidate()`.

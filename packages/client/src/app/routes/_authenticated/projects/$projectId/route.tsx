@@ -7,7 +7,7 @@ import { createFileRoute } from '@tanstack/react-router';
 import { ProjectLayout } from '@pages/project';
 import { IamService } from '@units/iam';
 import { ProjectService } from '@units/project';
-import { RouteError, RouteNotFound, RoutePending } from '@app/ui';
+import { ProjectNotFound, RouteError, RoutePending } from '@app/ui';
 
 const requireProjectRead = IamService.IamGuards.requirePermission({
   permission: 'project:read',
@@ -31,7 +31,8 @@ const requireProjectRead = IamService.IamGuards.requirePermission({
  * looks for it — `defaultPreload: 'intent'` preloads through it.
  *
  * All three boundaries are named here rather than inherited, because this route loads data
- * (`test/architecture/route-state-conventions.test.ts`).
+ * (`test/architecture/route-state-conventions.test.ts`). The not-found one is the project's own:
+ * its way out is the list of projects, not the dashboard (STORY-014-05, acceptance 8).
  */
 export const Route = createFileRoute('/_authenticated/projects/$projectId')({
   beforeLoad: async (args) => {
@@ -45,6 +46,6 @@ export const Route = createFileRoute('/_authenticated/projects/$projectId')({
   component: ProjectLayout,
   pendingComponent: RoutePending,
   errorComponent: RouteError,
-  notFoundComponent: RouteNotFound,
+  notFoundComponent: ProjectNotFound,
   staticData: { crumbKey: 'projects.detail.title' },
 });

@@ -244,10 +244,32 @@ estimate: M
       читающего (`self_assignment_forbidden`). Управление составом рисуется только по
       `permissions.canManageMembers`.
 
-> **Открыто по клиенту (2026-09-27).** Критерий 10 — фильтры `q`, `role[]` и «вышедшие» в URL:
-> не сделаны, список показывает живой состав целиком. Критерий 9 — суммарная загрузка сотрудника по
+> **Открыто по клиенту (2026-09-27).** Критерий 10 — ~~фильтры `q`, `role[]` в URL~~ закрыто
+> 2026-09-27 (врезка ниже); «вышедшие по явному фильтру» — открыто. Критерий 9 — суммарная загрузка сотрудника по
 > проектам как подсказка: не сделана (нужен источник по всем проектам человека). E2E
 > `membership-invalidates-permissions.spec.ts` не написан.
+>
+> **Фильтры состава в URL (2026-09-27, критерий 10).** `GET /projects/{projectId}/members` не
+> принимает ни фильтра, ни страницы и не несёт имён (имена — из `GET /employees` на клиенте), поэтому
+> сужение идёт **на клиенте** по уже загруженному составу — как у отчёта о покрытии 2FA
+> (`organization-settings-search.schema.ts`); `rules/lists-and-filters.mdc` требует серверной
+> фильтрации только для прав (п. 13), а состав приходит целиком одним ответом. Состояние — URL:
+> `validateSearch: projectMembersSearchSchema` (`units/project/model/validation`; `q` ≤ 64,
+> `role[]` — whitelist `PROJECT_ROLES`, всё с `.catch`), запись — `useProjectMemberFilters`
+> (`replace: true`, `q` через `useDebouncedCallback` 300 мс, чипы активных фильтров + «Сбросить»),
+> сужение — `ProjectLib.filterProjectRoster` (подстрока в подписи строки без учёта регистра, роли —
+> конъюнкция). Форма добавления читает **нефильтрованный** состав. «Никто не подходит» и «в проекте
+> никого» — разные состояния (`widgets/project-members/ui/project-members-no-matches.component.tsx`);
+> сброс, крестик чипа и строка, которую смена роли вывела из фильтра, отдают фокус полю поиска
+> (`SharedHooks.useFocusHandoff`, для выбора роли — `SharedHooks.useRemovalFocusHandoff`: Mantine
+> пересобирает ref на каждый рендер, и обычный handoff выдёргивал фокус из select при откате).
+> Тесты: `project-members-search.schema.test.ts`, `filter-project-roster.util.test.ts`,
+> `use-project-member-filters.hook.test.ts`, `use-removal-focus-handoff.hook.test.ts`, блок «the
+> roster filters» в `test/routes/project-members-screen.test.tsx` (URL, чтение из адреса, пустой
+> результат, фокус, axe). **Не сделано:** «вышедшие» (`?includeLeft`) — строка вышедшего и
+> вернувшегося человека не уникальна по `userId`, а на `userId` держатся ключ строки, оптимистичные
+> патчи и возврат фокуса; нужен ключ по членству и строка без команд. Список «открыто» не закрыт
+> этим пунктом полностью.
 >
 > **Клавиатура и скринридер (2026-09-27, a11y-гейт).** Архивный проект: выбор роли и «Исключить»
 > остаются в табуляции — `aria-disabled`, а не `disabled`, пояснение `projects.archived.description`

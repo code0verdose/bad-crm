@@ -20,5 +20,6 @@ export * from './use-focus-handoff.hook.js';
 export * from './use-focus-if-lost.hook.js';
 export * from './use-language.hook.js';
 export * from './use-refusal-focus.hook.js';
+export * from './use-removal-focus-handoff.hook.js';
 export * from './use-seconds-remaining.hook.js';
 export * from './use-sidebar-collapse.hook.js';

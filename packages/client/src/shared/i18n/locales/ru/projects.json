@@ -57,6 +57,9 @@
   "detail": {
     "title": "Проект"
   },
+  "notFound": {
+    "action": "К списку проектов"
+  },
   "status": {
     "ACTIVE": "Активен",
     "ON_HOLD": "Приостановлен",
@@ -251,6 +254,18 @@
     "removeOf": "Исключить из проекта: {{name}}",
     "column": {
       "actions": "Действия"
+    },
+    "filters": {
+      "search": "Поиск",
+      "searchPlaceholder": "Имя",
+      "role": "Роль",
+      "chip": {
+        "query": "Поиск"
+      },
+      "shown": "Показано: {{shown}} из {{total}}",
+      "noMatchesTitle": "Никто не подходит под фильтры",
+      "noMatches": "Попробуйте другое имя или роль либо сбросьте фильтры.",
+      "reset": "Сбросить фильтры"
     },
     "add": {
       "person": "Сотрудник",

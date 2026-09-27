@@ -5,6 +5,7 @@ export * from './use-project-deletion.hook.js';
 export * from './use-project-editing.hook.js';
 export * from './use-project-filters.hook.js';
 export * from './use-project-list.hook.js';
+export * from './use-project-member-filters.hook.js';
 export * from './use-project.hook.js';
 export * from './use-project-members.hook.js';
 export * from './use-project-roster.hook.js';
