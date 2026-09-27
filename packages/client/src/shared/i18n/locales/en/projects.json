@@ -252,6 +252,18 @@
     "column": {
       "actions": "Actions"
     },
+    "filters": {
+      "search": "Search",
+      "searchPlaceholder": "Name",
+      "role": "Role",
+      "chip": {
+        "query": "Search"
+      },
+      "shown": "Shown: {{shown}} of {{total}}",
+      "noMatchesTitle": "Nobody matches the filters",
+      "noMatches": "Try another name or role, or reset the filters.",
+      "reset": "Reset filters"
+    },
     "add": {
       "person": "Person",
       "choose": "Choose a person",

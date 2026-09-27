@@ -1,8 +1,8 @@
 import { Badge, NativeSelect, Stack, Table, Text } from '@mantine/core';
-import { useCallback, useId, useRef } from 'react';
+import { type RefObject, useCallback, useId, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { SharedLib } from '@shared';
+import { SharedHooks, SharedLib } from '@shared';
 
 import { type ProjectRosterRow } from '@units/project/lib';
 import { PROJECT_ROLE_LABEL, PROJECT_ROLES, type ProjectRole } from '@units/project/model';
@@ -25,6 +25,12 @@ export interface ProjectMemberTableProps {
    * note beside the table saying why — and they do nothing.
    */
   readonly locked?: boolean;
+  /**
+   * Where focus goes when a role select leaves the page while holding it — a filtered roster drops
+   * the row whose role was just changed out of the filter (STORY-014-02, acceptance 10). Without it
+   * focus falls to `<body>`.
+   */
+  readonly returnFocusTo?: RefObject<HTMLElement | null>;
 }
 
 /**
@@ -50,10 +56,13 @@ export function ProjectMemberTable({
   onChangeRole,
   onRemove,
   locked = false,
+  returnFocusTo,
 }: ProjectMemberTableProps) {
   const { t, i18n } = useTranslation();
   const noteId = useId();
   const returning = useRef<string | null>(null);
+  const noAnchor = useRef<HTMLElement | null>(null);
+  const handOffFocus = SharedHooks.useFocusHandoff(returnFocusTo ?? noAnchor);
 
   const remove = useCallback(
     (userId: string) => {
@@ -107,6 +116,7 @@ export function ProjectMemberTable({
                       value,
                       label: t(PROJECT_ROLE_LABEL[value]),
                     }))}
+                    ref={handOffFocus}
                     onChange={(event) => {
                       // Locked, the pick is ignored and React puts the stored role back.
                       if (locked) return;
