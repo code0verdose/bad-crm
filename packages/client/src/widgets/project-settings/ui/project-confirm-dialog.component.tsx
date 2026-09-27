@@ -1,4 +1,5 @@
 import { Alert, Button, Group, List, Modal, Stack, Text } from '@mantine/core';
+import { type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { type SharedApi } from '@shared';
@@ -13,6 +14,11 @@ export interface ProjectConfirmDialogProps {
   readonly isPending: boolean;
   /** The refusal as a sentence chosen by `code` and `reason`. Absent while nothing was refused. */
   readonly failure: SharedApi.ErrorMessage | undefined;
+  /**
+   * What the action would do to whom, when that is a number the server counts rather than a fixed
+   * sentence — the summary of a change of visibility. Rendered above the consequences.
+   */
+  readonly summary?: ReactNode;
   readonly onConfirm: () => void;
   readonly onClose: () => void;
 }
@@ -38,6 +44,7 @@ export function ProjectConfirmDialog({
   projectName,
   isPending,
   failure,
+  summary,
   onConfirm,
   onClose,
 }: ProjectConfirmDialogProps) {
@@ -57,6 +64,7 @@ export function ProjectConfirmDialog({
     >
       <Stack gap="md">
         <Text>{t(copy.descriptionKey, { name: projectName })}</Text>
+        {summary}
         <List size="sm">
           {copy.consequenceKeys.map((key) => (
             <List.Item key={key}>{t(key)}</List.Item>

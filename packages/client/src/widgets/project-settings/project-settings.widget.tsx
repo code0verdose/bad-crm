@@ -44,11 +44,15 @@ export function ProjectSettings({ projectId, onDeleted }: ProjectSettingsProps) 
   const view = ProjectService.ProjectHooks.useProject(projectId);
   const controls = ProjectService.ProjectHooks.useProjectControls(projectId);
   const editing = ProjectService.ProjectHooks.useProjectEditing(projectId);
-  const visibility = ProjectService.ProjectHooks.useProjectVisibilityChange(projectId);
   const archival = ProjectService.ProjectHooks.useProjectArchival(projectId);
   const deletion = ProjectService.ProjectHooks.useProjectDeletion(projectId);
   const directory = EmployeeService.EmployeeHooks.useDirectory(can('user:read'));
   const [action, setAction] = useState<ProjectActionKind | null>(null);
+  // The count is read only while its dialog is open: each opening asks the server again.
+  const visibility = ProjectService.ProjectHooks.useProjectVisibilityChange(
+    projectId,
+    action === 'close' || action === 'open',
+  );
   const visibilityNoteId = useId();
   const dangerNoteId = useId();
 
@@ -169,6 +173,11 @@ export function ProjectSettings({ projectId, onDeleted }: ProjectSettingsProps) 
         onConfirm={confirm}
         opened={action !== null}
         projectName={project.name}
+        summary={
+          action === 'close' || action === 'open' ? (
+            <ProjectUi.ProjectVisibilityImpact impact={visibility.impact} />
+          ) : undefined
+        }
       />
     </>
   );

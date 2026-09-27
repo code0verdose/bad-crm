@@ -70,8 +70,10 @@
     "close": {
       "title": "Make the project private?",
       "description": "«{{name}}» will be visible only to the people on it.",
+      "impact_one": "{{count}} colleague loses access at once.",
+      "impact_other": "{{count}} colleagues lose access at once.",
+      "impactNone": "Nobody loses access: everyone who reads it is on the project or holds a grant.",
       "consequence": {
-        "access": "Everyone in the organization who is not on the project loses access at once.",
         "members": "Nobody's place on the project changes."
       },
       "confirm": "Make private"
@@ -79,12 +81,15 @@
     "open": {
       "title": "Open the project to the organization?",
       "description": "Every member of the organization will be able to read «{{name}}».",
+      "impact_one": "{{count}} colleague gains read access at once.",
+      "impact_other": "{{count}} colleagues gain read access at once.",
+      "impactNone": "Nobody gains access: everyone who can read projects already reads this one.",
       "consequence": {
-        "access": "Everyone in the organization gains read access at once.",
         "members": "Nobody's place on the project changes."
       },
       "confirm": "Open to the organization"
-    }
+    },
+    "impactFailed": "Could not count who is affected"
   },
   "role": {
     "LEAD": "Lead",
