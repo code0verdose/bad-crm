@@ -28,7 +28,7 @@ estimate: M
 > - Клиентские и серверные тесты — `*.test.ts`; `.spec.ts` носят только сценарии `packages/e2e`
 >   (для `project-overview.spec.ts` имя верно, для остальных из состава — нет).
 >
-> **Блок `permissions` в DTO — это открытый критерий соседней истории.** Критерии 5 и 9 требуют,
+> **Блок `permissions` в DTO был открытым критерием соседней истории (закрыт 2026-09-27).** Критерии 5 и 9 требуют,
 > чтобы решение о видимости кнопок бралось из `permissions: { canEdit, canManageMembers, canArchive }`
 > внутри DTO проекта. Это же критерий 12
 > [STORY-011-08](../../epic-011-rbac-permissions/stories/story-011-08-effective-permissions.md),
@@ -260,7 +260,7 @@ admin с DENY на `project:archive`» × «зритель `PUBLIC_ORG`, `OBSERV
 `canArchive` хотя бы в одной строке; контроль «ни одного лишнего чтения». HTTP-форма —
 `project-endpoints.test.ts` (зритель — все `false`; `MEMBER` и `LEAD` — два разных блока, след тот
 же) и `project-write-endpoints.test.ts` (`201` с блоком). Сериализатор — `project-serializer.test.ts`
-(whitelist внутри блока; две фикстуры, различающие каждую пару флагов).
+(whitelist внутри блока; три фикстуры, различающие каждую пару флагов).
 
 **Доказательство красного** (внесён дефект — точное падение — откат):
 - `canArchive` вычислен `canUpdateProject` → 7 падений таблицы, например

@@ -170,8 +170,9 @@ estimate: L
 этой правкой не меняется.
 
 **Дополнение 2026-09-27 — критерий 12 закрыт на проекте.** `GET /api/v1/projects/{projectId}` (и
-`201` от `POST /projects`) отдаёт `permissions: { canEdit, canManageMembers, canArchive, canDelete }`
-— объединение имён этого критерия и STORY-014-05. Каждый флаг — решение той функции policy, которую
+`201` от `POST /projects`) отдаёт `permissions: { canEdit, canManageMembers, canChangeVisibility,
+canArchive, canDelete }` — объединение имён этого критерия, STORY-014-05 и STORY-014-01
+(`canChangeVisibility` добавлен в тот же день, см. конец абзаца). Каждый флаг — решение той функции policy, которую
 ассертит соответствующая команда, над теми же фактами, что и чтение
 (`domain/project/access/project-permissions.policy.ts`); клиент цепочку не резолвит. Держит это
 таблица против самих команд — `test/unit/application/project-card-permissions.test.ts`; разбор и
