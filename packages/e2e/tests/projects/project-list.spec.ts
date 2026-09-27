@@ -1,9 +1,11 @@
 import { randomUUID } from 'node:crypto';
 
+import { request as apiRequestContext, type Browser, type Page } from '@playwright/test';
+
+import { ensureScenarioColleague, withOwnerSession } from '../../fixtures/fresh-session.util.js';
+import { SEED_ORGANIZATION_A, SEED_PASSWORD } from '../../fixtures/seed-data.js';
 import { expect, test } from '../../fixtures/session.fixture.js';
-import { roleAccountEmail } from '../../fixtures/role-account.js';
-import { SEED_ORGANIZATION_A } from '../../fixtures/seed-data.js';
-import { apiSessionFor, ownerApiSession, type ApiSession } from '../../fixtures/test-account.js';
+import { type ApiSession } from '../../fixtures/test-account.js';
 import { audit } from '../support/audit.util.js';
 
 /**
@@ -21,21 +23,29 @@ import { audit } from '../support/audit.util.js';
  * the same reason `test-account.ts` gives for accounts: a harness that reached past the contract
  * would be testing a path the product does not have.
  *
- * The two standing role accounts of `role-account.ts` play the two parts a visibility check needs:
- * `admin` is made the project's lead (and therefore its `LEAD` member — `CreateProjectUseCase`
- * seats the creator and the lead as the first two memberships), `developer` never is. Both hold
- * `project:read` (`SYSTEM_ROLE_PERMISSIONS`), so the difference measured below is the resource ACL,
- * not the capability — a stranger who could not even open `/projects` would pass this file for the
- * wrong reason.
+ * The stranger side of the visibility check is the standing `developer` role account of
+ * `role-account.ts` — read-only here (never seated on anything this file creates), so nothing in
+ * this file bumps its `permissions_version` and a sibling file signed in as the same account races
+ * nothing. It holds `project:read` (`SYSTEM_ROLE_PERMISSIONS`), so the difference measured below is
+ * the resource ACL, not the capability — a stranger who could not even open `/projects` would pass
+ * this file for the wrong reason.
  *
- * **Every mutating call signs in fresh, immediately before it.** Seating a membership bumps the
- * subject's `permissions_version` in the same transaction (`project-member.repository.ts`,
+ * **The member/lead side is a reusable scenario colleague (`ensureScenarioColleague`), not the
+ * standing `admin` role account.** Measured 2026-09-27: `project-overview.spec.ts` also makes
+ * `admin` the `LEAD` of a project of its own, in whatever worker Playwright happens to run it in —
+ * that bumps `admin`'s `permissions_version` at a moment this file cannot predict, and a browser
+ * session already signed in as `admin` reads the bump as a stale access token rather than the list
+ * this test asks about. A colleague neither this file nor any other seats on anything but its own
+ * scenario's project has no such neighbour — and reused rather than reinvited every run, because a
+ * one-off colleague per run would spend this machine's `invitation_accept` budget three times over
+ * across the three files in this directory, run back to back (`fresh-session.util.ts`).
+ *
+ * **Every mutating API call signs in fresh, immediately before it**, and retries once more with
+ * another fresh session if that one turns out to have gone stale between minting and use — the same
+ * cross-worker race `fresh-session.util.ts` explains: seating a membership bumps the subject's
+ * `permissions_version` in the same transaction (`project-member.repository.ts`,
  * `bumpPermissionsVersionOf`), which is exactly what an already-issued access token carries a
- * snapshot of (`authenticate-session.query.ts`) — so the owner's own token goes stale the moment
- * the first `POST /projects` seats them as its lead, and a second call on that same token would be
- * refused `401 unauthenticated`, indistinguishable from a broken fixture. A fresh sign-in per call
- * is the same cost `session.fixture.ts` already pays for the same reason, applied to the API
- * session rather than the browser one.
+ * snapshot of (`authenticate-session.query.ts`).
  */
 
 /** A key this suite invented owns — `PROJECT_KEY_PATTERN`: a letter, then up to nine `[A-Z0-9]`. */
@@ -86,17 +96,52 @@ const removeProject = async (owner: ApiSession, id: string): Promise<void> => {
   });
 };
 
+const apiURL = (): string => process.env['E2E_API_URL'] ?? 'http://localhost:3000';
+const browserOrigin = (): string =>
+  new URL(process.env['E2E_BASE_URL'] ?? 'http://localhost:5173').origin;
+
 /**
- * Runs one owner-authenticated call under its own, freshly minted session — never a session another
- * call already spent (see the file doc on why a reused token goes stale after the first seat).
+ * A signed-in page for an account outside `session.fixture.ts`'s closed `FixtureRole` list — the
+ * one-off colleague this file provisions for the member/lead side of the visibility check. Mirrors
+ * that file's own `mintSession`/`signedInPage` (same login, same same-origin `/auth/refresh`
+ * exchange, same reason for both), duplicated here because those two are not exported and take only
+ * a `FixtureRole`.
  */
-const withOwnerSession = async <T>(action: (owner: ApiSession) => Promise<T>): Promise<T> => {
-  const owner = await ownerApiSession(SEED_ORGANIZATION_A);
+const withColleaguePage = async (
+  browser: Browser,
+  email: string,
+  body: (page: Page) => Promise<void>,
+): Promise<void> => {
+  const login = await apiRequestContext.newContext({
+    baseURL: apiURL(),
+    extraHTTPHeaders: { origin: browserOrigin() },
+  });
+
+  let storageState: Awaited<ReturnType<typeof login.storageState>>;
 
   try {
-    return await action(owner);
+    const signedIn = await login.post('/api/v1/auth/login', {
+      data: { email, password: SEED_PASSWORD },
+    });
+
+    expect(signedIn.ok(), await signedIn.text()).toBe(true);
+
+    const resumed = await login.post('/api/v1/auth/refresh');
+
+    expect(resumed.ok(), await resumed.text()).toBe(true);
+
+    storageState = await login.storageState();
   } finally {
-    await owner.context.dispose();
+    await login.dispose();
+  }
+
+  const context = await browser.newContext({ storageState });
+  const page = await context.newPage();
+
+  try {
+    await body(page);
+  } finally {
+    await context.close();
   }
 };
 
@@ -107,30 +152,40 @@ test.describe('the projects screen', () => {
   // that bump against a sibling worker's own fresh owner login (same organization, same owner
   // account) and answers `401 unauthenticated` to whichever call loses — a fixture problem the
   // product's own token model creates, not a defect in it. Serial keeps the whole file, seed
-  // included, on one worker and off that race.
+  // included, on one worker and off that race. Cross-*file* races of the same shape are handled by
+  // `withOwnerSession`'s retry (`fresh-session.util.ts`) and by never seating the standing `admin`
+  // role account on anything (see the file doc).
   test.describe.configure({ mode: 'serial' });
 
   let publicProject: CreatedProject;
   let privateProject: CreatedProject;
+  let leadColleagueEmail: string;
 
   test.beforeAll(async () => {
-    const admin = await apiSessionFor(roleAccountEmail(SEED_ORGANIZATION_A, 'admin'));
+    publicProject = await withOwnerSession(SEED_ORGANIZATION_A, (owner) =>
+      createProject(owner, { label: 'Public', visibility: 'PUBLIC_ORG', leadId: owner.userId }),
+    );
 
-    try {
-      publicProject = await withOwnerSession((owner) =>
-        createProject(owner, { label: 'Public', visibility: 'PUBLIC_ORG', leadId: owner.userId }),
-      );
-      privateProject = await withOwnerSession((owner) =>
-        createProject(owner, { label: 'Private', visibility: 'PRIVATE', leadId: admin.userId }),
-      );
-    } finally {
-      await admin.context.dispose();
-    }
+    // A reusable scenario colleague — see the file doc on why the member/lead side does not use
+    // the standing `admin` role account. `developer`'s own system role is reused for it only as a
+    // convenient, already-minimal capability set (`project:read` and nothing project-shaped beyond
+    // it) — this is a fresh person, not that account.
+    const colleague = await withOwnerSession(SEED_ORGANIZATION_A, (owner) =>
+      ensureScenarioColleague(owner, SEED_ORGANIZATION_A, 'project-list-lead', 'developer'),
+    );
+
+    leadColleagueEmail = colleague.email;
+
+    privateProject = await withOwnerSession(SEED_ORGANIZATION_A, (owner) =>
+      createProject(owner, { label: 'Private', visibility: 'PRIVATE', leadId: colleague.userId }),
+    );
   });
 
   test.afterAll(async () => {
-    await withOwnerSession((owner) => removeProject(owner, publicProject.id));
-    await withOwnerSession((owner) => removeProject(owner, privateProject.id));
+    await withOwnerSession(SEED_ORGANIZATION_A, (owner) => removeProject(owner, publicProject.id));
+    await withOwnerSession(SEED_ORGANIZATION_A, (owner) => removeProject(owner, privateProject.id));
+    // The scenario colleague is not deactivated here — `ensureScenarioColleague`'s doc explains why
+    // it is meant to outlive the run, the same as the standing role accounts.
   });
 
   test('a search query and a status filter survive a full page reload', async ({ ownerPage }) => {
@@ -209,13 +264,11 @@ test.describe('the projects screen', () => {
     });
   });
 
-  test.describe('a private project, the member’s side', () => {
-    test.use({ role: 'admin' });
+  test('a private project’s lead sees it in their own list', async ({ browser }) => {
+    await withColleaguePage(browser, leadColleagueEmail, async (page) => {
+      await page.goto(`/projects?view=table&q=${encodeURIComponent(privateProject.name)}`);
 
-    test('the project’s lead sees it in their own list', async ({ rolePage }) => {
-      await rolePage.goto(`/projects?view=table&q=${encodeURIComponent(privateProject.name)}`);
-
-      const table = rolePage.getByRole('table');
+      const table = page.getByRole('table');
 
       await expect(table).toBeVisible();
       await expect(table).toContainText(privateProject.name);

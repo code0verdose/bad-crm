@@ -2,17 +2,11 @@ import { randomUUID } from 'node:crypto';
 
 import { request as apiRequestContext, type Browser, type Page } from '@playwright/test';
 
-import { expect, test } from '../../fixtures/session.fixture.js';
+import { ensureScenarioColleague, withOwnerSession } from '../../fixtures/fresh-session.util.js';
 import { roleAccountEmail } from '../../fixtures/role-account.js';
 import { SEED_ORGANIZATION_A, SEED_PASSWORD } from '../../fixtures/seed-data.js';
-import {
-  apiSessionFor,
-  ownerApiSession,
-  provisionColleague,
-  systemRoleId,
-  testAccountEmail,
-  type ApiSession,
-} from '../../fixtures/test-account.js';
+import { expect, test } from '../../fixtures/session.fixture.js';
+import { apiSessionFor, type ApiSession } from '../../fixtures/test-account.js';
 import { audit } from '../support/audit.util.js';
 
 /**
@@ -38,14 +32,18 @@ import { audit } from '../support/audit.util.js';
  * creator and the lead as the first two memberships), which would make a session reused from an
  * earlier call answer `401 unauthenticated` rather than the assertion under test.
  *
- * **The `MEMBER` in the danger-zone scenario is a one-off colleague, not the standing `developer`
- * role account.** Measured 2026-09-27: `membership-invalidates-permissions.spec.ts` seats and
- * removes the *standing* `developer` account on a project of its own, in whatever worker Playwright
- * happens to run it in; that bumps `developer`'s `permissions_version` at a moment this file cannot
- * predict, and a browser session already signed in as `developer` reads the bump as a stale access
- * token — a raw route error, not the assertion under test. A colleague this file provisions and
- * never touches again has no such neighbour. The stranger-project scenario keeps the standing
- * `developer` role, because it never becomes a member of anything and so is never bumped.
+ * **The `MEMBER` in the danger-zone scenario is a reusable scenario colleague
+ * (`ensureScenarioColleague`, `fresh-session.util.ts`), not the standing `developer` role account.**
+ * Measured 2026-09-27: `membership-invalidates-permissions.spec.ts` seats and removes the
+ * *standing* `developer` account on a project of its own, in whatever worker Playwright happens to
+ * run it in; that bumps `developer`'s `permissions_version` at a moment this file cannot predict,
+ * and a browser session already signed in as `developer` reads the bump as a stale access token — a
+ * raw route error, not the assertion under test. A colleague neither file seats on anything but its
+ * own scenario's project has no such neighbour. It is reused across runs rather than reinvited,
+ * because a one-off colleague per run would spend this machine's `invitation_accept` budget three
+ * times over across the three files in this directory, run back to back. The stranger-project
+ * scenario keeps the standing `developer` role, because it never becomes a member of anything and
+ * so is never bumped.
  */
 
 const projectKey = (): string => `E2E${randomUUID().replace(/-/g, '').slice(0, 6).toUpperCase()}`;
@@ -111,52 +109,6 @@ const addProjectMember = async (
   expect(response.ok(), await response.text()).toBe(true);
 };
 
-/**
- * A session minted just before its call still answered `401 unauthenticated` — the login and the
- * call it authorised were on either side of a *sibling worker's* own project creation, which seats
- * that worker's owner or lead and bumps their `permissions_version` in between. `expect`'s custom
- * failure message (the response body) is what carries the code this far.
- */
-const isStaleSessionError = (error: unknown): boolean =>
-  error instanceof Error && error.message.includes('"code":"unauthenticated"');
-
-/** How many times a narrow cross-worker race is retried before it counts as a real failure. */
-const MAX_SESSION_ATTEMPTS = 4;
-
-/**
- * Runs one call under its own, freshly minted session of the kind `mint` produces, retrying with
- * another fresh session if the previous one turns out already stale (see `isStaleSessionError`).
- *
- * Safe to retry: every caller below hands in exactly one mutating request, and a `401` means the
- * gate refused it before anything was written — never a request that partly succeeded.
- */
-const withRetriedSession = async <T>(
-  mint: () => Promise<ApiSession>,
-  action: (session: ApiSession) => Promise<T>,
-): Promise<T> => {
-  for (let attempt = 1; attempt <= MAX_SESSION_ATTEMPTS; attempt += 1) {
-    const session = await mint();
-
-    try {
-      return await action(session);
-    } catch (error) {
-      if (attempt === MAX_SESSION_ATTEMPTS || !isStaleSessionError(error)) throw error;
-    } finally {
-      await session.context.dispose();
-    }
-  }
-
-  // Unreachable: the loop above always either returns or throws on its last attempt.
-  throw new Error('withRetriedSession: exhausted attempts without returning or throwing');
-};
-
-/**
- * Runs one owner-authenticated call — see the file doc on why a reused token goes stale after the
- * first seat, and `isStaleSessionError` above for the cross-worker version of the same staleness.
- */
-const withOwnerSession = async <T>(action: (owner: ApiSession) => Promise<T>): Promise<T> =>
-  withRetriedSession(() => ownerApiSession(SEED_ORGANIZATION_A), action);
-
 const apiURL = (): string => process.env['E2E_API_URL'] ?? 'http://localhost:3000';
 const browserOrigin = (): string =>
   new URL(process.env['E2E_BASE_URL'] ?? 'http://localhost:5173').origin;
@@ -219,34 +171,29 @@ test.describe('the project card', () => {
 
     try {
       // Nobody but its own creator (the owner) is ever seated on this one.
-      strangerProject = await withOwnerSession((owner) =>
+      strangerProject = await withOwnerSession(SEED_ORGANIZATION_A, (owner) =>
         createProject(owner, { label: 'Stranger', visibility: 'PRIVATE', leadId: owner.userId }),
       );
 
       // `admin` becomes its LEAD (MANAGER on the chain) at creation.
-      memberProject = await withOwnerSession((owner) =>
+      memberProject = await withOwnerSession(SEED_ORGANIZATION_A, (owner) =>
         createProject(owner, { label: 'Member', visibility: 'PRIVATE', leadId: admin.userId }),
       );
     } finally {
       await admin.context.dispose();
     }
 
-    // A one-off colleague — see the file doc on why the `MEMBER` scenario does not use the
-    // standing `developer` role account. `developer`'s own system role is reused for it only as a
-    // convenient, already-minimal capability set (`project:read` and nothing project-shaped
+    // A reusable scenario colleague — see the file doc on why the `MEMBER` scenario does not use
+    // the standing `developer` role account. `developer`'s own system role is reused for it only as
+    // a convenient, already-minimal capability set (`project:read` and nothing project-shaped
     // beyond it) — this is a fresh person, not that account.
-    const colleague = await withOwnerSession(async (owner) => {
-      const roleId = await systemRoleId(owner, 'developer');
-
-      return provisionColleague(owner, {
-        email: testAccountEmail('project-member'),
-        roleId,
-      });
-    });
+    const colleague = await withOwnerSession(SEED_ORGANIZATION_A, (owner) =>
+      ensureScenarioColleague(owner, SEED_ORGANIZATION_A, 'project-overview-member', 'developer'),
+    );
 
     memberColleagueEmail = colleague.email;
 
-    await withOwnerSession((owner) =>
+    await withOwnerSession(SEED_ORGANIZATION_A, (owner) =>
       addProjectMember(owner, memberProject.id, {
         userId: colleague.userId,
         projectRole: 'MEMBER',
@@ -256,28 +203,12 @@ test.describe('the project card', () => {
   });
 
   test.afterAll(async () => {
-    await withOwnerSession((owner) => removeProject(owner, strangerProject.id));
-    await withOwnerSession((owner) => removeProject(owner, memberProject.id));
-    // Belt beside the global teardown's braces: this run's own colleague swept immediately,
-    // rather than waiting for the suite-wide sweep by marker.
-    await withOwnerSession(async (owner) => {
-      const response = await owner.context.get(
-        `/api/v1/employees?${new URLSearchParams({ q: memberColleagueEmail, perPage: '10' }).toString()}`,
-        { headers: owner.headers },
-      );
-
-      if (!response.ok()) return;
-
-      const { items } = (await response.json()) as { items: readonly { userId: string }[] };
-      const [row] = items;
-
-      if (row === undefined) return;
-
-      await owner.context.post(`/api/v1/users/${row.userId}/deactivate`, {
-        headers: { ...owner.headers, 'Idempotency-Key': randomUUID() },
-        data: { reason: 'end-to-end run finished' },
-      });
-    });
+    await withOwnerSession(SEED_ORGANIZATION_A, (owner) =>
+      removeProject(owner, strangerProject.id),
+    );
+    await withOwnerSession(SEED_ORGANIZATION_A, (owner) => removeProject(owner, memberProject.id));
+    // The scenario colleague is not deactivated here — `ensureScenarioColleague`'s doc explains why
+    // it is meant to outlive the run, the same as the standing role accounts.
   });
 
   test.describe('a project the caller may not see', () => {

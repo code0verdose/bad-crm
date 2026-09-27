@@ -2,15 +2,10 @@ import { randomUUID } from 'node:crypto';
 
 import { request as apiRequestContext, type Browser, type Page } from '@playwright/test';
 
-import { expect, test } from '../../fixtures/session.fixture.js';
+import { ensureScenarioColleague, withOwnerSession } from '../../fixtures/fresh-session.util.js';
 import { SEED_ORGANIZATION_A, SEED_PASSWORD } from '../../fixtures/seed-data.js';
-import {
-  ownerApiSession,
-  provisionColleague,
-  systemRoleId,
-  testAccountEmail,
-  type ApiSession,
-} from '../../fixtures/test-account.js';
+import { expect, test } from '../../fixtures/session.fixture.js';
+import { type ApiSession } from '../../fixtures/test-account.js';
 
 /**
  * Membership as access, live (STORY-014-02, acceptance 4; STORY-014-05, acceptance 2).
@@ -34,14 +29,17 @@ import {
  * closed-contour behaviour `project-overview.spec.ts` checks for a project the caller is never
  * added to.
  *
- * **The colleague is a one-off account this file provisions, not the standing `developer` role
- * account.** This scenario adds and removes a membership twice over — exactly the kind of mutation
- * that bumps its subject's `permissions_version` — and `project-overview.spec.ts` signs in as that
- * same standing account to read a project it is deliberately never added to. Sharing the account
- * would let this file's membership churn go stale under that file's already-open browser session in
- * whichever worker Playwright happens to schedule them into, which is a race between two files
- * rather than anything either one asserts. A colleague neither file otherwise touches removes the
- * neighbour instead of trying to out-time it.
+ * **The colleague is a reusable scenario account (`ensureScenarioColleague`,
+ * `fresh-session.util.ts`), not the standing `developer` role account.** This scenario adds and
+ * removes a membership twice over — exactly the kind of mutation that bumps its subject's
+ * `permissions_version` — and `project-overview.spec.ts` signs in as that same standing account to
+ * read a project it is deliberately never added to. Sharing the account would let this file's
+ * membership churn go stale under that file's already-open browser session in whichever worker
+ * Playwright happens to schedule them into, which is a race between two files rather than anything
+ * either one asserts. A colleague neither file otherwise touches removes the neighbour instead of
+ * trying to out-time it — reused across runs rather than reinvited, for the reason
+ * `fresh-session.util.ts` gives: three files' worth of fresh invitations, run back to back, exhaust
+ * this machine's `invitation_accept` budget.
  */
 
 const projectKey = (): string => `E2E${randomUUID().replace(/-/g, '').slice(0, 6).toUpperCase()}`;
@@ -120,42 +118,6 @@ const removeProjectMember = async (
   expect(response.ok(), await response.text()).toBe(true);
 };
 
-/**
- * A session minted just before its call still answered `401 unauthenticated` — the login and the
- * call it authorised were on either side of a *sibling worker's* own project creation, which seats
- * that worker's owner and bumps `permissions_version` in between. `expect`'s custom failure message
- * (the response body) is what carries the code this far.
- */
-const isStaleSessionError = (error: unknown): boolean =>
-  error instanceof Error && error.message.includes('"code":"unauthenticated"');
-
-/** How many times a narrow cross-worker race is retried before it counts as a real failure. */
-const MAX_SESSION_ATTEMPTS = 4;
-
-/**
- * Runs one owner-authenticated call under its own, freshly minted session, retrying with another
- * fresh one if the previous session turns out already stale (see `isStaleSessionError`).
- *
- * Safe to retry: every caller below hands in exactly one mutating request, and a `401` means the
- * gate refused it before anything was written — never a request that partly succeeded.
- */
-const withOwnerSession = async <T>(action: (owner: ApiSession) => Promise<T>): Promise<T> => {
-  for (let attempt = 1; attempt <= MAX_SESSION_ATTEMPTS; attempt += 1) {
-    const owner = await ownerApiSession(SEED_ORGANIZATION_A);
-
-    try {
-      return await action(owner);
-    } catch (error) {
-      if (attempt === MAX_SESSION_ATTEMPTS || !isStaleSessionError(error)) throw error;
-    } finally {
-      await owner.context.dispose();
-    }
-  }
-
-  // Unreachable: the loop above always either returns or throws on its last attempt.
-  throw new Error('withOwnerSession: exhausted attempts without returning or throwing');
-};
-
 const apiURL = (): string => process.env['E2E_API_URL'] ?? 'http://localhost:3000';
 const browserOrigin = (): string =>
   new URL(process.env['E2E_BASE_URL'] ?? 'http://localhost:5173').origin;
@@ -214,37 +176,24 @@ test.describe('project membership and live access', () => {
   let colleagueEmail: string;
 
   test.beforeAll(async () => {
-    project = await withOwnerSession((owner) =>
+    project = await withOwnerSession(SEED_ORGANIZATION_A, (owner) =>
       createProject(owner, { label: 'Live-access', visibility: 'PRIVATE', leadId: owner.userId }),
     );
 
-    // A one-off colleague — see the file doc on why this scenario does not sign in as the standing
-    // `developer` role account.
-    const colleague = await withOwnerSession(async (owner) => {
-      const roleId = await systemRoleId(owner, 'developer');
-
-      return provisionColleague(owner, {
-        email: testAccountEmail('live-access'),
-        roleId,
-      });
-    });
+    // A reusable scenario colleague — see the file doc on why this scenario does not sign in as
+    // the standing `developer` role account.
+    const colleague = await withOwnerSession(SEED_ORGANIZATION_A, (owner) =>
+      ensureScenarioColleague(owner, SEED_ORGANIZATION_A, 'membership-live-access', 'developer'),
+    );
 
     colleagueId = colleague.userId;
     colleagueEmail = colleague.email;
   });
 
   test.afterAll(async () => {
-    await withOwnerSession((owner) => removeProject(owner, project.id));
-    // Belt beside the global teardown's braces: this run's own colleague swept immediately.
-    await withOwnerSession(async (owner) => {
-      const response = await owner.context.post(`/api/v1/users/${colleagueId}/deactivate`, {
-        headers: { ...owner.headers, 'Idempotency-Key': randomUUID() },
-        data: { reason: 'end-to-end run finished' },
-      });
-
-      // Best-effort: a project already removed above leaves this call nothing new to revoke.
-      void response;
-    });
+    await withOwnerSession(SEED_ORGANIZATION_A, (owner) => removeProject(owner, project.id));
+    // The scenario colleague is not deactivated here — `ensureScenarioColleague`'s doc explains why
+    // it is meant to outlive the run, the same as the standing role accounts.
   });
 
   test('a colleague gains and loses access on the very next request, with no sign-in in between', async ({
@@ -259,7 +208,7 @@ test.describe('project membership and live access', () => {
       // The product's own endpoint, from a session that owns none of this scenario's assertions —
       // the owner is the project's lead (`MANAGER` on the chain), so a fresh owner session is what
       // `project-list.spec.ts` also uses to make a change to a project it just created.
-      await withOwnerSession((owner) =>
+      await withOwnerSession(SEED_ORGANIZATION_A, (owner) =>
         addProjectMember(owner, project.id, {
           userId: colleagueId,
           projectRole: 'MEMBER',
@@ -274,7 +223,9 @@ test.describe('project membership and live access', () => {
       await expect(page.getByRole('heading', { level: 2, name: project.name })).toBeVisible();
       await expect(page.getByRole('heading', { level: 1, name: 'Nothing here' })).toHaveCount(0);
 
-      await withOwnerSession((owner) => removeProjectMember(owner, project.id, colleagueId));
+      await withOwnerSession(SEED_ORGANIZATION_A, (owner) =>
+        removeProjectMember(owner, project.id, colleagueId),
+      );
 
       await page.reload();
       await expect(page.getByRole('heading', { level: 1, name: 'Nothing here' })).toBeVisible();
