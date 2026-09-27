@@ -4,6 +4,11 @@ import {
 } from '@/application/access/ports/project-access-reader.port.js';
 import { type AclReaderPort } from '@/application/access/ports/acl-reader.port.js';
 import {
+  type ProjectAudienceAccessReaderPort,
+  type ProjectGrantFacts,
+  type ProjectSeatFacts,
+} from '@/application/access/ports/project-audience-access-reader.port.js';
+import {
   type AclEntryDraft,
   type AclEntryRow,
   type AclListEntry,
@@ -101,7 +106,8 @@ export class FakeProjectStore
     ProjectAccessReaderPort,
     AclReaderPort,
     AclRepositoryPort,
-    ProjectListQueryPort
+    ProjectListQueryPort,
+    ProjectAudienceAccessReaderPort
 {
   readonly rows: StoredProject[] = [];
   /** Every membership the store ever wrote, live and ended alike. */
@@ -128,6 +134,11 @@ export class FakeProjectStore
    * apart from `entries`, which answer every chain alike and so stand for the organization node.
    */
   readonly projectGrants = new Map<string, AclEntryOnChain[]>();
+  /**
+   * What `grantsOn` answers — the grants reaching each colleague on the chain, seeded by a suite that
+   * wants the audience of a visibility change. Kept apart from `entries`, which answer the caller.
+   */
+  readonly audienceGrants: ProjectGrantFacts[] = [];
   /** Every chain the resolver asked about, in order. */
   readonly chains: (readonly AclChainNode[])[] = [];
   /** Every call that reached a port, in order — the trace `get-project-detail.query.test.ts` also holds. */
@@ -677,5 +688,25 @@ export class FakeProjectStore
     return this.aclFailure === undefined
       ? Promise.resolve([...this.entries])
       : Promise.reject(this.aclFailure);
+  }
+
+  /** The active accounts of `subjects`, each with the live seat the roster holds for them. */
+  seatsOf(projectId: string): Promise<readonly ProjectSeatFacts[]> {
+    this.trace.push('seatsOf');
+
+    return Promise.resolve(
+      [...this.subjects.values()]
+        .filter((subject) => subject.status === 'ACTIVE')
+        .map((subject) => ({
+          userId: subject.userId,
+          memberRole: this.liveOf(projectId, subject.userId)?.projectRole ?? null,
+        })),
+    );
+  }
+
+  grantsOn(): Promise<readonly ProjectGrantFacts[]> {
+    this.trace.push('grantsOn');
+
+    return Promise.resolve([...this.audienceGrants]);
   }
 }
