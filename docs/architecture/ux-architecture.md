@@ -272,9 +272,12 @@ flowchart TD
   `units/iam`. Гард сессии бросает `redirect({ to: '/login', search: { redirect } })`; гард права —
   `PermissionDeniedError` (экран 403) или `notFound()`, и **выбор обязателен на каждом вызове**
   (см. «403 vs 404»).
-  `requireProjectMember`, `requireAnyPermission(...p)`, `requireVaultUnlocked` в таблицах ниже —
-  **проектируемые**: их заведут эпики своих доменов (проекты — EPIC-014, vault — M4+), в коде их
-  пока нет.
+  Проектный гард отгружен с EPIC-014 (2026-09-26, `39bfd69`): `ProjectService.ProjectGuards.requireProjectAccess`
+  в `units/project/service/guards` — он не решает доступ сам, а читает карточку проекта через тот же
+  кеш и превращает отказ сервера в `notFound()`. Прежнее проектное имя `requireProjectMember`
+  не прижилось: проект с видимостью `PUBLIC_ORG` читает любой член организации, не только участник.
+  `requireAnyPermission(...p)`, `requireVaultUnlocked` в таблицах ниже — **проектируемые**: их
+  заведут эпики своих доменов (vault — M4+), в коде их пока нет.
 - Search-схемы — Zod, лежат в `units/<unit>/model/validation/*.schema.ts`, подключаются
   `validateSearch: zodValidator(schema)`.
 - Каждый маршрут с данными объявляет `pendingComponent`, `errorComponent`; секции — `notFoundComponent`.
@@ -349,9 +352,10 @@ EPIC-006), а клиентский экран остаётся невыполн�
 
 | Маршрут | Файл route | Гард (beforeLoad) | Search-params (Zod) | Основной виджет |
 |---|---|---|---|---|
-| `/projects` | `routes/_authenticated/projects/index.tsx` | `requireSession` | `projectListSearchSchema`: `q`, `status[]`, `lead?`, `client?`, `view=grid\|table`, `sort`, `page` | `ProjectListWidget` |
-| `/projects/$projectId` | `routes/_authenticated/projects/$projectId/route.tsx` | `requireProjectMember` | — | `ProjectLayoutWidget` |
-| `/projects/$projectId/` | `routes/_authenticated/projects/$projectId/index.tsx` | наследует | `projectOverviewSchema`: `range` | `ProjectOverviewWidget` |
+| `/projects` | `routes/_authenticated/projects/index.tsx` | `requirePermission('project:read', whenDenied: 'forbidden')` | `projectListSearchSchema` (`units/project/model/validation`): `q`, `status[]`, `lead?`, `member=me?`, `view=grid\|table`, `sort`, `page`, `perPage`; без `client` — фильтр придёт со STORY-014-07 | `ProjectList` |
+| `/projects/new` | `routes/_authenticated/projects/new.tsx` | `requirePermission('project:create', whenDenied: 'forbidden')` | — | `ProjectCreate` |
+| `/projects/$projectId` | `routes/_authenticated/projects/$projectId/route.tsx` | `requirePermission('project:read', whenDenied: 'not-found')`, затем `ProjectGuards.requireProjectAccess` | — | `ProjectHeader` + вкладки (`pages/project/layout.tsx`) |
+| `/projects/$projectId/` | `routes/_authenticated/projects/$projectId/index.tsx` | наследует | — (`range` из истории не заведён: блоку «последние изменения» нечего читать до STORY-016-03) | `ProjectOverview` |
 | `/projects/$projectId/boards` | `routes/_authenticated/projects/$projectId/boards.tsx` | наследует | `q` | `BoardListWidget` |
 | `/projects/$projectId/board/$boardId` | `routes/_authenticated/projects/$projectId/board.$boardId.tsx` | наследует | `boardSearchSchema`: `q`, `assignee[]`, `label[]`, `priority[]`, `sprint?`, `swimlane=none\|assignee\|epic`, `task?` | `KanbanBoardWidget` |
 | `/projects/$projectId/backlog` | `routes/_authenticated/projects/$projectId/backlog.tsx` | наследует | `backlogSearchSchema`: `q`, `label[]`, `epic?`, `sort`, `page`, `task?` | `BacklogWidget` |
@@ -362,8 +366,8 @@ EPIC-006), а клиентский экран остаётся невыполн�
 | `/projects/$projectId/ci` | `routes/_authenticated/projects/$projectId/ci/index.tsx` | `requirePermission('ci:read')` | `ciRunsSearchSchema`: `workflow?`, `status[]`, `branch?`, `cursor?` | `WorkflowRunListWidget` |
 | `/projects/$projectId/ci/$runId` | `routes/_authenticated/projects/$projectId/ci/$runId.tsx` | `requirePermission('ci:read')` | `job?`, `step?` | `WorkflowRunDetailWidget` |
 | `/projects/$projectId/time` | `routes/_authenticated/projects/$projectId/time.tsx` | `requirePermission('time:read_team')` | `from`, `to`, `user[]` | `ProjectTimeWidget` |
-| `/projects/$projectId/members` | `routes/_authenticated/projects/$projectId/members.tsx` | наследует | `q`, `role[]` | `ProjectMembersWidget` |
-| `/projects/$projectId/settings` | `routes/_authenticated/projects/$projectId/settings.tsx` | `requirePermission('project:manage_settings')` | `tab=general\|integrations\|danger` | `ProjectSettingsWidget` |
+| `/projects/$projectId/members` | `routes/_authenticated/projects/$projectId/members.tsx` | наследует | — (фильтры состава `q`, `role[]` в URL не вынесены — STORY-014-02, критерий 10, открыт) | `ProjectMembers` |
+| `/projects/$projectId/settings` | `routes/_authenticated/projects/$projectId/settings.tsx` | наследует — своего гарда нет: какие секции видны (правка, видимость, архив, удаление), решает блок `permissions` карточки; читателю, которому не открыто ничего, — фраза вместо 404 | — (без `tab`: секции идут одной страницей) | `ProjectSettings` |
 
 ### Задачи
 
@@ -601,7 +605,7 @@ Empty — первая неделя работы: карточка-привет�
 **Состояния.** Loading — skeleton-колонки с 3 карточками-плейсхолдерами. Empty (доска без задач) —
 `EmptyState` в первой колонке с «Создать задачу» и ссылкой на импорт. Empty (не подошёл фильтр) —
 другой текст и кнопка «Сбросить фильтры». Error — inline `DataState` на месте доски с retry, тоста
-нет. No-access — маршрут не отдаётся: `requireProjectMember` бросает `notFound()`, а гард права на
+нет. No-access — маршрут не отдаётся: проектный гард `ProjectGuards.requireProjectAccess` бросает `notFound()`, а гард права на
 доске вызывается с `whenDenied: 'not-found'` — доска принадлежит закрытому контуру, где секрет сам
 факт существования (не 403; см. «403 vs 404»).
 
