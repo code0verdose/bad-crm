@@ -62,7 +62,7 @@ export function ProjectMemberTable({
   const noteId = useId();
   const returning = useRef<string | null>(null);
   const noAnchor = useRef<HTMLElement | null>(null);
-  const handOffFocus = SharedHooks.useFocusHandoff(returnFocusTo ?? noAnchor);
+  const handOffFocus = SharedHooks.useRemovalFocusHandoff(returnFocusTo ?? noAnchor);
 
   const remove = useCallback(
     (userId: string) => {

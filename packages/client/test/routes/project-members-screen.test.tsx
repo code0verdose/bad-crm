@@ -510,6 +510,122 @@ describe('the roster, to a screen reader and a keyboard', () => {
 });
 
 /**
+ * STORY-014-02, acceptance 10: the roster's filters live in the URL. The endpoint answers the whole
+ * roster and knows no names, so the narrowing happens on the rows already on screen — but the state
+ * is the address, so it is read from a link and written back with every change.
+ */
+describe('the roster filters', () => {
+  const searchBox = () =>
+    screen.getByRole('searchbox', { name: 'projects.members.filters.search' });
+
+  it('narrows the roster by a phrase, and writes it to the URL once the typing pauses', async () => {
+    const user = userEvent.setup();
+    const { router } = await startAt({ section: 'members' });
+    const table = await roster();
+
+    await user.type(searchBox(), 'oleg');
+
+    await waitFor(() => {
+      expect(router.state.location.search).toMatchObject({ q: 'oleg' });
+    });
+    expect(namesIn(table)).toEqual(['Oleg Petrov']);
+  });
+
+  it('narrows the roster by role from the chips, and names the filter as a removable chip', async () => {
+    const user = userEvent.setup();
+    const { router } = await startAt({ section: 'members' });
+    const table = await roster();
+
+    await user.click(screen.getByRole('checkbox', { name: 'projects.role.LEAD' }));
+
+    await waitFor(() => {
+      expect(router.state.location.search).toMatchObject({ role: ['LEAD'] });
+    });
+    expect(namesIn(table)).toEqual(['Anna Ivanova']);
+    expect(screen.getByText('projects.members.filters.shown')).toBeInTheDocument();
+    // The bar of active filters: the chip's cross and «reset all» (`rules/lists-and-filters.mdc` §11).
+    expect(screen.getByRole('button', { name: 'filter.remove' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'filter.reset' })).toBeInTheDocument();
+  });
+
+  it('reads the filter from the address it is opened at', async () => {
+    const { router } = await startAt({ section: 'members' });
+
+    await roster();
+    await router.navigate({
+      to: '/projects/$projectId/members',
+      params: { projectId: PROJECT },
+      search: { role: ['MEMBER'] },
+    });
+
+    await waitFor(() => {
+      expect(namesIn(screen.getByRole('table'))).toEqual(['Oleg Petrov']);
+    });
+    expect(screen.getByRole('checkbox', { name: 'projects.role.MEMBER' })).toBeChecked();
+  });
+
+  it('tells «nothing matches» from «nobody is here», and resets back to the search box', async () => {
+    const user = userEvent.setup();
+    const { router } = await startAt({ section: 'members' });
+
+    await roster();
+    await user.type(searchBox(), 'nobody-by-this-name');
+
+    const reset = await screen.findByRole('button', { name: 'projects.members.filters.reset' });
+
+    expect(screen.getByText('projects.members.filters.noMatchesTitle')).toBeInTheDocument();
+    expect(screen.queryByText('projects.members.empty')).not.toBeInTheDocument();
+
+    reset.focus();
+    await user.keyboard('{Enter}');
+
+    await waitFor(() => {
+      expect(namesIn(screen.getByRole('table'))).toEqual(['Anna Ivanova', 'Oleg Petrov']);
+    });
+    expect(router.state.location.search).not.toHaveProperty('q');
+    await waitFor(() => {
+      expect(searchBox()).toHaveFocus();
+    });
+  });
+
+  it('hands the focus to the search box when a role change takes the row out of the filter', async () => {
+    const user = userEvent.setup();
+
+    await startAt({ section: 'members', holdRosterRefetch: true });
+
+    const table = await roster();
+
+    await user.click(screen.getByRole('checkbox', { name: 'projects.role.MEMBER' }));
+    await waitFor(() => {
+      expect(namesIn(table)).toEqual(['Oleg Petrov']);
+    });
+
+    const role = within(rowOf(table, 'Oleg Petrov')).getByRole('combobox');
+
+    role.focus();
+    await user.selectOptions(role, 'REVIEWER');
+
+    await waitFor(() => {
+      expect(screen.queryByRole('table')).toBeNull();
+    });
+    await waitFor(() => {
+      expect(searchBox()).toHaveFocus();
+    });
+  });
+
+  it('has no axe violations with a filter on', async () => {
+    const user = userEvent.setup();
+    const { container } = await startAt({ section: 'members' });
+
+    await roster();
+    await user.click(screen.getByRole('checkbox', { name: 'projects.role.LEAD' }));
+    await screen.findByText('projects.members.filters.shown');
+
+    expect(await axeViolationsIn(container, { control: 'aria-allowed-attr' })).toEqual([]);
+  });
+});
+
+/**
  * The sentences `cimode` cannot state: a role select and a remove button name the person, with the
  * real catalogues — a placeholder left in a label is a key renamed on one side only.
  */
