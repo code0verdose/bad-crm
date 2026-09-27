@@ -218,6 +218,21 @@ describe('the project switcher', () => {
     expect(localStorage.getItem(`bc.recent-projects.v1:${ME}`)).toBeNull();
   });
 
+  it('keeps the remembered list through a session event that is not its end', async () => {
+    const user = userEvent.setup();
+    const { trigger } = await mounted();
+    const { AuthLib } = await import('@units/auth');
+
+    await user.click(trigger);
+    await screen.findByText('Other project');
+
+    act(() => {
+      AuthLib.emitAuthEvent('refresh-failed');
+    });
+
+    expect(localStorage.getItem(`bc.recent-projects.v1:${ME}`)).not.toBeNull();
+  });
+
   it('keeps the section: members of this project become members of the chosen one', async () => {
     const user = userEvent.setup();
     const { trigger, router } = await mounted();
