@@ -123,9 +123,11 @@ describe('CreateProjectUseCase', () => {
   });
 
   /**
-   * The row is already written when the block is decided, so a chain that cannot be read must not
-   * undo the creation — and must not guess either: every flag is `false` (fail-closed), and the
-   * client learns the real answer from the next read of the card.
+   * The row is already written when the block is decided, so a resolver that answers `unavailable`
+   * must not undo the creation — and must not guess either: every flag is `false` (fail-closed), and
+   * the client learns the real answer from the next read of the card. This is the application-side
+   * failure only: a failed SQL statement aborts the transaction on a real database and the creation
+   * fails with it — the double here cannot show that, and does not claim to.
    */
   it('answers every flag false, and still creates, when the chain cannot be read', async () => {
     const { harness, useCase } = build();

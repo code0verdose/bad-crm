@@ -126,6 +126,9 @@ export class CreateProjectUseCase {
 
         // The response is the card's `ProjectDetail`, so it carries the card's block, decided the
         // card's way — over the row and the chain as this transaction now sees them, seats included.
+        // A resolver that fails in the application answers every flag `false` and the project
+        // stays created; a failed SQL statement is another matter — Postgres aborts the transaction,
+        // so the commit fails and nothing is created (fail-closed either way, never a wider block).
         const permissions = await decideProjectPermissions(
           input.actor,
           projectReadFacts(this.projects, this.acl, input.actor, projectId),
