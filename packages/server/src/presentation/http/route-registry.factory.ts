@@ -91,6 +91,7 @@ import {
   createProjectBodySchema,
   projectIdParamsSchema,
   projectListQuerySchema,
+  projectOptionsQuerySchema,
   projectMemberParamsSchema,
   projectMembersQuerySchema,
   projectVisibilityPreviewQuerySchema,
@@ -265,6 +266,7 @@ export const createRouteRegistry = (
   const teamMemberValidator = validate({ params: teamMemberParamsSchema });
 
   const projectListValidator = validate({ query: projectListQuerySchema });
+  const projectOptionsValidator = validate({ query: projectOptionsQuerySchema });
   const projectIdValidator = validate({ params: projectIdParamsSchema });
   const createProjectValidator = validate({ body: createProjectBodySchema });
   const updateProjectValidator = validate({
@@ -295,6 +297,7 @@ export const createRouteRegistry = (
 
   const projects = createProjectController({
     listProjects: dependencies.project.listProjects,
+    listProjectOptions: dependencies.project.listProjectOptions,
     getProjectDetail: dependencies.project.getProjectDetail,
     createProject: dependencies.project.createProject,
     updateProject: dependencies.project.updateProject,
@@ -307,6 +310,7 @@ export const createRouteRegistry = (
     updateMember: dependencies.project.updateProjectMember,
     removeMember: dependencies.project.removeProjectMember,
     listValidator: projectListValidator,
+    optionsValidator: projectOptionsValidator,
     projectIdValidator,
     createValidator: createProjectValidator,
     updateValidator: updateProjectValidator,
@@ -774,6 +778,18 @@ export const createRouteRegistry = (
       // which is the only place that can answer 404 rather than 403 for somebody else's account.
       permission: 'project:create',
       aclCheckedIn: 'CreateProjectUseCase',
+    },
+    // Before `/projects/:projectId`: Express matches in declaration order, and the parameter route
+    // would otherwise swallow `/projects/options` and answer 422 for a `projectId` that is not a
+    // UUID — the shadowing the `/employees/org-chart` entry above names.
+    {
+      method: 'get',
+      path: `${API_PREFIX}/projects/options`,
+      handlers: [projectOptionsValidator.handler, projects.options],
+      permission: 'project:read',
+      // The list's decision on the list's set: the capability first, then the same visibility plan
+      // `ListProjectsQuery` computes, applied in SQL by the same adapter (STORY-014-06).
+      aclCheckedIn: 'ListProjectOptionsQuery',
     },
     {
       method: 'get',

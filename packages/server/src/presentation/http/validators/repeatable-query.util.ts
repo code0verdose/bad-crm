@@ -11,9 +11,13 @@ import { z } from 'zod';
  * `preprocess` rather than a union of «array or scalar»: the branch has to happen before the item
  * schema runs, and doing it here means the item schema — a UUID, a status — is stated once.
  */
-export const repeatable = <T extends z.ZodType>(item: T): z.ZodType<z.output<T>[], unknown> =>
+export const repeatable = <T extends z.ZodType>(
+  item: T,
+  /** At most this many values; more is a `422` `too_big` on the parameter. */
+  max?: number,
+): z.ZodType<z.output<T>[], unknown> =>
   z.preprocess(
     (value: unknown): unknown[] =>
       value === undefined ? [] : Array.isArray(value) ? value : [value],
-    z.array(item),
+    max === undefined ? z.array(item) : z.array(item).max(max),
   );

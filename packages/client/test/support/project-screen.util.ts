@@ -57,7 +57,7 @@ export const ALL: Flags = {
 
 export interface Call {
   readonly url: string;
-  /** The query string, `?` included — the path alone does not say which preview was asked for. */
+  /** The query string, `?`-prefixed or empty — what a read was asked with. */
   readonly search: string;
   readonly method: string;
   readonly body: unknown;
@@ -150,6 +150,8 @@ export interface ServerOptions {
   readonly alsoOnProject?: readonly string[];
   /** Answers `GET …/visibility-impact`. Three lose, two gain unless said otherwise. */
   readonly impact?: Handler;
+  /** Answers the header switcher's `GET /projects/options`. Nothing on offer unless said otherwise. */
+  readonly projectOptions?: Handler;
 }
 
 const stubServer = ({
@@ -161,6 +163,7 @@ const stubServer = ({
   people = PEOPLE,
   alsoOnProject = [],
   impact = () => json({ losingAccess: 3, gainingAccess: 2 }),
+  projectOptions = () => json({ items: [], hasMore: false, recent: [] }),
 }: ServerOptions): void => {
   const log: Call[] = [];
   let wrote = false;
@@ -226,6 +229,7 @@ const stubServer = ({
       return answer;
     }
     if (url.endsWith(`/projects/${PROJECT}/visibility-impact`)) return impact(call);
+    if (url.endsWith('/projects/options')) return projectOptions(call);
     if (url.endsWith(`/projects/${PROJECT}/members`)) {
       // Counted from the write, not from the first read: StrictMode and a slow suite can ask for
       // the roster more than once before anything has been changed.

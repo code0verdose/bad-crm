@@ -8,6 +8,11 @@ import {
   type ProjectListSort,
   type ProjectListViewer,
 } from '@/application/project/ports/project-list-query.port.js';
+import {
+  type ProjectOption,
+  type ProjectOptionsFilter,
+  type ProjectOptionsQueryPort,
+} from '@/application/project/ports/project-options-query.port.js';
 import { type ProjectListEntry } from '@/application/project/ports/project-repository.port.js';
 import {
   PROJECT_STATUSES,
@@ -25,6 +30,14 @@ interface ListRow {
   readonly lead_id: string;
   readonly color: string;
   readonly member_count: number;
+}
+
+interface OptionRow {
+  readonly id: string;
+  readonly key: string;
+  readonly name: string;
+  readonly status: string;
+  readonly color: string;
 }
 
 interface FacetRow {
@@ -91,7 +104,10 @@ const NOT_A_MEMBER = '-';
  * ahead of the policy (`docs/security/rls-design.md`, «Ловушки», 6). Both sit after the uuid they
  * qualify, where they cost a filter over the caller's own grants and nothing more.
  */
-export class PrismaProjectListQuery extends TenantScopedRepository implements ProjectListQueryPort {
+export class PrismaProjectListQuery
+  extends TenantScopedRepository
+  implements ProjectListQueryPort, ProjectOptionsQueryPort
+{
   protected readonly resource = 'project' as const;
   protected readonly repositoryName = 'ProjectListQuery';
 
@@ -146,6 +162,36 @@ export class PrismaProjectListQuery extends TenantScopedRepository implements Pr
           .map((row) => row.value)
           .toSorted(),
       };
+    });
+  }
+
+  /**
+   * The header switcher's read (STORY-014-06): the **same** visible set as the page and the facets
+   * — the prefix below, with the same plan — narrowed by text and, for the «recent» half, by ids.
+   * Five columns and no per-row subquery: the switcher is opened far more often than the list.
+   */
+  options(
+    viewer: ProjectListViewer,
+    filter: ProjectOptionsFilter,
+  ): Promise<readonly ProjectOption[]> {
+    return this.run('options', async (tx) => {
+      const conditions: Prisma.Sql[] = [
+        Prisma.sql`v.status = ANY(${[...filter.statuses]}::text[])`,
+      ];
+
+      if (filter.query !== '') conditions.push(textMatch(filter.query));
+      // `null` is «no id filter»; an empty array binds as «none of them».
+      if (filter.ids !== null) conditions.push(Prisma.sql`v.id = ANY(${[...filter.ids]}::uuid[])`);
+
+      const rows = await tx.$queryRaw<OptionRow[]>(Prisma.sql`
+        ${this.visibleSet(viewer, 'options')}
+        SELECT v.id, v.key, v.name, v.status, v.color
+          FROM visible v
+         WHERE ${Prisma.join(conditions, ' AND ')}
+         ORDER BY v.name ASC, v.id ASC
+         LIMIT ${filter.limit}`);
+
+      return rows.map(toOption);
     });
   }
 
@@ -218,13 +264,7 @@ export class PrismaProjectListQuery extends TenantScopedRepository implements Pr
 const narrowing = (filter: ProjectListFilter): Prisma.Sql => {
   const conditions: Prisma.Sql[] = [Prisma.sql`v.status = ANY(${[...filter.statuses]}::text[])`];
 
-  if (filter.query !== '') {
-    const pattern = `%${escapeLike(filter.query)}%`;
-
-    conditions.push(
-      Prisma.sql`(v.name ILIKE ${pattern} ESCAPE '\\' OR v.key ILIKE ${pattern} ESCAPE '\\')`,
-    );
-  }
+  if (filter.query !== '') conditions.push(textMatch(filter.query));
 
   if (filter.leadId !== null) conditions.push(Prisma.sql`v.lead_id = ${filter.leadId}::uuid`);
 
@@ -232,6 +272,13 @@ const narrowing = (filter: ProjectListFilter): Prisma.Sql => {
   if (filter.memberOnly) conditions.push(Prisma.sql`v.member_role IS NOT NULL`);
 
   return Prisma.join(conditions, ' AND ');
+};
+
+/** The name or the key contains what was typed — the list's and the switcher's one text match. */
+const textMatch = (query: string): Prisma.Sql => {
+  const pattern = `%${escapeLike(query)}%`;
+
+  return Prisma.sql`(v.name ILIKE ${pattern} ESCAPE '\\' OR v.key ILIKE ${pattern} ESCAPE '\\')`;
 };
 
 /** `%`, `_` and the escape character are text the person typed, not patterns. */
@@ -248,4 +295,13 @@ const toEntry = (row: ListRow): ProjectListEntry => ({
   leadId: row.lead_id,
   color: row.color,
   memberCount: row.member_count,
+});
+
+const toOption = (row: OptionRow): ProjectOption => ({
+  projectId: row.id,
+  key: row.key,
+  name: row.name,
+  // `TEXT` held by `ck_projects_status`, as in `toEntry`.
+  status: row.status as ProjectStatus,
+  color: row.color,
 });

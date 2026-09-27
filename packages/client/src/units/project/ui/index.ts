@@ -6,6 +6,8 @@ export * from './project-member-add-form.component.js';
 export * from './project-member-remove.component.js';
 export * from './project-member-table.component.js';
 export * from './project-status-badge.component.js';
+export * from './project-switcher-option.component.js';
+export * from './project-switcher.component.js';
 export * from './project-tabs.component.js';
 export * from './project-upcoming-blocks.component.js';
 export * from './project-visibility-impact.component.js';

@@ -7,17 +7,12 @@ import {
   type ProjectListFilter,
   type ProjectListQueryPort,
   type ProjectListSort,
-  type ProjectListViewer,
 } from '@/application/project/ports/project-list-query.port.js';
+import { readProjectListViewer } from '@/application/project/project-list-viewer.util.js';
 import { type ProjectListEntry } from '@/application/project/ports/project-repository.port.js';
-import { type AclEntryOnChain } from '@/domain/access/acl-chain.types.js';
 import { type Actor } from '@/domain/access/actor.types.js';
-import { accessErrorFor } from '@/domain/access/access.errors.js';
 import { assertAllowed } from '@/domain/access/decision.util.js';
-import {
-  canListProjects,
-  visibleProjectsPlan,
-} from '@/domain/project/access/visible-projects.policy.js';
+import { canListProjects } from '@/domain/project/access/visible-projects.policy.js';
 import { type ProjectStatus } from '@/domain/project/project.enums.js';
 
 /**
@@ -100,10 +95,11 @@ export class ListProjectsQuery {
       async () => {
         assertAllowed(canListProjects(actor), 'project');
 
-        const viewer: ProjectListViewer = {
-          userId: actor.userId,
-          plan: visibleProjectsPlan(actor, await this.organizationGrants(actor), this.clock.now()),
-        };
+        const viewer = await readProjectListViewer(actor, {
+          acl: this.acl,
+          clock: this.clock,
+          logger: this.logger,
+        });
         const page = await this.list.page(viewer, filter);
         const facets = await this.list.facets(viewer);
 
@@ -117,20 +113,5 @@ export class ListProjectsQuery {
         };
       },
     );
-  }
-
-  private async organizationGrants(actor: Actor): Promise<readonly AclEntryOnChain[]> {
-    try {
-      return await this.acl.entriesAlong(
-        [{ depth: 0, type: 'ORGANIZATION', id: actor.organizationId }],
-        actor.userId,
-      );
-    } catch (error) {
-      // Logged here, as `resolve-acl.query.ts` logs the same failure on the detail read: the refusal
-      // below carries a reason and no cause, and the cause is what an operator needs.
-      this.logger.warn({ resourceType: 'ORGANIZATION', err: error }, 'acl resolution failed');
-
-      throw accessErrorFor('acl_resolution_failed', 'project', undefined, 'project:read');
-    }
   }
 }

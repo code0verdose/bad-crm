@@ -1541,6 +1541,42 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/projects/options": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The projects the header's switcher offers.
+         * @description A light read for the project switcher (STORY-014-06): five fields a project, no member
+         *     count, no facets, no `total` — the switcher is opened far more often than the list, and it
+         *     must not pull full cards.
+         *
+         *     **The same projects as `GET /projects`, by the same rule.** Visibility is decided exactly as
+         *     on the list — the capability `project:read`, then the caller's grants, teams, roles and
+         *     memberships applied **in SQL** — so a project the list would hide is not offered here
+         *     either, and a project the caller lost is gone from the next answer.
+         *
+         *     **The archive is hidden unless asked for** (`archived=true`). Results are ordered by name;
+         *     at most 50 come back, and `hasMore` says that more visible projects match — the switcher
+         *     then asks the person to type.
+         *
+         *     `recent` names the ids the browser remembers as recently visited (at most five). They are
+         *     answered in `recent` — those of them the caller can still see, under the same `archived`
+         *     rule and without the text filter — so the client never keeps a project it may no longer
+         *     open. An id of another organization, of a deleted project or of nothing is simply absent.
+         */
+        get: operations["listProjectOptions"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/projects/{projectId}": {
         parameters: {
             query?: never;
@@ -2781,6 +2817,28 @@ export interface components {
             color: string;
             /** @description Live memberships only — people who left the project are not on it. */
             memberCount: number;
+        };
+        /**
+         * @description One project as the switcher offers it — identity and colour. No lead, no visibility, no
+         *     counters, no financial field.
+         */
+        ProjectOption: {
+            /** Format: uuid */
+            id: string;
+            /** @example BAD */
+            key: string;
+            name: string;
+            /** @enum {string} */
+            status: "ACTIVE" | "ON_HOLD" | "ARCHIVED" | "CLOSED";
+            /** @description A name from the palette of the design system, never a hex literal. */
+            color: string;
+        };
+        ProjectOptionList: {
+            items: components["schemas"]["ProjectOption"][];
+            /** @description More visible projects match than `items` carries. */
+            hasMore: boolean;
+            /** @description Those of the asked `recent` ids the caller can still see, in name order. */
+            recent: components["schemas"]["ProjectOption"][];
         };
         ProjectListPage: {
             items: components["schemas"]["ProjectListItem"][];
@@ -6288,6 +6346,38 @@ export interface operations {
             422: components["responses"]["ValidationFailed"];
             429: components["responses"]["RateLimited"];
             500: components["responses"]["InternalError"];
+        };
+    };
+    listProjectOptions: {
+        parameters: {
+            query?: {
+                /** @description Matched, case-insensitively, against the name and the key. */
+                q?: string;
+                /** @description Offer archived projects too. */
+                archived?: boolean;
+                /** @description Repeated. Ids remembered as recently visited; answered in `recent`. */
+                recent?: string[];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The projects this caller can switch to. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProjectOptionList"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            422: components["responses"]["ValidationFailed"];
+            500: components["responses"]["InternalError"];
+            503: components["responses"]["ServiceUnavailable"];
         };
     };
     getProject: {

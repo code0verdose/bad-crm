@@ -25,5 +25,24 @@
   "adminRoles": "Roles and permissions",
   "settingsSecurity": "Security",
   "adminOrganization": "Organization",
-  "projects": "Projects"
+  "projects": "Projects",
+  "projectSwitcher": {
+    "trigger": "Switch project",
+    "triggerCurrent": "Project: {{key}} {{name}}. Switch project",
+    "placeholder": "Choose a project",
+    "search": "Find a project",
+    "shortcut": "Ctrl+Alt+P or ⌘⌥P",
+    "archived": "Show archived",
+    "archivedMark": "Archived",
+    "recent": "Recent",
+    "all": "Projects",
+    "found_zero": "No projects found",
+    "found_one": "{{count}} project found",
+    "found_other": "{{count}} projects found",
+    "empty": "No projects to show",
+    "more": "More projects match — type to narrow the list",
+    "failed": "Could not load the projects",
+    "retry": "Try again",
+    "loading": "Loading projects"
+  }
 }
