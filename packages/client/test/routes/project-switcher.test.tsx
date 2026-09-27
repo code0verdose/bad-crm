@@ -316,6 +316,32 @@ describe('the project switcher', () => {
     });
   });
 
+  /**
+   * Inside a text field the chord is typing: `Ctrl+Alt` is AltGr on Windows, and on layouts that
+   * put a character on AltGr+P the shortcut would swallow it and throw focus out of the field.
+   */
+  it('leaves Ctrl+Alt+P to a text field — the roster search types, the switcher stays shut', async () => {
+    const { trigger } = await mounted();
+    const search = await screen.findByRole('searchbox', {
+      name: 'projects.members.filters.search',
+    });
+
+    search.focus();
+    fireEvent.keyDown(search, { key: 'π', code: 'KeyP', ctrlKey: true, altKey: true });
+
+    // Past the tick on which an opened dropdown would move focus into its own search.
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(trigger).toHaveAttribute('aria-expanded', 'false');
+    expect(search).toHaveFocus();
+
+    // Out of the field, the same chord opens it — the control of the case above.
+    fireEvent.keyDown(document.body, { key: 'π', code: 'KeyP', ctrlKey: true, altKey: true });
+
+    await waitFor(() => {
+      expect(trigger).toHaveAttribute('aria-expanded', 'true');
+    });
+  });
+
   it('hides the archive until asked, then marks it in words', async () => {
     const user = userEvent.setup();
     const { trigger } = await mounted();

@@ -62,12 +62,10 @@ export function ProjectSwitcher({ switcher }: ProjectSwitcherProps) {
     },
   });
 
-  // `[]` for the ignored tags: the shortcut must work from a field too, where people are when they
-  // decide to go elsewhere.
-  useHotkeys(
-    [[PROJECT_SWITCHER_HOTKEY, () => combobox.openDropdown(), { usePhysicalKeys: true }]],
-    [],
-  );
+  // Mantine's default ignored tags (`INPUT`, `TEXTAREA`, `SELECT`, and `contenteditable`): inside a
+  // field the chord is typing — `Ctrl+Alt` is AltGr on Windows, and a layout with a character on
+  // AltGr+P would lose it to the switcher. From a field, Tab out first, or use the trigger.
+  useHotkeys([[PROJECT_SWITCHER_HOTKEY, () => combobox.openDropdown(), { usePhysicalKeys: true }]]);
 
   const { current, recent, results } = switcher;
   const found = recent.length + results.length;
