@@ -56,6 +56,9 @@
   "detail": {
     "title": "Project"
   },
+  "notFound": {
+    "action": "Back to projects"
+  },
   "status": {
     "ACTIVE": "Active",
     "ON_HOLD": "On hold",

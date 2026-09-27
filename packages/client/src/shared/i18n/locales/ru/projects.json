@@ -57,6 +57,9 @@
   "detail": {
     "title": "Проект"
   },
+  "notFound": {
+    "action": "К списку проектов"
+  },
   "status": {
     "ACTIVE": "Активен",
     "ON_HOLD": "Приостановлен",

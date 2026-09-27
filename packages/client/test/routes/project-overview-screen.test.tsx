@@ -400,6 +400,29 @@ describe('/projects/$projectId', () => {
     },
   );
 
+  /**
+   * STORY-014-05, acceptance 8: the way out of a project that is not there is the list of projects,
+   * not the dashboard — the reader came looking for a project, and the list is where the next one
+   * is. The same for 404 and 403, because the two screens must stay word for word the same.
+   */
+  it.each([
+    { status: 404, code: 'project_not_found' },
+    { status: 403, code: 'user_forbidden' },
+  ])('leads from a refused project ($status) to the list of projects', async ({ status, code }) => {
+    const user = userEvent.setup();
+    const { router } = await startAt({ detail: () => problem(status, code) });
+
+    await screen.findByRole('heading', { level: 1, name: 'errors.not_found.title' });
+    // CONTROL: the general way out is not offered beside it — one action, the project's.
+    expect(screen.queryByRole('link', { name: 'errors.not_found.action' })).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('link', { name: 'projects.notFound.action' }));
+
+    await waitFor(() => {
+      expect(router.state.location.pathname).toBe('/projects');
+    });
+  });
+
   it('names the project in the title and the announcement when the card opens', async () => {
     await startAt();
 
