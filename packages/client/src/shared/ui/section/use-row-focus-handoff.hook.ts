@@ -41,9 +41,10 @@ const handoffTarget = (element: HTMLElement): HTMLElement | null => {
  *
  * **No effect** (`rules/frontend-fsd.mdc` rule 11), for the reason `useFocusHandoff` has none: the
  * ref cleanup runs while the node is still in the document, so whether it held focus and where its
- * neighbours are can still be read. Focus is moved one microtask later and only if the node really
- * left — `StrictMode` detaches and re-attaches every new ref once without removing anything, and a
- * row re-rendered in place keeps its node — and only if nobody else has placed focus meanwhile.
+ * neighbours are can still be read. Focus is moved one microtask later, once the commit has taken
+ * the node out, and only if focus was really lost — fell to `<body>` with the node. That one check
+ * covers both false alarms: `StrictMode` detaches and re-attaches every new ref once without
+ * removing anything (the node keeps focus), and somebody else may have placed focus meanwhile.
  */
 export const useRowFocusHandoff = (
   takesFocus: () => boolean,
@@ -62,7 +63,7 @@ export const useRowFocusHandoff = (
         queueMicrotask(() => {
           const lost = document.activeElement === null || document.activeElement === document.body;
 
-          if (!element.isConnected && lost) target?.focus();
+          if (lost) target?.focus();
         });
       };
     },

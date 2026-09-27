@@ -380,6 +380,25 @@ describe('the roster, to a screen reader and a keyboard', () => {
     });
   });
 
+  it('prefers the row below to the row above', async () => {
+    const user = userEvent.setup();
+
+    await startAt({ section: 'members', alsoOnProject: [OUTSIDER] });
+
+    const table = await roster();
+
+    expect(namesIn(table)).toEqual(['Anna Ivanova', 'Oleg Petrov', 'Vera Sidorova']);
+    removeOf(table, 'Oleg Petrov').focus();
+    await user.keyboard('{Enter}');
+
+    await waitFor(() => {
+      expect(namesIn(table)).toEqual(['Anna Ivanova', 'Vera Sidorova']);
+    });
+    await waitFor(() => {
+      expect(removeOf(table, 'Vera Sidorova')).toHaveFocus();
+    });
+  });
+
   it('hands it to the row above when the last row leaves', async () => {
     const user = userEvent.setup();
 

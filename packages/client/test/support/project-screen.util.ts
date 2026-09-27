@@ -141,6 +141,8 @@ export interface ServerOptions {
   readonly holdRosterRefetch?: boolean;
   /** Who the directory answers with. The four people above unless said otherwise. */
   readonly people?: readonly ReturnType<typeof person>[];
+  /** Also on the project, beside the lead and the member — as members, full time. */
+  readonly alsoOnProject?: readonly string[];
 }
 
 const stubServer = ({
@@ -150,10 +152,15 @@ const stubServer = ({
   write = () => noContent(),
   holdRosterRefetch = false,
   people = PEOPLE,
+  alsoOnProject = [],
 }: ServerOptions): void => {
   const log: Call[] = [];
   let wrote = false;
-  let roster = [membership(MEMBER, 'MEMBER', 60), membership(LEAD, 'LEAD', 40)];
+  let roster = [
+    membership(MEMBER, 'MEMBER', 60),
+    membership(LEAD, 'LEAD', 40),
+    ...alsoOnProject.map((userId) => membership(userId, 'MEMBER', 100)),
+  ];
 
   sent = log;
 
