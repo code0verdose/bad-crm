@@ -14,9 +14,9 @@ import { SharedUi } from '@shared';
  * refused project stays word for word the screen of an address that never existed, and 404 and 403
  * still cannot be told apart (`ux-architecture.md` → «403 vs 404»).
  *
- * Set as `notFoundComponent` of `/projects/$projectId`, which covers both the resource guard's
- * refusal and an address under a readable project that does not exist. Every other route keeps the
- * router's default.
+ * Set as `notFoundComponent` of `/projects/$projectId`, which covers the resource guard's refusal;
+ * an unknown section under a readable project falls to `_authenticated/$` and keeps the dashboard
+ * exit. Every other route keeps the router's default.
  */
 export function ProjectNotFound() {
   const { t } = useTranslation();

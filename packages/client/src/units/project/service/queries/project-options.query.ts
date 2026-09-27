@@ -18,12 +18,6 @@ import { QueryKeys } from '@shared/lib';
 export const PROJECT_OPTIONS_STALE_MS = 5 * 60 * 1000;
 
 /**
- * The projects the switcher offers. `keepPreviousData` keeps the last results on screen while the
- * next search is in flight; the `signal` cancels the previous search when the text changes, so an
- * answer to an older question cannot overwrite a newer one. `enabled` is the switcher's «open»:
- * nothing is asked until the person opens it.
- */
-/**
  * The project the header is standing in, for the switcher's label — **read from the cache, never
  * fetched**. The project layout's guard is what asks for the card, and only after it has decided the
  * reader may see it; a header that asked on its own would request a project the route just refused
@@ -37,6 +31,12 @@ export const useCurrentProjectQuery = (
 ): UseQueryResult<ProjectDetail, Error> =>
   useQuery({ ...projectDetailQueryOptions(projectId ?? ''), enabled: false });
 
+/**
+ * The projects the switcher offers. `keepPreviousData` keeps the last results on screen while the
+ * next search is in flight; the `signal` cancels the previous search when the text changes, so an
+ * answer to an older question cannot overwrite a newer one. `enabled` is the switcher's «open»:
+ * nothing is asked until the person opens it.
+ */
 export const useProjectOptionsQuery = (
   params: ProjectOptionsParams,
   enabled: boolean,
