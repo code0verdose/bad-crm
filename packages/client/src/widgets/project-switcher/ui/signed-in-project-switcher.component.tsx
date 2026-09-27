@@ -1,5 +1,7 @@
 import { useMatches, useNavigate } from '@tanstack/react-router';
+import { useEffect } from 'react';
 
+import { AuthLib } from '@units/auth';
 import { ProjectLib, ProjectService, ProjectUi } from '@units/project';
 
 export interface SignedInProjectSwitcherProps {
@@ -28,6 +30,20 @@ export function SignedInProjectSwitcher({ userId }: SignedInProjectSwitcherProps
       void navigate(target);
     },
   });
+
+  const { forgetRemembered } = switcher;
+
+  // A subscription to an external source, with its cleanup (`rules/frontend-fsd.mdc` rule 11): the
+  // end of a session is an event of `units/auth`, and the browser's copy of the list goes with it.
+  // Here and not in the unit's hook — units do not import each other; the tab's in-memory visits
+  // are reset by the session-event subscriber in `app/`.
+  useEffect(
+    () =>
+      AuthLib.onAuthEvent((event) => {
+        if (event === 'logged-out') forgetRemembered();
+      }),
+    [forgetRemembered],
+  );
 
   return <ProjectUi.ProjectSwitcher switcher={switcher} />;
 }

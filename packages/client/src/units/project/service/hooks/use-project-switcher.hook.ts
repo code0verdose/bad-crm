@@ -1,8 +1,7 @@
 import { useDebouncedValue, useLocalStorage } from '@mantine/hooks';
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { useStore } from 'zustand';
 
-import { AuthLib } from '@units/auth';
 import { type ProjectOption } from '@units/project/api';
 import {
   inRecencyOrder,
@@ -74,6 +73,12 @@ export interface ProjectSwitcher {
    * already open, which goes nowhere.
    */
   readonly select: (projectId: string) => boolean;
+  /**
+   * Removes the browser's copy of this person's list. Called on the end of their session by the
+   * layer that knows about sessions (`widgets/project-switcher`) — a unit does not import another
+   * unit, and storage is written only through this hook, so only this hook can remove it.
+   */
+  readonly forgetRemembered: () => void;
 }
 
 const toOption = (card: {
@@ -124,18 +129,6 @@ export const useProjectSwitcher = ({
     getInitialValueInEffect: false,
   });
 
-  // A subscription to an external source, with its cleanup (`rules/frontend-fsd.mdc` rule 11): the
-  // end of a session is an event of `units/auth`, and the browser's copy of the list is removed
-  // with it. Only here — storage is written through this hook, and only the hook can remove it;
-  // the tab's in-memory visits are reset by the session-event subscriber in `app/`.
-  useEffect(
-    () =>
-      AuthLib.onAuthEvent((event) => {
-        if (event === 'logged-out') removeRemembered();
-      }),
-    [removeRemembered],
-  );
-
   const recentIds = mergeRecentProjects(visited, remembered, forgotten);
 
   const optionsQ = useProjectOptionsQuery({ q: search, archived, recent: recentIds }, isOpen);
@@ -173,6 +166,7 @@ export const useProjectSwitcher = ({
     retry: () => {
       void optionsQ.refetch();
     },
+    forgetRemembered: removeRemembered,
     select: (projectId) => {
       close();
       if (projectId === currentProjectId) return false;

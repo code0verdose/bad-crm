@@ -186,7 +186,10 @@ describe('the project switcher', () => {
     await user.click(trigger);
     await screen.findByText('Other project');
 
-    expect(optionReads().at(-1)?.getAll('recent')).not.toContain(OLD);
+    const lastRead = optionReads().at(-1);
+
+    assert(lastRead !== undefined, 'the switcher asked for its options');
+    expect(lastRead.getAll('recent')).not.toContain(OLD);
     const stored: unknown = JSON.parse(
       localStorage.getItem(`bc.recent-projects.v1:${ME}`) ?? 'null',
     );
