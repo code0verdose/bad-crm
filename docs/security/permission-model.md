@@ -2327,6 +2327,7 @@ node -e "const m=require('./packages/server/test/permissions/__snapshots__/permi
 | `PUT /api/v1/users/:userId/permission-overrides/:permission` | `permission:override` | `WritePermissionOverrideUseCase` |
 | `DELETE /api/v1/users/:userId/permission-overrides/:permission` | `permission:override` | `RemovePermissionOverrideUseCase` |
 | `GET /api/v1/projects` | `project:read` | `ListProjectsQuery` (видимость — план в SQL, `visible-projects.policy.ts`) |
+| `GET /api/v1/projects/options` | `project:read` | `ListProjectOptionsQuery` (видимость — тот же план в SQL, что у списка, `project-list-viewer.util.ts`) |
 | `GET /api/v1/projects/:projectId` | `project:read` | `GetProjectDetailQuery` |
 | `POST /api/v1/projects` | `project:create` | `CreateProjectUseCase` |
 | `PATCH /api/v1/projects/:projectId` | `project:update` (+ `project:manage_members` при смене `leadId`) | `UpdateProjectUseCase` |
