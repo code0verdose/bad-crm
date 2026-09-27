@@ -285,7 +285,8 @@ estimate: M
 >   рисуется по одной capability `project:manage_visibility` (`useCan().holds`), без уровня `MANAGER`.
 >   Держателю ключа без уровня кнопка видна, а отказ приходит в диалоге. Нужен `canChangeVisibility`
 >   в блоке — это правка сервера и спеки, не клиента.
-> - Удалённый проект уводит на дашборд: маршрута `/projects` (STORY-014-04) в этой ветке нет.
+> - ~~Удалённый проект уводит на дашборд: маршрута `/projects` (STORY-014-04) в этой ветке нет.~~
+>   Закрыто 2026-09-27: после удаления — на список `/projects` (`pages/project/settings-page.tsx`).
 - [x] Тесты: `test/unit/domain/project/project-key-value.test.ts`,
       `project-access-policy.test.ts` (п. 5, 6), use-case'ы в `test/unit/application/`,
       HTTP `test/integration/http/project-write-endpoints.test.ts` (п. 2, 4, 7–9, 11),

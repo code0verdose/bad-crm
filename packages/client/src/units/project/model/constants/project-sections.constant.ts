@@ -8,8 +8,10 @@
  *
  * Overview, members (STORY-014-02) and settings (STORY-014-01) are shipped; files are EPIC-015;
  * boards, documents and time are M3+. Settings is shipped but **not always shown**: a reader the
- * card's `permissions` block gives no settings command does not see the tab at all (STORY-014-05,
- * acceptance 5) — the tab list takes the hidden sections from its caller.
+ * card's `permissions` block gives no settings command, and who does not hold the capability
+ * `project:manage_visibility`, does not see the tab at all (STORY-014-05, acceptance 5). The
+ * capability half is temporary — the block has no visibility flag yet. The tab list takes the
+ * hidden sections from its caller (`pages/project/hooks/use-project-section.hook.ts`).
  */
 export const PROJECT_SECTIONS = [
   { value: 'overview', labelKey: 'projects.section.overview', available: true },
