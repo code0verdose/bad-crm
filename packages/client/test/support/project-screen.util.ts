@@ -152,6 +152,12 @@ export interface ServerOptions {
   readonly impact?: Handler;
   /** Answers the header switcher's `GET /projects/options`. Nothing on offer unless said otherwise. */
   readonly projectOptions?: Handler;
+  /**
+   * Reads of addresses outside this project — another project a switch leads to. Asked first;
+   * `undefined` falls through to the stand. The transport keeps the `fetch` it was built with, so a
+   * later `vi.stubGlobal` would not reach it: whatever a case serves is said here, at mount.
+   */
+  readonly elsewhere?: (call: Call) => Response | undefined;
 }
 
 const stubServer = ({
@@ -164,6 +170,7 @@ const stubServer = ({
   alsoOnProject = [],
   impact = () => json({ losingAccess: 3, gainingAccess: 2 }),
   projectOptions = () => json({ items: [], hasMore: false, recent: [] }),
+  elsewhere = () => undefined,
 }: ServerOptions): void => {
   const log: Call[] = [];
   let wrote = false;
@@ -228,6 +235,9 @@ const stubServer = ({
 
       return answer;
     }
+    const served = elsewhere(call);
+
+    if (served !== undefined) return served;
     if (url.endsWith(`/projects/${PROJECT}/visibility-impact`)) return impact(call);
     if (url.endsWith('/projects/options')) return projectOptions(call);
     if (url.endsWith(`/projects/${PROJECT}/members`)) {

@@ -4,7 +4,9 @@ import { afterEach, assert, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { axeViolationsIn } from '../support/axe-scan.util.js';
 import {
+  ALL,
   PROJECT,
+  card,
   cardReady,
   json,
   problem,
@@ -72,8 +74,12 @@ afterEach(() => {
   localStorage.clear();
 });
 
-const mounted = async () => {
-  const app = await startAt({ section: 'members', projectOptions: optionsServer });
+const mounted = async (elsewhere?: (call: Call) => Response | undefined) => {
+  const app = await startAt({
+    section: 'members',
+    projectOptions: optionsServer,
+    ...(elsewhere === undefined ? {} : { elsewhere }),
+  });
 
   await cardReady();
 
@@ -181,6 +187,61 @@ describe('the project switcher', () => {
     });
   });
 
+  /**
+   * A choice that leads to another project must not hand focus back to the trigger once the route
+   * announcer has put it on the new page's heading: Mantine's `focusTarget()` runs a tick later
+   * (`setTimeout(…, 0)`), after the announcer's synchronous move, and would win.
+   *
+   * The other project answers «not found» here — the one switch after which the page's name
+   * changes, so the announcer moves focus. A settled switch keeps the name («project») and the
+   * announcer leaves focus where it is.
+   */
+  it('leaves focus on the heading of the page a switch leads to', async () => {
+    const user = userEvent.setup();
+    const { trigger, router } = await mounted((call) =>
+      call.url.endsWith(`/projects/${OTHER}`) ? problem(404, 'project_not_found') : undefined,
+    );
+
+    await user.click(trigger);
+    await user.click(await screen.findByRole('option', { name: /Other project/ }));
+
+    await waitFor(() => {
+      expect(router.state.location.pathname).toBe(`/projects/${OTHER}/members`);
+    });
+
+    const heading = await screen.findByRole('heading', { level: 1 });
+
+    await waitFor(() => {
+      expect(heading).toHaveFocus();
+    });
+    // Past the tick on which the combobox gives focus back to its target.
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(heading).toHaveFocus();
+  });
+
+  it('keeps focus on the trigger after a settled switch, naming the project now open', async () => {
+    const user = userEvent.setup();
+    const { trigger, router } = await mounted((call) => {
+      if (call.url.endsWith(`/projects/${OTHER}`)) {
+        return json(card(ALL, { id: OTHER, key: 'OTH', name: 'Other project' }));
+      }
+
+      return call.url.endsWith(`/projects/${OTHER}/members`) ? json({ items: [] }) : undefined;
+    });
+
+    await user.click(trigger);
+    await user.click(await screen.findByRole('option', { name: /Other project/ }));
+
+    await waitFor(() => {
+      expect(router.state.location.pathname).toBe(`/projects/${OTHER}/members`);
+    });
+    await screen.findByRole('heading', { level: 2, name: 'Other project' });
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    expect(trigger).toHaveFocus();
+    expect(trigger).toHaveTextContent('Other project');
+  });
+
   it('closes on Escape and gives the focus back to the trigger', async () => {
     const user = userEvent.setup();
     const { trigger } = await mounted();
@@ -250,6 +311,9 @@ describe('the project switcher', () => {
       expect(trigger).toHaveAttribute('aria-expanded', 'false');
     });
     expect(router.state.location.pathname).toBe(before);
+    await waitFor(() => {
+      expect(trigger).toHaveFocus();
+    });
   });
 
   it('shows a failed load in the list with a retry that asks again', async () => {

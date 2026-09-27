@@ -59,8 +59,12 @@ export interface ProjectSwitcher {
   readonly hasMore: boolean;
   readonly status: 'pending' | 'error' | 'success';
   readonly retry: () => void;
-  /** Takes the person to `projectId`, in the same section they are in now. */
-  readonly select: (projectId: string) => void;
+  /**
+   * Takes the person to `projectId`, in the same section they are in now. `true` when the choice
+   * leads to another project — the page it opens owns focus from then on; `false` for the project
+   * already open, which goes nowhere.
+   */
+  readonly select: (projectId: string) => boolean;
 }
 
 const toOption = (card: {
@@ -148,7 +152,10 @@ export const useProjectSwitcher = ({
     },
     select: (projectId) => {
       close();
-      if (projectId !== currentProjectId) onSwitch(projectSwitchTarget(projectId, section));
+      if (projectId === currentProjectId) return false;
+      onSwitch(projectSwitchTarget(projectId, section));
+
+      return true;
     },
   };
 };

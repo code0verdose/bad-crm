@@ -1,6 +1,7 @@
 import { Button, Combobox, Group, Switch, Text, VisuallyHidden, useCombobox } from '@mantine/core';
 import { useHotkeys } from '@mantine/hooks';
 import { IconSelector } from '@tabler/icons-react';
+import { useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { type ProjectSwitcher as ProjectSwitcherState } from '@units/project/service/hooks/use-project-switcher.hook.js';
@@ -29,13 +30,21 @@ export interface ProjectSwitcherProps {
  * **Keyboard and screen reader** (acceptances 4 and 10). The trigger is a real button that opens on
  * Enter, Space and the shortcut; focus moves into the search field, arrows walk the options —
  * the field carries `aria-activedescendant`, set by `Combobox.Search` — Enter chooses, Escape
- * closes, and on close focus returns to the trigger (`focusTarget`). The count of what was found is
+ * closes, and on close focus returns to the trigger (`focusTarget`; a choice of another project
+ * returns it at once instead, so the route announcer can move it on to the new page). The count of what was found is
  * announced in a polite status region rather than being left for the reader to discover.
  *
  * Rendering only: which projects, which are recent, where a choice leads — all of it is the hook's.
  */
 export function ProjectSwitcher({ switcher }: ProjectSwitcherProps) {
   const { t } = useTranslation();
+  /**
+   * The dropdown is closing because another project was chosen. Mantine's `focusTarget()` moves
+   * focus a tick later (`setTimeout(…, 0)`), after the route announcer has put it on the heading of
+   * the page the choice opened — and would take it back. So a choice that leaves hands focus to the
+   * trigger at once, before the navigation commits, and the deferred return is skipped.
+   */
+  const leaving = useRef(false);
   const combobox = useCombobox({
     onDropdownOpen: () => {
       switcher.open();
@@ -44,6 +53,11 @@ export function ProjectSwitcher({ switcher }: ProjectSwitcherProps) {
     onDropdownClose: () => {
       switcher.close();
       combobox.resetSelectedOption();
+      if (leaving.current) {
+        leaving.current = false;
+
+        return;
+      }
       combobox.focusTarget();
     },
   });
@@ -65,7 +79,10 @@ export function ProjectSwitcher({ switcher }: ProjectSwitcherProps) {
       // layout engine it reads every reference as detached and hides an open list.
       hideDetached={false}
       onOptionSubmit={(projectId) => {
-        switcher.select(projectId);
+        // Focus first: the trigger holds it until the new page's announcer, when the page's name
+        // changed, moves it on. Escape and the project already open take the deferred return.
+        combobox.targetRef.current?.focus();
+        leaving.current = switcher.select(projectId);
         combobox.closeDropdown();
       }}
       position="bottom-start"
