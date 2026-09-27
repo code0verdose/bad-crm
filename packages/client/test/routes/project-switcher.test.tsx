@@ -7,6 +7,7 @@ import {
   PROJECT,
   cardReady,
   json,
+  problem,
   remount,
   sent,
   startAt,
@@ -235,6 +236,69 @@ describe('the project switcher', () => {
     });
     // Neither «o» nor «ot» reached the server: the pause swallowed them.
     expect(optionReads().map((read) => read.get('q'))).toEqual([null, 'oth']);
+  });
+
+  it('choosing the project already open closes the list and goes nowhere', async () => {
+    const user = userEvent.setup();
+    const { trigger, router } = await mounted();
+    const before = router.state.location.pathname;
+
+    await user.click(trigger);
+    await user.click(await screen.findByRole('option', { name: /Bad CRM/ }));
+
+    await waitFor(() => {
+      expect(trigger).toHaveAttribute('aria-expanded', 'false');
+    });
+    expect(router.state.location.pathname).toBe(before);
+  });
+
+  it('shows a failed load in the list with a retry that asks again', async () => {
+    const user = userEvent.setup();
+    let calls = 0;
+
+    await startAt({
+      section: 'members',
+      projectOptions: (call) => {
+        calls += 1;
+
+        // Two failures: the query client retries a 500 once on its own before it gives up.
+        return calls <= 2 ? problem(500, 'internal_error') : optionsServer(call);
+      },
+    });
+    await cardReady();
+    await user.click(
+      await screen.findByRole('button', { name: 'nav.projectSwitcher.triggerCurrent' }),
+    );
+
+    expect(await screen.findByText('nav.projectSwitcher.failed')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'nav.projectSwitcher.retry' }));
+
+    expect(await screen.findByText('Other project')).toBeInTheDocument();
+  });
+
+  it('says there is nothing to offer, and says there is more than it shows', async () => {
+    const user = userEvent.setup();
+
+    await startAt({
+      section: 'members',
+      projectOptions: (call) =>
+        new URLSearchParams(call.search).get('q') === null
+          ? json({ items: [], hasMore: false, recent: [] })
+          : json({ items: [option(OTHER, 'OTH', 'Other project')], hasMore: true, recent: [] }),
+    });
+    await cardReady();
+    await user.click(
+      await screen.findByRole('button', { name: 'nav.projectSwitcher.triggerCurrent' }),
+    );
+
+    expect(await screen.findByText('nav.projectSwitcher.empty')).toBeInTheDocument();
+    expect(screen.queryByText('nav.projectSwitcher.more')).toBeNull();
+
+    await user.keyboard('o');
+
+    expect(await screen.findByText('nav.projectSwitcher.more')).toBeInTheDocument();
+    expect(screen.queryByText('nav.projectSwitcher.empty')).toBeNull();
   });
 
   it('has no axe violations with the list open', async () => {
