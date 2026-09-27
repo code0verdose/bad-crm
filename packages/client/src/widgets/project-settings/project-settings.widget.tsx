@@ -22,14 +22,12 @@ export interface ProjectSettingsProps {
  * (STORY-014-01, client half).
  *
  * **Every section is drawn from the card's `permissions` block** (STORY-014-05, acceptance 5): the
- * edit form from `canEdit`, the archive button from `canArchive`, the delete button from `canDelete`,
- * and whether the lead may be changed from `canManageMembers`. The one exception is the visibility,
- * for which **the contract publishes no flag** (`ProjectPermissions` names four commands, and
- * `project:manage_visibility` is not one of them): it is drawn from the capability alone, through
- * `useCan().holds` — the key alone, because `can()` of a resource-scoped key without a level is
- * `false` by design; a hint that is right about the key and cannot know the `MANAGER` level the command also
- * needs on the chain. A reader with the key and without the level sees the button and gets the
- * command's own refusal, in the dialog. Named in the story as a gap in the contract, not papered over.
+ * edit form from `canEdit`, the visibility button from `canChangeVisibility`, the archive button
+ * from `canArchive`, the delete button from `canDelete`, and whether the lead may be changed from
+ * `canManageMembers`. None of the project's controls reads the reader's capability set (only the
+ * directory of people does, through `user:read`): a key the reader holds says nothing about the
+ * `MANAGER` level the command also needs on the chain, and the flag is the server's decision of both
+ * (`docs/security/permission-model.md` §7(е)).
  *
  * **An archived project keeps its controls on screen and within reach** (acceptance 7): not a hard
  * `disabled`, which dropped them from the tab order with the reason in a banner far above, but
@@ -42,7 +40,7 @@ export interface ProjectSettingsProps {
  */
 export function ProjectSettings({ projectId, onDeleted }: ProjectSettingsProps) {
   const { t } = useTranslation();
-  const { can, holds } = IamService.IamHooks.useCan();
+  const { can } = IamService.IamHooks.useCan();
   const view = ProjectService.ProjectHooks.useProject(projectId);
   const controls = ProjectService.ProjectHooks.useProjectControls(projectId);
   const editing = ProjectService.ProjectHooks.useProjectEditing(projectId);
@@ -55,7 +53,6 @@ export function ProjectSettings({ projectId, onDeleted }: ProjectSettingsProps) 
   const dangerNoteId = useId();
 
   const { project } = view;
-  const mayChangeVisibility = holds('project:manage_visibility');
   const visibilityAction: ProjectActionKind = visibility.target === 'PRIVATE' ? 'close' : 'open';
   const running = action === 'archive' ? archival : action === 'delete' ? deletion : visibility;
 
@@ -70,7 +67,7 @@ export function ProjectSettings({ projectId, onDeleted }: ProjectSettingsProps) 
     else visibility.confirm(close);
   };
 
-  if (!controls.hasSettings && !mayChangeVisibility) {
+  if (!controls.hasSettings) {
     return <Text c="var(--bc-text-muted)">{t('projects.settings.nothing')}</Text>;
   }
 
@@ -98,7 +95,7 @@ export function ProjectSettings({ projectId, onDeleted }: ProjectSettingsProps) 
         </SharedUi.Section>
       )}
 
-      {mayChangeVisibility && (
+      {controls.canChangeVisibility && (
         <SharedUi.Section
           descriptionKey="projects.settings.visibility.description"
           titleKey="projects.settings.visibility.title"

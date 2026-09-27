@@ -18,7 +18,10 @@ import {
  */
 export type ProjectDetail = components['schemas']['ProjectDetail'];
 
-/** `{ canEdit, canManageMembers, canArchive, canDelete }` — a hint for the controls, not a grant. */
+/**
+ * `{ canEdit, canManageMembers, canChangeVisibility, canArchive, canDelete }` — a hint for the
+ * controls, not a grant.
+ */
 export type ProjectPermissions = components['schemas']['ProjectPermissions'];
 
 /** What a project is created from. `key` is normalized by the server and never changes afterwards. */
