@@ -1,7 +1,7 @@
 ---
 id: STORY-014-06
 epic: EPIC-014
-status: backlog
+status: in-progress
 blocked: false
 priority: should
 estimate: M
@@ -112,24 +112,51 @@ estimate: M
     Then 0 нарушений A/AA, `combobox`-семантика с `aria-activedescendant`, объявление результатов в
     live-области, все строки — EN и RU.
 
+## Состояние по коду (2026-09-27)
+
+Серверная половина и переключатель в шапке отгружены. По критериям — что закрыто и чем доказано:
+
+| # | Состояние | Чем держится |
+|---|---|---|
+| 1 | закрыт | текущий проект читается из совпавших маршрутов (`units/project/lib/utils/project-location.util.ts`), стора «выбранного проекта» нет; стор недавних хранит только id и на данные не влияет. `project-location.util.test.ts` |
+| 2 | закрыт с оговоркой | раздел сохраняется (`project-switch-target.util.ts`; `test/routes/project-switcher.test.tsx`, «keeps the section»). Search-параметры при смене проекта **сбрасываются все**: у разделов проекта сегодня нет ни одного параметра, общего для всех проектов (`view`, `sort`), а фильтр состава относится к своему проекту. `retainSearchParams`/`stripSearchParams` не заведены — заводятся вместе с первым общим параметром |
+| 3 | закрыт | поиск на сервере (`GET /projects/options?q=`), пауза 300 мс, отмена по `signal`, недавние закреплены сверху. «Последние 5» — только id: визиты этой вкладки пишет гард в стор в памяти (`service/stores/recent-projects.store.ts`), в браузере список живёт через Mantine `useLocalStorage` и записывается при открытии переключателя (`use-project-switcher.hook.ts`). Прямого обращения к Web Storage нет — его запрещает `test/architecture/data-layer-conventions.test.ts`, это гейт инварианта «нет учётных данных в Web Storage», и расширять его ради UI-удобства не стали. Тесты: «asks once per pause», «remembers the visits across a reload» (в хранилище только id), стор, util |
+| 4 | закрыт | триггер — кнопка, `Mod+Alt+P` по **физической** клавише (раскладка и `⌥` на macOS не мешают; `Mod+K` занят глобальным поиском, `Mod+Shift+P` в Firefox — приватное окно), стрелки + `aria-activedescendant`, Enter, Escape, фокус на триггер. Оговорка: мутация «убрать `focusTarget()`» тест возврата фокуса **не роняет** — Mantine возвращает фокус и сам; строка оставлена по документации `Combobox` |
+| 5 | закрыт | `beforeLoad` даёт 404 до рендера (было с 014-05); гард теперь забывает проект из недавних на 404/403 и запоминает на успехе (`require-project-access-recent.guard.test.ts`); сервер отдаёт в `recent` только видимые id — `test/integration/db/project-list.test.ts`, блок «the switcher offers what the list shows» |
+| 6 | не в этой дельте | экран «проект недоступен» с кнопкой — зона 014-05, критерий 8 |
+| 7 | закрыт | архив скрыт по умолчанию, переключатель `archived`, пометка словом «В архиве». Сервер: `list-project-options.query.test.ts`, HTTP-набор; клиент: «hides the archive until asked» |
+| 8 | **открыт** | хлебные крошки и `document.title` берут статичный `crumbKey` маршрута (`projects.detail.title`); ключа и имени проекта в них нет. Нужна динамическая крошка в `widgets/breadcrumbs` и объявителе маршрута — отдельная работа |
+| 9 | закрыт | `GET /projects/options` — пять полей, без счётчиков и фасетов, до 50 строк + `hasMore`; `staleTime` 5 минут (`project-options.query.ts`); видимость — тот же план и тот же SQL-префикс, что у списка (`project-list-viewer.util.ts`, `project-list-query.adapter.ts`) |
+| 10 | закрыт | axe на открытом списке без нарушений, счётчик в `role="status"`, EN и RU в `nav.json` (`projectSwitcher.*`) |
+
+Серверные решения: отдельный лёгкий маршрут, а не узкая форма `GET /projects` — список считает
+участников подзапросом на строку и фасеты вторым оператором, переключателю это не нужно. Второго
+механизма видимости нет: чтение узла организации и план вынесены в
+`application/project/project-list-viewer.util.ts`, им пользуются оба запроса. Маршрут стоит **до**
+`/projects/:projectId`. В снапшоте матрицы — по ячейке на роль, совпадают с `GET /projects`.
+
+e2e `project-switcher.spec.ts` не написан — зона агента e2e.
+
 ## Задачи
 
-- [ ] `packages/client/src/widgets/project-switcher/project-switcher.widget.tsx` +
-      `ui/project-switcher-item.component.tsx`, `ui/project-switcher-empty.component.tsx`
-      (Mantine `Spotlight`/`Combobox` — API уточнить через MCP `mantine`).
-- [ ] `packages/client/src/units/project/service/queries/project-options.query.ts` (лёгкий список),
-      `service/hooks/use-project-switcher.hook.ts` (поиск, debounce, недавние, навигация).
-- [ ] `packages/client/src/units/project/lib/recent-projects.util.ts` — работа с `localStorage`
-      (только UI-порядок, без данных).
-- [ ] `packages/client/src/app/routes/_authenticated/projects/$projectId/route.tsx` —
-      `retainSearchParams` / `stripSearchParams` при смене `projectId`.
-- [ ] `packages/client/src/widgets/app-header/app-header.widget.tsx` — размещение переключателя,
-      хлебные крошки, head-менеджмент маршрута.
-- [ ] `packages/server/src/application/project/queries/list-project-options.query.ts` +
-      запись в `ROUTE_REGISTRY` с `project:read`.
-- [ ] i18n: `packages/client/src/app/i18n/{en,ru}/navigation.json`.
-- [ ] Тесты: `use-project-switcher.hook.spec.ts` (п. 2, 3, 7), компонентные на клавиатуру (п. 4),
-      e2e `project-switcher.spec.ts` (п. 1, 2, 5) + axe.
+- [x] Переключатель: `widgets/project-switcher/project-switcher.widget.tsx` (читает маршрут,
+      навигирует) + `units/project/ui/project-switcher.component.tsx`,
+      `ui/project-switcher-option.component.tsx` (Mantine `Combobox` с поиском в выпадающем списке,
+      API сверен через MCP `mantine`).
+- [x] `units/project/service/queries/project-options.query.ts`,
+      `service/hooks/use-project-switcher.hook.ts`.
+- [x] `units/project/lib/utils/recent-projects.util.ts` (чистые функции) +
+      `service/stores/recent-projects.store.ts` (стор, потому что пишет гард `beforeLoad`; в браузер
+      список уходит через Mantine `useLocalStorage` в хуке).
+- [ ] `retainSearchParams` / `stripSearchParams` — не нужны до первого общего параметра (критерий 2).
+- [x] Размещение в шапке — `widgets/app-shell/ui/topbar.component.tsx` (`widgets/app-header` в дереве нет).
+- [ ] Хлебные крошки и заголовок вкладки с ключом и именем проекта (критерий 8).
+- [x] `application/project/use-cases/list-project-options.query.ts` + запись в реестре с
+      `project:read`, `aclCheckedIn: 'ListProjectOptionsQuery'`; контракт и `pnpm api:gen`.
+- [x] i18n: `shared/i18n/locales/{en,ru}/nav.json`.
+- [x] Тесты: сервер — юнит запроса и адаптера, HTTP, матрица, интеграционный на живом Postgres;
+      клиент — util, стор, гард, экран целиком (`test/routes/project-switcher.test.tsx`) с клавиатурой и axe.
+- [ ] e2e `project-switcher.spec.ts` (п. 1, 2, 5) + axe.
 
 ## Ссылки
 
