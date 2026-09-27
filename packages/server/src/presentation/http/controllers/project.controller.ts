@@ -12,6 +12,7 @@ import {
   type RemoveProjectMemberUseCase,
   type UpdateProjectMemberUseCase,
 } from '@/application/project/use-cases/manage-project-members.use-case.js';
+import { type PreviewProjectVisibilityQuery } from '@/application/project/use-cases/preview-project-visibility.query.js';
 import { type UpdateProjectUseCase } from '@/application/project/use-cases/update-project.use-case.js';
 import { readActor } from '@/presentation/http/middleware/require-permission.middleware.js';
 import { type RequestValidator } from '@/presentation/http/middleware/validate.middleware.js';
@@ -19,6 +20,7 @@ import { serializeProjectListPage } from '@/presentation/http/serializers/projec
 import {
   serializeProjectDetail,
   serializeProjectMember,
+  serializeProjectVisibilityImpact,
 } from '@/presentation/http/serializers/project.serializer.js';
 import { clientOf } from '@/presentation/http/session-client.util.js';
 import {
@@ -29,6 +31,7 @@ import {
   type projectListQuerySchema,
   type projectMemberParamsSchema,
   type projectMembersQuerySchema,
+  type projectVisibilityPreviewQuerySchema,
   type updateProjectBodySchema,
   type updateProjectMemberBodySchema,
 } from '@/presentation/http/validators/project.validator.js';
@@ -46,6 +49,7 @@ export interface ProjectControllerDependencies {
   readonly createProject: CreateProjectUseCase;
   readonly updateProject: UpdateProjectUseCase;
   readonly changeVisibility: ChangeProjectVisibilityUseCase;
+  readonly previewVisibility: PreviewProjectVisibilityQuery;
   readonly archiveProject: ArchiveProjectUseCase;
   readonly deleteProject: DeleteProjectUseCase;
   readonly listMembers: ListProjectMembersQuery;
@@ -62,6 +66,10 @@ export interface ProjectControllerDependencies {
   readonly visibilityValidator: RequestValidator<{
     params: typeof projectIdParamsSchema;
     body: typeof changeProjectVisibilityBodySchema;
+  }>;
+  readonly visibilityPreviewValidator: RequestValidator<{
+    params: typeof projectIdParamsSchema;
+    query: typeof projectVisibilityPreviewQuerySchema;
   }>;
   readonly membersQueryValidator: RequestValidator<{
     params: typeof projectIdParamsSchema;
@@ -95,6 +103,7 @@ export const createProjectController = (
   readonly create: RequestHandler;
   readonly update: RequestHandler;
   readonly changeVisibility: RequestHandler;
+  readonly previewVisibility: RequestHandler;
   readonly archive: RequestHandler;
   readonly remove: RequestHandler;
   readonly listMembers: RequestHandler;
@@ -185,6 +194,18 @@ export const createProjectController = (
     });
 
     response.status(204).send();
+  },
+
+  previewVisibility: async (_request, response) => {
+    const { params, query } = dependencies.visibilityPreviewValidator.read(response);
+
+    const impact = await dependencies.previewVisibility.execute({
+      actor: readActor(response),
+      projectId: params.projectId,
+      visibility: query.to,
+    });
+
+    response.status(200).json(serializeProjectVisibilityImpact(impact));
   },
 
   archive: async (request, response) => {

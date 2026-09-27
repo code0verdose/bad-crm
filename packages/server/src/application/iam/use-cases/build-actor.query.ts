@@ -1,5 +1,4 @@
-import { type SharedPermissions } from '@bad-crm/shared';
-
+import { actorFromFacts } from '@/application/iam/actor-from-facts.util.js';
 import { type EffectivePermissionsReaderPort } from '@/application/iam/ports/effective-permissions-reader.port.js';
 import { type UnitOfWorkPort } from '@/application/platform/ports/unit-of-work.port.js';
 import { type Actor } from '@/domain/access/actor.types.js';
@@ -67,15 +66,7 @@ export class BuildActorQuery {
 
         if (facts === null) throw denyAccess('user', 'other_organization');
 
-        return {
-          userId: input.userId,
-          organizationId: input.organizationId,
-          isOwner: facts.isOwner,
-          permissionsVersion: facts.permissionsVersion,
-          permissions: new Set<SharedPermissions.PermissionKey>(facts.granted),
-          denied: new Set<SharedPermissions.PermissionKey>(facts.denied),
-          roleKeys: facts.roleKeys,
-        };
+        return actorFromFacts(input.userId, input.organizationId, facts);
       },
     );
   }

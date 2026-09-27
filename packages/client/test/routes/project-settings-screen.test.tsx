@@ -19,6 +19,7 @@ import {
   PEOPLE,
   PROJECT,
   cardReady,
+  json,
   problem,
   remount,
   sent,
@@ -322,9 +323,7 @@ describe('changing the visibility', () => {
     const dialog = await screen.findByRole('dialog');
 
     expect(writes('POST')).toEqual([]);
-    expect(
-      within(dialog).getByText('projects.visibility.close.consequence.access'),
-    ).toBeInTheDocument();
+    expect(await within(dialog).findByText('projects.visibility.close.impact')).toBeInTheDocument();
 
     await user.click(
       within(dialog).getByRole('button', { name: 'projects.visibility.close.confirm' }),
@@ -389,6 +388,153 @@ describe('changing the visibility', () => {
     ).not.toContain('projects.section.settings');
     // Positive control: the tab list is drawn, and the overview tab in it.
     expect(screen.getByRole('tab', { name: 'projects.section.overview' })).toBeInTheDocument();
+  });
+});
+
+/**
+ * STORY-014-01, acceptance 7: the confirmation says how many colleagues the change moves — the
+ * server's count (`GET …/visibility-impact`), asked only once the dialog is open, announced from a
+ * live region inside the `aria-modal` dialog, and a failed read said there too, with a retry, while
+ * the change itself stays possible.
+ */
+describe('the summary of a change of visibility', () => {
+  const openVisibility = async (user: UserEvent): Promise<HTMLElement> => {
+    await user.click(
+      await screen.findByRole('button', { name: /projects\.settings\.visibility\.change/ }),
+    );
+
+    return screen.findByRole('dialog');
+  };
+
+  const previews = () => sent.filter((call) => call.url.endsWith('/visibility-impact'));
+
+  it('asks the server only once the dialog is open, for the direction it would move', async () => {
+    const user = userEvent.setup();
+
+    await startAt();
+    await cardReady();
+    expect(previews()).toEqual([]);
+
+    const dialog = await openVisibility(user);
+    const status = within(dialog).getByRole('status');
+
+    expect(await within(status).findByText('projects.visibility.close.impact')).toBeInTheDocument();
+    expect(previews().map((call) => call.search)).toEqual(['?to=PRIVATE']);
+    expect(writes('POST')).toEqual([]);
+  });
+
+  it('holds its place while the count is on its way, then announces it', async () => {
+    const user = userEvent.setup();
+    let release: (response: Response) => void = () => undefined;
+
+    await startAt({
+      impact: () =>
+        new Promise<Response>((resolve) => {
+          release = resolve;
+        }),
+    });
+
+    const dialog = await openVisibility(user);
+    const status = within(dialog).getByRole('status');
+
+    await waitFor(() => {
+      expect(status).toHaveAttribute('aria-busy', 'true');
+    });
+    expect(status).toHaveAttribute('aria-live', 'polite');
+
+    release(
+      new Response(JSON.stringify({ losingAccess: 1, gainingAccess: 0 }), {
+        headers: { 'content-type': 'application/json' },
+      }),
+    );
+
+    expect(await within(status).findByText('projects.visibility.close.impact')).toBeInTheDocument();
+    expect(status).toHaveAttribute('aria-busy', 'false');
+  });
+
+  it('says «nobody» in its own sentence when the change moves nobody', async () => {
+    const user = userEvent.setup();
+
+    await startAt({ impact: () => json({ losingAccess: 0, gainingAccess: 0 }) });
+
+    const dialog = await openVisibility(user);
+
+    expect(
+      await within(dialog).findByText('projects.visibility.close.impactNone'),
+    ).toBeInTheDocument();
+    expect(within(dialog).queryByText('projects.visibility.close.impact')).toBeNull();
+  });
+
+  it('counts who gains a private project opened to the organization', async () => {
+    const user = userEvent.setup();
+
+    await startAt({ overrides: { visibility: 'PRIVATE' } });
+
+    const dialog = await openVisibility(user);
+
+    expect(await within(dialog).findByText('projects.visibility.open.impact')).toBeInTheDocument();
+    expect(previews().map((call) => call.search)).toEqual(['?to=PUBLIC_ORG']);
+  });
+
+  it('says a failed count inside the dialog, retries it there, and leaves the change possible', async () => {
+    const user = userEvent.setup();
+    let failing = true;
+
+    await startAt({
+      impact: () =>
+        failing ? problem(503, 'service_unavailable') : json({ losingAccess: 2, gainingAccess: 0 }),
+    });
+
+    const dialog = await openVisibility(user);
+
+    expect(await within(dialog).findByText('projects.visibility.impactFailed')).toBeInTheDocument();
+    expect(
+      within(dialog).getByRole('button', { name: 'projects.visibility.close.confirm' }),
+    ).toBeEnabled();
+    // One signal, in the dialog: the reason is said there and nowhere else — no toast behind it.
+    const reasons = screen.getAllByText('errors.code.service_unavailable');
+
+    expect(reasons).toHaveLength(1);
+    expect(dialog).toContainElement(reasons[0] ?? null);
+
+    failing = false;
+    await user.click(within(dialog).getByRole('button', { name: 'common.retry' }));
+
+    expect(await within(dialog).findByText('projects.visibility.close.impact')).toBeInTheDocument();
+    expect(within(dialog).queryByText('projects.visibility.impactFailed')).toBeNull();
+  });
+
+  it('asks again on the next opening rather than showing the last count', async () => {
+    const user = userEvent.setup();
+
+    await startAt();
+
+    let dialog = await openVisibility(user);
+
+    await within(dialog).findByText('projects.visibility.close.impact');
+    await user.keyboard('{Escape}');
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog')).toBeNull();
+    });
+
+    dialog = await openVisibility(user);
+    await within(dialog).findByText('projects.visibility.close.impact');
+
+    await waitFor(() => {
+      expect(previews()).toHaveLength(2);
+    });
+  });
+
+  it('has no axe violations with the count on screen', async () => {
+    const user = userEvent.setup();
+
+    await startAt();
+
+    const dialog = await openVisibility(user);
+
+    await within(dialog).findByText('projects.visibility.close.impact');
+
+    expect(await axeViolationsIn(dialog, { modal: true, control: 'button-name' })).toEqual([]);
   });
 });
 
@@ -546,9 +692,7 @@ describe('the refusals no screen above has shown yet', () => {
 
     const dialog = await screen.findByRole('dialog');
 
-    expect(
-      within(dialog).getByText('projects.visibility.open.consequence.access'),
-    ).toBeInTheDocument();
+    expect(await within(dialog).findByText('projects.visibility.open.impact')).toBeInTheDocument();
     await user.click(
       within(dialog).getByRole('button', { name: 'projects.visibility.open.confirm' }),
     );
@@ -603,6 +747,28 @@ describe('the refusals no screen above has shown yet', () => {
  * side only.
  */
 describe.each(['en', 'ru'] as const)('the interpolated labels in %s', (language) => {
+  it('state the count of the visibility summary in its plural', async () => {
+    const i18n = SharedI18n.createI18n(language);
+    const user = userEvent.setup();
+
+    await startAt({ i18n, language, impact: () => json({ losingAccess: 3, gainingAccess: 0 }) });
+
+    await user.click(
+      await screen.findByRole('button', {
+        name: i18n.t('projects.settings.visibility.change', {
+          value: i18n.t('projects.visibility.PRIVATE'),
+        }),
+      }),
+    );
+
+    const dialog = within(await screen.findByRole('dialog'));
+    const sentence = i18n.t('projects.visibility.close.impact', { count: 3 });
+
+    expect(sentence).toMatch(/^3 /);
+    expect(await dialog.findByText(sentence)).toBeInTheDocument();
+    expect(dialog.queryByText(/\{\{/)).toBeNull();
+  });
+
   it('name the project the delete dialog is about', async () => {
     const i18n = SharedI18n.createI18n(language);
     const user = userEvent.setup();

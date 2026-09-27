@@ -182,6 +182,10 @@ const CALLS: Readonly<Record<string, Call>> = {
       .set('Authorization', `Bearer ${token}`)
       .set('X-Confirm-Dangerous', '1')
       .send({ visibility: 'PRIVATE' }),
+  'GET /api/v1/projects/:projectId/visibility-impact': (target, token) =>
+    request(target)
+      .get(`/api/v1/projects/${PROJECT_ID}/visibility-impact?to=PRIVATE`)
+      .set('Authorization', `Bearer ${token}`),
   'POST /api/v1/projects/:projectId/archive': (app, token) =>
     request(app)
       .post(`/api/v1/projects/${PROJECT_ID}/archive`)
@@ -328,6 +332,7 @@ const RESOURCE_ROUTES = [
   'PATCH /api/v1/projects/:projectId',
   'DELETE /api/v1/projects/:projectId',
   'POST /api/v1/projects/:projectId/visibility',
+  'GET /api/v1/projects/:projectId/visibility-impact',
   'POST /api/v1/projects/:projectId/archive',
   'GET /api/v1/projects/:projectId/members',
   'POST /api/v1/projects/:projectId/members',

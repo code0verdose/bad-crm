@@ -157,6 +157,25 @@ export const changeProjectVisibility = async (
   );
 };
 
+/** How many active colleagues a change of visibility would take the project from, or give it to. */
+export type ProjectVisibilityImpact = components['schemas']['ProjectVisibilityImpact'];
+
+/**
+ * The summary a change of visibility is confirmed with (`GET …/visibility-impact`, the change's own
+ * key and level). Counts decided by the server per colleague — the client counts nobody.
+ */
+export const previewProjectVisibility = async (
+  projectId: string,
+  to: ProjectVisibilityValue,
+  signal: AbortSignal,
+): Promise<ProjectVisibilityImpact> =>
+  unwrapApiResult(
+    await apiClient.GET('/projects/{projectId}/visibility-impact', {
+      params: { path: { projectId }, query: { to } },
+      signal,
+    }),
+  );
+
 /** `status` becomes `ARCHIVED`; idempotent — an archived project answers `204` again. */
 export const archiveProject = async (projectId: string): Promise<void> => {
   unwrapApiResult(

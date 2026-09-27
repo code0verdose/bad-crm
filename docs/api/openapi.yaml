@@ -2824,6 +2824,55 @@ paths:
         '503':
           $ref: '#/components/responses/ServiceUnavailable'
 
+  /projects/{projectId}/visibility-impact:
+    get:
+      operationId: previewProjectVisibility
+      summary: How many colleagues a change of visibility would move.
+      description: |
+        The summary `POST /projects/{projectId}/visibility` is confirmed with (STORY-014-01,
+        acceptance 7): of the organization's **active** accounts, how many read the project now and
+        would not under `to` (`losingAccess`), and how many do not and would (`gainingAccess`).
+
+        Each colleague is decided by the same read decision as `GET /projects/{projectId}` —
+        capability, implicit level under the hypothetical visibility, explicit grants on the
+        project and on the organization. So a member, a colleague with a grant, and the owner keep
+        the project; a guest without a grant never had it; a suspended or invited account is not
+        counted at all. `to` equal to the current visibility moves nobody: both counts are `0`.
+
+        Asked under the change's own permission — `project:manage_visibility`, `MANAGER` on the
+        chain — because whoever may not make the change may not learn what it would do to whom.
+        Every outsider is `404`, as on the card. Nothing is written.
+      tags: [project]
+      x-permission: project:manage_visibility
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+        - name: to
+          in: query
+          required: true
+          description: The visibility the change would move the project to.
+          schema:
+            type: string
+            enum: [PUBLIC_ORG, PRIVATE]
+      responses:
+        '200':
+          description: The two counts.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectVisibilityImpact'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+
   /projects/{projectId}/archive:
     post:
       operationId: archiveProject
@@ -4975,6 +5024,23 @@ components:
         visibility:
           type: string
           enum: [PUBLIC_ORG, PRIVATE]
+
+    ProjectVisibilityImpact:
+      type: object
+      additionalProperties: false
+      required: [losingAccess, gainingAccess]
+      description: |
+        Counts of active colleagues, never who they are: the names are behind `user:read`, and a
+        summary is not a way around it.
+      properties:
+        losingAccess:
+          type: integer
+          minimum: 0
+          examples: [7]
+        gainingAccess:
+          type: integer
+          minimum: 0
+          examples: [0]
 
     ProjectMember:
       type: object

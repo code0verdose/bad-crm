@@ -29,10 +29,12 @@ const READER_PORT = /-access-reader\.port\.ts$/;
  * An allow-list rather than a deny-list of entity fields, for the reason `audit-redaction.util.ts`
  * gives the other way round: a deny-list stays quiet on the field nobody thought to list. A new
  * kind of fact — a channel's `kind`, a file's `scope` — is added here, in one line, with the port
- * that needs it.
+ * that needs it. `depth` and `expiresAt` came with `project-audience-access-reader.port.ts`: a
+ * grant's node on the chain and its expiry are what the resolution rule reads
+ * (`AclEntryOnChain`), not fields of an entity.
  */
 const DECISION_FACT =
-  /^(organizationId|[a-z]+Id|[a-z]+Ids|is[A-Z]\w*|visibility|memberRole|level|aclLevel)$/;
+  /^(organizationId|[a-z]+Id|[a-z]+Ids|is[A-Z]\w*|visibility|memberRole|level|aclLevel|depth|expiresAt)$/;
 
 const stripComments = (source: string): string =>
   source.replaceAll(/\/\*[\s\S]*?\*\//g, '').replaceAll(/\/\/.*$/gm, '');

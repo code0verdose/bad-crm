@@ -97,6 +97,59 @@ export class PrismaEffectivePermissionsReader
     });
   }
 
+  /**
+   * The same fold for a whole audience — four statements however many ids, grouped by person.
+   *
+   * The predicates are the ones `rows` sends (`unexpired`, `ROLE_SELECT`, `OVERRIDE_SELECT`, the
+   * `deletedAt` filter on the account) and the fold is `toFacts`, so the answer for one person here
+   * is by construction the answer `capabilitiesOf` gives for them — which
+   * `test/unit/persistence/effective-permissions-reader.test.ts` also holds by comparison.
+   */
+  capabilitiesOfMany(userIds: readonly string[]): Promise<ReadonlyMap<string, CapabilityFacts>> {
+    return this.run('capabilitiesOfMany', async (tx) => {
+      const found = new Map<string, CapabilityFacts>();
+
+      if (userIds.length === 0) return found;
+
+      const organizationId = this.organizationId('capabilitiesOfMany');
+      const ids = [...userIds];
+
+      const users = await tx.user.findMany({
+        where: { organizationId, id: { in: ids }, deletedAt: null },
+        select: { id: true, permissionsVersion: true },
+      });
+
+      if (users.length === 0) return found;
+
+      const present = users.map((user) => user.id);
+      const [organization, assignments, overrides] = await Promise.all([
+        tx.organization.findFirst({ where: { id: organizationId }, select: { ownerId: true } }),
+        tx.userRole.findMany({
+          where: { organizationId, userId: { in: present }, ...unexpired() },
+          select: { userId: true, ...ROLE_SELECT },
+        }),
+        tx.userPermissionOverride.findMany({
+          where: { organizationId, userId: { in: present }, ...unexpired() },
+          select: { userId: true, ...OVERRIDE_SELECT },
+        }),
+      ]);
+
+      for (const user of users) {
+        found.set(
+          user.id,
+          toFacts({
+            permissionsVersion: user.permissionsVersion,
+            isOwner: organization?.ownerId === user.id,
+            assignments: assignments.filter((row) => row.userId === user.id),
+            overrides: overrides.filter((row) => row.userId === user.id),
+          }),
+        );
+      }
+
+      return found;
+    });
+  }
+
   private async rows(
     tx: TxClient,
     userId: string,
@@ -111,36 +164,15 @@ export class PrismaEffectivePermissionsReader
 
     if (user === null) return null;
 
-    const unexpired = { OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }] };
-
     const [organization, assignments, overrides] = await Promise.all([
       tx.organization.findFirst({ where: { id: organizationId }, select: { ownerId: true } }),
       tx.userRole.findMany({
-        where: { organizationId, userId, ...unexpired },
-        select: {
-          role: {
-            select: {
-              id: true,
-              key: true,
-              name: true,
-              permissions: {
-                where: { permission: { deprecatedAt: null } },
-                select: { permissionKey: true },
-              },
-            },
-          },
-        },
+        where: { organizationId, userId, ...unexpired() },
+        select: ROLE_SELECT,
       }),
       tx.userPermissionOverride.findMany({
-        where: { organizationId, userId, ...unexpired },
-        select: {
-          permissionKey: true,
-          effect: true,
-          reason: true,
-          grantedById: true,
-          grantedAt: true,
-          expiresAt: true,
-        },
+        where: { organizationId, userId, ...unexpired() },
+        select: OVERRIDE_SELECT,
       }),
     ]);
 
@@ -152,6 +184,34 @@ export class PrismaEffectivePermissionsReader
     };
   }
 }
+
+/** Expiry as a predicate, against the application clock at the moment it is built (see above). */
+const unexpired = () => ({ OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }] });
+
+/** A held role, with the permissions it grants — deprecated keys grant nothing. */
+const ROLE_SELECT = {
+  role: {
+    select: {
+      id: true,
+      key: true,
+      name: true,
+      permissions: {
+        where: { permission: { deprecatedAt: null } },
+        select: { permissionKey: true },
+      },
+    },
+  },
+} as const;
+
+/** An exception, with everything the administration screen explains it by. */
+const OVERRIDE_SELECT = {
+  permissionKey: true,
+  effect: true,
+  reason: true,
+  grantedById: true,
+  grantedAt: true,
+  expiresAt: true,
+} as const;
 
 /** The fold the decision is made from — roles and ALLOW exceptions in, DENY exceptions apart. */
 const toFacts = (rows: PermissionRows): CapabilityFacts => {

@@ -120,6 +120,14 @@ export const changeProjectVisibilityBodySchema = z.strictObject({
 
 export const projectIdParamsSchema = z.strictObject({ projectId: projectIdSchema });
 
+/**
+ * `?to=PRIVATE` — the visibility a change would move the project to. Required: a preview of «some
+ * change» names nothing, and the closed list is the whitelist.
+ */
+export const projectVisibilityPreviewQuerySchema = z.strictObject({
+  to: projectVisibilitySchema,
+});
+
 export const projectMemberParamsSchema = z.strictObject({
   projectId: projectIdSchema,
   userId: userIdSchema,

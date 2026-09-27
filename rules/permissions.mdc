@@ -40,9 +40,10 @@ RLS — второй независимый рубеж, не замена policy
    (`missing` → 404, `unavailable` → 503, иначе уровень), правило разрешения —
    `domain/access/acl-resolution.policy.ts`; маршруты `acl:*` отгружены 2026-09-26 (`GET`/`POST /acl`,
    `DELETE /acl/{aclId}`). Чего ещё нет: access-reader'ов
-   доменов кроме проекта — `git ls-files | grep access-reader` печатает три файла, и все три про
-   проект: порт, адаптер `infrastructure/persistence/prisma/project-access-reader.adapter.ts` и
-   его тест `test/unit/persistence/project-access-reader.test.ts`; второго домена в выводе нет.
+   доменов кроме проекта — `git ls-files | grep access-reader` печатает только проектные файлы
+   (два ридера — `project-access-reader` на одного человека и `project-audience-access-reader` на
+   всех активных сотрудников сразу, 2026-09-27 — с адаптерами и тестами) и архитектурный тест
+   `test/unit/architecture/access-readers.test.ts`; второго домена в выводе нет.
 6. **Fail-closed.** Неизвестный ключ, ошибка резолва ACL, отсутствующий scope, недоступный кеш —
    всё это `DENY`. Ни одна ветка не заканчивается «разрешим, раз непонятно».
 7. **`accessReader` вернул `null` → 404 `resource_not_found`, а не 403.** Ресурс из чужой

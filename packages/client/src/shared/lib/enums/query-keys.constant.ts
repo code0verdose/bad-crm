@@ -162,6 +162,14 @@ export interface ProjectQueryKeys {
   readonly list: (params: ProjectListParams) => readonly [string, 'list', ProjectListParams];
   readonly detail: (id: string) => readonly [string, 'detail', string];
   readonly members: (id: string) => readonly [string, 'members', string];
+  /**
+   * The summary of a change of visibility, per target — under `all`, so the change itself (which
+   * invalidates `all`) never leaves a stale count behind for the next dialog.
+   */
+  readonly visibilityImpact: (
+    id: string,
+    to: string,
+  ) => readonly [string, 'visibility-impact', string, string];
 }
 
 /**
@@ -257,6 +265,7 @@ export const QueryKeys = {
     list: (params: ProjectListParams) => ['projects', 'list', params],
     detail: (id: string) => ['projects', 'detail', id],
     members: (id: string) => ['projects', 'members', id],
+    visibilityImpact: (id: string, to: string) => ['projects', 'visibility-impact', id, to],
   } satisfies ProjectQueryKeys,
   SecurityPolicy: {
     all: ['security-policy'],

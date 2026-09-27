@@ -77,6 +77,7 @@ import { ChangeProjectVisibilityUseCase } from '@/application/project/use-cases/
 import { CreateProjectUseCase } from '@/application/project/use-cases/create-project.use-case.js';
 import { DeleteProjectUseCase } from '@/application/project/use-cases/delete-project.use-case.js';
 import { GetProjectDetailQuery } from '@/application/project/use-cases/get-project-detail.query.js';
+import { PreviewProjectVisibilityQuery } from '@/application/project/use-cases/preview-project-visibility.query.js';
 import { ListProjectMembersQuery } from '@/application/project/use-cases/list-project-members.query.js';
 import { ListProjectsQuery } from '@/application/project/use-cases/list-projects.query.js';
 import {
@@ -158,6 +159,7 @@ import { PrismaTeamRepository } from '@/infrastructure/persistence/prisma/team.r
 import { PrismaResourceAclRepository } from '@/infrastructure/persistence/prisma/resource-acl.repository.js';
 import { PrismaAclReader } from '@/infrastructure/persistence/prisma/acl-reader.adapter.js';
 import { PrismaProjectAccessReader } from '@/infrastructure/persistence/prisma/project-access-reader.adapter.js';
+import { PrismaProjectAudienceAccessReader } from '@/infrastructure/persistence/prisma/project-audience-access-reader.adapter.js';
 import { PrismaProjectListQuery } from '@/infrastructure/persistence/prisma/project-list-query.adapter.js';
 import { PrismaProjectMemberRepository } from '@/infrastructure/persistence/prisma/project-member.repository.js';
 import { PrismaProjectRepository } from '@/infrastructure/persistence/prisma/project.repository.js';
@@ -663,6 +665,16 @@ const buildProject = (input: {
       projects,
       resolveAcl,
       input.audit,
+    ),
+    // The summary a visibility change is confirmed with: decided under the command's own key,
+    // then every active colleague folded as the actor they would be and asked the read decision.
+    previewProjectVisibility: new PreviewProjectVisibilityQuery(
+      unitOfWork,
+      projects,
+      resolveAcl,
+      new PrismaProjectAudienceAccessReader(),
+      new PrismaEffectivePermissionsReader(),
+      input.clock,
     ),
     archiveProject: new ArchiveProjectUseCase(unitOfWork, projects, resolveAcl, input.audit),
     deleteProject: new DeleteProjectUseCase(unitOfWork, projects, members, resolveAcl, input.audit),

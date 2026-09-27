@@ -93,6 +93,7 @@ import {
   projectListQuerySchema,
   projectMemberParamsSchema,
   projectMembersQuerySchema,
+  projectVisibilityPreviewQuerySchema,
   updateProjectBodySchema,
   updateProjectMemberBodySchema,
 } from '@/presentation/http/validators/project.validator.js';
@@ -274,6 +275,10 @@ export const createRouteRegistry = (
     params: projectIdParamsSchema,
     body: changeProjectVisibilityBodySchema,
   });
+  const projectVisibilityPreviewValidator = validate({
+    params: projectIdParamsSchema,
+    query: projectVisibilityPreviewQuerySchema,
+  });
   const projectMembersQueryValidator = validate({
     params: projectIdParamsSchema,
     query: projectMembersQuerySchema,
@@ -294,6 +299,7 @@ export const createRouteRegistry = (
     createProject: dependencies.project.createProject,
     updateProject: dependencies.project.updateProject,
     changeVisibility: dependencies.project.changeProjectVisibility,
+    previewVisibility: dependencies.project.previewProjectVisibility,
     archiveProject: dependencies.project.archiveProject,
     deleteProject: dependencies.project.deleteProject,
     listMembers: dependencies.project.listProjectMembers,
@@ -305,6 +311,7 @@ export const createRouteRegistry = (
     createValidator: createProjectValidator,
     updateValidator: updateProjectValidator,
     visibilityValidator: projectVisibilityValidator,
+    visibilityPreviewValidator: projectVisibilityPreviewValidator,
     membersQueryValidator: projectMembersQueryValidator,
     addMemberValidator: addProjectMemberValidator,
     updateMemberValidator: updateProjectMemberValidator,
@@ -798,6 +805,15 @@ export const createRouteRegistry = (
       // only after the decision so the 428 cannot be used to learn who holds the right.
       permission: 'project:manage_visibility',
       aclCheckedIn: 'ChangeProjectVisibilityUseCase',
+    },
+    {
+      method: 'get',
+      path: `${API_PREFIX}/projects/:projectId/visibility-impact`,
+      handlers: [projectVisibilityPreviewValidator.handler, projects.previewVisibility],
+      // The summary the change above is confirmed with — under the change's own key and level,
+      // because whoever may not make the change may not learn what it would do to whom.
+      permission: 'project:manage_visibility',
+      aclCheckedIn: 'PreviewProjectVisibilityQuery',
     },
     {
       method: 'post',
