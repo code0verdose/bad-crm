@@ -193,7 +193,15 @@ estimate: M
 - [x] Тесты клиента: `units/project/**/*.test.ts(x)` (утилиты, гард, хуки),
       `test/routes/project-overview-screen.test.tsx` (всё приложение: п. 1–4, 7, 8, 10 + axe),
       группа `Projects` в `test/api/query-keys.test.ts`.
-- [ ] E2E `packages/e2e/tests/**/project-overview.spec.ts` (п. 2, 3) — не написан.
+- [x] E2E `packages/e2e/tests/projects/project-overview.spec.ts` (2026-09-27; п. 2, 5, 8, 10):
+      404-параметр стороннего приватного проекта неотличим от несуществующего id, тот же способ
+      выхода («к списку проектов»); danger zone `/projects/$projectId/settings` рисуется по блоку
+      `permissions`, а не по роли — `MEMBER` (`EDITOR` на цепочке, одноразовый коллега) не видит
+      «Архивировать»/«Удалить», лид проекта (`admin`, `MANAGER`) видит оба и оба не задизейблены;
+      axe на заполненной карточке. Доказательство красного — убран
+      `ProjectService.ProjectGuards.requireProjectAccess` в
+      `app/routes/_authenticated/projects/$projectId/route.tsx`: оба сценария падают («Back to
+      projects» не находится, «Nothing here» не находится), возвращено обратно.
 
 ## Состояние критериев (клиент, 2026-09-26)
 
