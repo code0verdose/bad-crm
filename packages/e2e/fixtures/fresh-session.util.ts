@@ -38,9 +38,13 @@ export const MAX_SESSION_ATTEMPTS = 4;
  * Runs one call under its own, freshly minted session of the kind `mint` produces, retrying with
  * another fresh session if the previous one turns out already stale (see `isStaleSessionError`).
  *
- * Safe to retry only when `action` performs exactly one mutating request: a `401` means the gate
- * refused it before anything was written, never a request that partly succeeded. Every caller in
- * `tests/projects/**` holds to that.
+ * Safe to retry only when `action` performs no more than one mutating request under the session
+ * `mint` hands it: a `401` means the gate refused that request before anything was written, never
+ * one that partly succeeded — so retrying with a fresh session cannot double a write. `action` may
+ * still make several *idempotent* calls under the one session (`ensureScenarioColleague` looks up
+ * before it ever creates, so calling it twice under two different retried sessions costs nothing);
+ * what it must not do is depend on an earlier call's side effect surviving into a later attempt.
+ * Every caller in `tests/projects/**` holds to that.
  */
 export const withRetriedSession = async <T>(
   mint: () => Promise<ApiSession>,
@@ -91,10 +95,24 @@ export const scenarioColleagueEmail = (organization: SeedOrganization, key: stri
  * calls it. Three `tests/projects/**` files each provisioning their own one-off subject, run three
  * times in a row the way this suite's own gate does, spend nine of those ten within the first two
  * runs and refuse the third outright — measured 2026-09-27. `role-account.ts` solves the identical
- * problem for `admin`/`developer` with a deterministic address, invited once and reused forever;
- * this is the same solution for a colleague that must not be `admin` or `developer` themselves (see
- * `withOwnerSession`'s doc on why: those two are read by other files' browser sessions and must
- * never be seated on anything).
+ * problem for `admin`/`developer` with a deterministic address, invited once and reused forever.
+ *
+ * This is the same solution for a subject that must not be `admin` or `developer` themselves: both
+ * of those are also read as **browser sessions** by other suites (`tests/rbac/role-fixtures.spec.ts`,
+ * `tests/security/org-2fa-policy.spec.ts`), and seating either of them on a project bumps their own
+ * `permissions_version` at a moment those files cannot predict, turning an already-open session of
+ * theirs into a stale one — measured 2026-09-27 in `project-overview.spec.ts`'s own file doc, which
+ * moved its project `LEAD` off `admin` for exactly this reason. A scenario colleague is never read by
+ * anything but the one file that provisioned it, so seating it on that file's own project has no such
+ * neighbour to surprise.
+ *
+ * **`systemRole` almost always stays `developer`, even for a colleague that needs more than
+ * `developer` holds.** `tests/security/org-2fa-policy.spec.ts` asserts an exact headcount of who
+ * holds the `admin` **role** in this organization (`«of 3 covered people»`) — measured 2026-09-27:
+ * giving a scenario colleague the `admin` system role, to reach `project:archive`/`project:delete`,
+ * inflated that headcount to four and turned a green, unrelated file red. A colleague that needs a
+ * capability beyond `developer`'s gets it through `grantPermissionOverride` below instead — layer 3
+ * of the permission model, additive to one person, invisible to any report that counts role holders.
  *
  * Not swept by the global teardown: the address deliberately carries no `TEST_ACCOUNT_MARKER`, for
  * the reason `role-account.ts` gives for its own accounts — a sweep that took it would make the next
@@ -129,4 +147,37 @@ export const ensureScenarioColleague = async (
   const roleId = await systemRoleId(owner, systemRole);
 
   return provisionColleague(owner, { email, roleId });
+};
+
+/**
+ * Widens one scenario colleague's capability by one key, through the product's own layer-3
+ * mechanism (`PUT /users/{userId}/permission-overrides/{permission}`) rather than a stronger system
+ * role — see `ensureScenarioColleague`'s doc on why a role that carries more than `developer` risks
+ * inflating some *other* file's exact headcount of who holds it.
+ *
+ * `ALLOW` may only hand out a permission the caller already holds — the owner holds every key, so
+ * `owner` is always the right caller here. Idempotent by the endpoint's own contract (`PUT` on the
+ * pair identifies the row), which is what lets this run again on every reuse of the colleague
+ * without growing anything; no `expiresAt`, because a scenario colleague that outlives the run needs
+ * the grant to outlive it too.
+ */
+export const grantPermissionOverride = async (
+  owner: ApiSession,
+  userId: string,
+  permission: string,
+  reason: string,
+): Promise<void> => {
+  const response = await owner.context.put(
+    `/api/v1/users/${userId}/permission-overrides/${encodeURIComponent(permission)}`,
+    {
+      headers: owner.headers,
+      data: { effect: 'ALLOW', reason },
+    },
+  );
+
+  if (!response.ok()) {
+    throw new Error(
+      `Could not grant ${permission} to ${userId}: HTTP ${String(response.status())}.\n${await response.text()}`,
+    );
+  }
 };

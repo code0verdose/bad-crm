@@ -102,10 +102,10 @@ const browserOrigin = (): string =>
 
 /**
  * A signed-in page for an account outside `session.fixture.ts`'s closed `FixtureRole` list — the
- * one-off colleague this file provisions for the member/lead side of the visibility check. Mirrors
- * that file's own `mintSession`/`signedInPage` (same login, same same-origin `/auth/refresh`
- * exchange, same reason for both), duplicated here because those two are not exported and take only
- * a `FixtureRole`.
+ * reusable, deterministic scenario colleague (`ensureScenarioColleague`) this file signs in as for
+ * the member/lead side of the visibility check. Mirrors that file's own `mintSession`/`signedInPage`
+ * (same login, same same-origin `/auth/refresh` exchange, same reason for both), duplicated here
+ * because those two are not exported and take only a `FixtureRole`.
  */
 const withColleaguePage = async (
   browser: Browser,

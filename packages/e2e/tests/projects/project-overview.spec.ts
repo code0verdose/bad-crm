@@ -2,11 +2,14 @@ import { randomUUID } from 'node:crypto';
 
 import { request as apiRequestContext, type Browser, type Page } from '@playwright/test';
 
-import { ensureScenarioColleague, withOwnerSession } from '../../fixtures/fresh-session.util.js';
-import { roleAccountEmail } from '../../fixtures/role-account.js';
+import {
+  ensureScenarioColleague,
+  grantPermissionOverride,
+  withOwnerSession,
+} from '../../fixtures/fresh-session.util.js';
 import { SEED_ORGANIZATION_A, SEED_PASSWORD } from '../../fixtures/seed-data.js';
 import { expect, test } from '../../fixtures/session.fixture.js';
-import { apiSessionFor, type ApiSession } from '../../fixtures/test-account.js';
+import { type ApiSession } from '../../fixtures/test-account.js';
 import { audit } from '../support/audit.util.js';
 
 /**
@@ -27,23 +30,33 @@ import { audit } from '../support/audit.util.js';
  *   differs, which is what makes this a permission-model assertion and not a component prop test.
  *
  * Data goes in through the product's own API, as `project-list.spec.ts` explains: never a direct
- * insert, and every mutating call signs in fresh immediately before it — seating `admin` as a
+ * insert, and every mutating call signs in fresh immediately before it — seating somebody as a
  * project's `LEAD` bumps *their own* `permissions_version` (`CreateProjectUseCase` seats the
  * creator and the lead as the first two memberships), which would make a session reused from an
  * earlier call answer `401 unauthenticated` rather than the assertion under test.
  *
- * **The `MEMBER` in the danger-zone scenario is a reusable scenario colleague
- * (`ensureScenarioColleague`, `fresh-session.util.ts`), not the standing `developer` role account.**
- * Measured 2026-09-27: `membership-invalidates-permissions.spec.ts` seats and removes the
- * *standing* `developer` account on a project of its own, in whatever worker Playwright happens to
- * run it in; that bumps `developer`'s `permissions_version` at a moment this file cannot predict,
- * and a browser session already signed in as `developer` reads the bump as a stale access token — a
- * raw route error, not the assertion under test. A colleague neither file seats on anything but its
- * own scenario's project has no such neighbour. It is reused across runs rather than reinvited,
- * because a one-off colleague per run would spend this machine's `invitation_accept` budget three
- * times over across the three files in this directory, run back to back. The stranger-project
- * scenario keeps the standing `developer` role, because it never becomes a member of anything and
- * so is never bumped.
+ * **Both the `MEMBER` and the `LEAD` of the danger-zone scenario are reusable scenario colleagues
+ * (`ensureScenarioColleague`, `fresh-session.util.ts`), never the standing `admin`/`developer` role
+ * accounts.** Measured 2026-09-27: `tests/rbac/role-fixtures.spec.ts` and
+ * `tests/security/org-2fa-policy.spec.ts` both sign in as the standing `admin` account and keep a
+ * browser session of it open; seating that same account as a project's `LEAD` here bumps `admin`'s
+ * `permissions_version` at a moment neither of those files can predict, and their already-open
+ * session reads the bump as a stale access token — a raw route error, not the assertion under test.
+ * `project-list.spec.ts` closed exactly this race for its own lead by moving off `admin`; a colleague
+ * neither file seats on anything but its own scenario's project has no such neighbour, whichever role
+ * it is given. **Both colleagues stay on the `developer` system role** — `MANAGER` on the resource
+ * chain is not enough on its own for the lead: `project:archive`/`project:delete`/
+ * `project:manage_members` are capabilities the caller must also hold
+ * (`docs/security/permission-model.md` §7 (е)), and the obvious fix, a stronger system role, was
+ * measured 2026-09-27 to break a *different* file: `tests/security/org-2fa-policy.spec.ts` asserts an
+ * exact headcount of who holds the `admin` role in this organization, and a fourth `admin` here turned
+ * that count, and that file, red. `grantPermissionOverride` (`fresh-session.util.ts`) grants the three
+ * capabilities to this one person instead — layer 3 of the permission model, invisible to a report
+ * that counts role holders. Every scenario colleague here is reused across runs rather than
+ * reinvited, because a one-off colleague per run would spend this machine's `invitation_accept`
+ * budget three times over across the three files in `tests/projects/`, run back to back. The
+ * stranger-project scenario keeps the standing `developer` role for its browser session, because it
+ * is never seated on anything and so is never bumped.
  */
 
 const projectKey = (): string => `E2E${randomUUID().replace(/-/g, '').slice(0, 6).toUpperCase()}`;
@@ -115,9 +128,10 @@ const browserOrigin = (): string =>
 
 /**
  * A signed-in page for an account outside `session.fixture.ts`'s closed `FixtureRole` list — the
- * one-off colleague this file provisions for the `MEMBER` scenario. Mirrors that file's own
- * `mintSession`/`signedInPage` (same login, same same-origin `/auth/refresh` exchange, same reason
- * for both), duplicated here because those two are not exported and take only a `FixtureRole`.
+ * reusable, deterministic scenario colleagues this file signs in as for the `MEMBER` and `LEAD`
+ * halves of the danger-zone scenario. Mirrors that file's own `mintSession`/`signedInPage` (same
+ * login, same same-origin `/auth/refresh` exchange, same reason for both), duplicated here because
+ * those two are not exported and take only a `FixtureRole`.
  */
 const withColleaguePage = async (
   browser: Browser,
@@ -164,38 +178,53 @@ test.describe('the project card', () => {
 
   let strangerProject: CreatedProject;
   let memberProject: CreatedProject;
+  let leadColleagueEmail: string;
   let memberColleagueEmail: string;
 
   test.beforeAll(async () => {
-    const admin = await apiSessionFor(roleAccountEmail(SEED_ORGANIZATION_A, 'admin'));
-
-    try {
-      // Nobody but its own creator (the owner) is ever seated on this one.
-      strangerProject = await withOwnerSession(SEED_ORGANIZATION_A, (owner) =>
-        createProject(owner, { label: 'Stranger', visibility: 'PRIVATE', leadId: owner.userId }),
-      );
-
-      // `admin` becomes its LEAD (MANAGER on the chain) at creation.
-      memberProject = await withOwnerSession(SEED_ORGANIZATION_A, (owner) =>
-        createProject(owner, { label: 'Member', visibility: 'PRIVATE', leadId: admin.userId }),
-      );
-    } finally {
-      await admin.context.dispose();
-    }
-
-    // A reusable scenario colleague — see the file doc on why the `MEMBER` scenario does not use
-    // the standing `developer` role account. `developer`'s own system role is reused for it only as
-    // a convenient, already-minimal capability set (`project:read` and nothing project-shaped
-    // beyond it) — this is a fresh person, not that account.
-    const colleague = await withOwnerSession(SEED_ORGANIZATION_A, (owner) =>
-      ensureScenarioColleague(owner, SEED_ORGANIZATION_A, 'project-overview-member', 'developer'),
+    // Nobody but its own creator (the owner) is ever seated on this one.
+    strangerProject = await withOwnerSession(SEED_ORGANIZATION_A, (owner) =>
+      createProject(owner, { label: 'Stranger', visibility: 'PRIVATE', leadId: owner.userId }),
     );
 
-    memberColleagueEmail = colleague.email;
+    // Reusable scenario colleagues — see the file doc on why the `LEAD` and `MEMBER` halves of the
+    // danger-zone scenario never use the standing `admin`/`developer` role accounts, and why the
+    // lead stays on the `developer` system role rather than a stronger one.
+    const [lead, member] = await withOwnerSession(SEED_ORGANIZATION_A, (owner) =>
+      Promise.all([
+        ensureScenarioColleague(owner, SEED_ORGANIZATION_A, 'project-overview-lead', 'developer'),
+        ensureScenarioColleague(owner, SEED_ORGANIZATION_A, 'project-overview-member', 'developer'),
+      ]),
+    );
+
+    leadColleagueEmail = lead.email;
+    memberColleagueEmail = member.email;
+
+    // The lead needs the danger-zone capabilities beyond what `developer` holds — granted to this
+    // one person, additively, rather than by a stronger system role (see the file doc and
+    // `ensureScenarioColleague`'s in `fresh-session.util.ts`).
+    await withOwnerSession(SEED_ORGANIZATION_A, (owner) =>
+      Promise.all(
+        (['project:archive', 'project:delete', 'project:manage_members'] as const).map(
+          (permission) =>
+            grantPermissionOverride(
+              owner,
+              lead.userId,
+              permission,
+              'e2e project-overview.spec.ts danger-zone scenario',
+            ),
+        ),
+      ),
+    );
+
+    // The lead colleague becomes MANAGER on the chain at creation.
+    memberProject = await withOwnerSession(SEED_ORGANIZATION_A, (owner) =>
+      createProject(owner, { label: 'Member', visibility: 'PRIVATE', leadId: lead.userId }),
+    );
 
     await withOwnerSession(SEED_ORGANIZATION_A, (owner) =>
       addProjectMember(owner, memberProject.id, {
-        userId: colleague.userId,
+        userId: member.userId,
         projectRole: 'MEMBER',
         allocationPct: 100,
       }),
@@ -207,8 +236,8 @@ test.describe('the project card', () => {
       removeProject(owner, strangerProject.id),
     );
     await withOwnerSession(SEED_ORGANIZATION_A, (owner) => removeProject(owner, memberProject.id));
-    // The scenario colleague is not deactivated here — `ensureScenarioColleague`'s doc explains why
-    // it is meant to outlive the run, the same as the standing role accounts.
+    // Neither scenario colleague is deactivated here — `ensureScenarioColleague`'s doc explains why
+    // both are meant to outlive the run, the same as the standing role accounts.
   });
 
   test.describe('a project the caller may not see', () => {
@@ -258,14 +287,12 @@ test.describe('the project card', () => {
       });
     });
 
-    test.describe('the project’s LEAD', () => {
-      test.use({ role: 'admin' });
+    test('the project’s LEAD sees both, and neither is disabled', async ({ browser }) => {
+      await withColleaguePage(browser, leadColleagueEmail, async (page) => {
+        await page.goto(`/projects/${memberProject.id}/settings`);
 
-      test('sees both, and neither is disabled', async ({ rolePage }) => {
-        await rolePage.goto(`/projects/${memberProject.id}/settings`);
-
-        await expect(rolePage.getByRole('button', { name: 'Archive project' })).toBeEnabled();
-        await expect(rolePage.getByRole('button', { name: 'Delete project' })).toBeEnabled();
+        await expect(page.getByRole('button', { name: 'Archive project' })).toBeEnabled();
+        await expect(page.getByRole('button', { name: 'Delete project' })).toBeEnabled();
       });
     });
   });

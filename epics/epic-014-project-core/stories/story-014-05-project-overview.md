@@ -196,9 +196,18 @@ estimate: M
 - [x] E2E `packages/e2e/tests/projects/project-overview.spec.ts` (2026-09-27; п. 2, 5, 8, 10):
       404-параметр стороннего приватного проекта неотличим от несуществующего id, тот же способ
       выхода («к списку проектов»); danger zone `/projects/$projectId/settings` рисуется по блоку
-      `permissions`, а не по роли — `MEMBER` (`EDITOR` на цепочке, одноразовый коллега) не видит
-      «Архивировать»/«Удалить», лид проекта (`admin`, `MANAGER`) видит оба и оба не задизейблены;
-      axe на заполненной карточке. Доказательство красного — убран
+      `permissions`, а не по роли — оба, `MEMBER` (`EDITOR` на цепочке) и лид проекта (`MANAGER`),
+      это переиспользуемые детерминированные коллеги с системной ролью `developer`
+      (`ensureScenarioColleague`), а не стоящие аккаунты `admin`/`developer`: те читаются
+      браузерными сессиями `tests/rbac/role-fixtures.spec.ts` и
+      `tests/security/org-2fa-policy.spec.ts`, и посадка их лидом бампала бы их
+      `permissions_version` под этими сессиями. Лиду одной системной роли `developer` мало —
+      `project:archive`/`project:delete`/`project:manage_members` выданы персональным исключением
+      (`PUT /users/{id}/permission-overrides/{permission}`, `grantPermissionOverride`), а не более
+      сильной системной ролью: более сильная роль (`admin`) была опробована первой и сломала
+      `tests/security/org-2fa-policy.spec.ts`, который считает точное число держателей роли
+      `admin` в организации. `MEMBER` не видит «Архивировать»/«Удалить», лид видит оба и оба не
+      задизейблены; axe на заполненной карточке. Доказательство красного — убран
       `ProjectService.ProjectGuards.requireProjectAccess` в
       `app/routes/_authenticated/projects/$projectId/route.tsx`: оба сценария падают («Back to
       projects» не находится, «Nothing here» не находится), возвращено обратно.
