@@ -366,7 +366,7 @@ EPIC-006), а клиентский экран остаётся невыполн�
 | `/projects/$projectId/ci` | `routes/_authenticated/projects/$projectId/ci/index.tsx` | `requirePermission('ci:read')` | `ciRunsSearchSchema`: `workflow?`, `status[]`, `branch?`, `cursor?` | `WorkflowRunListWidget` |
 | `/projects/$projectId/ci/$runId` | `routes/_authenticated/projects/$projectId/ci/$runId.tsx` | `requirePermission('ci:read')` | `job?`, `step?` | `WorkflowRunDetailWidget` |
 | `/projects/$projectId/time` | `routes/_authenticated/projects/$projectId/time.tsx` | `requirePermission('time:read_team')` | `from`, `to`, `user[]` | `ProjectTimeWidget` |
-| `/projects/$projectId/members` | `routes/_authenticated/projects/$projectId/members.tsx` | наследует | — (фильтры состава `q`, `role[]` в URL не вынесены — STORY-014-02, критерий 10, открыт) | `ProjectMembers` |
+| `/projects/$projectId/members` | `routes/_authenticated/projects/$projectId/members.tsx` | наследует | `projectMembersSearchSchema` (`units/project/model/validation`): `q`, `role[]`; сужение на клиенте — операция не фильтрует и не несёт имён; «вышедшие» не вынесены (STORY-014-02, критерий 10) | `ProjectMembers` |
 | `/projects/$projectId/settings` | `routes/_authenticated/projects/$projectId/settings.tsx` | наследует — своего гарда нет: какие секции видны (правка, видимость, архив, удаление), решает блок `permissions` карточки; читателю, которому не открыто ничего, — фраза вместо 404 | — (без `tab`: секции идут одной страницей) | `ProjectSettings` |
 
 ### Задачи
