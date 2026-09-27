@@ -223,3 +223,56 @@ describe('a full optimistic mutation', () => {
     expect(client.getQueryState(KEY)?.isInvalidated).toBe(true);
   });
 });
+
+/**
+ * Not every row the API sends is addressed by `id`: a membership is addressed by the `userId` it
+ * belongs to (`ProjectMember`, `TeamMember`). Without naming the field, a patch of a roster matches
+ * nothing and the «optimistic» role change is invisible until the refetch — green in review, absent
+ * in the browser.
+ */
+describe('addressing rows by another field', () => {
+  const roster = () => [
+    { userId: 'u1', projectRole: 'LEAD' },
+    { userId: 'u2', projectRole: 'MEMBER' },
+  ];
+
+  it('patches the row whose named field matches', () => {
+    const client = clientWith(roster());
+
+    runOptimisticPatch(client, {
+      queryKeys: [KEY],
+      itemId: 'u2',
+      idKey: 'userId',
+      patch: { projectRole: 'OBSERVER' },
+    });
+
+    expect(client.getQueryData(KEY)).toEqual([
+      { userId: 'u1', projectRole: 'LEAD' },
+      { userId: 'u2', projectRole: 'OBSERVER' },
+    ]);
+  });
+
+  it('removes the row whose named field matches, and only that one', () => {
+    const client = clientWith(roster());
+
+    runOptimisticRemove(client, { queryKeys: [KEY], itemId: 'u1', idKey: 'userId' });
+
+    expect(client.getQueryData(KEY)).toEqual([{ userId: 'u2', projectRole: 'MEMBER' }]);
+  });
+
+  it('passes over a row that is not an object instead of reading a field off it', () => {
+    const client = clientWith([null, ...roster()]);
+
+    runOptimisticRemove(client, { queryKeys: [KEY], itemId: 'u1', idKey: 'userId' });
+
+    expect(client.getQueryData(KEY)).toEqual([null, { userId: 'u2', projectRole: 'MEMBER' }]);
+  });
+
+  it('CONTROL: without the field named, a roster row is not matched by its user id', () => {
+    const client = clientWith(roster());
+
+    runOptimisticRemove(client, { queryKeys: [KEY], itemId: 'u1' });
+
+    expect(client.getQueryData(KEY)).toEqual(roster());
+  });
+});
