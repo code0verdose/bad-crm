@@ -344,6 +344,52 @@ describe('the project switcher', () => {
     expect(trigger).toHaveTextContent('Other project');
   });
 
+  /**
+   * While the other project loads, its crumb has no name yet — only the route's key, «Project». The
+   * live region must not say it: between «BAD · Bad CRM» and «OTH · Other project» a screen reader
+   * would announce a third page that never existed. It speaks once, when the page has arrived.
+   */
+  it('says nothing in the live region while the other project loads, then names it', async () => {
+    const user = userEvent.setup();
+    let answer: (response: Response) => void = () => undefined;
+    const pending = new Promise<Response>((resolve) => {
+      answer = resolve;
+    });
+    const { trigger, router } = await mounted((call) => {
+      if (call.url.endsWith(`/projects/${OTHER}`)) return pending as unknown as Response;
+
+      return call.url.endsWith(`/projects/${OTHER}/members`) ? json({ items: [] }) : undefined;
+    });
+    const announcer = screen.getByTestId('route-announcer');
+
+    await waitFor(() => {
+      expect(announcer).toHaveTextContent(/^BAD · Bad CRM$/);
+    });
+
+    await user.click(trigger);
+    await user.click(await screen.findByRole('option', { name: /Other project/ }));
+
+    // The card of the other project has been asked for and not answered: the page is loading.
+    await waitFor(() => {
+      expect(sent.some((call) => call.url.endsWith(`/projects/${OTHER}`))).toBe(true);
+    });
+    // Past the moment the router stops holding the old page and renders the pending state
+    // (`defaultPendingMs`, 200 ms): from then on the matches are the other project's, unnamed.
+    await new Promise((resolve) => setTimeout(resolve, 400));
+    expect(screen.queryByRole('heading', { level: 2, name: 'Bad CRM' })).toBeNull();
+    expect(announcer).not.toHaveTextContent('projects.detail.title');
+    expect(announcer).toHaveTextContent(/^BAD · Bad CRM$/);
+
+    answer(json(card(ALL, { id: OTHER, key: 'OTH', name: 'Other project' })));
+
+    await waitFor(() => {
+      expect(router.state.location.pathname).toBe(`/projects/${OTHER}/members`);
+    });
+    await waitFor(() => {
+      expect(announcer).toHaveTextContent(/^OTH · Other project$/);
+    });
+  });
+
   it('closes on Escape and gives the focus back to the trigger', async () => {
     const user = userEvent.setup();
     const { trigger } = await mounted();
