@@ -2,10 +2,15 @@ import { describe, expect, it } from 'vitest';
 
 import { type SharedPermissions } from '@bad-crm/shared';
 
+import {
+  type ProjectAudienceAccessReaderPort,
+  type ProjectGrantFacts,
+} from '@/application/access/ports/project-audience-access-reader.port.js';
 import { type CapabilityFacts } from '@/application/iam/ports/effective-permissions-reader.port.js';
 import { PreviewProjectVisibilityQuery } from '@/application/project/use-cases/preview-project-visibility.query.js';
 import { type ProjectRole } from '@/domain/project/project.enums.js';
 
+import { type CountingArray, countingArray } from '../../support/counting-array.util.js';
 import { FakeEffectivePermissionsReader } from '../../support/iam-doubles.util.js';
 import { FakeClock } from '../../support/identity-doubles.util.js';
 import {
@@ -151,5 +156,46 @@ describe('PreviewProjectVisibilityQuery', () => {
       query.execute({ actor: MANAGER, projectId: PROJECT_ID, visibility: 'PUBLIC_ORG' }),
     ).rejects.toMatchObject({ code: 'project_not_found' });
     expect(harness.store.trace).not.toContain('seatsOf');
+  });
+
+  it('walks the grants once, not once per colleague', async () => {
+    // A per-colleague `filter` over every grant is N² element reads — the shape that took the
+    // summary past the idle-transaction timeout at 20 000 accounts. Each extra colleague holds an
+    // explicit grant, so closing the project costs them nothing and the answer stays the fixture's.
+    const { harness } = build();
+    const extra = Array.from(
+      { length: 400 },
+      (_, index) => `018f4a3b-2c1d-7a41-9f00-${index.toString().padStart(12, '0')}`,
+    );
+
+    for (const userId of extra) {
+      harness.store.subjects.set(userId, { userId, status: 'ACTIVE' });
+      harness.store.audienceGrants.push({ userId, depth: 0, level: 'VIEWER', expiresAt: null });
+    }
+
+    let grants: CountingArray<ProjectGrantFacts> | undefined;
+    const audience: ProjectAudienceAccessReaderPort = {
+      seatsOf: (projectId) => harness.store.seatsOf(projectId),
+      grantsOn: async () => {
+        grants = countingArray(await harness.store.grantsOn());
+
+        return grants.rows;
+      },
+    };
+    const query = new PreviewProjectVisibilityQuery(
+      harness.unitOfWork,
+      harness.store,
+      harness.acl,
+      audience,
+      new FakeEffectivePermissionsReader(COLLEAGUE, {
+        [IVAN]: reads(['project:read', 'project:manage_visibility']),
+      }),
+      new FakeClock(),
+    );
+
+    await expect(
+      query.execute({ actor: MANAGER, projectId: PROJECT_ID, visibility: 'PRIVATE' }),
+    ).resolves.toEqual({ losingAccess: 1, gainingAccess: 0 });
+    expect(grants?.reads()).toBeLessThanOrEqual(4 * extra.length);
   });
 });
