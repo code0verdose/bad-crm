@@ -281,10 +281,13 @@ estimate: M
 > - **Критерий 7, сводка «сколько сотрудников потеряет доступ» — не сделана:** сервер её не считает,
 >   а клиентский подсчёт требует справочника (`user:read`) и не видит явных грантов ACL; диалог
 >   называет последствия словами.
-> - **Разрыв контракта:** в `ProjectPermissions` нет флага видимости, поэтому кнопка смены видимости
->   рисуется по одной capability `project:manage_visibility` (`useCan().holds`), без уровня `MANAGER`.
->   Держателю ключа без уровня кнопка видна, а отказ приходит в диалоге. Нужен `canChangeVisibility`
->   в блоке — это правка сервера и спеки, не клиента.
+> - **Разрыв контракта: серверная половина закрыта 2026-09-27, клиент ждёт.** `ProjectPermissions`
+>   получил обязательный флаг `canChangeVisibility` — решение `canManageProjectVisibility`, той же
+>   функции, что ассертит `ChangeProjectVisibilityUseCase` (`project-permissions.policy.ts`, таблица
+>   `test/unit/application/project-card-permissions.test.ts`; разбор — STORY-014-05). Клиент пока
+>   рисует кнопку по одной capability `project:manage_visibility` (`useCan().holds`), без уровня
+>   `MANAGER`: держателю ключа без уровня кнопка видна, а отказ приходит в диалоге. Открыто —
+>   переключить кнопку на флаг.
 > - Удалённый проект уводит на дашборд: маршрута `/projects` (STORY-014-04) в этой ветке нет.
 - [x] Тесты: `test/unit/domain/project/project-key-value.test.ts`,
       `project-access-policy.test.ts` (п. 5, 6), use-case'ы в `test/unit/application/`,
