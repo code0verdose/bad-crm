@@ -1,4 +1,4 @@
-import { screen, waitFor, within } from '@testing-library/react';
+import { act, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, assert, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -334,7 +334,7 @@ describe('/projects/$projectId', () => {
       ).toBeInTheDocument();
       expect(screen.queryByRole('tablist')).not.toBeInTheDocument();
       expect(
-        screen.queryByRole('heading', { level: 1, name: 'projects.detail.title' }),
+        screen.queryByRole('heading', { level: 1, name: 'BAD · Bad CRM' }),
       ).not.toBeInTheDocument();
       expect(screen.queryByRole('heading', { level: 2, name: 'Bad CRM' })).not.toBeInTheDocument();
       // The layout never ran, so neither did the roster under it. (That a refusal is not retried
@@ -423,17 +423,54 @@ describe('/projects/$projectId', () => {
     });
   });
 
-  it('names the project in the title and the announcement when the card opens', async () => {
+  /**
+   * STORY-014-06, acceptance 8: with two projects open in two tabs, the tabs must say which is
+   * which. The key and the name are the project's own words — data, not a translation — and they
+   * are the same in all four voices of the page: the tab, the trail, the heading and the
+   * announcement. (The fixture's project is called «Bad CRM», like the product: the tab reads
+   * «BAD · Bad CRM · Bad CRM», the last part being the product.) The trail itself is not on this
+   * page: the project is its only crumb, and a single crumb is not rendered — the crumb's title is
+   * what the heading, the tab and the announcement are built from (`useRouteCrumbs`).
+   */
+  it('names the project by its key and name in the tab, the trail, the heading and the announcement', async () => {
     await startAt();
 
     await screen.findByRole('heading', { level: 2, name: 'Bad CRM' });
 
     await waitFor(() => {
-      expect(document.title).toBe('projects.detail.title · Bad CRM');
+      expect(document.title).toBe('BAD · Bad CRM · Bad CRM');
     });
-    expect(screen.getByTestId('route-announcer')).toHaveTextContent(
-      exactly('projects.detail.title'),
-    );
+    expect(screen.getByTestId('route-announcer')).toHaveTextContent(exactly('BAD · Bad CRM'));
+    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent(exactly('BAD · Bad CRM'));
+  });
+
+  /**
+   * The name comes from the card the route's guard put in the cache, and follows it: a rename that
+   * lands in the cache renames the tab — without a request of its own for the title.
+   */
+  it('renames the tab when the card in the cache is renamed, asking for nothing to do it', async () => {
+    const { router } = await startAt();
+    // The tree's own cache — `startAt` evaluates a fresh module graph, and so a fresh key factory.
+    const { QueryKeys } = await import('@shared/lib');
+
+    await screen.findByRole('heading', { level: 2, name: 'Bad CRM' });
+    await waitFor(() => {
+      expect(document.title).toBe('BAD · Bad CRM · Bad CRM');
+    });
+    const reads = projectCalls().length;
+
+    act(() => {
+      router.options.context.queryClient.setQueryData(
+        QueryKeys.Projects.detail(PROJECT),
+        card({ name: 'Renamed' }),
+      );
+    });
+
+    await waitFor(() => {
+      expect(document.title).toBe('BAD · Renamed · Bad CRM');
+    });
+    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent(exactly('BAD · Renamed'));
+    expect(projectCalls()).toHaveLength(reads);
   });
 
   it('does not ask for a project at all without project:read — the same not-found screen', async () => {
@@ -470,7 +507,7 @@ describe('/projects/$projectId', () => {
     // where a keyboard user starts over from the top and a screen reader says nothing.
     await waitFor(() => {
       expect(document.activeElement).toBe(
-        screen.getByRole('heading', { level: 1, name: 'projects.detail.title' }),
+        screen.getByRole('heading', { level: 1, name: 'BAD · Bad CRM' }),
       );
     });
   });
@@ -592,7 +629,7 @@ describe('/projects/$projectId', () => {
     // An error state inside a section is not a page: the page keeps its one h1, the card's title.
     expect(
       screen.getAllByRole('heading', { level: 1 }).map((heading) => heading.textContent),
-    ).toEqual(['projects.detail.title']);
+    ).toEqual(['BAD · Bad CRM']);
     // One signal for one failure: the inline state, and no toast beside it.
     expect(document.querySelector('.mantine-Notification-root')).toBeNull();
 
@@ -817,17 +854,18 @@ describe.each(['en', 'ru'] as const)('/projects/$projectId in %s', (language) =>
     expect(screen.getByTestId('route-announcer')).toHaveTextContent(exactly(failed));
   });
 
-  it('names the project in the title and the announcement, in words', async () => {
+  /** The project's key and name are its own words: the same in every language of the interface. */
+  it('names the project in the title and the announcement by its own words, untranslated', async () => {
     await startAt({ i18n, language });
 
     await screen.findByRole('tablist');
 
     await waitFor(() => {
-      expect(document.title).toBe(`${phrase('detail.title')} · Bad CRM`);
+      expect(document.title).toBe('BAD · Bad CRM · Bad CRM');
     });
-    expect(screen.getByTestId('route-announcer')).toHaveTextContent(
-      exactly(phrase('detail.title')),
-    );
+    expect(screen.getByTestId('route-announcer')).toHaveTextContent(exactly('BAD · Bad CRM'));
+    // CONTROL: the page around it is in this language — the tabs are translated.
+    expect(screen.getByRole('tab', { name: phrase('section.overview') })).toBeInTheDocument();
   });
 
   it('says in words that the project is archived', async () => {

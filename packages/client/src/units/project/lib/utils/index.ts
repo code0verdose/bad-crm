@@ -14,6 +14,7 @@ export * from './project-refusal.util.js';
 export * from './project-roster.util.js';
 export * from './project-location.util.js';
 export * from './project-switch-target.util.js';
+export * from './project-title.util.js';
 export * from './recent-projects.util.js';
 export * from './translate-field-errors.util.js';
 export * from './visibility-impact-message.util.js';

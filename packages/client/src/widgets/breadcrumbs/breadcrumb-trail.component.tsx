@@ -16,12 +16,13 @@ export interface BreadcrumbTrailProps {
  * the rules — last crumb is not a link, `aria-current` marks it — could not be exercised through
  * the router.
  *
- * The application has since grown past that (2026-08-30), and this docstring still said «in M1
- * exactly one route declares a crumb … unverified until then». Thirteen routes declare one
- * (`grep -rn 'staticData: { crumbKey' packages/client/src/app/routes/`), nested ones among them —
- * `/admin/teams/$teamId`, `/admin/members/$userId` — so real trails of two exist; and the rules are
- * verified, by `test/widgets/breadcrumbs.test.tsx`. The split is still the right shape; it is no
- * longer the only way to see the component work.
+ * Still true as of 2026-09-27, and worth saying because a note of 2026-08-30 claimed otherwise: many
+ * routes declare a crumb (`grep -rn 'crumbKey' packages/client/src/app/routes/`), but no route with
+ * a crumb has a parent that declares one. `/admin/teams/$teamId` and `/projects/$projectId` are
+ * siblings of their lists (`teams/index.tsx`, `projects/index.tsx`), not children of a layout, so
+ * every page of the product today has a trail of one — and renders none. The rules are verified
+ * here, on the component, by `test/widgets/breadcrumbs.test.tsx`; a trail on screen needs a layout
+ * route above the list that carries its crumb.
  *
  * Nothing renders below two entries: a single crumb is the page title said twice.
  *
@@ -39,11 +40,11 @@ export function BreadcrumbTrail({ crumbs }: BreadcrumbTrailProps) {
       {crumbs.map((crumb) =>
         crumb.isCurrent ? (
           <Text aria-current="page" c="var(--bc-text-muted)" key={crumb.pathname} size="sm">
-            {t(crumb.labelKey)}
+            {crumb.title ?? t(crumb.labelKey)}
           </Text>
         ) : (
           <Anchor component={Link} key={crumb.pathname} size="sm" to={crumb.pathname}>
-            {t(crumb.labelKey)}
+            {crumb.title ?? t(crumb.labelKey)}
           </Anchor>
         ),
       )}

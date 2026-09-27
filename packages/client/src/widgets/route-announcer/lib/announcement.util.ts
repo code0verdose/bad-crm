@@ -26,6 +26,10 @@ export const routePhase = (matches: readonly RouteStatusSource[]): RoutePhase =>
 
 /** The page the announcer last spoke about, and what it still owes that page. */
 export interface AnnouncedPage {
+  /**
+   * The page's identity (`crumbIdentity`): its crumb key, and for a page named by its data the key
+   * with its address. Named for the first case, which is every page but a project's.
+   */
   readonly titleKey: string | undefined;
   /** The page was on its error screen. */
   readonly failed: boolean;
@@ -54,9 +58,12 @@ export const openingPage = (titleKey: string | undefined, phase: RoutePhase): An
  *
  * Two occasions, and only two:
  *
- * - **the page changed** — a new name. Keyed on the name rather than the pathname so that a
- *   search-parameter change (a filter, a page number) does not yank focus out of the control the
- *   user is operating. A route replaced by its error screen is a new name too
+ * - **the page changed** — a new name. Keyed on the page's identity (`crumbIdentity` in
+ *   `widgets/breadcrumbs`) rather than the pathname, so that a search-parameter change (a filter, a
+ *   page number) or a section tab does not yank focus out of the control the user is operating. A
+ *   page named by its data — a project — is its key *and* its address: switching to another
+ *   project is a new page, renaming this one is not. A route replaced by its error screen is a new
+ *   name too
  *   (`widgets/breadcrumbs/lib/route-crumbs.util.ts`): the reader lands on «the page did not load»;
  * - **the failed page was reloaded** — «Retry». Whatever the answer, the button the reader pressed
  *   leaves with the error screen that held it (the router mounts its error boundary afresh on every

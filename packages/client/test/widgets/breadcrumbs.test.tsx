@@ -116,6 +116,85 @@ describe('a match a stand-in screen replaced', () => {
   });
 });
 
+/**
+ * STORY-014-06, acceptance 8: a page named by its data — a project — says which one. The route
+ * declares its crumb key as every route does; the name comes in beside the matches, by route id,
+ * from the cache the route's guard filled (`useRouteCrumbs`). A stand-in screen still wins: a
+ * project that answered «not found» is not named, the refusal is.
+ */
+describe('a crumb named by its data', () => {
+  const LAYOUT = '/_authenticated/projects/$projectId';
+  const projects = { pathname: '/projects', staticData: { crumbKey: 'projects.list.title' } };
+  const project = {
+    routeId: LAYOUT,
+    pathname: '/projects/42',
+    staticData: { crumbKey: 'projects.detail.title' },
+  };
+  const titles = { [LAYOUT]: 'BAD · Bad CRM' };
+
+  it('carries the title the route id is given, beside its key', () => {
+    expect(BreadcrumbsLib.routeCrumbs([projects, project], titles)).toEqual([
+      { labelKey: 'projects.list.title', pathname: '/projects', isCurrent: false },
+      {
+        labelKey: 'projects.detail.title',
+        title: 'BAD · Bad CRM',
+        pathname: '/projects/42',
+        isCurrent: true,
+      },
+    ]);
+  });
+
+  it('CONTROL: keeps the key alone while there is no title to give', () => {
+    expect(BreadcrumbsLib.routeCrumbs([project], {})).toEqual([
+      { labelKey: 'projects.detail.title', pathname: '/projects/42', isCurrent: true },
+    ]);
+  });
+
+  it.each([
+    { status: 'notFound', error: undefined, key: 'errors.not_found.title' },
+    { status: 'error', error: new Error('boom'), key: 'errors.route.title' },
+  ])('names a $status by its stand-in, not by the project', ({ status, error, key }) => {
+    expect(BreadcrumbsLib.currentCrumb([projects, { ...project, status, error }], titles)).toEqual({
+      labelKey: key,
+      pathname: '/projects/42',
+      isCurrent: true,
+    });
+  });
+
+  /**
+   * What the route announcer keys a page on. Another project is another page — focus goes to its
+   * heading — but the same project renamed is the same page: saving a new name on the settings tab
+   * must not throw focus out of the form.
+   */
+  describe('the identity of the page', () => {
+    const named = (pathname: string, title: string) =>
+      BreadcrumbsLib.crumbIdentity({
+        labelKey: 'projects.detail.title',
+        title,
+        pathname,
+        isCurrent: true,
+      });
+
+    it('differs between two projects', () => {
+      expect(named('/projects/42', 'BAD · Bad CRM')).not.toBe(named('/projects/43', 'OTH · Other'));
+    });
+
+    it('stays when the same project is renamed', () => {
+      expect(named('/projects/42', 'BAD · Bad CRM')).toBe(named('/projects/42', 'BAD · Renamed'));
+    });
+
+    it('is the key alone for a page named by its key, wherever it is', () => {
+      expect(
+        BreadcrumbsLib.crumbIdentity({
+          labelKey: 'teams.detail.title',
+          pathname: '/admin/teams/1',
+          isCurrent: true,
+        }),
+      ).toBe('teams.detail.title');
+    });
+  });
+});
+
 const TWO_CRUMBS = [
   { labelKey: 'nav.projects', pathname: '/projects', isCurrent: false },
   { labelKey: 'nav.dashboard', pathname: '/projects/42', isCurrent: true },
@@ -163,6 +242,28 @@ describe('rendering the trail', () => {
     );
 
     expect(screen.getByText('nav.dashboard')).toHaveAttribute('aria-current', 'page');
+  });
+
+  /** The project's own words, as they are: a key and a name are data, not a translation. */
+  it('shows a crumb’s title rather than its key when it has one', () => {
+    render(
+      <Standalone>
+        <BreadcrumbTrail
+          crumbs={[
+            { labelKey: 'nav.projects', pathname: '/projects', isCurrent: false },
+            {
+              labelKey: 'projects.detail.title',
+              title: 'BAD · Bad CRM',
+              pathname: '/projects/42',
+              isCurrent: true,
+            },
+          ]}
+        />
+      </Standalone>,
+    );
+
+    expect(screen.getByText('BAD · Bad CRM')).toHaveAttribute('aria-current', 'page');
+    expect(screen.queryByText('projects.detail.title')).toBeNull();
   });
 
   it('renders nothing at all for a single crumb', () => {

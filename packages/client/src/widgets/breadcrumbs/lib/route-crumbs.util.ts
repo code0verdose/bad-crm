@@ -11,8 +11,14 @@ import { IamLib } from '@units/iam';
  *
  * A route joins the trail by declaring `staticData.crumbKey`; a layout route that is only there to
  * hold a guard declares nothing and is skipped, which is why `_authenticated` never appears.
+ *
+ * **A page named by its data** — a project — keeps its key and is given a title beside it, by
+ * route id (`CrumbTitles`). The key stays the route's, declared like every other; the title is what
+ * the reader sees (STORY-014-06, acceptance 8: the tab and the trail say *which* project).
  */
 export interface RouteCrumbSource {
+  /** The router's id of the route — what a title is given by. Absent in pure cases. */
+  readonly routeId?: string;
   readonly pathname: string;
   readonly staticData?: { readonly crumbKey?: string };
   /** The router's status of the match. Absent in pure cases, which then read as loaded. */
@@ -24,6 +30,11 @@ export interface RouteCrumbSource {
 export interface RouteCrumb {
   /** i18n key of the label. */
   readonly labelKey: string;
+  /**
+   * The page's own name, shown instead of the key — data, not a translation (a project's key and
+   * name). Absent on a page named by its key, and on a page a stand-in screen replaced.
+   */
+  readonly title?: string;
   readonly pathname: string;
   /** The page you are on: rendered as text, never as a link to itself. */
   readonly isCurrent: boolean;
@@ -56,9 +67,14 @@ const standInKey = (match: RouteCrumbSource): string | undefined => {
   return undefined;
 };
 
+/** Titles of the pages named by their data, by route id — built by `useRouteCrumbs`. */
+export type CrumbTitles = Readonly<Record<string, string>>;
+
+type CrumbLabel = Omit<RouteCrumb, 'isCurrent'>;
+
 /** Labels in route order, stopping at the first match a stand-in screen replaced. */
-const crumbLabels = (matches: readonly RouteCrumbSource[]) => {
-  const labels: { labelKey: string; pathname: string }[] = [];
+const crumbLabels = (matches: readonly RouteCrumbSource[], titles: CrumbTitles) => {
+  const labels: CrumbLabel[] = [];
 
   for (const match of matches) {
     const standIn = standInKey(match);
@@ -68,18 +84,47 @@ const crumbLabels = (matches: readonly RouteCrumbSource[]) => {
 
     const crumbKey = match.staticData?.crumbKey;
 
-    if (crumbKey !== undefined) labels.push({ labelKey: crumbKey, pathname: match.pathname });
+    if (crumbKey === undefined) continue;
+
+    const title = match.routeId === undefined ? undefined : titles[match.routeId];
+
+    labels.push({
+      labelKey: crumbKey,
+      ...(title === undefined ? {} : { title }),
+      pathname: match.pathname,
+    });
   }
 
   return labels;
 };
 
-export const routeCrumbs = (matches: readonly RouteCrumbSource[]): RouteCrumb[] => {
-  const labels = crumbLabels(matches);
+export const routeCrumbs = (
+  matches: readonly RouteCrumbSource[],
+  titles: CrumbTitles = {},
+): RouteCrumb[] => {
+  const labels = crumbLabels(matches, titles);
 
   return labels.map((label, index) => ({ ...label, isCurrent: index === labels.length - 1 }));
 };
 
-/** The `h1` of the page, which is the last crumb — or nothing, on a route that declares none. */
+/** The page itself — the last crumb, which is its `h1` — or nothing, on a route that declares none. */
+export const currentCrumb = (
+  matches: readonly RouteCrumbSource[],
+  titles: CrumbTitles = {},
+): RouteCrumb | undefined => routeCrumbs(matches, titles).at(-1);
+
+/** The `h1` key of the page, which is the last crumb — or nothing, on a route that declares none. */
 export const currentCrumbKey = (matches: readonly RouteCrumbSource[]): string | undefined =>
-  routeCrumbs(matches).at(-1)?.labelKey;
+  currentCrumb(matches)?.labelKey;
+
+/**
+ * Which page this is, for the route announcer's «did the page change» (`rules/a11y.mdc` §21).
+ *
+ * A page named by its key is that key wherever it is — the same as before titles existed, so a
+ * search parameter or a section tab never moves focus. A page named by its data is the key **and
+ * the address**: another project is another page, and focus goes to its heading; the same project
+ * renamed keeps its address and stays the same page, so saving a new name on the settings tab does
+ * not throw focus out of the form. Keyed on the address rather than the title for that reason.
+ */
+export const crumbIdentity = (crumb: RouteCrumb): string =>
+  crumb.title === undefined ? crumb.labelKey : `${crumb.labelKey}@${crumb.pathname}`;

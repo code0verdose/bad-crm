@@ -104,3 +104,58 @@ describe('requireProjectAccess', () => {
     expect(error).toMatchObject({ name: 'ApiError', status: 500, code: 'internal_error' });
   });
 });
+
+/**
+ * STORY-014-06, acceptance 6: a project that answers «not found» to somebody who was working in it
+ * may mean their rights changed under them — taken off the project, or a role that no longer reads
+ * projects. The server keeps no cache of rights (`build-actor.query.ts`); the client does, in the
+ * query cache, so the guard marks the reader's own rights stale and the shell asks
+ * `GET /me/permissions` again — its `ETag` carries `permissionsVersion`.
+ */
+describe('requireProjectAccess and the reader’s own rights', () => {
+  const OTHER_USER = '018f4a3b-2c1d-7a41-9f00-2b7c1d0e5b13';
+
+  const seeded = () => {
+    const queryClient = freshClient();
+
+    queryClient.setQueryData(QueryKeys.Permissions.mine(), { permissions: ['project:read'] });
+    // Somebody else's rights on the administration screen: a project refusal says nothing of them.
+    queryClient.setQueryData(QueryKeys.Permissions.ofUser(OTHER_USER), { permissions: [] });
+
+    return queryClient;
+  };
+
+  const stale = (queryClient: ReturnType<typeof freshClient>, key: readonly unknown[]) =>
+    queryClient.getQueryState(key)?.isInvalidated;
+
+  it.each([
+    { status: 404, code: 'project_not_found' },
+    { status: 403, code: 'user_forbidden' },
+  ])(
+    'marks the reader’s own rights stale on $status, and only theirs',
+    async ({ status, code }) => {
+      vi.stubGlobal('fetch', () => Promise.resolve(problem(status, code)));
+      const queryClient = seeded();
+
+      expect(isNotFound(await run(queryClient))).toBe(true);
+      expect(stale(queryClient, QueryKeys.Permissions.mine())).toBe(true);
+      expect(stale(queryClient, QueryKeys.Permissions.ofUser(OTHER_USER))).toBe(false);
+    },
+  );
+
+  it('CONTROL: leaves the rights alone when the project opens', async () => {
+    vi.stubGlobal('fetch', () => Promise.resolve(project()));
+    const queryClient = seeded();
+
+    expect(await run(queryClient)).toBeUndefined();
+    expect(stale(queryClient, QueryKeys.Permissions.mine())).toBe(false);
+  });
+
+  it('leaves the rights alone on a failure that is not an answer about the project', async () => {
+    vi.stubGlobal('fetch', () => Promise.resolve(problem(500, 'internal_error')));
+    const queryClient = seeded();
+
+    expect(isNotFound(await run(queryClient))).toBe(false);
+    expect(stale(queryClient, QueryKeys.Permissions.mine())).toBe(false);
+  });
+});

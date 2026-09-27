@@ -7,13 +7,16 @@ import {
   type RecentProjectsStore,
 } from '@units/project/service/stores/recent-projects.store.js';
 import { isApiError } from '@shared/api';
+import { QueryKeys } from '@shared/lib';
 
 const HTTP_FORBIDDEN = 403;
 const HTTP_NOT_FOUND = 404;
 
 /** The slice of `beforeLoad` arguments this guard reads — narrow, so a unit never names `app/`. */
 export interface ProjectGuardArgs {
-  readonly context: { readonly queryClient: Pick<QueryClient, 'ensureQueryData'> };
+  readonly context: {
+    readonly queryClient: Pick<QueryClient, 'ensureQueryData' | 'invalidateQueries'>;
+  };
   readonly params: { readonly projectId: string };
 }
 
@@ -33,6 +36,15 @@ export interface ProjectGuardArgs {
  * a project is the closed contour, where the existence of the thing is the secret
  * (`IamGuards.requirePermission`, `whenDenied`). Any other failure is not an answer about the
  * project and goes to the route's error boundary, which offers a retry.
+ *
+ * **A refusal also marks the reader's own rights stale** (STORY-014-06, acceptance 6). A project
+ * that answers «not found» to somebody who was working in it may mean their rights changed under
+ * them — taken off the project, or a role that no longer reads projects. The server keeps no cache
+ * of rights to drop (`application/iam/use-cases/build-actor.query.ts`); the client's copy is the
+ * query entry of `GET /me/permissions`, which every `can(...)` of the shell reads, so that entry is
+ * invalidated and the shell asks again — its `ETag` carries `permissionsVersion`. Only the reader's
+ * own entry (`mine()`), not `Permissions.all`: a refusal says nothing about the rights of the people
+ * an administration screen may have open. Not awaited: the not-found screen does not wait on it.
  *
  * Named for what it checks rather than `requireProjectMember` (the name in the story and in
  * `ux-architecture.md`): a `PUBLIC_ORG` project is readable by every member of the organization,
@@ -54,6 +66,7 @@ export const requireProjectAccess = async (
   } catch (error) {
     if (isApiError(error) && (error.status === HTTP_NOT_FOUND || error.status === HTTP_FORBIDDEN)) {
       recent.forget(params.projectId);
+      void context.queryClient.invalidateQueries({ queryKey: QueryKeys.Permissions.mine() });
       // eslint-disable-next-line @typescript-eslint/only-throw-error -- the router's own signal
       throw notFound();
     }

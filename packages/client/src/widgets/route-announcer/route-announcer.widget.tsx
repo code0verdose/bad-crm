@@ -5,7 +5,7 @@ import { useTranslation } from 'react-i18next';
 
 import { SharedUi } from '@shared';
 
-import { BreadcrumbsLib } from '@widgets/breadcrumbs';
+import { BreadcrumbsLib, useRouteCrumbs } from '@widgets/breadcrumbs';
 import { announcementStep, openingPage, routePhase } from '@widgets/route-announcer/lib';
 
 import classes from './route-announcer.module.css';
@@ -41,10 +41,18 @@ export function RouteAnnouncer() {
   const { t } = useTranslation();
   const matches = useMatches();
 
-  const titleKey = BreadcrumbsLib.currentCrumbKey(matches);
+  /**
+   * The page is the last crumb of the trail — with its title when it is named by its data, a
+   * project «KEY · Name» (STORY-014-06, acceptance 8) — so the tab and the announcement say what
+   * the trail and the heading say.
+   */
+  const page = useRouteCrumbs().at(-1);
+  const pageName = page === undefined ? undefined : (page.title ?? t(page.labelKey));
+  /** What «the page changed» is keyed on: another project is another page, a renamed one is not. */
+  const pageKey = page === undefined ? undefined : BreadcrumbsLib.crumbIdentity(page);
   const phase = routePhase(matches);
 
-  useDocumentTitle(titleKey === undefined ? PRODUCT_NAME : `${t(titleKey)} · ${PRODUCT_NAME}`);
+  useDocumentTitle(pageName === undefined ? PRODUCT_NAME : `${pageName} · ${PRODUCT_NAME}`);
 
   /**
    * The page this component last announced — initialised to the page it is mounting on, which is
@@ -57,7 +65,7 @@ export function RouteAnnouncer() {
    * `StrictMode`, which is how the application actually mounts; the browser had been doing this all
    * along.
    */
-  const announced = useRef(openingPage(titleKey, phase));
+  const announced = useRef(openingPage(pageKey, phase));
 
   /** The heading this component last put focus on. */
   const focused = useRef<HTMLElement | null>(null);
@@ -66,7 +74,7 @@ export function RouteAnnouncer() {
   // declarative equivalent, and it is the only thing that tells a screen reader the page changed.
   // No cleanup: it neither subscribes nor allocates.
   useEffect(() => {
-    const step = announcementStep(announced.current, titleKey, phase);
+    const step = announcementStep(announced.current, pageKey, phase);
     const heading = step.focus ? document.getElementById(SharedUi.PAGE_TITLE_ID) : null;
 
     announced.current = step.announced;
@@ -74,7 +82,7 @@ export function RouteAnnouncer() {
 
     focused.current = heading;
     heading.focus();
-  }, [titleKey, phase]);
+  }, [pageKey, phase]);
 
   /**
    * While the page is failed, the heading that took focus may be replaced under the reader.
@@ -121,7 +129,7 @@ export function RouteAnnouncer() {
       data-testid="route-announcer"
       role="status"
     >
-      {titleKey === undefined ? null : t(titleKey)}
+      {pageName ?? null}
     </div>
   );
 }

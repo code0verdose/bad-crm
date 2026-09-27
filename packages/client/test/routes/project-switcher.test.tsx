@@ -259,9 +259,8 @@ describe('the project switcher', () => {
    * announcer has put it on the new page's heading: Mantine's `focusTarget()` runs a tick later
    * (`setTimeout(…, 0)`), after the announcer's synchronous move, and would win.
    *
-   * The other project answers «not found» here — the one switch after which the page's name
-   * changes, so the announcer moves focus. A settled switch keeps the name («project») and the
-   * announcer leaves focus where it is.
+   * The other project answers «not found» here: the page is named by the refusal. The case below
+   * is the switch that opens the other project, named by its own key and name.
    */
   it('leaves focus on the heading of the page a switch leads to', async () => {
     const user = userEvent.setup();
@@ -286,7 +285,37 @@ describe('the project switcher', () => {
     expect(heading).toHaveFocus();
   });
 
-  it('keeps focus on the trigger after a settled switch, naming the project now open', async () => {
+  /**
+   * Acceptance 6: a project that answers «not found» in the middle of work — the reader was taken
+   * off it — makes the shell ask for the reader's rights again. The server keeps no cache of rights;
+   * the one that would go on answering with the old ones is this tab's query cache.
+   */
+  it('asks for the reader’s rights again once a project answers «not found»', async () => {
+    const { router } = await mounted((call) =>
+      call.url.endsWith(`/projects/${OTHER}`) ? problem(404, 'project_not_found') : undefined,
+    );
+    const rightsReads = () => sent.filter((call) => call.url.endsWith('/me/permissions')).length;
+    const before = rightsReads();
+
+    // CONTROL: the rights were read to open the project at all.
+    expect(before).toBeGreaterThan(0);
+
+    await router.navigate({ to: '/projects/$projectId', params: { projectId: OTHER } });
+    await screen.findByRole('heading', { level: 1, name: 'errors.not_found.title' });
+
+    await waitFor(() => {
+      expect(rightsReads()).toBeGreaterThan(before);
+    });
+  });
+
+  /**
+   * Acceptance 8 makes the page's name the project's — «OTH · Other project» — so a switch that
+   * opens another project is a new page, and a new page takes focus to its heading
+   * (`rules/a11y.mdc` §21): the reader hears «loaded OTH · Other project» and lands at the top of
+   * what changed, the same as after following a link from the list. The trigger names the new
+   * project too, and is one Shift+Tab away; it does not keep focus through a page change.
+   */
+  it('moves focus to the heading of the project a switch opens, and names it everywhere', async () => {
     const user = userEvent.setup();
     const { trigger, router } = await mounted((call) => {
       if (call.url.endsWith(`/projects/${OTHER}`)) {
@@ -302,10 +331,16 @@ describe('the project switcher', () => {
     await waitFor(() => {
       expect(router.state.location.pathname).toBe(`/projects/${OTHER}/members`);
     });
-    await screen.findByRole('heading', { level: 2, name: 'Other project' });
-    await new Promise((resolve) => setTimeout(resolve, 10));
 
-    expect(trigger).toHaveFocus();
+    const heading = await screen.findByRole('heading', { level: 1, name: 'OTH · Other project' });
+
+    await waitFor(() => {
+      expect(heading).toHaveFocus();
+    });
+    // Past the tick on which the combobox would give focus back to its target.
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(heading).toHaveFocus();
+    expect(document.title).toBe('OTH · Other project · Bad CRM');
     expect(trigger).toHaveTextContent('Other project');
   });
 
