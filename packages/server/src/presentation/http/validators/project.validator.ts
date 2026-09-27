@@ -8,6 +8,7 @@ import {
 import { z } from 'zod';
 
 import { PROJECT_LIST_SORTS } from '@/application/project/ports/project-list-query.port.js';
+import { PROJECT_OPTIONS_RECENT_MAX } from '@/application/project/use-cases/list-project-options.query.js';
 import { PROJECT_KEY_PATTERN, normalizeProjectKey } from '@/domain/project/project-key.value.js';
 import {
   PROJECT_ROLES,
@@ -193,4 +194,18 @@ export const projectListQuerySchema = z.strictObject({
     .max(MAX_PAGE_SIZE)
     .optional()
     .default(LIST_PER_PAGE_DEFAULT),
+});
+
+/**
+ * The query string of `GET /projects/options` — the header's switcher (STORY-014-06).
+ *
+ * `q` is the list's text search, with the list's bound. `archived` is a flag, parsed like every
+ * other boolean of this API (`z.stringbool`), so `?archived=yes` is a `422` rather than a guess.
+ * `recent` repeats and names at most `PROJECT_OPTIONS_RECENT_MAX` projects — the ids the browser
+ * remembers; which of them the caller may still see is the server's to answer.
+ */
+export const projectOptionsQuerySchema = z.strictObject({
+  q: z.string().trim().max(LIST_QUERY_MAX).optional().default(''),
+  archived: z.stringbool().default(false),
+  recent: repeatable(projectIdSchema, PROJECT_OPTIONS_RECENT_MAX),
 });

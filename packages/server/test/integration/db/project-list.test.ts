@@ -8,6 +8,7 @@ import { type SharedPermissions } from '@bad-crm/shared';
 
 import { ResolveAclQuery } from '@/application/access/use-cases/resolve-acl.query.js';
 import { GetProjectDetailQuery } from '@/application/project/use-cases/get-project-detail.query.js';
+import { ListProjectOptionsQuery } from '@/application/project/use-cases/list-project-options.query.js';
 import {
   ListProjectsQuery,
   type ListProjectsInput,
@@ -462,6 +463,75 @@ describe('the list is can(project:read), applied to a set', () => {
     expect(listed).toEqual(byKey(expected));
     expect((await readableOneByOne(actor())).toSorted()).toEqual(listed);
     expect(page.total).toBe(expected.length);
+  });
+});
+
+/**
+ * The header's switcher (STORY-014-06) reads the **same** visible set: for every caller above, the
+ * options with the archive on are exactly the list with every status, and the recent ids come back
+ * only when the caller could open them — a hidden, deleted or foreign id is simply absent.
+ */
+describe('the switcher offers what the list shows, and nothing else', () => {
+  const optionsQuery = (): ListProjectOptionsQuery =>
+    new ListProjectOptionsQuery(
+      new PrismaUnitOfWork(prisma),
+      new PrismaAclReader(),
+      new PrismaProjectListQuery(),
+      { now: () => new Date() },
+      silentLogger,
+    );
+
+  const offer = (
+    actor: Actor,
+    input: { query?: string; includeArchived?: boolean; recentIds?: string[] },
+  ) =>
+    optionsQuery().execute({
+      actor,
+      query: input.query ?? '',
+      includeArchived: input.includeArchived ?? true,
+      recentIds: input.recentIds ?? [],
+    });
+
+  it.each<readonly [string, () => Actor]>([
+    ['Ivan', () => actorFor(seeded.ivanId)],
+    ['Petr', () => actorFor(seeded.petrId)],
+    ['Gus', () => actorFor(seeded.gusId, { roleKeys: ['guest'] })],
+    ['Olga', () => actorFor(seeded.olgaId)],
+    [
+      'the owner',
+      () => actorFor(seeded.ownerId, { isOwner: true, permissions: new Set(), roleKeys: [] }),
+    ],
+  ])('%s — options ≡ list, recent ≡ readable one by one', async (_who, actor) => {
+    const listed = (await list(actor())).items.map((item) => item.projectId).toSorted();
+    const offered = await offer(actor(), {});
+
+    expect(offered.items.map((item) => item.projectId).toSorted()).toEqual(listed);
+    expect(offered.hasMore).toBe(false);
+
+    // Five ids of every kind at once — readable, hidden, deleted, foreign — answered as a set.
+    const asked = [
+      seeded.ids.P01,
+      seeded.ids.P03,
+      seeded.ids.P09,
+      seeded.ids.P12,
+      seeded.foreignProjectId,
+    ];
+    const recent = await offer(actor(), { recentIds: asked });
+    const readable = await readableOneByOne(actor());
+
+    expect(recent.recent.map((item) => item.projectId).toSorted()).toEqual(
+      asked.filter((id) => readable.includes(id)).toSorted(),
+    );
+  });
+
+  it('keeps the archive out by default and matches text in name and key', async () => {
+    const ivan = actorFor(seeded.ivanId);
+    const plain = await offer(ivan, { includeArchived: false });
+    const found = await offer(ivan, { includeArchived: false, query: '100%' });
+
+    // In name order — «100% done» sorts before the projects named after their keys.
+    expect(keysOf(plain.items)).toEqual(['P07', 'P01', 'P02', 'P05']);
+    expect(keysOf(found.items)).toEqual(['P07']);
   });
 });
 

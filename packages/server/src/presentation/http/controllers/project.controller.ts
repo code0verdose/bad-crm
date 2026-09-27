@@ -6,6 +6,7 @@ import { type CreateProjectUseCase } from '@/application/project/use-cases/creat
 import { type DeleteProjectUseCase } from '@/application/project/use-cases/delete-project.use-case.js';
 import { type GetProjectDetailQuery } from '@/application/project/use-cases/get-project-detail.query.js';
 import { type ListProjectMembersQuery } from '@/application/project/use-cases/list-project-members.query.js';
+import { type ListProjectOptionsQuery } from '@/application/project/use-cases/list-project-options.query.js';
 import { type ListProjectsQuery } from '@/application/project/use-cases/list-projects.query.js';
 import {
   type AddProjectMemberUseCase,
@@ -16,6 +17,7 @@ import { type UpdateProjectUseCase } from '@/application/project/use-cases/updat
 import { readActor } from '@/presentation/http/middleware/require-permission.middleware.js';
 import { type RequestValidator } from '@/presentation/http/middleware/validate.middleware.js';
 import { serializeProjectListPage } from '@/presentation/http/serializers/project-list-item.serializer.js';
+import { serializeProjectOptionList } from '@/presentation/http/serializers/project-option.serializer.js';
 import {
   serializeProjectDetail,
   serializeProjectMember,
@@ -29,6 +31,7 @@ import {
   type projectListQuerySchema,
   type projectMemberParamsSchema,
   type projectMembersQuerySchema,
+  type projectOptionsQuerySchema,
   type updateProjectBodySchema,
   type updateProjectMemberBodySchema,
 } from '@/presentation/http/validators/project.validator.js';
@@ -42,6 +45,7 @@ const CONFIRM_DANGEROUS = 'x-confirm-dangerous';
 
 export interface ProjectControllerDependencies {
   readonly listProjects: ListProjectsQuery;
+  readonly listProjectOptions: ListProjectOptionsQuery;
   readonly getProjectDetail: GetProjectDetailQuery;
   readonly createProject: CreateProjectUseCase;
   readonly updateProject: UpdateProjectUseCase;
@@ -53,6 +57,7 @@ export interface ProjectControllerDependencies {
   readonly updateMember: UpdateProjectMemberUseCase;
   readonly removeMember: RemoveProjectMemberUseCase;
   readonly listValidator: RequestValidator<{ query: typeof projectListQuerySchema }>;
+  readonly optionsValidator: RequestValidator<{ query: typeof projectOptionsQuerySchema }>;
   readonly projectIdValidator: RequestValidator<{ params: typeof projectIdParamsSchema }>;
   readonly createValidator: RequestValidator<{ body: typeof createProjectBodySchema }>;
   readonly updateValidator: RequestValidator<{
@@ -91,6 +96,7 @@ export const createProjectController = (
   dependencies: ProjectControllerDependencies,
 ): {
   readonly list: RequestHandler;
+  readonly options: RequestHandler;
   readonly detail: RequestHandler;
   readonly create: RequestHandler;
   readonly update: RequestHandler;
@@ -123,6 +129,20 @@ export const createProjectController = (
     });
 
     response.status(200).json(serializeProjectListPage(page));
+  },
+
+  /** The header's switcher: the list's visible set, five fields a row, recent ids answered. */
+  options: async (_request, response) => {
+    const { query } = dependencies.optionsValidator.read(response);
+
+    const list = await dependencies.listProjectOptions.execute({
+      actor: readActor(response),
+      query: query.q,
+      includeArchived: query.archived,
+      recentIds: query.recent,
+    });
+
+    response.status(200).json(serializeProjectOptionList(list));
   },
 
   detail: async (_request, response) => {

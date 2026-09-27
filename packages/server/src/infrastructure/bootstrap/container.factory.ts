@@ -78,6 +78,7 @@ import { CreateProjectUseCase } from '@/application/project/use-cases/create-pro
 import { DeleteProjectUseCase } from '@/application/project/use-cases/delete-project.use-case.js';
 import { GetProjectDetailQuery } from '@/application/project/use-cases/get-project-detail.query.js';
 import { ListProjectMembersQuery } from '@/application/project/use-cases/list-project-members.query.js';
+import { ListProjectOptionsQuery } from '@/application/project/use-cases/list-project-options.query.js';
 import { ListProjectsQuery } from '@/application/project/use-cases/list-projects.query.js';
 import {
   AddProjectMemberUseCase,
@@ -644,6 +645,7 @@ const buildProject = (input: {
   const aclReader = new PrismaAclReader();
   const projects = new PrismaProjectRepository();
   const members = new PrismaProjectMemberRepository();
+  const projectList = new PrismaProjectListQuery();
 
   return {
     // The same grant reader the resolver walks the chain with: the list reads the organization
@@ -651,7 +653,15 @@ const buildProject = (input: {
     listProjects: new ListProjectsQuery(
       unitOfWork,
       aclReader,
-      new PrismaProjectListQuery(),
+      projectList,
+      input.clock,
+      input.logger,
+    ),
+    // The switcher reads through the same adapter, so both surfaces share one visible set.
+    listProjectOptions: new ListProjectOptionsQuery(
+      unitOfWork,
+      aclReader,
+      projectList,
       input.clock,
       input.logger,
     ),

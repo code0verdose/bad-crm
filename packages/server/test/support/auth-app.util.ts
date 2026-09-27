@@ -49,6 +49,7 @@ import { CreateProjectUseCase } from '@/application/project/use-cases/create-pro
 import { DeleteProjectUseCase } from '@/application/project/use-cases/delete-project.use-case.js';
 import { GetProjectDetailQuery } from '@/application/project/use-cases/get-project-detail.query.js';
 import { ListProjectMembersQuery } from '@/application/project/use-cases/list-project-members.query.js';
+import { ListProjectOptionsQuery } from '@/application/project/use-cases/list-project-options.query.js';
 import { ListProjectsQuery } from '@/application/project/use-cases/list-projects.query.js';
 import {
   AddProjectMemberUseCase,
@@ -757,6 +758,7 @@ export const createAuthApp = (options: AuthAppOptions = {}): AuthApp => {
   const projectAcl = new ResolveAclQuery({ acl: projects, projects, clock, logger });
   const project: ProjectDependencies = {
     listProjects: new ListProjectsQuery(unitOfWork, projects, projects, clock, logger),
+    listProjectOptions: new ListProjectOptionsQuery(unitOfWork, projects, projects, clock, logger),
     getProjectDetail: new GetProjectDetailQuery(unitOfWork, projects, projectAcl),
     createProject: new CreateProjectUseCase(unitOfWork, projects, projects, projectAcl, audit),
     updateProject: new UpdateProjectUseCase(unitOfWork, projects, projects, projectAcl, audit),

@@ -28,6 +28,11 @@ import {
   type ProjectPatch,
   type ProjectRepositoryPort,
 } from '@/application/project/ports/project-repository.port.js';
+import {
+  type ProjectOption,
+  type ProjectOptionsFilter,
+  type ProjectOptionsQueryPort,
+} from '@/application/project/ports/project-options-query.port.js';
 import { type TenantScope } from '@/application/platform/ports/unit-of-work.port.js';
 import {
   type AclChainNode,
@@ -101,7 +106,8 @@ export class FakeProjectStore
     ProjectAccessReaderPort,
     AclReaderPort,
     AclRepositoryPort,
-    ProjectListQueryPort
+    ProjectListQueryPort,
+    ProjectOptionsQueryPort
 {
   readonly rows: StoredProject[] = [];
   /** Every membership the store ever wrote, live and ended alike. */
@@ -641,6 +647,37 @@ export class FakeProjectStore
         })),
       total: matching.length,
     });
+  }
+
+  /** The switcher's read under the same plan — `isProjectVisible` row by row, as `page` does. */
+  options(
+    viewer: ProjectListViewer,
+    filter: ProjectOptionsFilter,
+  ): Promise<readonly ProjectOption[]> {
+    this.trace.push('options');
+
+    const needle = filter.query.toLowerCase();
+
+    return Promise.resolve(
+      this.visibleTo(viewer)
+        .filter(
+          (row) =>
+            filter.statuses.includes(row.status) &&
+            (needle === '' ||
+              row.name.toLowerCase().includes(needle) ||
+              row.key.toLowerCase().includes(needle)) &&
+            (filter.ids === null || filter.ids.includes(row.projectId)),
+        )
+        .toSorted((a, b) => a.name.localeCompare(b.name))
+        .slice(0, filter.limit)
+        .map(({ projectId, key, name, status, color }) => ({
+          projectId,
+          key,
+          name,
+          status,
+          color,
+        })),
+    );
   }
 
   facets(viewer: ProjectListViewer): Promise<ProjectListFacets> {

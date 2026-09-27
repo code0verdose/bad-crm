@@ -69,6 +69,7 @@ import { type ChangeProjectVisibilityUseCase } from '@/application/project/use-c
 import { type CreateProjectUseCase } from '@/application/project/use-cases/create-project.use-case.js';
 import { type DeleteProjectUseCase } from '@/application/project/use-cases/delete-project.use-case.js';
 import { type GetProjectDetailQuery } from '@/application/project/use-cases/get-project-detail.query.js';
+import { type ListProjectOptionsQuery } from '@/application/project/use-cases/list-project-options.query.js';
 import { type ListProjectsQuery } from '@/application/project/use-cases/list-projects.query.js';
 import { type ListProjectMembersQuery } from '@/application/project/use-cases/list-project-members.query.js';
 import {
@@ -215,6 +216,7 @@ export interface IamDependencies {
  */
 export interface ProjectDependencies {
   readonly listProjects: ListProjectsQuery;
+  readonly listProjectOptions: ListProjectOptionsQuery;
   readonly getProjectDetail: GetProjectDetailQuery;
   readonly createProject: CreateProjectUseCase;
   readonly updateProject: UpdateProjectUseCase;

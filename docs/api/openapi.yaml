@@ -2648,6 +2648,74 @@ paths:
         '500':
           $ref: '#/components/responses/InternalError'
 
+  /projects/options:
+    get:
+      operationId: listProjectOptions
+      summary: The projects the header's switcher offers.
+      description: |
+        A light read for the project switcher (STORY-014-06): five fields a project, no member
+        count, no facets, no `total` — the switcher is opened far more often than the list, and it
+        must not pull full cards.
+
+        **The same projects as `GET /projects`, by the same rule.** Visibility is decided exactly as
+        on the list — the capability `project:read`, then the caller's grants, teams, roles and
+        memberships applied **in SQL** — so a project the list would hide is not offered here
+        either, and a project the caller lost is gone from the next answer.
+
+        **The archive is hidden unless asked for** (`archived=true`). Results are ordered by name;
+        at most 50 come back, and `hasMore` says that more visible projects match — the switcher
+        then asks the person to type.
+
+        `recent` names the ids the browser remembers as recently visited (at most five). They are
+        answered in `recent` — those of them the caller can still see, under the same `archived`
+        rule and without the text filter — so the client never keeps a project it may no longer
+        open. An id of another organization, of a deleted project or of nothing is simply absent.
+      tags: [project]
+      x-permission: project:read
+      parameters:
+        - name: q
+          in: query
+          required: false
+          schema:
+            type: string
+            maxLength: 64
+          description: Matched, case-insensitively, against the name and the key.
+        - name: archived
+          in: query
+          required: false
+          description: Offer archived projects too.
+          schema:
+            type: boolean
+            default: false
+        - name: recent
+          in: query
+          required: false
+          explode: true
+          schema:
+            type: array
+            maxItems: 5
+            items:
+              type: string
+              format: uuid
+          description: Repeated. Ids remembered as recently visited; answered in `recent`.
+      responses:
+        '200':
+          description: The projects this caller can switch to.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectOptionList'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+
   /projects/{projectId}:
     get:
       operationId: getProject
@@ -4747,6 +4815,50 @@ components:
           type: integer
           minimum: 0
           description: Live memberships only — people who left the project are not on it.
+
+    ProjectOption:
+      type: object
+      additionalProperties: false
+      required: [id, key, name, status, color]
+      description: |
+        One project as the switcher offers it — identity and colour. No lead, no visibility, no
+        counters, no financial field.
+      properties:
+        id:
+          type: string
+          format: uuid
+        key:
+          type: string
+          pattern: '^[A-Z][A-Z0-9]{1,9}$'
+          examples: ['BAD']
+        name:
+          type: string
+        status:
+          type: string
+          enum: [ACTIVE, ON_HOLD, ARCHIVED, CLOSED]
+        color:
+          type: string
+          description: A name from the palette of the design system, never a hex literal.
+
+    ProjectOptionList:
+      type: object
+      additionalProperties: false
+      required: [items, hasMore, recent]
+      properties:
+        items:
+          type: array
+          maxItems: 50
+          items:
+            $ref: '#/components/schemas/ProjectOption'
+        hasMore:
+          type: boolean
+          description: More visible projects match than `items` carries.
+        recent:
+          type: array
+          maxItems: 5
+          description: Those of the asked `recent` ids the caller can still see, in name order.
+          items:
+            $ref: '#/components/schemas/ProjectOption'
 
     ProjectListPage:
       type: object

@@ -167,6 +167,9 @@ const CALLS: Readonly<Record<string, Call>> = {
   // code, and `test/integration/db/project-list.test.ts` holds the list against `can()` per row.
   'GET /api/v1/projects': (app, token) =>
     request(app).get('/api/v1/projects').set('Authorization', `Bearer ${token}`),
+  // The switcher (STORY-014-06): the list's capability and the list's visible set — one cell too.
+  'GET /api/v1/projects/options': (app, token) =>
+    request(app).get('/api/v1/projects/options').set('Authorization', `Bearer ${token}`),
   'GET /api/v1/projects/:projectId': (target, token) =>
     request(target).get(`/api/v1/projects/${PROJECT_ID}`).set('Authorization', `Bearer ${token}`),
   'PATCH /api/v1/projects/:projectId': (app, token) =>
