@@ -27,6 +27,15 @@ import { audit } from '../support/audit.util.js';
  * `project:read` (`SYSTEM_ROLE_PERMISSIONS`), so the difference measured below is the resource ACL,
  * not the capability — a stranger who could not even open `/projects` would pass this file for the
  * wrong reason.
+ *
+ * **Every mutating call signs in fresh, immediately before it.** Seating a membership bumps the
+ * subject's `permissions_version` in the same transaction (`project-member.repository.ts`,
+ * `bumpPermissionsVersionOf`), which is exactly what an already-issued access token carries a
+ * snapshot of (`authenticate-session.query.ts`) — so the owner's own token goes stale the moment
+ * the first `POST /projects` seats them as its lead, and a second call on that same token would be
+ * refused `401 unauthenticated`, indistinguishable from a broken fixture. A fresh sign-in per call
+ * is the same cost `session.fixture.ts` already pays for the same reason, applied to the API
+ * session rather than the browser one.
  */
 
 /** A key this suite invented owns — `PROJECT_KEY_PATTERN`: a letter, then up to nine `[A-Z0-9]`. */
@@ -77,36 +86,51 @@ const removeProject = async (owner: ApiSession, id: string): Promise<void> => {
   });
 };
 
+/**
+ * Runs one owner-authenticated call under its own, freshly minted session — never a session another
+ * call already spent (see the file doc on why a reused token goes stale after the first seat).
+ */
+const withOwnerSession = async <T>(action: (owner: ApiSession) => Promise<T>): Promise<T> => {
+  const owner = await ownerApiSession(SEED_ORGANIZATION_A);
+
+  try {
+    return await action(owner);
+  } finally {
+    await owner.context.dispose();
+  }
+};
+
 test.describe('the projects screen', () => {
-  let owner: ApiSession;
+  // Serial, deliberately: every scenario below reads the two projects `beforeAll` seats, and seating
+  // a membership bumps the *subject's* `permissions_version` for every session of theirs, anywhere —
+  // not only the one that made the call. Running this file's tests across parallel workers races
+  // that bump against a sibling worker's own fresh owner login (same organization, same owner
+  // account) and answers `401 unauthenticated` to whichever call loses — a fixture problem the
+  // product's own token model creates, not a defect in it. Serial keeps the whole file, seed
+  // included, on one worker and off that race.
+  test.describe.configure({ mode: 'serial' });
+
   let publicProject: CreatedProject;
   let privateProject: CreatedProject;
 
   test.beforeAll(async () => {
-    owner = await ownerApiSession(SEED_ORGANIZATION_A);
-
     const admin = await apiSessionFor(roleAccountEmail(SEED_ORGANIZATION_A, 'admin'));
 
     try {
-      publicProject = await createProject(owner, {
-        label: 'Public',
-        visibility: 'PUBLIC_ORG',
-        leadId: owner.userId,
-      });
-      privateProject = await createProject(owner, {
-        label: 'Private',
-        visibility: 'PRIVATE',
-        leadId: admin.userId,
-      });
+      publicProject = await withOwnerSession((owner) =>
+        createProject(owner, { label: 'Public', visibility: 'PUBLIC_ORG', leadId: owner.userId }),
+      );
+      privateProject = await withOwnerSession((owner) =>
+        createProject(owner, { label: 'Private', visibility: 'PRIVATE', leadId: admin.userId }),
+      );
     } finally {
       await admin.context.dispose();
     }
   });
 
   test.afterAll(async () => {
-    await removeProject(owner, publicProject.id);
-    await removeProject(owner, privateProject.id);
-    await owner.context.dispose();
+    await withOwnerSession((owner) => removeProject(owner, publicProject.id));
+    await withOwnerSession((owner) => removeProject(owner, privateProject.id));
   });
 
   test('a search query and a status filter survive a full page reload', async ({ ownerPage }) => {
@@ -130,8 +154,14 @@ test.describe('the projects screen', () => {
     await activeChip.click();
     await expect(table).toContainText(publicProject.name);
 
-    await expect(ownerPage).toHaveURL(new RegExp(`q=${encodeURIComponent(publicProject.name)}`));
-    await expect(ownerPage).toHaveURL(/status=ACTIVE/);
+    // Read back through `URLSearchParams` rather than matched as a literal substring: the router
+    // encodes a repeated filter as a JSON array (`status=%5B%22ACTIVE%22%5D`) and a space in `q` as
+    // `+`, and asserting the query's *meaning* rather than its exact bytes keeps this from being
+    // rewritten the day that encoding choice changes for a reason that has nothing to do with §1.
+    const paramsOf = (url: string): URLSearchParams => new URL(url).searchParams;
+
+    expect(paramsOf(ownerPage.url()).get('q')).toBe(publicProject.name);
+    expect(paramsOf(ownerPage.url()).get('status') ?? '').toContain('ACTIVE');
 
     const urlBeforeReload = ownerPage.url();
 
@@ -155,7 +185,10 @@ test.describe('the projects screen', () => {
     test.use({ role: 'developer' });
 
     test('is absent from a stranger’s list, and present on its member’s', async ({ rolePage }) => {
-      await rolePage.goto(`/projects?view=table&q=${encodeURIComponent(privateProject.name)}`);
+      // Unfiltered first — the private project's own name would filter straight to the empty
+      // state (correctly, for a stranger), which is indistinguishable from a table that never
+      // rendered at all if that is the first thing asked of the screen.
+      await rolePage.goto('/projects?view=table');
 
       const table = rolePage.getByRole('table');
 
@@ -168,7 +201,10 @@ test.describe('the projects screen', () => {
       await expect(table).toContainText(publicProject.name);
 
       await rolePage.getByRole('searchbox', { name: 'Search' }).fill(privateProject.name);
-      await expect(table.getByRole('row')).toHaveCount(1); // the header alone — no match
+      // `DataState` draws its empty state **in place of** the table on no match — there is no row
+      // to count, the table itself is gone — so the absence is asserted on the screen as a whole.
+      await expect(rolePage.getByText('No projects match the filters')).toBeVisible();
+      await expect(table).toHaveCount(0);
       await expect(rolePage.getByRole('main')).not.toContainText(privateProject.name);
     });
   });
