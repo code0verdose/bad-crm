@@ -48,6 +48,7 @@ import { ChangeProjectVisibilityUseCase } from '@/application/project/use-cases/
 import { CreateProjectUseCase } from '@/application/project/use-cases/create-project.use-case.js';
 import { DeleteProjectUseCase } from '@/application/project/use-cases/delete-project.use-case.js';
 import { GetProjectDetailQuery } from '@/application/project/use-cases/get-project-detail.query.js';
+import { PreviewProjectVisibilityQuery } from '@/application/project/use-cases/preview-project-visibility.query.js';
 import { ListProjectMembersQuery } from '@/application/project/use-cases/list-project-members.query.js';
 import { ListProjectsQuery } from '@/application/project/use-cases/list-projects.query.js';
 import {
@@ -765,6 +766,14 @@ export const createAuthApp = (options: AuthAppOptions = {}): AuthApp => {
       projects,
       projectAcl,
       audit,
+    ),
+    previewProjectVisibility: new PreviewProjectVisibilityQuery(
+      unitOfWork,
+      projects,
+      projectAcl,
+      projects,
+      capabilities,
+      clock,
     ),
     archiveProject: new ArchiveProjectUseCase(unitOfWork, projects, projectAcl, audit),
     deleteProject: new DeleteProjectUseCase(unitOfWork, projects, projects, projectAcl, audit),

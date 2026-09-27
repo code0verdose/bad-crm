@@ -1636,6 +1636,38 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/projects/{projectId}/visibility-impact": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * How many colleagues a change of visibility would move.
+         * @description The summary `POST /projects/{projectId}/visibility` is confirmed with (STORY-014-01,
+         *     acceptance 7): of the organization's **active** accounts, how many read the project now and
+         *     would not under `to` (`losingAccess`), and how many do not and would (`gainingAccess`).
+         *
+         *     Each colleague is decided by the same read decision as `GET /projects/{projectId}` —
+         *     capability, implicit level under the hypothetical visibility, explicit grants on the
+         *     project and on the organization. So a member, a colleague with a grant, and the owner keep
+         *     the project; a guest without a grant never had it; a suspended or invited account is not
+         *     counted at all. `to` equal to the current visibility moves nobody: both counts are `0`.
+         *
+         *     Asked under the change's own permission — `project:manage_visibility`, `MANAGER` on the
+         *     chain — because whoever may not make the change may not learn what it would do to whom.
+         *     Every outsider is `404`, as on the card. Nothing is written.
+         */
+        get: operations["previewProjectVisibility"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/projects/{projectId}/archive": {
         parameters: {
             query?: never;
@@ -2893,6 +2925,16 @@ export interface components {
         ProjectVisibilityChange: {
             /** @enum {string} */
             visibility: "PUBLIC_ORG" | "PRIVATE";
+        };
+        /**
+         * @description Counts of active colleagues, never who they are: the names are behind `user:read`, and a
+         *     summary is not a way around it.
+         */
+        ProjectVisibilityImpact: {
+            /** @example 7 */
+            losingAccess: number;
+            /** @example 0 */
+            gainingAccess: number;
         };
         /**
          * @description One membership. A **user id and no name**: who this account belongs to is `GET /employees`,
@@ -6398,6 +6440,43 @@ export interface operations {
             422: components["responses"]["ValidationFailed"];
             428: components["responses"]["ConfirmationRequired"];
             429: components["responses"]["RateLimited"];
+            500: components["responses"]["InternalError"];
+            503: components["responses"]["ServiceUnavailable"];
+        };
+    };
+    previewProjectVisibility: {
+        parameters: {
+            query: {
+                /** @description The visibility the change would move the project to. */
+                to: "PUBLIC_ORG" | "PRIVATE";
+            };
+            header?: never;
+            path: {
+                /**
+                 * @description Identifier of a project the caller may see. Another organization's id is 404, and so are a
+                 *     `PRIVATE` project the caller is not on and a project that has been deleted — the row survives
+                 *     as a soft deletion so that its `key` can be reused, and confirming that an id once named a
+                 *     project here would be a fact about data the caller cannot see.
+                 */
+                projectId: components["parameters"]["ProjectId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The two counts. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProjectVisibilityImpact"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["ValidationFailed"];
             500: components["responses"]["InternalError"];
             503: components["responses"]["ServiceUnavailable"];
         };

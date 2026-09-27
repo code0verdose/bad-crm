@@ -1,5 +1,6 @@
 import { type ProjectMemberEntry } from '@/application/project/ports/project-member-repository.port.js';
 import { type ProjectCard } from '@/application/project/project-card.util.js';
+import { type VisibilityImpact } from '@/domain/project/access/visibility-impact.policy.js';
 import {
   type ProjectRole,
   type ProjectStatus,
@@ -84,4 +85,17 @@ export const serializeProjectMember = (member: ProjectMemberEntry): ProjectMembe
   allocationPct: member.allocationPct,
   joinedAt: member.joinedAt.toISOString(),
   leftAt: member.leftAt === null ? null : member.leftAt.toISOString(),
+});
+
+export interface ProjectVisibilityImpactResponse {
+  readonly losingAccess: number;
+  readonly gainingAccess: number;
+}
+
+/** The summary of a visibility change → `ProjectVisibilityImpact`, the two counts and nothing else. */
+export const serializeProjectVisibilityImpact = (
+  impact: VisibilityImpact,
+): ProjectVisibilityImpactResponse => ({
+  losingAccess: impact.losingAccess,
+  gainingAccess: impact.gainingAccess,
 });

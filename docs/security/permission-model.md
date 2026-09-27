@@ -2331,6 +2331,7 @@ node -e "const m=require('./packages/server/test/permissions/__snapshots__/permi
 | `POST /api/v1/projects` | `project:create` | `CreateProjectUseCase` |
 | `PATCH /api/v1/projects/:projectId` | `project:update` (+ `project:manage_members` при смене `leadId`) | `UpdateProjectUseCase` |
 | `POST /api/v1/projects/:projectId/visibility` | `project:manage_visibility` | `ChangeProjectVisibilityUseCase` |
+| `GET /api/v1/projects/:projectId/visibility-impact` | `project:manage_visibility` | `PreviewProjectVisibilityQuery` (каждый активный сотрудник — через `canReadProject`) |
 | `POST /api/v1/projects/:projectId/archive` | `project:archive` | `ArchiveProjectUseCase` |
 | `DELETE /api/v1/projects/:projectId` | `project:delete` | `DeleteProjectUseCase` |
 | `GET /api/v1/projects/:projectId/members` | `project:read` | `ListProjectMembersQuery` |

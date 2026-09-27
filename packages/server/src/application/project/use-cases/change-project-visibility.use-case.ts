@@ -33,8 +33,9 @@ export interface ChangeProjectVisibilityInput {
  * at once. The key is `dangerous` for the pair, and so is the confirmation.
  *
  * What the story asks the *screen* to show — how many colleagues lose access — is not computed
- * here: a count of the organization minus the roster is a read the card makes with what it already
- * has, and a number in a 428 body would be a second copy of it (STORY-014-05).
+ * here: it is its own read, `PreviewProjectVisibilityQuery` (`GET …/visibility-impact`), asked under
+ * the same key and level before the dialog is confirmed. A number in a 428 body would be a second
+ * copy of it, and the client that shows the consequences never sees the 428.
  *
  * A repeat asking for the visibility already held is a no-op: no write, no confirmation demanded,
  * no entry — the state the caller wanted already holds.
