@@ -305,8 +305,9 @@ admin с DENY на `project:archive`» × «зритель `PUBLIC_ORG`, `OBSERV
   `project:manage_visibility` (`useCan().holds`).~~ Снято 2026-09-27: кнопка рисуется по
   `canChangeVisibility`; держатель capability, которому блок отказал, не видит ни кнопки, ни (если
   больше ничего не открыто) вкладки — `project-settings-screen.test.tsx`, «changing the visibility».
-- **Критерий 7 распространён на действия:** на архивном проекте элементы остаются на экране
-  `disabled`, объяснение — баннер архива; удаление доступно.
+- **Критерий 7 распространён на действия:** на архивном проекте элементы остаются на экране и в
+  табуляции (`aria-disabled`, поля `readOnly`, отправка отбрасывается в обработчике), пояснение
+  `ArchivedNote` стоит у каждой секции (`aria-describedby`); удаление доступно (уточнено 2026-09-27).
 - **Критерий 6 — половина.** Отказ показанной кнопки даёт **один** сигнал с человекочитаемой
   причиной по `reason` (`units/project/lib/utils/project-refusal.util.ts`: `permission_not_granted`,
   `insufficient_acl_level`, `self_assignment_forbidden`): тост для действий из строки состава,
