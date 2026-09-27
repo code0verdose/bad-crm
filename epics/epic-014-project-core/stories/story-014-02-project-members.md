@@ -228,10 +228,24 @@ estimate: M
       (`bumpPermissionsVersionOf` на `ProjectMemberRepositoryPort`, 2026-09-10).
 - [x] `packages/server/src/presentation/http/route-registry.factory.ts` — `project:manage_members`,
       `project:read` c `aclCheckedIn` (2026-09-10).
-- [ ] `packages/client/src/units/project/service/{queries,mutations,hooks}` —
-      `project-members.query.ts`, `add-project-member.mutation.ts` (оптимистичный патч + rollback),
-      `use-project-members.hook.ts`; `widgets/project-members/project-members.widget.tsx` +
-      `ui/member-role-select.component.tsx`, `ui/allocation-field.component.tsx`.
+- [x] Клиент (2026-09-27; пути от `packages/client/src/`): раздел `/projects/$projectId/members`
+      (`app/routes/_authenticated/projects/$projectId/members.tsx`, `pages/project/members-page.tsx`,
+      `widgets/project-members`); мутации `add-project-member` (**пессимистичная**, а не
+      «оптимистичный патч» плана: `204` без строки, а реальные отказы — сам себя, отключённый
+      аккаунт — ровно те случаи, где оптимистичная строка показала бы доступ, которого нет),
+      `update-project-member` и `remove-project-member` — **оптимистичные** (inline-правка и удаление,
+      `runOptimisticPatch`/`runOptimisticRemove` с `idKey: 'userId'` — хелпер научен адресовать строку
+      не по `id`; откат снапшотом на прежнее место); хук `use-project-roster.hook.ts`; компоненты
+      `units/project/ui/project-member-{table,add-form}.component.tsx` (роль — `NativeSelect` в строке,
+      доля — `NumberInput` 0…100 с `clampBehavior="strict"`). Отказы — один тост с текстом по
+      `reason` (`units/project/lib/utils/project-refusal.util.ts`); кандидаты без участников и без
+      читающего (`self_assignment_forbidden`). Управление составом рисуется только по
+      `permissions.canManageMembers`.
+
+> **Открыто по клиенту (2026-09-27).** Критерий 10 — фильтры `q`, `role[]` и «вышедшие» в URL:
+> не сделаны, список показывает живой состав целиком. Критерий 9 — суммарная загрузка сотрудника по
+> проектам как подсказка: не сделана (нужен источник по всем проектам человека). E2E
+> `membership-invalidates-permissions.spec.ts` не написан.
 - [x] Тесты сервера: `test/unit/domain/project/project-membership-policy.test.ts` (п. 6, 7),
       `implicit-level-policy.test.ts` (п. 2, 3, с STORY-011-06),
       `test/unit/application/manage-project-members.use-case.test.ts`,
