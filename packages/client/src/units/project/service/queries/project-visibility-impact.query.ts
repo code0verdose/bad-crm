@@ -12,7 +12,7 @@ import { QueryKeys } from '@shared/lib';
  *
  * `staleTime: 0` rather than the client-wide 30 s: the count is a statement about grants and seats
  * that anybody may change in between, and it is shown as the reason to press a dangerous button —
- * every opening of the dialog asks again. The request is cancelled with the dialog.
+ * every opening of the dialog asks again. The answer is ignored once the dialog closes.
  */
 export const useProjectVisibilityImpactQuery = (
   projectId: string,

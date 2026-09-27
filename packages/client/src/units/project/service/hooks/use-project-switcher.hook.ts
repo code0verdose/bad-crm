@@ -1,7 +1,8 @@
 import { useDebouncedValue, useLocalStorage } from '@mantine/hooks';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useStore } from 'zustand';
 
+import { AuthLib } from '@units/auth';
 import { type ProjectOption } from '@units/project/api';
 import {
   inRecencyOrder,
@@ -15,8 +16,8 @@ import {
   useProjectOptionsQuery,
 } from '@units/project/service/queries/project-options.query.js';
 import {
-  RECENT_PROJECTS_STORAGE_KEY,
   recentProjects,
+  recentProjectsStorageKey,
   type RecentProjectsStore,
 } from '@units/project/service/stores/recent-projects.store.js';
 
@@ -27,7 +28,15 @@ import {
  */
 export const SWITCHER_TYPING_PAUSE_MS = 300;
 
+/**
+ * What a person with nothing remembered has. One array for every render: Mantine's storage hook
+ * keys its callbacks on the default, and a fresh literal would hand back a new remover each time.
+ */
+const NOTHING_REMEMBERED: unknown = [];
+
 export interface ProjectSwitcherInput {
+  /** Who is signed in: the remembered list is theirs, kept under a key of their own. */
+  readonly userId: string;
   /** The project in the path, or `null` outside `/projects/$projectId/**`. */
   readonly currentProjectId: string | null;
   /** The section in the path, or `null` outside a project. */
@@ -59,8 +68,12 @@ export interface ProjectSwitcher {
   readonly hasMore: boolean;
   readonly status: 'pending' | 'error' | 'success';
   readonly retry: () => void;
-  /** Takes the person to `projectId`, in the same section they are in now. */
-  readonly select: (projectId: string) => void;
+  /**
+   * Takes the person to `projectId`, in the same section they are in now. `true` when the choice
+   * leads to another project — the page it opens owns focus from then on; `false` for the project
+   * already open, which goes nowhere.
+   */
+  readonly select: (projectId: string) => boolean;
 }
 
 const toOption = (card: {
@@ -91,6 +104,7 @@ const toOption = (card: {
  * Nothing is asked until the switcher is opened.
  */
 export const useProjectSwitcher = ({
+  userId,
   currentProjectId,
   section,
   onSwitch,
@@ -104,11 +118,24 @@ export const useProjectSwitcher = ({
   const forgotten = useStore(recentStore, (state) => state.forgotten);
   // Read synchronously on mount (`getInitialValueInEffect: false`), so the first open already asks
   // about what the browser remembered. `unknown`: storage is outside the program and is sanitized.
-  const [remembered, setRemembered] = useLocalStorage<unknown>({
-    key: RECENT_PROJECTS_STORAGE_KEY,
-    defaultValue: [],
+  const [remembered, setRemembered, removeRemembered] = useLocalStorage<unknown>({
+    key: recentProjectsStorageKey(userId),
+    defaultValue: NOTHING_REMEMBERED,
     getInitialValueInEffect: false,
   });
+
+  // A subscription to an external source, with its cleanup (`rules/frontend-fsd.mdc` rule 11): the
+  // end of a session is an event of `units/auth`, and the browser's copy of the list is removed
+  // with it. Only here — storage is written through this hook, and only the hook can remove it;
+  // the tab's in-memory visits are reset by the session-event subscriber in `app/`.
+  useEffect(
+    () =>
+      AuthLib.onAuthEvent((event) => {
+        if (event === 'logged-out') removeRemembered();
+      }),
+    [removeRemembered],
+  );
+
   const recentIds = mergeRecentProjects(visited, remembered, forgotten);
 
   const optionsQ = useProjectOptionsQuery({ q: search, archived, recent: recentIds }, isOpen);
@@ -148,7 +175,10 @@ export const useProjectSwitcher = ({
     },
     select: (projectId) => {
       close();
-      if (projectId !== currentProjectId) onSwitch(projectSwitchTarget(projectId, section));
+      if (projectId === currentProjectId) return false;
+      onSwitch(projectSwitchTarget(projectId, section));
+
+      return true;
     },
   };
 };

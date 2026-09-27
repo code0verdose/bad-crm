@@ -36,6 +36,11 @@ import { AuthLib } from '@units/auth';
  * signing in again returns the user to the page they were thrown out of, and `replace: true` keeps
  * it out of the history behind the login screen where Back would walk straight into another 401.
  *
+ * The projects the tab visited go with the session, at once: they are in memory only, nothing
+ * renders from them after the navigation, and the next person to sign in on this tab is not the
+ * one who visited them. (The switcher removes the copy it kept in the browser itself — storage is
+ * written through a hook, and only a hook can remove it.)
+ *
  * `refresh-failed` is not handled here. It is the earlier, quieter moment — the rotation was refused
  * but the tab may still hold a valid access token — and `units/auth` follows it with `logged-out`
  * when the session is really over. Acting on both would race the second event against the first
@@ -58,12 +63,18 @@ export interface AuthEventTarget {
    * observes the end of a session, it never starts one.
    */
   readonly session: { readonly end: () => void };
+  /**
+   * The projects this tab visited — `ProjectService.ProjectStores.recentProjects`. They are one
+   * person's, and in memory they would outlive the session into the next person's switcher.
+   */
+  readonly recentProjects: { readonly reset: () => void };
 }
 
 export const subscribeAuthEvents = ({
   router,
   queryClient,
   session,
+  recentProjects,
 }: AuthEventTarget): (() => void) => {
   const signOut = async (): Promise<void> => {
     await router.navigate({
@@ -87,6 +98,7 @@ export const subscribeAuthEvents = ({
     // Synchronous, and before the navigation: `beforeLoad` on `/login` runs during
     // `router.navigate`, and it decides on the session state as it is at that moment.
     session.end();
+    recentProjects.reset();
     void signOut();
   });
 };

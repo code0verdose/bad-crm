@@ -1,10 +1,14 @@
-import { fireEvent, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, assert, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { axeViolationsIn } from '../support/axe-scan.util.js';
 import {
+  ALL,
+  ME,
+  OUTSIDER,
   PROJECT,
+  card,
   cardReady,
   json,
   problem,
@@ -72,8 +76,12 @@ afterEach(() => {
   localStorage.clear();
 });
 
-const mounted = async () => {
-  const app = await startAt({ section: 'members', projectOptions: optionsServer });
+const mounted = async (elsewhere?: (call: Call) => Response | undefined) => {
+  const app = await startAt({
+    section: 'members',
+    projectOptions: optionsServer,
+    ...(elsewhere === undefined ? {} : { elsewhere }),
+  });
 
   await cardReady();
 
@@ -139,7 +147,9 @@ describe('the project switcher', () => {
     await screen.findByText('Other project');
 
     // What the browser keeps is ids and nothing else — no name, no key, no colour.
-    const stored: unknown = JSON.parse(localStorage.getItem('bc.recent-projects.v1') ?? 'null');
+    const stored: unknown = JSON.parse(
+      localStorage.getItem(`bc.recent-projects.v1:${ME}`) ?? 'null',
+    );
 
     assert(Array.isArray(stored), 'opening the switcher wrote the remembered list');
     expect(stored[0]).toBe(firstProject);
@@ -158,6 +168,51 @@ describe('the project switcher', () => {
 
     // This visit first, the one before the reload next (anything after them is older cases' leftovers).
     expect(optionReads().at(-1)?.getAll('recent').slice(0, 2)).toEqual([PROJECT, firstProject]);
+  });
+
+  /**
+   * The browser is shared by whoever signs in on it. What one person visited is theirs: kept under
+   * a key of their own, never under a key the next person's switcher reads.
+   */
+  it('keeps the list under the signed-in person’s own key, apart from anyone else’s', async () => {
+    const user = userEvent.setup();
+
+    // Somebody else signed in on this browser earlier — and the shared key of the first version.
+    localStorage.setItem(`bc.recent-projects.v1:${OUTSIDER}`, JSON.stringify([OLD]));
+    localStorage.setItem('bc.recent-projects.v1', JSON.stringify([OLD]));
+
+    const { trigger } = await mounted();
+
+    await user.click(trigger);
+    await screen.findByText('Other project');
+
+    expect(optionReads().at(-1)?.getAll('recent')).not.toContain(OLD);
+    const stored: unknown = JSON.parse(
+      localStorage.getItem(`bc.recent-projects.v1:${ME}`) ?? 'null',
+    );
+
+    assert(Array.isArray(stored), 'the list is kept under the reader’s own key');
+    expect(stored).not.toContain(OLD);
+    expect(stored[0]).toBe(PROJECT);
+    // The other person's list is theirs to keep: not read, not rewritten.
+    expect(localStorage.getItem(`bc.recent-projects.v1:${OUTSIDER}`)).toBe(JSON.stringify([OLD]));
+  });
+
+  it('forgets the remembered list when the session ends', async () => {
+    const user = userEvent.setup();
+    const { trigger } = await mounted();
+    // The bus of the module graph this mount runs on — `startAt` resets the modules.
+    const { AuthLib } = await import('@units/auth');
+
+    await user.click(trigger);
+    await screen.findByText('Other project');
+    expect(localStorage.getItem(`bc.recent-projects.v1:${ME}`)).not.toBeNull();
+
+    act(() => {
+      AuthLib.emitAuthEvent('logged-out');
+    });
+
+    expect(localStorage.getItem(`bc.recent-projects.v1:${ME}`)).toBeNull();
   });
 
   it('keeps the section: members of this project become members of the chosen one', async () => {
@@ -181,6 +236,61 @@ describe('the project switcher', () => {
     });
   });
 
+  /**
+   * A choice that leads to another project must not hand focus back to the trigger once the route
+   * announcer has put it on the new page's heading: Mantine's `focusTarget()` runs a tick later
+   * (`setTimeout(…, 0)`), after the announcer's synchronous move, and would win.
+   *
+   * The other project answers «not found» here — the one switch after which the page's name
+   * changes, so the announcer moves focus. A settled switch keeps the name («project») and the
+   * announcer leaves focus where it is.
+   */
+  it('leaves focus on the heading of the page a switch leads to', async () => {
+    const user = userEvent.setup();
+    const { trigger, router } = await mounted((call) =>
+      call.url.endsWith(`/projects/${OTHER}`) ? problem(404, 'project_not_found') : undefined,
+    );
+
+    await user.click(trigger);
+    await user.click(await screen.findByRole('option', { name: /Other project/ }));
+
+    await waitFor(() => {
+      expect(router.state.location.pathname).toBe(`/projects/${OTHER}/members`);
+    });
+
+    const heading = await screen.findByRole('heading', { level: 1 });
+
+    await waitFor(() => {
+      expect(heading).toHaveFocus();
+    });
+    // Past the tick on which the combobox gives focus back to its target.
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(heading).toHaveFocus();
+  });
+
+  it('keeps focus on the trigger after a settled switch, naming the project now open', async () => {
+    const user = userEvent.setup();
+    const { trigger, router } = await mounted((call) => {
+      if (call.url.endsWith(`/projects/${OTHER}`)) {
+        return json(card(ALL, { id: OTHER, key: 'OTH', name: 'Other project' }));
+      }
+
+      return call.url.endsWith(`/projects/${OTHER}/members`) ? json({ items: [] }) : undefined;
+    });
+
+    await user.click(trigger);
+    await user.click(await screen.findByRole('option', { name: /Other project/ }));
+
+    await waitFor(() => {
+      expect(router.state.location.pathname).toBe(`/projects/${OTHER}/members`);
+    });
+    await screen.findByRole('heading', { level: 2, name: 'Other project' });
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    expect(trigger).toHaveFocus();
+    expect(trigger).toHaveTextContent('Other project');
+  });
+
   it('closes on Escape and gives the focus back to the trigger', async () => {
     const user = userEvent.setup();
     const { trigger } = await mounted();
@@ -200,6 +310,32 @@ describe('the project switcher', () => {
 
     // `з` is what the P key types on a Russian layout; the code is what the shortcut matches.
     fireEvent.keyDown(document.body, { key: 'з', code: 'KeyP', ctrlKey: true, altKey: true });
+
+    await waitFor(() => {
+      expect(trigger).toHaveAttribute('aria-expanded', 'true');
+    });
+  });
+
+  /**
+   * Inside a text field the chord is typing: `Ctrl+Alt` is AltGr on Windows, and on layouts that
+   * put a character on AltGr+P the shortcut would swallow it and throw focus out of the field.
+   */
+  it('leaves Ctrl+Alt+P to a text field — the roster search types, the switcher stays shut', async () => {
+    const { trigger } = await mounted();
+    const search = await screen.findByRole('searchbox', {
+      name: 'projects.members.filters.search',
+    });
+
+    search.focus();
+    fireEvent.keyDown(search, { key: 'π', code: 'KeyP', ctrlKey: true, altKey: true });
+
+    // Past the tick on which an opened dropdown would move focus into its own search.
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(trigger).toHaveAttribute('aria-expanded', 'false');
+    expect(search).toHaveFocus();
+
+    // Out of the field, the same chord opens it — the control of the case above.
+    fireEvent.keyDown(document.body, { key: 'π', code: 'KeyP', ctrlKey: true, altKey: true });
 
     await waitFor(() => {
       expect(trigger).toHaveAttribute('aria-expanded', 'true');
@@ -250,6 +386,9 @@ describe('the project switcher', () => {
       expect(trigger).toHaveAttribute('aria-expanded', 'false');
     });
     expect(router.state.location.pathname).toBe(before);
+    await waitFor(() => {
+      expect(trigger).toHaveFocus();
+    });
   });
 
   it('shows a failed load in the list with a retry that asks again', async () => {
