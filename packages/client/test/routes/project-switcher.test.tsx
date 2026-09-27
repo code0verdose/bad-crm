@@ -286,6 +286,29 @@ describe('the project switcher', () => {
     expect(heading).toHaveFocus();
   });
 
+  /**
+   * Acceptance 6: a project that answers «not found» in the middle of work — the reader was taken
+   * off it — makes the shell ask for the reader's rights again. The server keeps no cache of rights;
+   * the one that would go on answering with the old ones is this tab's query cache.
+   */
+  it('asks for the reader’s rights again once a project answers «not found»', async () => {
+    const { router } = await mounted((call) =>
+      call.url.endsWith(`/projects/${OTHER}`) ? problem(404, 'project_not_found') : undefined,
+    );
+    const rightsReads = () => sent.filter((call) => call.url.endsWith('/me/permissions')).length;
+    const before = rightsReads();
+
+    // CONTROL: the rights were read to open the project at all.
+    expect(before).toBeGreaterThan(0);
+
+    await router.navigate({ to: '/projects/$projectId', params: { projectId: OTHER } });
+    await screen.findByRole('heading', { level: 1, name: 'errors.not_found.title' });
+
+    await waitFor(() => {
+      expect(rightsReads()).toBeGreaterThan(before);
+    });
+  });
+
   it('keeps focus on the trigger after a settled switch, naming the project now open', async () => {
     const user = userEvent.setup();
     const { trigger, router } = await mounted((call) => {
