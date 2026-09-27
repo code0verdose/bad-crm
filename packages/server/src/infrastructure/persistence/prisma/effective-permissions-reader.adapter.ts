@@ -99,7 +99,11 @@ export class PrismaEffectivePermissionsReader
   }
 
   /**
-   * The same fold for a whole audience — four statements however many ids, grouped by person.
+   * The same fold for a whole audience, grouped by person in one pass.
+   *
+   * A constant number of statements, independent of the number of ids; the rows read are O(N).
+   * The four `findMany`/`findFirst` calls are not four statements: without the `relationJoins`
+   * preview Prisma sends the nested `role` and `permissions` selects as statements of their own.
    *
    * The predicates are the ones `rows` sends (`unexpired`, `ROLE_SELECT`, `OVERRIDE_SELECT`, the
    * `deletedAt` filter on the account) and the fold is `toFacts`, so the answer for one person here

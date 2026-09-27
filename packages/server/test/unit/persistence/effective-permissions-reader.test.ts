@@ -462,7 +462,8 @@ describe('assembling what several people may do at once', () => {
       roleKeys: ['developer'],
       permissionsVersion: 5,
     });
-    // Four statements, whatever the number of ids.
+    // Four client calls, whatever the number of ids — a constant number of statements, not four:
+    // Prisma sends the nested role selects on their own.
     expect(recorder.calls.map((call) => call.name).toSorted()).toEqual([
       'organization.findFirst',
       'user.findMany',

@@ -23,7 +23,9 @@ interface GrantRow {
 
 /**
  * The audience of one project — every active account of the organization, its seat, and the grants
- * on the chain that reach it — in two statements, whatever the size of the organization.
+ * on the chain that reach it — in two statements. The number of statements does not grow with the
+ * organization; the rows read are O(N) in its accounts, and grouping them is the caller's, in one
+ * pass (`groupBy`), not a filter per person.
  *
  * **The per-person readers, restated for a set, and held to them.** The seat is
  * `PrismaProjectAccessReader.aclFacts` (live membership, `left_at IS NULL`) as a `LEFT JOIN` from
