@@ -1,8 +1,9 @@
 import { expect, type Page } from '@playwright/test';
 
+import { withOwnerSession } from '../../fixtures/fresh-session.util.js';
 import { roleAccountEmail } from '../../fixtures/role-account.js';
 import { SEED_ORGANIZATION_A } from '../../fixtures/seed-data.js';
-import { ownerApiSession, type ApiSession } from '../../fixtures/test-account.js';
+import { type ApiSession } from '../../fixtures/test-account.js';
 import { test } from '../../fixtures/session.fixture.js';
 import { audit } from '../support/audit.util.js';
 
@@ -32,7 +33,7 @@ import { audit } from '../support/audit.util.js';
  * the observation is worth is recorded in the story, because it also means a policy naming `owner`
  * protects nobody.
  *
- * **This file writes to the organization every other scenario signs into, so three things guard it.**
+ * **This file writes to the organization every other scenario signs into, so four things guard it.**
  *
  * It runs **serially** — `fullyParallel` is on in `playwright.config.ts`, and without this the two
  * describes below would race each other over one policy: one's `beforeEach` switching it off while
@@ -46,6 +47,13 @@ import { audit } from '../support/audit.util.js';
  * And the grace period it sets is **days rather than zero**: a covered account with no second factor
  * and no grace is scoped to enrolment on its next sign-in, and the accounts covered here are the ones
  * other scenarios run as.
+ *
+ * The fourth is `withOwnerSession` (`fresh-session.util.ts`) rather than a raw owner login: measured
+ * 2026-09-27, running this file alongside `tests/projects/**` — which creates and changes several
+ * projects as the same seeded owner — regularly answered this file's own first owner call
+ * `401 unauthenticated`, the owner's session having gone stale between login and use by a sibling
+ * file's concurrent project write. `withOwnerSession`'s retry is exactly the fix `tests/projects/**`
+ * already applies to itself for the identical race.
  */
 
 // One worker for this file: two describes sharing one organization's policy cannot run side by side.
@@ -71,15 +79,13 @@ const writePolicy = async (session: ApiSession, policy: StoredPolicy): Promise<v
   expect(response.ok(), await response.text()).toBe(true);
 };
 
-const asOwner = async (body: (session: ApiSession) => Promise<void>): Promise<void> => {
-  const session = await ownerApiSession(SEED_ORGANIZATION_A);
-
-  try {
-    await body(session);
-  } finally {
-    await session.context.dispose();
-  }
-};
+/**
+ * A fresh owner session per call, retried across the cross-worker race the file doc explains —
+ * `withOwnerSession` (`fresh-session.util.ts`), named `asOwner` here for how every call site below
+ * already reads.
+ */
+const asOwner = (body: (session: ApiSession) => Promise<void>): Promise<void> =>
+  withOwnerSession(SEED_ORGANIZATION_A, body);
 
 /** Between cases: the known state each of them starts from. */
 const disablePolicy = async (): Promise<void> => {
