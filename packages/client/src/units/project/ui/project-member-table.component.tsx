@@ -30,7 +30,7 @@ export interface ProjectMemberTableProps {
    * the row whose role was just changed out of the filter (STORY-014-02, acceptance 10). Without it
    * focus falls to `<body>`.
    */
-  readonly returnFocusTo?: RefObject<HTMLElement | null>;
+  readonly returnFocusTo: RefObject<HTMLElement | null>;
 }
 
 /**
@@ -61,8 +61,7 @@ export function ProjectMemberTable({
   const { t, i18n } = useTranslation();
   const noteId = useId();
   const returning = useRef<string | null>(null);
-  const noAnchor = useRef<HTMLElement | null>(null);
-  const handOffFocus = SharedHooks.useRemovalFocusHandoff(returnFocusTo ?? noAnchor);
+  const handOffFocus = SharedHooks.useRemovalFocusHandoff(returnFocusTo);
 
   const remove = useCallback(
     (userId: string) => {
