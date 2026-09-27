@@ -162,6 +162,7 @@ estimate: M
 >
 > **Чего здесь нет:** клиентской формы (`units/project`, `widgets/project-form`) и i18n-namespace
 > `project.json` — клиентская половина истории; списка и `visibleProjectIds` (STORY-014-03/04).
+> *Клиент — закрыто 2026-09-27, см. ниже.*
 
 ## Acceptance (Given/When/Then)
 
