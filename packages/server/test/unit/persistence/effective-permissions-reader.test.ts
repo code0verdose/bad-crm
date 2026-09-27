@@ -364,3 +364,143 @@ describe('narrating where each permission came from', () => {
     }
   });
 });
+
+/**
+ * The fold for a whole audience (`capabilitiesOfMany`) — the read behind the summary of a
+ * visibility change. What it must not do is answer one person differently from `capabilitiesOf`:
+ * the same predicates, the same fold, grouped by id; and a fixed number of statements.
+ */
+describe('assembling what several people may do at once', () => {
+  const IVAN = '018f4a3b-0000-7000-8000-0000000000c1';
+  const PETR = '018f4a3b-0000-7000-8000-0000000000c2';
+
+  const batchClient = (users: { id: string; permissionsVersion: number }[]) => {
+    const calls: { name: string; args: Record<string, unknown> }[] = [];
+    const record =
+      <T>(name: string, result: T) =>
+      (args: Record<string, unknown> = {}): Promise<T> => {
+        calls.push({ name, args });
+
+        return Promise.resolve(result);
+      };
+    const tx = {
+      $executeRaw: (): Promise<number> => Promise.resolve(1),
+      user: { findMany: record('user.findMany', users) },
+      organization: { findFirst: record('organization.findFirst', { ownerId: OWNER }) },
+      userRole: {
+        findMany: record('userRole.findMany', [
+          {
+            userId: IVAN,
+            role: {
+              id: 'r1',
+              key: 'developer',
+              name: 'Developer',
+              permissions: [{ permissionKey: 'project:read' }, { permissionKey: 'not:a_key' }],
+            },
+          },
+        ]),
+      },
+      userPermissionOverride: {
+        findMany: record('userPermissionOverride.findMany', [
+          {
+            userId: IVAN,
+            permissionKey: 'project:update',
+            effect: 'DENY',
+            reason: 'seeded exception row',
+            grantedById: null,
+            grantedAt: new Date('2026-08-01T00:00:00.000Z'),
+            expiresAt: null,
+          },
+        ]),
+      },
+    };
+
+    return {
+      calls,
+      base: {
+        $transaction: (fn: (client: typeof tx) => Promise<unknown>) => fn(tx),
+      } as unknown as Parameters<typeof withTenant>[0],
+    };
+  };
+
+  const BOTH = [
+    { id: OWNER, permissionsVersion: 3 },
+    { id: IVAN, permissionsVersion: 5 },
+  ];
+
+  const readMany = (base: Parameters<typeof withTenant>[0], ids: readonly string[]) =>
+    withTenant(base, { organizationId: ORG, userId: null }, () =>
+      new PrismaEffectivePermissionsReader().capabilitiesOfMany(ids),
+    );
+
+  it('sends nothing for nobody', async () => {
+    const recorder = batchClient(BOTH);
+
+    expect((await readMany(recorder.base, [])).size).toBe(0);
+    expect(recorder.calls).toEqual([]);
+  });
+
+  it('folds each person on their own rows, and leaves out an id that is not a person here', async () => {
+    const recorder = batchClient(BOTH);
+
+    const facts = await readMany(recorder.base, [OWNER, IVAN, PETR]);
+
+    expect([...facts.keys()]).toEqual([OWNER, IVAN]);
+    expect(facts.get(OWNER)).toEqual({
+      isOwner: true,
+      granted: [],
+      denied: [],
+      roleKeys: [],
+      permissionsVersion: 3,
+    });
+    expect(facts.get(IVAN)).toEqual({
+      isOwner: false,
+      granted: ['project:read'],
+      denied: ['project:update'],
+      roleKeys: ['developer'],
+      permissionsVersion: 5,
+    });
+    // Four statements, whatever the number of ids.
+    expect(recorder.calls.map((call) => call.name).toSorted()).toEqual([
+      'organization.findFirst',
+      'user.findMany',
+      'userPermissionOverride.findMany',
+      'userRole.findMany',
+    ]);
+  });
+
+  it('sends the predicates capabilitiesOf sends — tenant, deletion, expiry, deprecation', async () => {
+    const recorder = batchClient(BOTH);
+
+    await readMany(recorder.base, [OWNER, IVAN]);
+
+    const argsOf = (name: string) => recorder.calls.find((call) => call.name === name)?.args ?? {};
+
+    expect(argsOf('user.findMany')['where']).toEqual({
+      organizationId: ORG,
+      id: { in: [OWNER, IVAN] },
+      deletedAt: null,
+    });
+
+    for (const name of ['userRole.findMany', 'userPermissionOverride.findMany']) {
+      expect(argsOf(name)['where']).toEqual({
+        organizationId: ORG,
+        userId: { in: [OWNER, IVAN] },
+        OR: [{ expiresAt: null }, { expiresAt: { gt: expect.any(Date) } }],
+      });
+    }
+
+    const select = argsOf('userRole.findMany')['select'] as {
+      role: { select: { permissions: { where: unknown } } };
+    };
+
+    expect(select.role.select.permissions.where).toEqual({ permission: { deprecatedAt: null } });
+  });
+
+  it('stops after the accounts when none of the ids is a person here', async () => {
+    const recorder = batchClient([]);
+
+    expect((await readMany(recorder.base, [PETR])).size).toBe(0);
+    expect(recorder.calls.map((call) => call.name)).toEqual(['user.findMany']);
+  });
+});

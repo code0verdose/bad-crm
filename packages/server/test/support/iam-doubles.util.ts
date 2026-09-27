@@ -256,6 +256,19 @@ export class FakeEffectivePermissionsReader implements EffectivePermissionsReade
     return Promise.resolve(this.factsFor(userId));
   }
 
+  /** The same lookup, per id — an id answered `null` is absent, as the adapter leaves it out. */
+  capabilitiesOfMany(userIds: readonly string[]): Promise<ReadonlyMap<string, CapabilityFacts>> {
+    const found = new Map<string, CapabilityFacts>();
+
+    for (const userId of userIds) {
+      const facts = this.factsFor(userId);
+
+      if (facts !== null) found.set(userId, facts);
+    }
+
+    return Promise.resolve(found);
+  }
+
   /**
    * The same facts, narrated with whatever attribution the suite seeded.
    *

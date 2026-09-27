@@ -100,6 +100,14 @@ export interface EffectivePermissionsReaderPort {
   /** `null` when the person is not in this organization — answered as 404, never 403. */
   capabilitiesOf(userId: string): Promise<CapabilityFacts | null>;
   /**
+   * The same fold for several people at once, keyed by id — for a read that has to decide about a
+   * whole audience (the summary of a visibility change) rather than about the caller.
+   *
+   * The identical predicates and fold as `capabilitiesOf`, in a fixed number of statements however
+   * many ids are asked about; an id that is not a person of this organization is simply absent.
+   */
+  capabilitiesOfMany(userIds: readonly string[]): Promise<ReadonlyMap<string, CapabilityFacts>>;
+  /**
    * The same read, narrated — for the one screen that has to explain the answer instead of using it.
    *
    * Separate from `capabilitiesOf` because that one runs on **every request** to build the actor:
